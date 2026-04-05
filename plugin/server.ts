@@ -325,21 +325,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
       case 'dc_invite_link': {
         const link = await client.inviteLink()
-        // Generate QR code as text for the chat
-        let qrText = ''
-        try {
-          const qr = await import('qrcode-terminal')
-          await new Promise<void>((resolve) => {
-            qr.generate(link, { small: true }, (code: string) => {
-              qrText = code
-              resolve()
-            })
-          })
-        } catch {}
-        const text = qrText
-          ? `Scan this QR code in Delta Chat:\n\n${qrText}\n\nOr use this link: ${link}`
-          : link
-        return { content: [{ type: 'text' as const, text }] }
+        return { content: [{ type: 'text' as const, text: link }] }
       }
 
       case 'dc_access_pair': {
@@ -571,14 +557,6 @@ async function main(): Promise<void> {
     const result = await client.initAccount('Claude', chatmail)
     process.stderr.write(`deltachat channel: provisioned ${result.address}\n`)
     process.stderr.write(`deltachat channel: invite link: ${result.inviteLink}\n`)
-    // Show QR code in terminal for easy scanning
-    try {
-      const qr = await import('qrcode-terminal')
-      qr.generate(result.inviteLink, { small: true }, (code: string) => {
-        process.stderr.write('\nScan this QR code in Delta Chat to add the bot:\n\n')
-        process.stderr.write(code + '\n\n')
-      })
-    } catch {}
 
     const { mkdirSync, writeFileSync } = await import('node:fs')
     mkdirSync(STATE_DIR, { recursive: true })

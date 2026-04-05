@@ -47,7 +47,9 @@ This prints a QR code link.
 
 ### 2. Add the bot in Delta Chat
 
-Open Delta Chat on your phone and scan the QR code (or tap the link). This adds Claude as a verified contact.
+Open the invite link on your phone — Delta Chat will offer to add Claude as a verified contact.
+
+**To scan the QR code instead:** In Delta Chat, tap the pencil/compose button (bottom right), then tap the **QR code icon** (triangle) to open the scanner. Point it at the QR code displayed in your terminal.
 
 ### 3. Pair your chat
 
