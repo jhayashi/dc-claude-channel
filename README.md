@@ -64,14 +64,14 @@ After pairing, the bot sends two WebXDC apps (Permission Prompt and File Reviewe
 
 - **Permission prompts** — how to tap the centered message to Allow or Deny
 - **File Reviewer** — syntax-highlighted code/doc viewer with inline commenting
-- **Game building** — optionally build a WebXDC game right in the chat
+- **App building** — optionally build a WebXDC app right in the chat
 
 Reply "yes" to start, or "no" to skip. You can start using Claude immediately either way.
 
 ## Features
 
 - **End-to-end encrypted** — all messages, files, and app data encrypted via Autocrypt. Your code never passes through a third-party server in readable form.
-- **Trivial bot setup** — run `./install.sh`, scan a QR code, and pair with a 5-letter code. No tokens, no API keys, no cloud dashboards, no bot portals. The plugin auto-provisions an encrypted chatmail account on first run. A guided tutorial walks you through permissions, file review, and building your first WebXDC game — all in under 2 minutes.
+- **Trivial bot setup** — run `./install.sh`, scan a QR code, and pair with a 5-letter code. No tokens, no API keys, no cloud dashboards, no bot portals. The plugin auto-provisions an encrypted chatmail account on first run. A guided tutorial walks you through permissions, file review, and building your first WebXDC app — all in under 2 minutes.
 - **Tap and swipe Permissions** — interactive WebXDC app for Allow/Deny decisions, sent to the chat that triggered the action. Owner-verified — only the chat owner can approve.
 - **Mobile friendly File Reviewer** — send code and documents as interactive WebXDC apps with syntax highlighting (TypeScript, Python, Go, Bash, and more) and inline commenting. Long-press a line to leave feedback, Claude reads your comments and makes changes.
 - **WebXDC apps** — Claude can build single and multiplayer games, tools, and interactive apps as self-contained WebXDC bundles. Share them with friends by forwarding.
