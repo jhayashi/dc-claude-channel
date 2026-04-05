@@ -325,14 +325,21 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
       case 'dc_invite_link': {
         const link = await client.inviteLink()
-        // Show QR code in terminal
+        // Generate QR code as text for the chat
+        let qrText = ''
         try {
           const qr = await import('qrcode-terminal')
-          qr.generate(link, { small: true }, (code: string) => {
-            process.stderr.write('\nScan this QR code in Delta Chat:\n\n' + code + '\n\n')
+          await new Promise<void>((resolve) => {
+            qr.generate(link, { small: true }, (code: string) => {
+              qrText = code
+              resolve()
+            })
           })
         } catch {}
-        return { content: [{ type: 'text' as const, text: link }] }
+        const text = qrText
+          ? `Scan this QR code in Delta Chat:\n\n${qrText}\n\nOr use this link: ${link}`
+          : link
+        return { content: [{ type: 'text' as const, text }] }
       }
 
       case 'dc_access_pair': {
