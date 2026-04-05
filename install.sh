@@ -18,6 +18,7 @@ missing=()
 command -v bun >/dev/null 2>&1 || missing+=("bun (https://bun.sh/)")
 command -v claude >/dev/null 2>&1 || missing+=("claude (Claude Code CLI)")
 command -v deltachat-rpc-server >/dev/null 2>&1 || missing+=("deltachat-rpc-server (pipx install deltachat-rpc-server)")
+command -v zip >/dev/null 2>&1 || missing+=("zip (sudo apt install zip)")
 
 if [ ${#missing[@]} -gt 0 ]; then
   echo "Missing prerequisites:"
