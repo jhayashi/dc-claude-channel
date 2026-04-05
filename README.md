@@ -51,16 +51,12 @@ Open the invite link in a browser on the same machine running the terminal. On t
 
 ### 3. Pair your chat
 
-Send any message to the bot in Delta Chat. It replies with a pairing code:
+Once you've added Claude as a contact, send any message. Claude will reply with a command to type into your terminal:
 
 > Pairing required — run in Claude Code:
 > /deltachat:access pair abcde
 
-Back in Claude Code, run:
-
-```
-/deltachat:access pair abcde
-```
+Type that command into your Claude Code terminal to establish the link between your Delta Chat account and Claude. This ensures no one else can command your Claude agent.
 
 ### 4. Tutorial
 
