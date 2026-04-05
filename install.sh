@@ -38,6 +38,13 @@ cd "$PLUGIN_DIR"
 bun install --no-summary
 echo "Dependencies: OK"
 
+# --- Build WebXDC apps ---
+
+echo "Building WebXDC apps..."
+cd "$PLUGIN_DIR"
+bun run scripts/build-viewer-html.ts
+echo "WebXDC apps: OK"
+
 # --- Register plugin ---
 
 echo "Registering plugin..."
