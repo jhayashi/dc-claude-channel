@@ -7,9 +7,10 @@
     "start": "bun install --no-summary && bun server.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
     "@deltachat/jsonrpc-client": "*",
     "@deltachat/stdio-rpc-server": "*",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "qrcode-terminal": "^0.12.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
