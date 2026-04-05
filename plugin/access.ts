@@ -1,0 +1,196 @@
+/**
+ * File-based allowlist and pairing flow for Delta Chat channel access control.
+ *
+ * Approved chat IDs are stored as files under
+ * ~/.claude/channels/deltachat/approved/<chatId>.
+ * The file contains the owner's contact ID (the person who paired the chat).
+ * Legacy empty files (pre-owner tracking) are treated as having no owner.
+ */
+
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+// --- Constants ---
+
+const CODE_ALPHABET = "abcdefghijkmnopqrstuvwxyz"; // no 'l'
+const CODE_LEN = 5;
+const PAIRING_EXPIRY_MS = 3_600_000; // 1 hour
+const MAX_PENDING = 3;
+let _approvedDir = process.env.DC_TEST_APPROVED_DIR ?? join(
+  homedir(),
+  ".claude",
+  "channels",
+  "deltachat",
+  "approved",
+);
+
+/** Current approved directory path. */
+export function getApprovedDir(): string { return _approvedDir }
+
+/** Override the approved directory (for testing). */
+export function setApprovedDir(dir: string): void { _approvedDir = dir }
+
+// --- In-memory pending pairings ---
+
+interface PendingPair {
+  chatId: number;
+  contactId: number; // sender's contact ID (the owner)
+  createdAt: number; // Date.now()
+}
+
+const pending = new Map<string, PendingPair>();
+
+// --- Allowlist functions ---
+
+/** Return all approved chat IDs. */
+export function allowedChats(): number[] {
+  let entries: string[];
+  try {
+    entries = readdirSync(_approvedDir);
+  } catch {
+    return [];
+  }
+  const ids: number[] = [];
+  for (const name of entries) {
+    const id = parseInt(name, 10);
+    if (!Number.isNaN(id)) {
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
+/** Check whether a chat ID is in the allowlist. */
+export function isAllowed(chatId: number): boolean {
+  return existsSync(join(_approvedDir, String(chatId)));
+}
+
+/** Approve a chat ID. Stores the owner's contact ID in the file. */
+export function addChat(chatId: number, ownerContactId?: number): void {
+  mkdirSync(_approvedDir, { recursive: true });
+  writeFileSync(join(_approvedDir, String(chatId)), ownerContactId ? String(ownerContactId) : "");
+}
+
+/** Get the owner contact ID for a chat, or null if unknown (legacy or no owner). */
+export function getOwner(chatId: number): number | null {
+  const path = join(_approvedDir, String(chatId));
+  if (!existsSync(path)) return null;
+  try {
+    const content = readFileSync(path, 'utf-8').trim();
+    if (!content) return null;
+    const id = parseInt(content, 10);
+    return Number.isNaN(id) ? null : id;
+  } catch {
+    return null;
+  }
+}
+
+/** Check if a contact ID is the owner of any approved chat. */
+export function isKnownOwner(contactId: number): boolean {
+  for (const chatId of allowedChats()) {
+    if (getOwner(chatId) === contactId) return true;
+  }
+  return false;
+}
+
+/** Returns true if at least one approved chat has an owner set. */
+export function hasAnyOwner(): boolean {
+  for (const chatId of allowedChats()) {
+    if (getOwner(chatId) !== null) return true;
+  }
+  return false;
+}
+
+/** Revoke a chat ID. Silently ignores missing files. */
+export function removeChat(chatId: number): void {
+  try {
+    unlinkSync(join(_approvedDir, String(chatId)));
+  } catch {
+    // ignore
+  }
+}
+
+// --- Pairing functions ---
+
+/** Prune expired entries from the pending map. */
+function pruneExpired(): void {
+  const now = Date.now();
+  for (const [code, p] of pending) {
+    if (now - p.createdAt > PAIRING_EXPIRY_MS) {
+      pending.delete(code);
+    }
+  }
+}
+
+/** Generate a random pairing code using crypto.getRandomValues. */
+function generateCode(): string {
+  const buf = new Uint8Array(CODE_LEN);
+  crypto.getRandomValues(buf);
+  let code = "";
+  for (let i = 0; i < CODE_LEN; i++) {
+    code += CODE_ALPHABET[buf[i] % CODE_ALPHABET.length];
+  }
+  return code;
+}
+
+/**
+ * Start a pairing flow for the given chat ID.
+ * Returns the pairing code the user must present in their terminal.
+ * Throws if the maximum number of pending pairings is reached.
+ *
+ * @param contactId — the Delta Chat contact ID of the person requesting pairing (becomes the owner)
+ */
+export function startPairing(chatId: number, contactId: number): string {
+  pruneExpired();
+
+  // Return existing code for same chatId.
+  for (const [code, p] of pending) {
+    if (p.chatId === chatId) {
+      return code;
+    }
+  }
+
+  if (pending.size >= MAX_PENDING) {
+    throw new Error(`too many pending pairings (max ${MAX_PENDING})`);
+  }
+
+  const code = generateCode();
+  pending.set(code, { chatId, contactId, createdAt: Date.now() });
+  return code;
+}
+
+/**
+ * Complete a pairing: validate the code, approve the chat, return the chat ID.
+ * Throws on unknown/expired codes.
+ */
+export function completePairing(code: string): number {
+  code = code.toLowerCase().trim();
+
+  const p = pending.get(code);
+  if (!p) {
+    throw new Error(`unknown or expired pairing code: ${code}`);
+  }
+  if (Date.now() - p.createdAt > PAIRING_EXPIRY_MS) {
+    pending.delete(code);
+    throw new Error(`pairing code expired: ${code}`);
+  }
+
+  pending.delete(code);
+  addChat(p.chatId, p.contactId);
+  return p.chatId;
+}
+
+/**
+ * Check if a code is a valid pending pairing.
+ * Returns { chatId } or null if not found / expired.
+ */
+export function isPendingPair(code: string): { chatId: number } | null {
+  code = code.toLowerCase().trim();
+
+  const p = pending.get(code);
+  if (!p || Date.now() - p.createdAt > PAIRING_EXPIRY_MS) {
+    return null;
+  }
+  return { chatId: p.chatId };
+}

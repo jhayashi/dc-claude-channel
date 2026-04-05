@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="webxdc.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #0e1117;
+  color: #e6edf3;
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 20px 16px;
+}
+.card {
+  width: 100%;
+  max-width: 400px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 70vh;
+}
+.header {
+  background: linear-gradient(135deg, #1a1f2b 0%, #161b22 100%);
+  padding: 20px;
+  border-bottom: 1px solid #30363d;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.shield {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.header-text h1 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e6edf3;
+  margin-bottom: 2px;
+}
+.header-text .subtitle {
+  font-size: 12px;
+  color: #8b949e;
+  font-weight: 400;
+}
+.tool-badge {
+  display: inline-block;
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+  background: #1f6feb22;
+  color: #58a6ff;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid #1f6feb44;
+}
+.body { padding: 16px 20px; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.description {
+  font-size: 13px;
+  color: #8b949e;
+  line-height: 1.5;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+.preview-box {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 14px;
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #c9d1d9;
+  white-space: pre-wrap;
+  word-break: break-all;
+  flex: 1;
+  min-height: 160px;
+  overflow-y: auto;
+}
+.actions {
+  display: flex;
+  gap: 10px;
+  padding: 16px 20px 20px;
+  margin-top: auto;
+}
+.btn {
+  flex: 1;
+  padding: 13px 16px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: opacity 0.15s, transform 0.1s;
+}
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.3; cursor: default; transform: none; }
+.btn-allow {
+  background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
+  color: white;
+}
+.btn-deny {
+  background: linear-gradient(135deg, #da3633 0%, #f85149 100%);
+  color: white;
+}
+.result-card {
+  display: none;
+  text-align: center;
+  padding: 32px 20px;
+}
+.result-icon { font-size: 48px; margin-bottom: 12px; }
+.result-text {
+  font-size: 16px;
+  font-weight: 600;
+}
+.result-text.allowed { color: #3fb950; }
+.result-text.denied { color: #f85149; }
+.result-sub {
+  font-size: 12px;
+  color: #8b949e;
+  margin-top: 6px;
+}
+.back-hint {
+  font-size: 16px;
+  font-weight: 600;
+  color: #58a6ff;
+  margin-top: 20px;
+}
+.docs-hint {
+  font-size: 11px;
+  color: #8b949e;
+  margin-top: 16px;
+  line-height: 1.5;
+  user-select: all;
+}
+#loading {
+  text-align: center;
+  color: #8b949e;
+  padding: 60px 20px;
+  font-size: 14px;
+}
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #30363d;
+  border-top-color: #58a6ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 14px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#prompt { display: none; }
+#prompt.visible { display: flex; }
+#outdated {
+  display: none;
+  text-align: center;
+  padding: 60px 20px;
+}
+</style>
+</head>
+<body>
+<div id="loading">
+  <div class="spinner"></div>
+  Waiting for permission details...
+</div>
+<div id="outdated">
+  <div class="result-icon">&#x2B06;&#xFE0F;</div>
+  <div class="result-text allowed">New version available</div>
+  <div class="result-sub">A newer app has been sent to this chat.</div>
+  <div class="back-hint">&#x2190; Swipe or tap back to return to chat</div>
+</div>
+<div id="prompt" class="card">
+  <div class="header">
+    <div class="shield">&#x1f6e1;</div>
+    <div class="header-text">
+      <h1>Permission Request</h1>
+      <div class="subtitle">Claude wants to use <span id="tool" class="tool-badge"></span></div>
+    </div>
+  </div>
+  <div class="body">
+    <div id="desc" class="description"></div>
+    <div id="preview" class="preview-box"></div>
+  </div>
+  <div id="actions" class="actions">
+    <button class="btn btn-deny" onclick="respond(false)">&#x2716; Deny</button>
+    <button class="btn btn-allow" onclick="respond(true)">&#x2714; Allow</button>
+  </div>
+  <div id="result" class="result-card">
+    <div id="result-icon" class="result-icon"></div>
+    <div id="result-text" class="result-text"></div>
+    <div id="result-sub" class="result-sub"></div>
+  </div>
+</div>
+<script>
+var APP_VERSION = 1.02;
+// Map of requestId -> {data, resolved}
+var requests = {};
+// Whether initial replay has finished
+var initialReplayDone = false;
+// Guard against double-tap on Allow/Deny
+var responding = false;
+// Whether we've already sent a version_mismatch update
+var versionMismatchSent = false;
+
+var previewBox = document.getElementById('preview');
+
+function showRequest(data) {
+  responding = false;
+
+  document.getElementById('tool').textContent = data.toolName || 'unknown';
+  document.getElementById('desc').textContent = data.description || '';
+  var preview = data.inputPreview || '';
+  try { preview = JSON.stringify(JSON.parse(preview), null, 2); } catch(e) {}
+  previewBox.textContent = preview;
+
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('outdated').style.display = 'none';
+  document.getElementById('result').style.display = 'none';
+  document.getElementById('actions').style.display = 'flex';
+  document.getElementById('prompt').classList.add('visible');
+
+  // Store the active request id for respond()
+  document.getElementById('prompt').dataset.requestId = data.requestId;
+}
+
+function showLoading() {
+  document.getElementById('outdated').style.display = 'none';
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('prompt').classList.remove('visible');
+}
+
+function resolveInitialView() {
+  initialReplayDone = true;
+  if (versionMismatchSent) return;
+
+  // Prefer the hash target if it's unresolved
+  var hash = location.hash.replace('#', '');
+  if (hash && requests[hash] && !requests[hash].resolved) {
+    showRequest(requests[hash].data);
+    return;
+  }
+
+  // Fall back to the first unresolved request
+  for (var id in requests) {
+    if (!requests[id].resolved) {
+      showRequest(requests[id].data);
+      return;
+    }
+  }
+
+  // Nothing pending — keep the loading screen (or show a clear state)
+  showLoading();
+}
+
+window.webxdc.setUpdateListener(function(update) {
+  var d = update.payload;
+  if (!d) return;
+
+  if (d.type === 'request') {
+    // Check version — if server is newer, request an upgrade
+    if (d.version && d.version > APP_VERSION && !versionMismatchSent) {
+      versionMismatchSent = true;
+      console.log('version mismatch: app=' + APP_VERSION + ' server=' + d.version);
+      window.webxdc.sendUpdate({
+        payload: { type: 'version_mismatch', appVersion: APP_VERSION, serverVersion: d.version, senderAddr: window.webxdc.selfAddr },
+        summary: 'Update requested'
+      }, 'Version mismatch — requesting update');
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('prompt').classList.remove('visible');
+      document.getElementById('outdated').style.display = 'block';
+      return;
+    }
+
+    // Don't overwrite a resolved entry — treat each requestId as immutable once set
+    if (!requests[d.requestId]) {
+      requests[d.requestId] = { data: d, resolved: false };
+    }
+    // If we're past initial replay, this is a live update — navigate immediately
+    if (initialReplayDone && !requests[d.requestId].resolved) {
+      showRequest(d);
+    }
+  }
+
+  if (d.type === 'response') {
+    if (requests[d.requestId]) {
+      requests[d.requestId].resolved = true;
+    }
+  }
+}, 0);
+
+// Defer initial navigation until after synchronous replay completes
+setTimeout(resolveInitialView, 0);
+
+function respond(granted) {
+  if (responding) return;
+  var requestId = document.getElementById('prompt').dataset.requestId;
+  if (!requestId || !requests[requestId] || requests[requestId].resolved) return;
+
+  responding = true;
+  var btns = document.querySelectorAll('.btn');
+  for (var i = 0; i < btns.length; i++) btns[i].disabled = true;
+
+  window.webxdc.sendUpdate({
+    payload: {
+      type: 'response',
+      requestId: requestId,
+      granted: granted,
+      senderAddr: window.webxdc.selfAddr,
+      senderName: window.webxdc.selfName
+    },
+    summary: granted ? '\u2713 Allowed' : '\u00d7 Denied'
+  }, granted ? 'Allowed' : 'Denied');
+
+  requests[requestId].resolved = true;
+
+  document.getElementById('actions').style.display = 'none';
+  var r = document.getElementById('result');
+  r.style.display = 'block';
+  document.getElementById('result-icon').textContent = granted ? '\u2705' : '\u274c';
+  var rt = document.getElementById('result-text');
+  rt.textContent = granted ? 'Permission Granted' : 'Permission Denied';
+  rt.className = 'result-text ' + (granted ? 'allowed' : 'denied');
+  document.getElementById('result-sub').textContent = requests[requestId].data.toolName || '';
+
+  var hint = document.createElement('div');
+  hint.className = 'back-hint';
+  hint.textContent = '\u2190 Swipe or tap back to return to chat';
+  r.appendChild(hint);
+
+  var docs = document.createElement('div');
+  docs.className = 'docs-hint';
+  docs.textContent = 'To auto-allow this tool, configure permission rules: code.claude.com/docs/en/permissions';
+  r.appendChild(docs);
+}
+</script>
+</body>
+</html>

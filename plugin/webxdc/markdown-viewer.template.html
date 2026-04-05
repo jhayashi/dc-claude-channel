@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="webxdc.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #0e1117;
+  color: #e6edf3;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.sidebar {
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  padding: 8px;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.sidebar:empty { display: none; }
+.doc-tab {
+  padding: 6px 12px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #8b949e;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.doc-tab.active {
+  background: #1f6feb33;
+  border-color: #1f6feb;
+  color: #58a6ff;
+  text-decoration: underline;
+}
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  padding-bottom: 60px;
+  line-height: 1.6;
+}
+/* Markdown rendered styles */
+.content h1 { font-size: 24px; font-weight: 700; margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid #30363d; }
+.content h2 { font-size: 20px; font-weight: 600; margin: 24px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #21262d; }
+.content h3 { font-size: 16px; font-weight: 600; margin: 20px 0 8px; }
+.content p { margin: 0 0 12px; color: #c9d1d9; }
+.content ul, .content ol { margin: 0 0 12px; padding-left: 24px; color: #c9d1d9; }
+.content li { margin: 4px 0; }
+.content code {
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 13px;
+}
+.content pre {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 14px;
+  margin: 0 0 12px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.content pre code { background: none; border: none; padding: 0; }
+.content blockquote {
+  border-left: 3px solid #3b82f6;
+  padding: 4px 16px;
+  margin: 0 0 12px;
+  color: #8b949e;
+}
+.content a { color: #58a6ff; text-decoration: none; }
+.content hr { border: none; border-top: 1px solid #30363d; margin: 16px 0; }
+.content strong { color: #e6edf3; }
+.content table { border-collapse: collapse; margin: 0 0 12px; width: 100%; }
+.content th, .content td { border: 1px solid #30363d; padding: 8px 12px; text-align: left; }
+.content th { background: #161b22; font-weight: 600; }
+/* Source view styles */
+.source-view {
+  padding: 0;
+  overflow-x: auto;
+}
+.source-view pre {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  border-radius: 0;
+}
+.source-view code {
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  background: none;
+  border: none;
+  padding: 0;
+}
+/* Source lines — each line is a div for commenting */
+.source-line {
+  display: flex;
+  padding: 0 14px;
+  min-height: 20px;
+}
+.source-line .line-gutter {
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.source-line .line-content {
+  flex: 1;
+  white-space: pre;
+  overflow-x: visible;
+}
+.source-line.commented {
+  background: rgba(88, 166, 255, 0.08);
+}
+.source-line.commented .line-gutter {
+  color: #58a6ff;
+  font-size: 10px;
+}
+/* Markdown block commenting */
+.md-block {
+  position: relative;
+}
+.md-block.commented {
+  border-left: 3px solid #58a6ff;
+  padding-left: 12px;
+}
+.md-block.commented::before {
+  content: '\1F4AC';
+  position: absolute;
+  left: -6px;
+  top: 0;
+  font-size: 10px;
+}
+/* Prism theme overrides for our dark bg */
+/* %%PRISM_CSS%% */
+pre[class*="language-"] { background: #0e1117; }
+:not(pre) > code[class*="language-"], pre[class*="language-"] { background: #0e1117; }
+code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
+/* Loading */
+#loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  color: #8b949e;
+  gap: 12px;
+}
+.spinner {
+  width: 28px; height: 28px;
+  border: 3px solid #30363d;
+  border-top-color: #58a6ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#outdated {
+  display: none;
+  text-align: center;
+  padding: 60px 20px;
+  color: #8b949e;
+}
+#outdated .icon { font-size: 48px; margin-bottom: 12px; }
+#outdated .title { font-size: 18px; color: #58a6ff; margin-bottom: 8px; }
+#outdated .hint { font-size: 14px; margin-top: 16px; }
+/* Bottom bar */
+#bottombar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #161b22;
+  border-top: 1px solid #30363d;
+  padding: 10px 16px;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  z-index: 100;
+}
+#bottombar .hint {
+  color: #8b949e;
+  font-size: 13px;
+}
+#bottombar .comment-count {
+  color: #c9d1d9;
+}
+#bottombar .send-btn {
+  background: #1f6feb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-size: 14px;
+  cursor: pointer;
+}
+#bottombar .send-btn:active {
+  background: #1958c7;
+}
+/* Comment input card */
+#comment-card {
+  display: none;
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 12px;
+  z-index: 200;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+#comment-card textarea {
+  width: 100%;
+  background: #0e1117;
+  color: #e6edf3;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 8px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  resize: vertical;
+  min-height: 60px;
+  max-height: 150px;
+}
+#comment-card textarea:focus {
+  outline: none;
+  border-color: #58a6ff;
+}
+#comment-card .card-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+#comment-card .card-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+#comment-card .btn-save { background: #1f6feb; color: #fff; }
+#comment-card .btn-cancel { background: #30363d; color: #c9d1d9; }
+#comment-card .btn-delete { background: #da3633; color: #fff; }
+</style>
+</head>
+<body>
+<div id="loading">
+  <div class="spinner"></div>
+  Waiting for content...
+</div>
+<div id="empty" style="display:none">
+  <div style="text-align:center; padding:60px 20px; color:#8b949e;">
+    <div style="font-size:48px; margin-bottom:12px;">&#x1F4C4;</div>
+    <div style="font-size:16px; margin-bottom:8px;">No files</div>
+    <div style="font-size:14px;">&#x2190; Swipe back to exit</div>
+  </div>
+</div>
+<div id="outdated">
+  <div class="icon">&#x2B06;&#xFE0F;</div>
+  <div class="title">New version available</div>
+  <div>A newer app has been sent to this chat.</div>
+  <div class="hint">&#x2190; Swipe or tap back to return to chat</div>
+</div>
+<div id="sidebar" class="sidebar"></div>
+<div id="content" class="content" style="display:none"></div>
+<div id="bottombar">
+  <span class="hint" id="bar-hint">Press and hold on text to add a comment</span>
+  <span class="comment-count" id="bar-count" style="display:none"></span>
+  <button class="send-btn" id="bar-send" style="display:none">Send</button>
+</div>
+<div id="comment-card">
+  <textarea id="comment-text" placeholder="Add your comment..."></textarea>
+  <div class="card-buttons">
+    <button class="card-btn btn-delete" id="card-delete" style="display:none">Delete</button>
+    <button class="card-btn btn-cancel" id="card-cancel">Cancel</button>
+    <button class="card-btn btn-save" id="card-save">Save</button>
+  </div>
+</div>
+
+<script>
+/* %%PRISM_JS%% */
+</script>
+<script>
+var APP_VERSION = 1.01;
+var versionMismatchSent = false;
+var documents = [];
+var activeIndex = -1;
+
+// Comment state: per-document map of anchor -> comment text
+// For source: key = line number (1-indexed)
+// For markdown: key = paragraph index (0-indexed)
+var commentsByDoc = {}; // { docIndex: { anchor: commentText } }
+var editingAnchor = null; // currently editing anchor (or null)
+var longPressTimer = null;
+
+function getComments(docIndex) {
+  if (!commentsByDoc[docIndex]) commentsByDoc[docIndex] = {};
+  return commentsByDoc[docIndex];
+}
+
+function commentCount(docIndex) {
+  var c = commentsByDoc[docIndex];
+  if (!c) return 0;
+  return Object.keys(c).length;
+}
+
+/**
+ * HTML-escape a string for safe insertion into innerHTML.
+ */
+function esc(s) {
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+/**
+ * Render markdown to HTML. Wraps each block element in a .md-block div
+ * with data-paragraph index for commenting.
+ */
+function renderMarkdown(md) {
+  var codeBlocks = [];
+  md = md.replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {
+    var idx = codeBlocks.length;
+    codeBlocks.push('<pre><code>' + esc(code.trim()) + '</code></pre>');
+    return '\x00CB' + idx + '\x00';
+  });
+
+  var html = md
+    .replace(/`([^`]+)`/g, function(_, code) { return '<code>' + esc(code) + '</code>'; })
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+    .replace(/^---$/gm, '<hr>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, text) {
+      return '<a>' + esc(text) + '</a>';
+    })
+    .replace(/^[*-] (.+)$/gm, '<li>$1</li>')
+    .replace(/^(?!<[hlupboa]|<li|<hr|<pre)(.+)$/gm, '<p>$1</p>')
+    .replace(/(<li>[\s\S]*?<\/li>\n?)+/g, '<ul>$&</ul>');
+
+  html = html.replace(/\x00CB(\d+)\x00/g, function(_, idx) {
+    return codeBlocks[Number(idx)];
+  });
+
+  return html;
+}
+
+/**
+ * Render source code with per-line divs for commenting.
+ */
+function renderSource(content, language, docIndex) {
+  var doc = documents[docIndex];
+  var lineOffset = (doc && doc.startLine) ? doc.startLine - 1 : 0;
+  var lines = content.split('\n');
+  var comments = getComments(docIndex);
+
+  // Highlight with Prism first to get tokenized HTML
+  var highlighted = '';
+  if (typeof Prism !== 'undefined' && Prism.languages[language]) {
+    highlighted = Prism.highlight(content, Prism.languages[language], language);
+  } else {
+    highlighted = esc(content);
+  }
+
+  // Split highlighted HTML by newlines, preserving spans
+  var htmlLines = splitHighlightedLines(highlighted);
+
+  var wrapper = document.createElement('div');
+  wrapper.className = 'source-view';
+
+  for (var i = 0; i < htmlLines.length; i++) {
+    var lineNum = i + 1 + lineOffset;
+    var lineDiv = document.createElement('div');
+    lineDiv.className = 'source-line' + (comments[lineNum] ? ' commented' : '');
+    lineDiv.setAttribute('data-line', String(lineNum));
+
+    var gutter = document.createElement('div');
+    gutter.className = 'line-gutter';
+    gutter.textContent = comments[lineNum] ? '\u{1F4AC}' : '';
+
+    var lineContent = document.createElement('div');
+    lineContent.className = 'line-content';
+    lineContent.innerHTML = htmlLines[i] || '\n';  // eslint-disable-line
+
+    lineDiv.appendChild(gutter);
+    lineDiv.appendChild(lineContent);
+    wrapper.appendChild(lineDiv);
+
+    // Long-press handler
+    (function(ln) {
+      attachLongPress(lineDiv, function() { openCommentCard(ln); });
+    })(lineNum);
+  }
+
+  return wrapper;
+}
+
+/**
+ * Split Prism-highlighted HTML into lines, properly closing/reopening spans.
+ */
+function splitHighlightedLines(html) {
+  var lines = [];
+  var current = '';
+  var openTags = [];
+  var i = 0;
+  while (i < html.length) {
+    if (html[i] === '\n') {
+      // Close all open tags for this line
+      for (var j = openTags.length - 1; j >= 0; j--) {
+        current += '</span>';
+      }
+      lines.push(current);
+      current = '';
+      // Reopen tags for next line
+      for (var k = 0; k < openTags.length; k++) {
+        current += openTags[k];
+      }
+      i++;
+    } else if (html[i] === '<') {
+      var tagEnd = html.indexOf('>', i);
+      if (tagEnd === -1) { current += html[i]; i++; continue; }
+      var tag = html.substring(i, tagEnd + 1);
+      if (tag.substring(0, 2) === '</') {
+        // Closing tag
+        openTags.pop();
+        current += tag;
+      } else if (tag.substring(0, 5) === '<span') {
+        // Opening span tag
+        openTags.push(tag);
+        current += tag;
+      } else {
+        current += tag;
+      }
+      i = tagEnd + 1;
+    } else {
+      current += html[i];
+      i++;
+    }
+  }
+  // Close remaining open tags
+  for (var m = openTags.length - 1; m >= 0; m--) {
+    current += '</span>';
+  }
+  lines.push(current);
+  return lines;
+}
+
+/**
+ * Render markdown with per-block wrappers for commenting.
+ */
+function renderMarkdownWithBlocks(md, docIndex) {
+  var htmlStr = renderMarkdown(md);
+  var comments = getComments(docIndex);
+
+  // Parse into DOM, wrap each block element
+  var temp = document.createElement('div');
+  temp.innerHTML = htmlStr;  // eslint-disable-line
+
+  var container = document.createElement('div');
+  var paraIdx = 0;
+  var children = Array.prototype.slice.call(temp.childNodes);
+  for (var i = 0; i < children.length; i++) {
+    var child = children[i];
+    if (child.nodeType !== 1) continue; // skip text nodes
+
+    var block = document.createElement('div');
+    block.className = 'md-block' + (comments[paraIdx] ? ' commented' : '');
+    block.setAttribute('data-paragraph', String(paraIdx));
+    block.appendChild(child);
+    container.appendChild(block);
+
+    // Long-press handler
+    (function(pi) {
+      attachLongPress(block, function() { openCommentCard(pi); });
+    })(paraIdx);
+
+    paraIdx++;
+  }
+  return container;
+}
+
+/**
+ * Attach a long-press (500ms) handler to an element.
+ */
+function attachLongPress(el, callback) {
+  var timer = null;
+  var cancelled = false;
+
+  function start(e) {
+    cancelled = false;
+    timer = setTimeout(function() {
+      if (!cancelled) {
+        e.preventDefault();
+        callback();
+      }
+    }, 500);
+  }
+  function cancel() {
+    cancelled = true;
+    if (timer) { clearTimeout(timer); timer = null; }
+  }
+
+  el.addEventListener('touchstart', start, { passive: false });
+  el.addEventListener('touchend', cancel);
+  el.addEventListener('touchmove', cancel);
+  el.addEventListener('touchcancel', cancel);
+  // Desktop: mousedown
+  el.addEventListener('mousedown', function(e) {
+    if (e.button === 0) start(e);
+  });
+  el.addEventListener('mouseup', cancel);
+  el.addEventListener('mouseleave', cancel);
+}
+
+// ── Comment card ────────────────────────────────────────────────────
+
+function openCommentCard(anchor) {
+  editingAnchor = anchor;
+  var comments = getComments(activeIndex);
+  var existing = comments[anchor];
+
+  var textarea = document.getElementById('comment-text');
+  textarea.value = existing || '';
+
+  var deleteBtn = document.getElementById('card-delete');
+  deleteBtn.style.display = existing ? 'inline-block' : 'none';
+
+  var card = document.getElementById('comment-card');
+  // Position the card in the lower portion of the screen
+  card.style.bottom = '60px';
+  card.style.top = 'auto';
+  card.style.display = 'block';
+
+  setTimeout(function() { textarea.focus(); }, 100);
+}
+
+function closeCommentCard() {
+  document.getElementById('comment-card').style.display = 'none';
+  editingAnchor = null;
+}
+
+function saveComment() {
+  if (editingAnchor === null) return;
+  var text = document.getElementById('comment-text').value.trim();
+  if (!text) { closeCommentCard(); return; }
+
+  var comments = getComments(activeIndex);
+  comments[editingAnchor] = text;
+  closeCommentCard();
+  showDocument(activeIndex);
+  updateBottomBar();
+}
+
+function deleteComment() {
+  if (editingAnchor === null) return;
+  var comments = getComments(activeIndex);
+  delete comments[editingAnchor];
+  closeCommentCard();
+  showDocument(activeIndex);
+  updateBottomBar();
+}
+
+document.getElementById('card-save').addEventListener('click', saveComment);
+document.getElementById('card-cancel').addEventListener('click', closeCommentCard);
+document.getElementById('card-delete').addEventListener('click', deleteComment);
+
+// ── Bottom bar ──────────────────────────────────────────────────────
+
+function updateBottomBar() {
+  var bar = document.getElementById('bottombar');
+  var hint = document.getElementById('bar-hint');
+  var count = document.getElementById('bar-count');
+  var sendBtn = document.getElementById('bar-send');
+
+  if (activeIndex < 0) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+
+  var n = commentCount(activeIndex);
+  if (n === 0) {
+    hint.style.display = 'inline';
+    count.style.display = 'none';
+    sendBtn.style.display = 'none';
+  } else {
+    hint.style.display = 'none';
+    count.style.display = 'inline';
+    count.textContent = '\u{1F4AC} ' + n + ' comment' + (n === 1 ? '' : 's');
+    sendBtn.style.display = 'inline-block';
+  }
+}
+
+function sendComments() {
+  if (activeIndex < 0) return;
+  var doc = documents[activeIndex];
+  var comments = getComments(activeIndex);
+  var keys = Object.keys(comments);
+  if (keys.length === 0) return;
+
+  // Build comment array
+  var commentList = [];
+  var lines = doc.content.split('\n');
+  for (var i = 0; i < keys.length; i++) {
+    var anchor = Number(keys[i]);
+    var entry = { comment: comments[anchor] };
+
+    if (doc.language) {
+      // Source: anchor is line number (1-indexed)
+      entry.line = anchor;
+      entry.context = (lines[anchor - 1] || '').trim();
+    } else {
+      // Markdown: anchor is paragraph index
+      entry.paragraph = anchor;
+      // Get paragraph text from the rendered content
+      var blocks = document.querySelectorAll('.md-block[data-paragraph="' + anchor + '"]');
+      entry.context = blocks.length > 0 ? blocks[0].textContent.substring(0, 200).trim() : '';
+    }
+    commentList.push(entry);
+  }
+
+  // Sort by anchor position
+  commentList.sort(function(a, b) {
+    return (a.line || a.paragraph || 0) - (b.line || b.paragraph || 0);
+  });
+
+  var payload = {
+    type: 'comments',
+    fileTitle: doc.title,
+    comments: commentList,
+    senderAddr: window.webxdc.selfAddr,
+  };
+  if (doc.language) payload.language = doc.language;
+
+  window.webxdc.sendUpdate({ payload: payload }, 'Review comments for ' + doc.title);
+
+  // Remove the file from the app
+  var removedIndex = activeIndex;
+  delete commentsByDoc[removedIndex];
+  documents.splice(removedIndex, 1);
+
+  // Re-index commentsByDoc for shifted indices
+  var newComments = {};
+  var oldKeys = Object.keys(commentsByDoc);
+  for (var j = 0; j < oldKeys.length; j++) {
+    var oldIdx = Number(oldKeys[j]);
+    if (oldIdx > removedIndex) {
+      newComments[oldIdx - 1] = commentsByDoc[oldIdx];
+    } else {
+      newComments[oldIdx] = commentsByDoc[oldIdx];
+    }
+  }
+  commentsByDoc = newComments;
+
+  // Show next file or loading state
+  if (documents.length === 0) {
+    activeIndex = -1;
+    document.getElementById('content').style.display = 'none';
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('empty').style.display = 'block';
+    document.getElementById('bottombar').style.display = 'none';
+    rebuildSidebar();
+  } else {
+    activeIndex = Math.min(removedIndex, documents.length - 1);
+    rebuildSidebar();
+    showDocument(activeIndex);
+    updateBottomBar();
+  }
+}
+
+document.getElementById('bar-send').addEventListener('click', sendComments);
+
+// ── Document display ────────────────────────────────────────────────
+
+function showDocument(index) {
+  if (index < 0 || index >= documents.length) return;
+  activeIndex = index;
+  var contentEl = document.getElementById('content');
+  contentEl.style.display = 'block';
+  contentEl.replaceChildren();
+
+  var doc = documents[index];
+  if (doc.language) {
+    contentEl.appendChild(renderSource(doc.content, doc.language, index));
+  } else {
+    contentEl.appendChild(renderMarkdownWithBlocks(doc.content, index));
+  }
+
+  var tabs = document.querySelectorAll('.doc-tab');
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].className = 'doc-tab' + (Number(tabs[i].getAttribute('data-index')) === index ? ' active' : '');
+  }
+
+  updateBottomBar();
+}
+
+function rebuildSidebar() {
+  var sidebar = document.getElementById('sidebar');
+  sidebar.replaceChildren();
+  for (var i = documents.length - 1; i >= 0; i--) {
+    var tab = document.createElement('div');
+    tab.className = 'doc-tab' + (i === activeIndex ? ' active' : '');
+    tab.textContent = documents[i].title || ('Doc ' + (i + 1));
+    tab.setAttribute('data-index', String(i));
+    tab.addEventListener('click', function() {
+      showDocument(Number(this.getAttribute('data-index')));
+    });
+    sidebar.appendChild(tab);
+  }
+}
+
+window.webxdc.setUpdateListener(function(update) {
+  var data = update.payload;
+  if (!data) return;
+  if (versionMismatchSent) return;
+
+  // Auto-upgrade: if server version is newer, request fresh app
+  if (data.version && data.version > APP_VERSION && !versionMismatchSent) {
+    versionMismatchSent = true;
+    window.webxdc.sendUpdate({
+      payload: { type: 'version_mismatch', appVersion: APP_VERSION, serverVersion: data.version, senderAddr: window.webxdc.selfAddr },
+    }, 'version mismatch');
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = 'none';
+    document.getElementById('sidebar').style.display = 'none';
+    document.getElementById('bottombar').style.display = 'none';
+    document.getElementById('outdated').style.display = 'block';
+    return;
+  }
+
+  // Backward compat: old payloads have 'markdown' field
+  var content = data.content || data.markdown;
+  if (!content) return;
+
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('empty').style.display = 'none';
+
+  documents.push({
+    title: data.title || 'Untitled',
+    content: content,
+    language: data.language || null,
+    startLine: data.startLine || 1,
+  });
+
+  rebuildSidebar();
+  showDocument(documents.length - 1);
+}, 0);
+</script>
+</body>
+</html>

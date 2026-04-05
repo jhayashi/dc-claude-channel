@@ -1,0 +1,4 @@
+plugin/node_modules/
+plugin/dist/
+dev/
+.claude/settings.local.json

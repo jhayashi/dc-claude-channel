@@ -1,0 +1,18 @@
+{
+  "name": "claude-channel-deltachat",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": "./server.ts",
+  "scripts": {
+    "start": "bun install --no-summary && bun server.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@deltachat/jsonrpc-client": "*",
+    "@deltachat/stdio-rpc-server": "*",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "prismjs": "^1.30.0"
+  }
+}
