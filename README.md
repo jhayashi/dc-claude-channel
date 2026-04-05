@@ -8,7 +8,7 @@ Talk to and code securely with Claude from your phone. A Claude Code channel plu
 - [Bun](https://bun.sh/) (v1.1+)
 - [deltachat-rpc-server](https://github.com/deltachat/deltachat-core-rust) — the Delta Chat core binary (`pipx install deltachat-rpc-server`)
 - `zip` — for building WebXDC apps (`sudo apt install zip` on Ubuntu)
-- [Delta Chat](https://delta.chat/) on your phone (Android, iOS, desktop)
+- [Delta Chat](https://delta.chat/) on your phone (Android, iOS, or desktop) with a [chatmail](https://chatmail.at/) account
 
 ## Installation
 
