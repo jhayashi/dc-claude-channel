@@ -6,7 +6,7 @@ Talk to Claude from your phone. A Claude Code channel plugin that bridges Delta 
 
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
 - [Bun](https://bun.sh/) (v1.1+)
-- [deltachat-rpc-server](https://github.com/niclas-pohl/deltachat-rpc-server) — the Delta Chat core binary (`pip install deltachat-rpc-server` or build from source)
+- [deltachat-rpc-server](https://github.com/deltachat/deltachat-core-rust) — the Delta Chat core binary (`pipx install deltachat-rpc-server`)
 - [Delta Chat](https://delta.chat/) on your phone (Android or iOS)
 
 ## Installation
