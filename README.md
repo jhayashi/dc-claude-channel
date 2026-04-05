@@ -71,6 +71,7 @@ Reply "yes" to start, or "no" to skip. You can start using Claude immediately ei
 ## Features
 
 - **End-to-end encrypted** — all messages, files, and app data encrypted via Autocrypt. Your code never passes through a third-party server in readable form.
+- **Trivial bot setup** — run `./install.sh`, scan a QR code, and pair with a 5-letter code. No tokens, no API keys, no cloud dashboards, no bot portals. The plugin auto-provisions an encrypted chatmail account on first run. A guided tutorial walks you through permissions, file review, and building your first WebXDC game — all in under 2 minutes.
 - **Tap and swipe Permissions** — interactive WebXDC app for Allow/Deny decisions, sent to the chat that triggered the action. Owner-verified — only the chat owner can approve.
 - **Mobile friendly File Reviewer** — send code and documents as interactive WebXDC apps with syntax highlighting (TypeScript, Python, Go, Bash, and more) and inline commenting. Long-press a line to leave feedback, Claude reads your comments and makes changes.
 - **WebXDC apps** — Claude can build single and multiplayer games, tools, and interactive apps as self-contained WebXDC bundles. Share them with friends by forwarding.
@@ -78,6 +79,23 @@ Reply "yes" to start, or "no" to skip. You can start using Claude immediately ei
 - **Group chats** — create groups with behavior prompts (e.g., "Summarize any links shared"). Only the owner can command Claude in groups — other members' messages are silently ignored.
 - **Attachments** — send and receive images, PDFs, and files. Large files auto-download.
 - **Access control** — pairing codes, owner tracking, stranger lockout. Once paired, unknown contacts can't even trigger a pairing prompt.
+
+## How It Compares
+
+|  | Delta Chat | Telegram | Discord | Claude Mac Dispatch |
+|--|-----------|----------|---------|-------------------|
+| **Encryption** | E2E encrypted (Autocrypt) | Server-side only (no E2E for bots) | None | Local only |
+| **Account required** | None (email-based) | Phone number | Email + account | Apple ID |
+| **Interactive apps** | WebXDC apps (games, tools, GUIs) | Inline keyboards only | Slash commands only | Native UI |
+| **Permission UX** | Interactive WebXDC app (tap Allow/Deny) | Text-based numbered replies | Text-based | Native dialog |
+| **File review** | Syntax-highlighted viewer + inline commenting | Plain file attachment | Plain file attachment | Native editor |
+| **Screenshots** | Send from phone, Claude sees them | Same | Same | Screenshot tool |
+| **Group chats** | Behavior prompts + owner-only security | Basic | Basic | No |
+| **Bot setup** | One script + QR scan + guided tutorial | BotFather token + config | Bot portal + config | Built-in |
+| **Self-hosted** | Fully (client + server + plugin) | No (Telegram servers) | No (Discord servers) | No |
+| **Open source** | Client + server + plugin | Client only | No | No |
+| **Offline apps** | WebXDC apps run offline | No | No | N/A |
+| **Platform** | Any (phone, desktop, web) | Any | Any | Mac only |
 
 ## Note
 
