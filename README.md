@@ -1,6 +1,6 @@
 # Delta Chat Channel for Claude Code
 
-Talk to Claude from your phone. A Claude Code channel plugin that bridges Delta Chat to Claude Code — end-to-end encrypted, open source, no cloud middleman.
+Talk to and code securely with Claude from your phone. A Claude Code channel plugin that bridges Delta Chat to Claude Code — end-to-end encrypted, open source, with helper WebXDC applets to enable simpler GUI ingteraction (tap and swipe vs. text chat when that is easier).
 
 ## Prerequisites
 
@@ -8,7 +8,7 @@ Talk to Claude from your phone. A Claude Code channel plugin that bridges Delta 
 - [Bun](https://bun.sh/) (v1.1+)
 - [deltachat-rpc-server](https://github.com/deltachat/deltachat-core-rust) — the Delta Chat core binary (`pipx install deltachat-rpc-server`)
 - `zip` — for building WebXDC apps (`sudo apt install zip` on Ubuntu)
-- [Delta Chat](https://delta.chat/) on your phone (Android or iOS)
+- [Delta Chat](https://delta.chat/) on your phone (Android, iOS, desktop)
 
 ## Installation
 
@@ -71,8 +71,8 @@ Reply "yes" to start, or "no" to skip. You can start using Claude immediately ei
 ## Features
 
 - **End-to-end encrypted** — all messages, files, and app data encrypted via Autocrypt. Your code never passes through a third-party server in readable form.
-- **Permission prompts** — interactive WebXDC app for Allow/Deny decisions, sent to the chat that triggered the action. Owner-verified — only the chat owner can approve.
-- **File Reviewer** — send code and documents as interactive WebXDC apps with syntax highlighting (TypeScript, Python, Go, Bash, and more) and inline commenting. Long-press a line to leave feedback, Claude applies your changes.
+- **Tap and swipe Permissions** — interactive WebXDC app for Allow/Deny decisions, sent to the chat that triggered the action. Owner-verified — only the chat owner can approve.
+- **Mobile friendly File Reviewer** — send code and documents as interactive WebXDC apps with syntax highlighting (TypeScript, Python, Go, Bash, and more) and inline commenting. Long-press a line to leave feedback, Claude reads your comments and makes changes.
 - **WebXDC apps** — Claude can build single and multiplayer games, tools, and interactive apps as self-contained WebXDC bundles. Share them with friends by forwarding.
 - **Screenshots** — send photos and screenshots from your phone. Claude sees them and can fix visual bugs.
 - **Group chats** — create groups with behavior prompts (e.g., "Summarize any links shared"). Only the owner can command Claude in groups — other members' messages are silently ignored.
