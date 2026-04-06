@@ -82,18 +82,15 @@ Reply "yes" to start, or "no" to skip. You can start using Claude immediately ei
 
 ## How It Compares
 
-|  | Delta Chat | Telegram | Discord | Claude Mac Dispatch |
+|  | Delta Chat | Telegram | Discord |
 |--|-----------|----------|---------|-------------------|
-| **Encryption** | E2E encrypted (Autocrypt) | Server-side only (no E2E for bots) | None | Local only |
-| **Chat-native apps** | WebXDC apps (games, tools, GUIs) | Inline keyboards only | Slash commands only | Native macOS UI |
-| **Permission UX** | Interactive WebXDC app (tap Allow/Deny) | Text-based numbered replies | Text-based | Native dialog |
-| **File review** | Syntax-highlighted viewer + inline commenting | Plain file attachment | Plain file attachment | Native editor |
-| **Screenshots** | Send from phone, Claude sees them | Same | Same | Screenshot tool |
-| **Group chats** | Behavior prompts + owner-only security | Basic | Basic | No |
-| **Bot setup** | One script + QR scan + guided tutorial | BotFather token + config | Bot portal + config | Built-in |
-| **Self-hosted** | Fully (client + server + plugin) | No (Telegram servers) | No (Discord servers) | No |
-| **Open source** | Client + server + plugin | Client only | No | No |
-| **Platform** | Any (phone, desktop, web) | Any | Any | Mac only |
+| **Encryption** | E2E encrypted (Autocrypt) | Server-side only (no E2E for bots) | None |
+| **Chat-native apps** | WebXDC apps (games, tools, GUIs) | Inline keyboards only | Slash commands only | 
+| **Permission UX** | Interactive WebXDC app (tap Allow/Deny) | Text-based numbered replies | Text-based |
+| **File review** | Syntax-highlighted viewer + inline commenting | Plain file attachment | Plain file attachment |
+| **Bot setup** | One script + QR scan + guided tutorial | BotFather token + config | Bot portal + config |
+| **Self-hosted** | Fully (client + server + plugin) | No (Telegram servers) | No (Discord servers) |
+| **Open source** | Client + server + plugin | Client only | No |
 
 ## Note
 
