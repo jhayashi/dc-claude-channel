@@ -83,7 +83,7 @@ Reply "yes" to start, or "no" to skip. You can start using Claude immediately ei
 ## How It Compares
 
 |  | Delta Chat | Telegram | Discord |
-|--|-----------|----------|---------|-------------------|
+|--|-----------|----------|---------|
 | **Encryption** | E2E encrypted (Autocrypt) | Server-side only (no E2E for bots) | None |
 | **Chat-native apps** | WebXDC apps (games, tools, GUIs) | Inline keyboards only | Slash commands only | 
 | **Permission UX** | Interactive WebXDC app (tap Allow/Deny) | Text-based numbered replies | Text-based |
