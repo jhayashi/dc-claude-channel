@@ -34,8 +34,15 @@ const LOG_FILE = join(homedir(), '.claude', 'channels', 'deltachat', 'debug.log'
 
 function logf(format: string, ...args: unknown[]): void {
   try {
-    let msg = format
-    for (const a of args) msg = msg.replace('%s', String(a)).replace('%v', String(a)).replace('%d', String(a))
+    // Replace format specifiers left-to-right, one specifier per arg.
+    // Previous implementation called .replace('%s', ...) .replace('%v', ...) .replace('%d', ...)
+    // per arg, which only replaces the FIRST occurrence of each specifier —
+    // so the first %s would consume an arg meant for a later %d, etc.
+    let i = 0
+    const msg = format.replace(/%[svd]/g, () => {
+      if (i >= args.length) return ''
+      return String(args[i++])
+    })
     appendFileSync(LOG_FILE, msg + '\n')
   } catch {
     // non-fatal
@@ -308,7 +315,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           return { content: [{ type: 'text' as const, text: `reply: invalid chat_id: ${chatIdRaw}` }], isError: true }
         }
         if (!access.isAllowed(chatId)) {
-          return { content: [{ type: 'text' as const, text: `reply: chat ${chatId} is not on the allowlist` }], isError: true }
+          return { content: [{ type: 'text' as const, text: `reply: chat ${chatId} is not accessible (not paired, or chat was deleted)` }], isError: true }
         }
         const text = args.text as string
         if (!text) {
@@ -457,7 +464,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           return { content: [{ type: 'text' as const, text: 'dc_send_webxdc: chat_id and xdc_path are required' }], isError: true }
         }
         if (!access.isAllowed(chatId)) {
-          return { content: [{ type: 'text' as const, text: `dc_send_webxdc: chat ${chatId} is not on the allowlist` }], isError: true }
+          return { content: [{ type: 'text' as const, text: `dc_send_webxdc: chat ${chatId} is not accessible (not paired, or chat was deleted)` }], isError: true }
         }
         const { existsSync } = await import('node:fs')
         if (!existsSync(xdcPath)) {
@@ -475,7 +482,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           return { content: [{ type: 'text' as const, text: 'dc_send_attachment: chat_id and file_path are required' }], isError: true }
         }
         if (!access.isAllowed(chatId)) {
-          return { content: [{ type: 'text' as const, text: `dc_send_attachment: chat ${chatId} is not on the allowlist` }], isError: true }
+          return { content: [{ type: 'text' as const, text: `dc_send_attachment: chat ${chatId} is not accessible (not paired, or chat was deleted)` }], isError: true }
         }
         const { existsSync } = await import('node:fs')
         if (!existsSync(filePath)) {
@@ -491,7 +498,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           return { content: [{ type: 'text' as const, text: 'dc_chat_history: chat_id is required' }], isError: true }
         }
         if (!access.isAllowed(chatId)) {
-          return { content: [{ type: 'text' as const, text: `dc_chat_history: chat ${chatId} is not on the allowlist` }], isError: true }
+          return { content: [{ type: 'text' as const, text: `dc_chat_history: chat ${chatId} is not accessible (not paired, or chat was deleted)` }], isError: true }
         }
         const count = Math.min(Math.max(Number(args.count) || 20, 1), 100)
         const messages = await client.getChatHistory(chatId, count)
@@ -569,6 +576,39 @@ async function main(): Promise<void> {
 
   // Register event handlers BEFORE starting IO to avoid missing queued messages.
 
+  /**
+   * Tear down all bot state bound to a chat and delete the chat from DC core.
+   * Used by both the IncomingMsg system-message path and the ChatModified path.
+   * Safe to call even if some state doesn't exist — each step handles its own errors.
+   */
+  const cleanupChat = async (chatId: number, reason: string): Promise<void> => {
+    logf('dc channel: cleanup chat %d (%s)', chatId, reason)
+    // Drop any WebXDC session bindings for this chat.
+    for (const [mid, entry] of webxdcAppRegistry.entries()) {
+      if (entry.chatId === chatId) {
+        webxdcAppRegistry.delete(mid)
+        webxdcLastSerial.delete(mid)
+      }
+    }
+    // Drop file-reviewer session state.
+    try {
+      const fileReviewer = await import('./file-reviewer.js')
+      fileReviewer.deleteViewer(chatId)
+    } catch (err) {
+      logf('dc channel: cleanup file-reviewer error: %v', err)
+    }
+    // Clear any in-flight tutorial state.
+    tutorial.clearTutorial(chatId)
+    // Remove from the allowlist.
+    access.removeChat(chatId)
+    // Delete the chat from DC core last — after this, the chatId may be invalid.
+    try {
+      await client.deleteChat(chatId)
+    } catch (err) {
+      logf('dc channel: cleanup deleteChat error: %v', err)
+    }
+  }
+
   // Incoming messages — event-driven, no polling.
   client.onIncomingMessage(async (msg) => {
     if (shuttingDown) return
@@ -576,36 +616,13 @@ async function main(): Promise<void> {
     // System messages never reach Claude. Some (like member removal) trigger
     // cleanup; the rest are dropped silently.
     if (msg.systemMessageType) {
+      logf('dc channel: system message id=%d chat=%d type=%s', msg.id, msg.chatId, msg.systemMessageType)
       if (msg.systemMessageType === 'MemberRemovedFromGroup' && access.isAllowed(msg.chatId)) {
         try {
           const contacts = await client.getChatContacts(msg.chatId)
           const decision = decideCleanup(msg.systemMessageType, contacts)
           if (decision.cleanup) {
-            logf('dc channel: cleanup chat %d (%s)', msg.chatId, decision.reason)
-            // Drop any WebXDC session bindings for this chat.
-            for (const [mid, entry] of webxdcAppRegistry.entries()) {
-              if (entry.chatId === msg.chatId) {
-                webxdcAppRegistry.delete(mid)
-                webxdcLastSerial.delete(mid)
-              }
-            }
-            // Drop file-reviewer session state.
-            try {
-              const fileReviewer = await import('./file-reviewer.js')
-              fileReviewer.deleteViewer(msg.chatId)
-            } catch (err) {
-              logf('dc channel: cleanup file-reviewer error: %v', err)
-            }
-            // Clear any in-flight tutorial state.
-            tutorial.clearTutorial(msg.chatId)
-            // Remove from the allowlist.
-            access.removeChat(msg.chatId)
-            // Delete the chat from DC core last — after this, the chatId may be invalid.
-            try {
-              await client.deleteChat(msg.chatId)
-            } catch (err) {
-              logf('dc channel: cleanup deleteChat error: %v', err)
-            }
+            await cleanupChat(msg.chatId, decision.reason ?? 'unknown')
           }
         } catch (err) {
           logf('dc channel: cleanup error for chat %d: %v', msg.chatId, err)
@@ -621,14 +638,24 @@ async function main(): Promise<void> {
         logf('dc channel: ignoring pairing request from unknown contact %d in chat %d', msg.fromId, msg.chatId)
         return
       }
-      try {
-        const code = access.startPairing(msg.chatId, msg.fromId ?? 0)
-        const pairMsg = 'Pairing required \u2014 run in Claude Code:\n\n/deltachat:access pair ' + code
-        await client.send(msg.chatId, pairMsg)
-      } catch (err) {
-        logf('dc channel: pairing error for chat %d: %v', msg.chatId, err)
+      // Auto-pair: if the sender is already a known owner from another chat,
+      // silently approve this chat with the same owner. The owner-only rule
+      // below still gates non-owner messages in groups, so this adds no
+      // incremental risk vs. the original per-chat pairing handshake.
+      if (msg.fromId && access.isKnownOwner(msg.fromId)) {
+        access.addChat(msg.chatId, msg.fromId)
+        logf('dc channel: auto-paired chat %d to known owner %d', msg.chatId, msg.fromId)
+        // Fall through to normal message handling below.
+      } else {
+        try {
+          const code = access.startPairing(msg.chatId, msg.fromId ?? 0)
+          const pairMsg = 'Pairing required \u2014 run in Claude Code:\n\n/deltachat:access pair ' + code
+          await client.send(msg.chatId, pairMsg)
+        } catch (err) {
+          logf('dc channel: pairing error for chat %d: %v', msg.chatId, err)
+        }
+        return
       }
-      return
     }
 
     // In group chats, only the owner (person who paired the chat) can command Claude.
@@ -713,6 +740,23 @@ async function main(): Promise<void> {
       method: 'notifications/claude/channel',
       params: { content: msg.text, meta },
     }).catch(err => logf('dc channel: notification send error: %v', err))
+  })
+
+  // ChatModified — fires on local membership changes that don't come
+  // through IncomingMsg (e.g. the chat owner leaves a group from their own
+  // device). Re-check contacts and run the same cleanup decision.
+  client.onChatModified(async (chatId) => {
+    if (shuttingDown) return
+    if (!access.isAllowed(chatId)) return
+    try {
+      const contacts = await client.getChatContacts(chatId)
+      const decision = decideCleanup('ChatModified', contacts)
+      if (decision.cleanup) {
+        await cleanupChat(chatId, decision.reason ?? 'unknown')
+      }
+    } catch (err) {
+      logf('dc channel: ChatModified cleanup error for chat %d: %v', chatId, err)
+    }
   })
 
   // WebXDC updates — event-driven, O(1) dispatch via msgId registry.

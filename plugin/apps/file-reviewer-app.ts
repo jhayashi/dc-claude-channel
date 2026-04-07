@@ -201,6 +201,25 @@ export const fileReviewerApp: WebXDCApp = {
         continue
       }
 
+      if (payload.type === 'close_tab') {
+        // Pure in-memory cleanup. Does NOT touch the filesystem or any
+        // file. The "doc" only exists as content in lastUpdate; clearing
+        // lastUpdate prevents a future version_mismatch upgrade from
+        // restoring the closed doc.
+        const data = payload as { type: string; title?: string; docIndex?: number }
+        ctx.logf('file-reviewer: close_tab from chat %d, title=%s', ownerChatId, data.title ?? '')
+        if (session.lastUpdate) {
+          try {
+            const parsed = JSON.parse(session.lastUpdate)
+            if (parsed?.payload?.title === data.title) {
+              session.lastUpdate = undefined
+              ctx.logf('file-reviewer: cleared lastUpdate for closed tab "%s" in chat %d', data.title, ownerChatId)
+            }
+          } catch {}
+        }
+        continue
+      }
+
       if (payload.type !== 'version_mismatch') continue
 
       // Guard: check session still owns this msgId (concurrent handler may have already upgraded)

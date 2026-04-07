@@ -1,6 +1,19 @@
 {
   "name": "deltachat",
   "description": "Delta Chat messaging channel for Claude Code — e2e encrypted messaging bridge with chat native GUI app platform (WebXDC) used for permission prompts, file iteration, and whatever else you dream up (multi-player games, claude-powered GUIs, etc.).",
-  "version": "0.8.1",
-  "keywords": ["deltachat", "messaging", "channel", "mcp", "webxdc", "encrypted"]
+  "version": "0.8.3",
+  "keywords": ["deltachat", "messaging", "channel", "mcp", "webxdc", "encrypted"],
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/session-start.sh"
+          }
+        ]
+      }
+    ]
+  }
 }

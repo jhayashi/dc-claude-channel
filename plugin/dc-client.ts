@@ -19,6 +19,21 @@ import type { RawClient } from "@deltachat/jsonrpc-client";
 
 // ── Exported types ──────────────────────────────────────────────────────
 
+/**
+ * Normalize the systemMessageType value returned by deltachat-rpc-server.
+ *
+ * dc-core returns 'Unknown' (the SystemMessage enum default) for every
+ * regular text message — not null or undefined. Leaving that as a truthy
+ * string breaks downstream `if (msg.systemMessageType)` checks in server.ts,
+ * which would treat every text message as a system message and silently
+ * drop it. Real system messages have values like 'MemberRemovedFromGroup',
+ * 'GroupNameChanged', etc.
+ */
+export function normalizeSystemMessageType(raw: string | null | undefined): string | undefined {
+  if (!raw || raw === 'Unknown') return undefined
+  return raw
+}
+
 export interface Message {
   id: number;
   chatId: number;
@@ -235,7 +250,7 @@ export class DCClient {
           fileName: snap.fileName ?? undefined,
           viewType: snap.viewType ?? undefined,
           fromId: snap.fromId,
-          systemMessageType: snap.systemMessageType ?? undefined,
+          systemMessageType: normalizeSystemMessageType(snap.systemMessageType),
         });
       } catch (err) {
         this.log('dc-client: incoming message error: %v', err);
@@ -252,6 +267,22 @@ export class DCClient {
 
     this.contextEvents.on('WebxdcStatusUpdate', (event: { msgId: number; statusUpdateSerial: number }) => {
       handler(event.msgId, event.statusUpdateSerial);
+    });
+  }
+
+  /**
+   * Register a handler for chat modification events (membership changes,
+   * renames, ephemeral timer changes, etc.). These fire for locally-generated
+   * changes that don't come through IncomingMsg — specifically, when the chat
+   * owner leaves a group from their own device. The bot's cleanup logic needs
+   * this event path; the `IncomingMsg` path only fires when the bot is
+   * notified remotely via email.
+   */
+  onChatModified(handler: (chatId: number) => void): void {
+    if (!this.contextEvents) throw new Error('Account not initialized');
+
+    this.contextEvents.on('ChatModified', (event: { chatId: number }) => {
+      handler(event.chatId);
     });
   }
 

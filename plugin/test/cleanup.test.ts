@@ -46,4 +46,29 @@ describe('decideCleanup', () => {
     const d = decideCleanup('MemberRemovedFromGroup', [CONTACT_SELF, 2, 3, 4]);
     expect(d.cleanup).toBe(false);
   });
+
+  // ── ChatModified trigger (locally-generated leave events) ────────────────
+
+  test('ChatModified triggers bot-alone when only self remains', () => {
+    const d = decideCleanup('ChatModified', [CONTACT_SELF]);
+    expect(d.cleanup).toBe(true);
+    expect(d.reason).toBe('bot-alone');
+  });
+
+  test('ChatModified triggers bot-removed when self was removed locally', () => {
+    // Not actually how ChatModified arrives, but covers the symmetry.
+    const d = decideCleanup('ChatModified', [2, 3]);
+    expect(d.cleanup).toBe(true);
+    expect(d.reason).toBe('bot-removed');
+  });
+
+  test('ChatModified does not trigger with a populated group', () => {
+    const d = decideCleanup('ChatModified', [CONTACT_SELF, 2, 3]);
+    expect(d.cleanup).toBe(false);
+  });
+
+  test('unrelated event types do not trigger cleanup', () => {
+    expect(decideCleanup('ChatlistChanged', [CONTACT_SELF]).cleanup).toBe(false);
+    expect(decideCleanup('MsgsChanged', []).cleanup).toBe(false);
+  });
 });

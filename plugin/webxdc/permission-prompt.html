@@ -6,13 +6,13 @@
 <script src="webxdc.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
 body {
   font-family: system-ui, -apple-system, sans-serif;
   background: #0e1117;
   color: #e6edf3;
-  min-height: 100vh;
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   justify-content: center;
   padding: 20px 16px;
 }
@@ -25,7 +25,8 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  min-height: 70vh;
+  flex: 1;
+  min-height: 0;
 }
 .header {
   background: linear-gradient(135deg, #1a1f2b 0%, #161b22 100%);
@@ -39,13 +40,13 @@ body {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  background: #000;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
   flex-shrink: 0;
 }
+.shield svg { width: 28px; height: 28px; display: block; }
 .header-text h1 {
   font-size: 15px;
   font-weight: 600;
@@ -75,7 +76,37 @@ body {
   line-height: 1.5;
   margin-bottom: 12px;
   flex-shrink: 0;
+  max-height: 4.5em;
+  overflow: hidden;
+  position: relative;
 }
+.description.expanded {
+  max-height: none;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.description:not(.expanded).truncated::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  left: 0;
+  height: 1.5em;
+  background: linear-gradient(transparent, #161b22);
+  pointer-events: none;
+}
+.desc-toggle {
+  display: none;
+  background: none;
+  border: none;
+  color: #58a6ff;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0 0 12px 0;
+  margin-top: -8px;
+}
+.desc-toggle.visible { display: block; }
 .preview-box {
   background: #0d1117;
   border: 1px solid #30363d;
@@ -190,7 +221,7 @@ body {
 </div>
 <div id="prompt" class="card">
   <div class="header">
-    <div class="shield">&#x1f6e1;</div>
+    <div class="shield"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L4 5v6c0 5 3.5 9.5 8 11 4.5-1.5 8-6 8-11V5l-8-3z" fill="#fff"/><path d="M9 12l2 2 4-4" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div>
     <div class="header-text">
       <h1>Permission Request</h1>
       <div class="subtitle">Claude wants to use <span id="tool" class="tool-badge"></span></div>
@@ -198,6 +229,7 @@ body {
   </div>
   <div class="body">
     <div id="desc" class="description"></div>
+    <button id="desc-toggle" class="desc-toggle" onclick="toggleDesc()">Show more</button>
     <div id="preview" class="preview-box"></div>
   </div>
   <div id="actions" class="actions">
@@ -211,7 +243,7 @@ body {
   </div>
 </div>
 <script>
-var APP_VERSION = 1.03;
+var APP_VERSION = 1.06;
 // Map of requestId -> {data, resolved}
 var requests = {};
 // Whether initial replay has finished
@@ -227,7 +259,21 @@ function showRequest(data) {
   responding = false;
 
   document.getElementById('tool').textContent = data.toolName || 'unknown';
-  document.getElementById('desc').textContent = data.description || '';
+  var descEl = document.getElementById('desc');
+  var toggleEl = document.getElementById('desc-toggle');
+  descEl.textContent = data.description || '';
+  descEl.classList.remove('expanded');
+  toggleEl.textContent = 'Show more';
+  // Detect overflow on next frame
+  setTimeout(function() {
+    if (descEl.scrollHeight > descEl.clientHeight + 2) {
+      descEl.classList.add('truncated');
+      toggleEl.classList.add('visible');
+    } else {
+      descEl.classList.remove('truncated');
+      toggleEl.classList.remove('visible');
+    }
+  }, 0);
   var preview = data.inputPreview || '';
   try { preview = JSON.stringify(JSON.parse(preview), null, 2); } catch(e) {}
   previewBox.textContent = preview;
@@ -309,6 +355,13 @@ window.webxdc.setUpdateListener(function(update) {
 
 // Defer initial navigation until after synchronous replay completes
 setTimeout(resolveInitialView, 0);
+
+function toggleDesc() {
+  var descEl = document.getElementById('desc');
+  var toggleEl = document.getElementById('desc-toggle');
+  var expanded = descEl.classList.toggle('expanded');
+  toggleEl.textContent = expanded ? 'Show less' : 'Show more';
+}
 
 function respond(granted) {
   if (responding) return;

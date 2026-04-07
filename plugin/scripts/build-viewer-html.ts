@@ -35,6 +35,20 @@ const prismJS = [
   'components/prism-json.min.js',
   'components/prism-python.min.js',
   'components/prism-bash.min.js',
+  'components/prism-docker.min.js',
+  'components/prism-makefile.min.js',
+  'components/prism-ruby.min.js',
+  // prism-php depends on prism-markup-templating. Without it, php registers
+  // a global after-tokenize hook that unconditionally dereferences
+  // Prism.languages['markup-templating'].tokenizePlaceholders — which throws
+  // on EVERY highlight() call for EVERY language, breaking the whole viewer.
+  'components/prism-markup-templating.min.js',
+  'components/prism-php.min.js',
+  'components/prism-csharp.min.js',
+  'components/prism-powershell.min.js',
+  'components/prism-graphql.min.js',
+  'components/prism-lua.min.js',
+  'components/prism-r.min.js',
 ].map(f => readFileSync(join(PRISM_DIR, f), 'utf-8')).join('\n')
 
 const prismCSS = readFileSync(join(PRISM_DIR, 'themes', 'prism-okaidia.css'), 'utf-8')

@@ -25,7 +25,7 @@ body {
 }
 .sidebar:empty { display: none; }
 .doc-tab {
-  padding: 6px 12px;
+  padding: 6px 8px 6px 12px;
   background: #21262d;
   border: 1px solid #30363d;
   border-radius: 8px;
@@ -34,6 +34,9 @@ body {
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .doc-tab.active {
   background: #1f6feb33;
@@ -41,12 +44,70 @@ body {
   color: #58a6ff;
   text-decoration: underline;
 }
+.doc-tab .tab-title { display: inline-block; }
+.doc-tab .tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: #6e7681;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.doc-tab .tab-close:hover, .doc-tab .tab-close:active {
+  background: #30363d;
+  color: #f85149;
+}
+/* Confirm dialog */
+.dialog-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.dialog-overlay.visible { display: flex; }
+.dialog {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 20px;
+  max-width: 320px;
+  width: 100%;
+  color: #e6edf3;
+}
+.dialog-title { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+.dialog-body { font-size: 13px; color: #8b949e; margin-bottom: 16px; word-break: break-word; }
+.dialog-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.dialog-btn {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.dialog-btn.cancel { background: #21262d; color: #c9d1d9; }
+.dialog-btn.confirm { background: linear-gradient(135deg, #da3633 0%, #f85149 100%); color: #fff; }
 .content {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
   padding-bottom: 60px;
   line-height: 1.6;
+}
+/* Source view gets a tighter wrapper — the gutter + source-line padding
+   already provide enough left whitespace. */
+.content.source-mode {
+  padding: 0 0 60px 0;
 }
 /* Markdown rendered styles */
 .content h1 { font-size: 24px; font-weight: 700; margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid #30363d; }
@@ -86,6 +147,22 @@ body {
 .content table { border-collapse: collapse; margin: 0 0 12px; width: 100%; }
 .content th, .content td { border: 1px solid #30363d; padding: 8px 12px; text-align: left; }
 .content th { background: #161b22; font-weight: 600; }
+.content del { color: #6e7681; text-decoration: line-through; }
+.content ol { padding-left: 24px; margin: 0 0 12px; }
+.content ul { padding-left: 24px; margin: 0 0 12px; }
+.content li { margin: 2px 0; }
+.content li.task { list-style: none; margin-left: -20px; }
+.content li.task .task-mark {
+  display: inline-block;
+  width: 22px;
+  margin-right: 6px;
+  font-size: 18px;
+  vertical-align: middle;
+}
+.content li.task.done { color: #8b949e; }
+.content h4 { font-size: 16px; margin: 16px 0 8px; }
+.content h5 { font-size: 14px; margin: 14px 0 6px; color: #c9d1d9; }
+.content h6 { font-size: 13px; margin: 12px 0 6px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.05em; }
 /* Source view styles */
 .source-view {
   padding: 0;
@@ -109,14 +186,14 @@ body {
 /* Source lines — each line is a div for commenting */
 .source-line {
   display: flex;
-  padding: 0 14px;
+  padding: 0 14px 0 6px;
   min-height: 20px;
   user-select: none;
   -webkit-user-select: none;
 }
 .source-line .line-gutter {
   flex-shrink: 0;
-  width: 36px;
+  width: 14px;
   text-align: center;
   user-select: none;
   -webkit-user-select: none;
@@ -315,6 +392,16 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
   <span class="comment-count" id="bar-count" style="display:none"></span>
   <button class="send-btn" id="bar-send" style="display:none">Send</button>
 </div>
+<div id="close-dialog" class="dialog-overlay">
+  <div class="dialog">
+    <div class="dialog-title">Remove from viewer?</div>
+    <div class="dialog-body" id="close-dialog-body"></div>
+    <div class="dialog-actions">
+      <button class="dialog-btn cancel" id="close-dialog-cancel">Cancel</button>
+      <button class="dialog-btn confirm" id="close-dialog-confirm">Remove</button>
+    </div>
+  </div>
+</div>
 <div id="comment-card">
   <textarea id="comment-text" placeholder="Add your comment..."></textarea>
   <div class="card-buttons">
@@ -328,7 +415,7 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
 /* %%PRISM_JS%% */
 </script>
 <script>
-var APP_VERSION = 1.06;
+var APP_VERSION = 1.13;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -368,7 +455,15 @@ function renderMarkdown(md) {
   var codeBlocks = [];
   md = md.replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {
     var idx = codeBlocks.length;
-    codeBlocks.push('<pre><code>' + esc(code.trim()) + '</code></pre>');
+    var trimmed = code.replace(/\n$/, '');
+    var inner;
+    if (lang && typeof Prism !== 'undefined' && Prism.languages[lang]) {
+      inner = Prism.highlight(trimmed, Prism.languages[lang], lang);
+    } else {
+      inner = esc(trimmed);
+    }
+    var cls = lang ? ' class="language-' + esc(lang) + '"' : '';
+    codeBlocks.push('<pre><code' + cls + '>' + inner + '</code></pre>');
     return '\x00CB' + idx + '\x00';
   });
 
@@ -414,22 +509,47 @@ function renderMarkdown(md) {
     }
   );
 
+  // Multi-line blockquotes: collapse consecutive `> ` lines into one block.
+  md = md.replace(/(?:^> ?(.*)(?:\n|$))+/gm, function(block) {
+    var lines = block.replace(/\n$/, '').split('\n').map(function(l) {
+      return l.replace(/^> ?/, '');
+    });
+    return '<blockquote>' + lines.join('<br>') + '</blockquote>\n';
+  });
+
   var html = md
     .replace(/`([^`]+)`/g, function(_, code) { return '<code>' + esc(code) + '</code>'; })
+    .replace(/^###### (.+)$/gm, '<h6>$1</h6>')
+    .replace(/^##### (.+)$/gm, '<h5>$1</h5>')
+    .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
     .replace(/^## (.+)$/gm, '<h2>$1</h2>')
     .replace(/^# (.+)$/gm, '<h1>$1</h1>')
     .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+    .replace(/~~(.+?)~~/g, '<del>$1</del>')
     .replace(/^---$/gm, '<hr>')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, text) {
       return '<a>' + esc(text) + '</a>';
     })
+    // Task list items: - [ ] and - [x] (must run before plain list items)
+    .replace(/^[*-] \[( |x|X)\] (.+)$/gm, function(_, mark, text) {
+      var checked = (mark === 'x' || mark === 'X');
+      return '<li class="task' + (checked ? ' done' : '') + '">' +
+        '<span class="task-mark">' + (checked ? '\u2705' : '\u2B1C') + '</span> ' + text + '</li>';
+    })
+    // Ordered list items
+    .replace(/^\d+\. (.+)$/gm, '<li class="ol">$1</li>')
+    // Unordered list items
     .replace(/^[*-] (.+)$/gm, '<li>$1</li>')
-    .replace(/^(?!<[hlupboa]|<li|<hr|<pre|\x00)(.+)$/gm, '<p>$1</p>')
-    .replace(/(<li>[\s\S]*?<\/li>\n?)+/g, '<ul>$&</ul>');
+    .replace(/^(?!<[hlupboda]|<li|<hr|<pre|\x00)(.+)$/gm, '<p>$1</p>')
+    // Wrap consecutive ordered items in <ol>
+    .replace(/(<li class="ol">[\s\S]*?<\/li>\n?)+/g, function(m) {
+      return '<ol>' + m.replace(/ class="ol"/g, '') + '</ol>';
+    })
+    // Wrap remaining consecutive <li> (incl. task items) in <ul>
+    .replace(/(<li(?:\s[^>]*)?>[\s\S]*?<\/li>\n?)+/g, '<ul>$&</ul>');
 
   html = html.replace(/\x00CB(\d+)\x00/g, function(_, idx) {
     return codeBlocks[Number(idx)];
@@ -798,8 +918,10 @@ function showDocument(index) {
 
   var doc = documents[index];
   if (doc.language) {
+    contentEl.classList.add('source-mode');
     contentEl.appendChild(renderSource(doc.content, doc.language, index));
   } else {
+    contentEl.classList.remove('source-mode');
     contentEl.appendChild(renderMarkdownWithBlocks(doc.content, index));
   }
 
@@ -817,14 +939,89 @@ function rebuildSidebar() {
   for (var i = documents.length - 1; i >= 0; i--) {
     var tab = document.createElement('div');
     tab.className = 'doc-tab' + (i === activeIndex ? ' active' : '');
-    tab.textContent = documents[i].title || ('Doc ' + (i + 1));
     tab.setAttribute('data-index', String(i));
-    tab.addEventListener('click', function() {
-      showDocument(Number(this.getAttribute('data-index')));
+
+    var titleEl = document.createElement('span');
+    titleEl.className = 'tab-title';
+    titleEl.textContent = documents[i].title || ('Doc ' + (i + 1));
+    tab.appendChild(titleEl);
+
+    var closeEl = document.createElement('span');
+    closeEl.className = 'tab-close';
+    closeEl.setAttribute('aria-label', 'Close tab');
+    closeEl.textContent = '\u2716';
+    closeEl.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var idx = Number(this.parentNode.getAttribute('data-index'));
+      promptCloseTab(idx);
+    });
+    tab.appendChild(closeEl);
+
+    titleEl.addEventListener('click', function() {
+      showDocument(Number(this.parentNode.getAttribute('data-index')));
     });
     sidebar.appendChild(tab);
   }
 }
+
+var pendingCloseIndex = -1;
+function promptCloseTab(index) {
+  if (index < 0 || index >= documents.length) return;
+  pendingCloseIndex = index;
+  var title = documents[index].title || ('Doc ' + (index + 1));
+  document.getElementById('close-dialog-body').textContent =
+    'Remove "' + title + '" from this viewer? The original file is not affected.';
+  document.getElementById('close-dialog').classList.add('visible');
+}
+function hideCloseDialog() {
+  pendingCloseIndex = -1;
+  document.getElementById('close-dialog').classList.remove('visible');
+}
+function confirmCloseTab() {
+  var index = pendingCloseIndex;
+  if (index < 0 || index >= documents.length) { hideCloseDialog(); return; }
+  var doc = documents[index];
+  var title = doc.title || '';
+
+  // Tell the server so the dispatcher's session map drops the doc too.
+  // Server-side handler must NOT touch the filesystem — pure in-memory removal.
+  window.webxdc.sendUpdate({
+    payload: {
+      type: 'close_tab',
+      docIndex: index,
+      title: title,
+      senderAddr: window.webxdc.selfAddr,
+    },
+    summary: 'closed tab: ' + title,
+  }, 'closed tab');
+
+  // Local removal: drop the doc, drop its comments, fix activeIndex.
+  documents.splice(index, 1);
+  if (commentsByDoc[index]) delete commentsByDoc[index];
+  // Re-key comments for docs whose index shifted down.
+  var rekeyed = {};
+  for (var k in commentsByDoc) {
+    var oldIdx = Number(k);
+    if (oldIdx > index) rekeyed[oldIdx - 1] = commentsByDoc[k];
+    else rekeyed[oldIdx] = commentsByDoc[k];
+  }
+  commentsByDoc = rekeyed;
+
+  if (documents.length === 0) {
+    activeIndex = -1;
+    document.getElementById('content').replaceChildren();
+    document.getElementById('content').style.display = 'none';
+    document.getElementById('empty').style.display = 'block';
+  } else {
+    var newIndex = Math.min(index, documents.length - 1);
+    activeIndex = newIndex;
+    showDocument(newIndex);
+  }
+  rebuildSidebar();
+  hideCloseDialog();
+}
+document.getElementById('close-dialog-cancel').addEventListener('click', hideCloseDialog);
+document.getElementById('close-dialog-confirm').addEventListener('click', confirmCloseTab);
 
 window.webxdc.setUpdateListener(function(update) {
   var data = update.payload;
