@@ -148,6 +148,30 @@ body {
   top: 0;
   font-size: 10px;
 }
+/* Markdown tables */
+.table-wrap {
+  overflow-x: auto;
+  margin: 12px 0;
+  -webkit-overflow-scrolling: touch;
+}
+.md-block table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+.md-block th, .md-block td {
+  border: 1px solid #30363d;
+  padding: 6px 10px;
+  text-align: left;
+}
+.md-block th {
+  background: #161b22;
+  font-weight: 600;
+  color: #c9d1d9;
+}
+.md-block tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.02);
+}
 /* Prism theme overrides for our dark bg */
 /* %%PRISM_CSS%% */
 pre[class*="language-"] { background: #0e1117; }
@@ -300,7 +324,7 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
 /* %%PRISM_JS%% */
 </script>
 <script>
-var APP_VERSION = 1.03;
+var APP_VERSION = 1.04;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -344,6 +368,48 @@ function renderMarkdown(md) {
     return '\x00CB' + idx + '\x00';
   });
 
+  // GFM tables: parse before line-level paragraph wrapping
+  var tables = [];
+  md = md.replace(
+    /^\|(.+)\|[ \t]*\n\|([\s:|-]+)\|[ \t]*\n((?:\|.*\|[ \t]*\n?)+)/gm,
+    function(_, header, align, body) {
+      function splitRow(row) {
+        // strip leading/trailing pipe, split, trim
+        return row.replace(/^\||\|$/g, '').split('|').map(function(c) { return c.trim(); });
+      }
+      var headers = splitRow(header);
+      var aligns = splitRow(align).map(function(a) {
+        if (/^:.*:$/.test(a)) return 'center';
+        if (/:$/.test(a)) return 'right';
+        if (/^:/.test(a)) return 'left';
+        return '';
+      });
+      var rows = body.replace(/\n$/, '').split('\n').map(splitRow);
+
+      function styleAttr(i) {
+        return aligns[i] ? ' style="text-align:' + aligns[i] + '"' : '';
+      }
+
+      var html = '<div class="table-wrap"><table><thead><tr>';
+      for (var i = 0; i < headers.length; i++) {
+        html += '<th' + styleAttr(i) + '>' + esc(headers[i]) + '</th>';
+      }
+      html += '</tr></thead><tbody>';
+      for (var r = 0; r < rows.length; r++) {
+        html += '<tr>';
+        for (var c = 0; c < headers.length; c++) {
+          html += '<td' + styleAttr(c) + '>' + esc(rows[r][c] || '') + '</td>';
+        }
+        html += '</tr>';
+      }
+      html += '</tbody></table></div>';
+
+      var idx = tables.length;
+      tables.push(html);
+      return '\x00TB' + idx + '\x00';
+    }
+  );
+
   var html = md
     .replace(/`([^`]+)`/g, function(_, code) { return '<code>' + esc(code) + '</code>'; })
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
@@ -358,11 +424,14 @@ function renderMarkdown(md) {
       return '<a>' + esc(text) + '</a>';
     })
     .replace(/^[*-] (.+)$/gm, '<li>$1</li>')
-    .replace(/^(?!<[hlupboa]|<li|<hr|<pre)(.+)$/gm, '<p>$1</p>')
+    .replace(/^(?!<[hlupboa]|<li|<hr|<pre|\x00)(.+)$/gm, '<p>$1</p>')
     .replace(/(<li>[\s\S]*?<\/li>\n?)+/g, '<ul>$&</ul>');
 
   html = html.replace(/\x00CB(\d+)\x00/g, function(_, idx) {
     return codeBlocks[Number(idx)];
+  });
+  html = html.replace(/\x00TB(\d+)\x00/g, function(_, idx) {
+    return tables[Number(idx)];
   });
 
   return html;
