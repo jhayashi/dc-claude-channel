@@ -1,6 +1,6 @@
 {
   "name": "deltachat",
   "description": "Delta Chat channel for Claude Code — encrypted messaging bridge with WebXDC permission prompts and access control.",
-  "version": "0.1.0",
+  "version": "0.8.0",
   "keywords": ["deltachat", "messaging", "channel", "mcp", "webxdc", "encrypted"]
 }

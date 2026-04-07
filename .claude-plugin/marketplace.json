@@ -1,0 +1,24 @@
+{
+  "name": "dc-claude-channel",
+  "owner": {
+    "name": "Joe Hayashi"
+  },
+  "metadata": {
+    "description": "Delta Chat channel for Claude Code — encrypted messaging bridge with WebXDC apps and access control"
+  },
+  "plugins": [
+    {
+      "name": "deltachat",
+      "source": "./plugin",
+      "description": "Delta Chat channel with WebXDC file reviewer, permission relay, and onboarding tutorial",
+      "version": "0.8.0",
+      "author": {
+        "name": "Joe Hayashi"
+      },
+      "homepage": "https://github.com/jhayashi/dc-claude-channel",
+      "repository": "https://github.com/jhayashi/dc-claude-channel",
+      "license": "MIT",
+      "keywords": ["deltachat", "messaging", "channel", "mcp", "webxdc", "encrypted"]
+    }
+  ]
+}
