@@ -32,7 +32,7 @@ claude --plugin-dir /path/to/dc-claude-channel/plugin --dangerously-load-develop
 Use this when iterating on `server.ts` or other source files and you want edits to take effect without running `/plugin marketplace update`.
 
 Prerequisites for the dev path:
-- `~/.claude/plugins/installed_plugins.json` must have `"deltachat@inline"` entry (run `./install.sh` once)
+- `~/.claude/plugins/installed_plugins.json` must have `"deltachat@inline"` entry — add it manually or use the marketplace install path (recommended) instead
 - Do NOT add to `enabledPlugins` in settings.json (causes account lock contention)
 - No project-level `.mcp.json` defining deltachat (creates duplicate server)
 - `--plugin-dir` registers plugins with marketplace name `inline` internally

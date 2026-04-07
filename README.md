@@ -37,17 +37,9 @@ claude --dangerously-load-development-channels plugin:deltachat@dc-claude-channe
 
 Then restart your Claude Code session to pick up the new version.
 
-### Install from source (for contributors)
+### Development install
 
-If you want to hack on the plugin itself, clone the repo and run the dev install script:
-
-```bash
-git clone https://github.com/jhayashi/dc-claude-channel.git
-cd dc-claude-channel
-./install.sh
-```
-
-This checks prerequisites, installs dependencies, and registers the plugin against your local clone so you can edit files in place. See the [Development](#development) section below.
+If you want to hack on the plugin itself, see the [Development](#development) section below.
 
 ## First-Time Setup
 
@@ -89,7 +81,7 @@ Reply "yes" to start, or "no" to skip. You can start using Claude immediately ei
 ## Features
 
 - **End-to-end encrypted** — all messages, files, and app data encrypted via Autocrypt. Your code never passes through a third-party server in readable form.
-- **Trivial bot setup** — run `./install.sh`, scan a QR code, and pair with a 5-letter code. No tokens, no API keys, no cloud dashboards, no bot portals. The plugin auto-provisions an encrypted chatmail account on first run. A guided tutorial walks you through permissions, file review, and building your first WebXDC app — all in under 2 minutes.
+- **Trivial bot setup** — two lines in Claude Code (`/plugin marketplace add` + `/plugin install`), scan a QR code, and pair with a 5-letter code. No tokens, no API keys, no cloud dashboards, no bot portals, no Rust toolchain, no separate `deltachat-rpc-server` install. The plugin auto-provisions an encrypted chatmail account on first run. A guided tutorial walks you through permissions, file review, and building your first WebXDC app — all in under 2 minutes.
 - **Tap and swipe Permissions** — interactive WebXDC app for Allow/Deny decisions, sent to the chat that triggered the action. Owner-verified — only the chat owner can approve.
 - **Mobile friendly File Reviewer** — send code and documents as interactive WebXDC apps with syntax highlighting (TypeScript, Python, Go, Bash, and more) and inline commenting. Long-press a line to leave feedback, Claude reads your comments and makes changes.
 - **WebXDC apps** — Claude can build single and multiplayer games, tools, and interactive apps as self-contained WebXDC bundles. Share them with friends by forwarding.
@@ -106,7 +98,7 @@ Reply "yes" to start, or "no" to skip. You can start using Claude immediately ei
 | **Chat-native apps** | WebXDC apps (games, tools, GUIs) | Inline keyboards only | Slash commands only | 
 | **Permission UX** | Interactive WebXDC app (tap Allow/Deny) | Text-based numbered replies | Text-based |
 | **File review** | Syntax-highlighted viewer + inline commenting | Plain file attachment | Plain file attachment |
-| **Bot setup** | One script + QR scan + guided tutorial | BotFather token + config | Bot portal + config |
+| **Bot setup** | Two slash commands + QR scan + guided tutorial | BotFather token + config | Bot portal + config |
 | **Self-hosted** | Fully (client + server + plugin) | No (Telegram servers) | No (Discord servers) |
 | **Open source** | Client + server + plugin | Client only | No |
 
@@ -116,11 +108,23 @@ Only one Claude Code session can use the Delta Chat channel at a time — the un
 
 ## Development
 
+To hack on the plugin itself:
+
 ```bash
-cd plugin
+git clone https://github.com/jhayashi/dc-claude-channel.git
+cd dc-claude-channel/plugin
 bun install
 bun test
 ```
+
+Then add your local clone as a marketplace and install from it so your edits take effect in place:
+
+```
+/plugin marketplace add /absolute/path/to/dc-claude-channel
+/plugin install deltachat@dc-claude-channel
+```
+
+Launch Claude Code with `--dangerously-load-development-channels plugin:deltachat@dc-claude-channel`. After each edit, run `/plugin marketplace update` and restart the session to pick up changes. See [CLAUDE.md](CLAUDE.md) for architecture notes and development gotchas.
 
 ## License
 
