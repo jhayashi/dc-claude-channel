@@ -1,6 +1,6 @@
 import type { WebXDCApp, ToolDef, ToolResult, AppContext } from '../webxdc-app.js'
 import type { WebXDCUpdate } from '../dc-client.js'
-import * as mdViewer from '../markdown-viewer.js'
+import * as fileReviewer from '../file-reviewer.js'
 
 const MAX_PAYLOAD_BYTES = 120_000
 
@@ -58,8 +58,8 @@ function buildChunks(title: string, content: string, language: string | undefine
   return chunks
 }
 
-export const markdownViewerApp: WebXDCApp = {
-  id: 'markdown-viewer',
+export const fileReviewerApp: WebXDCApp = {
+  id: 'file-reviewer',
 
   instructions: 'When you receive file review comments from the File Reviewer app, read each comment carefully. Find the referenced lines or paragraphs using the context provided. Apply the requested changes to the file content. Reply in the chat summarizing what you changed. Send the updated file back using dc_send_file with the same title.',
 
@@ -108,7 +108,7 @@ export const markdownViewerApp: WebXDCApp = {
       return { content: [{ type: 'text', text: `dc_send_file: chat ${chatId} is not on the allowlist` }], isError: true }
     }
 
-    const version = mdViewer.getViewerVersion()
+    const version = fileReviewer.getViewerVersion()
 
     // Build chunks: split content into pieces that fit within the payload limit
     const chunks = buildChunks(title, content, language, version)
@@ -121,11 +121,11 @@ export const markdownViewerApp: WebXDCApp = {
     const icon = (language && fileIcons[language]) || '\u{1f4c4}'
 
     // Ensure viewer exists
-    let viewerMsgId = mdViewer.getViewer(chatId)
+    let viewerMsgId = fileReviewer.getViewer(chatId)
     if (!viewerMsgId) {
-      const { xdcPath } = await mdViewer.buildViewerXDC()
+      const { xdcPath } = await fileReviewer.buildViewerXDC()
       viewerMsgId = await ctx.client.sendWebXDC(chatId, xdcPath)
-      mdViewer.setViewer(chatId, viewerMsgId)
+      fileReviewer.setViewer(chatId, viewerMsgId)
       ctx.registerWebXDCMsg(viewerMsgId, this, chatId)
       const { unlinkSync } = await import('node:fs')
       try { unlinkSync(xdcPath) } catch {}
@@ -144,7 +144,7 @@ export const markdownViewerApp: WebXDCApp = {
       const update = JSON.stringify(updateObj)
       await ctx.client.sendWebXDCUpdate(viewerMsgId, update)
       // Save last update for replay after version mismatch upgrade
-      const session = mdViewer.getSession(chatId)
+      const session = fileReviewer.getSession(chatId)
       if (session) session.lastUpdate = update
     }
 
@@ -156,12 +156,12 @@ export const markdownViewerApp: WebXDCApp = {
     // Find which chat owns this msgId — if the msgId no longer matches
     // (e.g. already replaced by a version upgrade), bail out.
     let ownerChatId: number | null = null
-    for (const chatId of mdViewer.viewerChatIds()) {
-      if (mdViewer.getViewer(chatId) === msgId) { ownerChatId = chatId; break }
+    for (const chatId of fileReviewer.viewerChatIds()) {
+      if (fileReviewer.getViewer(chatId) === msgId) { ownerChatId = chatId; break }
     }
     if (ownerChatId === null) return
 
-    const session = mdViewer.getSession(ownerChatId)
+    const session = fileReviewer.getSession(ownerChatId)
     if (!session || session.msgId !== msgId) return
 
     for (const u of updates) {
@@ -204,23 +204,23 @@ export const markdownViewerApp: WebXDCApp = {
       if (payload.type !== 'version_mismatch') continue
 
       // Guard: check session still owns this msgId (concurrent handler may have already upgraded)
-      if (mdViewer.getViewer(ownerChatId) !== msgId) return
+      if (fileReviewer.getViewer(ownerChatId) !== msgId) return
 
       ctx.logf('file-reviewer: version mismatch from chat %d, resending app', ownerChatId)
       const lastUpdate = session.lastUpdate
       ctx.unregisterWebXDCMsg(msgId)
-      mdViewer.deleteViewer(ownerChatId)
-      const { xdcPath } = await mdViewer.buildViewerXDC()
+      fileReviewer.deleteViewer(ownerChatId)
+      const { xdcPath } = await fileReviewer.buildViewerXDC()
       const newMsgId = await ctx.client.sendWebXDC(ownerChatId, xdcPath)
-      mdViewer.setViewer(ownerChatId, newMsgId)
+      fileReviewer.setViewer(ownerChatId, newMsgId)
       ctx.registerWebXDCMsg(newMsgId, this, ownerChatId)
       if (lastUpdate) {
         // Rebuild payload with current version (not stale version from lastUpdate)
         const parsed = JSON.parse(lastUpdate)
-        if (parsed.payload) parsed.payload.version = mdViewer.getViewerVersion()
+        if (parsed.payload) parsed.payload.version = fileReviewer.getViewerVersion()
         const freshUpdate = JSON.stringify(parsed)
         await ctx.client.sendWebXDCUpdate(newMsgId, freshUpdate)
-        const newSession = mdViewer.getSession(ownerChatId)
+        const newSession = fileReviewer.getSession(ownerChatId)
         if (newSession) newSession.lastUpdate = freshUpdate
       }
       const { unlinkSync } = await import('node:fs')

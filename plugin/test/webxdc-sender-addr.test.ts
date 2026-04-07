@@ -41,7 +41,7 @@ describe("WebXDC senderAddr requirement", () => {
     });
   }
 
-  test("markdown-viewer.template.html has senderAddr for every sendUpdate", () => {
-    checkSenderAddr(join(WEBXDC_DIR, "markdown-viewer.template.html"));
+  test("file-reviewer.template.html has senderAddr for every sendUpdate", () => {
+    checkSenderAddr(join(WEBXDC_DIR, "file-reviewer.template.html"));
   });
 });

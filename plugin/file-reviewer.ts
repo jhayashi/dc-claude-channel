@@ -10,9 +10,9 @@
 import { join } from 'node:path'
 import { buildXDC, getAppVersion } from './xdc-builder.js'
 
-const HTML_PATH = join(import.meta.dir, 'webxdc', 'markdown-viewer.html')
-const MANIFEST_PATH = join(import.meta.dir, 'webxdc', 'markdown-viewer-manifest.toml')
-const ICON_PATH = join(import.meta.dir, 'webxdc', 'markdown-viewer-icon.png')
+const HTML_PATH = join(import.meta.dir, 'webxdc', 'file-reviewer.html')
+const MANIFEST_PATH = join(import.meta.dir, 'webxdc', 'file-reviewer-manifest.toml')
+const ICON_PATH = join(import.meta.dir, 'webxdc', 'file-reviewer-icon.png')
 
 // Track which chat has an active viewer session.
 interface ViewerSession { msgId: number; lastUpdate?: string }

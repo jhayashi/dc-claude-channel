@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Build script: assembles markdown-viewer.html with inlined Prism.js.
+ * Build script: assembles file-reviewer.html with inlined Prism.js.
  *
  * Reads the HTML template, injects the Prism.js bundle and theme CSS,
  * and writes the final file. Run with: bun plugin/scripts/build-viewer-html.ts
@@ -40,7 +40,7 @@ const prismJS = [
 const prismCSS = readFileSync(join(PRISM_DIR, 'themes', 'prism-okaidia.css'), 'utf-8')
 
 // Read the template
-const template = readFileSync(join(PLUGIN_DIR, 'webxdc', 'markdown-viewer.template.html'), 'utf-8')
+const template = readFileSync(join(PLUGIN_DIR, 'webxdc', 'file-reviewer.template.html'), 'utf-8')
 
 // Inject. Use function replacers to avoid $-sequence interpretation
 // in the replacement string (Prism JS contains $ characters that
@@ -49,5 +49,5 @@ const output = template
   .replace('/* %%PRISM_CSS%% */', () => prismCSS)
   .replace('/* %%PRISM_JS%% */', () => prismJS)
 
-writeFileSync(join(PLUGIN_DIR, 'webxdc', 'markdown-viewer.html'), output)
-console.log(`Built markdown-viewer.html (${output.length} bytes)`)
+writeFileSync(join(PLUGIN_DIR, 'webxdc', 'file-reviewer.html'), output)
+console.log(`Built file-reviewer.html (${output.length} bytes)`)

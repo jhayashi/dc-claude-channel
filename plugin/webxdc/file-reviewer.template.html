@@ -172,6 +172,10 @@ body {
 .md-block tr:nth-child(even) td {
   background: rgba(255, 255, 255, 0.02);
 }
+.md-block table tr.commented td {
+  background: rgba(88, 166, 255, 0.12) !important;
+  box-shadow: inset 3px 0 0 #58a6ff;
+}
 /* Prism theme overrides for our dark bg */
 /* %%PRISM_CSS%% */
 pre[class*="language-"] { background: #0e1117; }
@@ -324,7 +328,7 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
 /* %%PRISM_JS%% */
 </script>
 <script>
-var APP_VERSION = 1.04;
+var APP_VERSION = 1.05;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -555,6 +559,30 @@ function renderMarkdownWithBlocks(md, docIndex) {
     var child = children[i];
     if (child.nodeType !== 1) continue; // skip text nodes
 
+    // Special case: tables → each <tr> is its own commentable unit.
+    // The table-wrap div is not commentable itself; rows carry data-paragraph.
+    var table = (child.tagName === 'TABLE') ? child :
+      (child.querySelector ? child.querySelector('table') : null);
+    if (table) {
+      // Wrap in a non-commentable .md-block-table for layout consistency
+      var tableBlock = document.createElement('div');
+      tableBlock.className = 'md-block md-block-table';
+      tableBlock.appendChild(child);
+      container.appendChild(tableBlock);
+
+      var rows = table.querySelectorAll('tr');
+      for (var r = 0; r < rows.length; r++) {
+        var row = rows[r];
+        row.setAttribute('data-paragraph', String(paraIdx));
+        if (comments[paraIdx]) row.classList.add('commented');
+        (function(pi, rowEl) {
+          attachLongPress(rowEl, function() { openCommentCard(pi); });
+        })(paraIdx, row);
+        paraIdx++;
+      }
+      continue;
+    }
+
     var block = document.createElement('div');
     block.className = 'md-block' + (comments[paraIdx] ? ' commented' : '');
     block.setAttribute('data-paragraph', String(paraIdx));
@@ -702,8 +730,8 @@ function sendComments() {
       // Markdown: anchor is paragraph index
       entry.paragraph = anchor;
       // Get paragraph text from the rendered content
-      var blocks = document.querySelectorAll('.md-block[data-paragraph="' + anchor + '"]');
-      entry.context = blocks.length > 0 ? blocks[0].textContent.substring(0, 200).trim() : '';
+      var blocks = document.querySelectorAll('[data-paragraph="' + anchor + '"]');
+      entry.context = blocks.length > 0 ? blocks[0].textContent.substring(0, 200).trim().replace(/\s+/g, ' ') : '';
     }
     commentList.push(entry);
   }

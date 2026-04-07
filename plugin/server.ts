@@ -353,10 +353,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
               registerPermissionsSession(chatId, permMsgId)
               try { (await import('node:fs')).unlinkSync(permPath) } catch {}
 
-              const mdViewer = await import('./markdown-viewer.js')
-              const { xdcPath: viewerPath } = await mdViewer.buildViewerXDC()
+              const fileReviewer = await import('./file-reviewer.js')
+              const { xdcPath: viewerPath } = await fileReviewer.buildViewerXDC()
               const viewerMsgId = await client.sendWebXDC(chatId, viewerPath)
-              mdViewer.setViewer(chatId, viewerMsgId)
+              fileReviewer.setViewer(chatId, viewerMsgId)
               const fileApp = appToolMap.get('dc_send_file')
               if (fileApp) ctx.registerWebXDCMsg(viewerMsgId, fileApp, chatId)
               try { (await import('node:fs')).unlinkSync(viewerPath) } catch {}
