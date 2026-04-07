@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Delta Chat Channel for Claude Code — Installer
-# Installs dependencies and registers the plugin.
+# Delta Chat Channel for Claude Code — Development installer.
+#
+# END USERS: Install via the marketplace instead:
+#   /plugin marketplace add jhayashi/dc-claude-channel
+#   /plugin install deltachat@dc-claude-channel
+#
+# This script is for contributors hacking on the plugin itself. It
+# registers the plugin against your local git clone so edits take effect
+# in place, without requiring a marketplace round-trip.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_DIR="$SCRIPT_DIR/plugin"
 PLUGINS_FILE="$HOME/.claude/plugins/installed_plugins.json"
 
-echo "Delta Chat Channel for Claude Code"
-echo "==================================="
+echo "Delta Chat Channel for Claude Code — development install"
+echo "========================================================="
+echo "(End users should use /plugin marketplace install — see README)"
 echo
 
 # --- Check prerequisites ---
@@ -17,8 +25,9 @@ echo
 missing=()
 command -v bun >/dev/null 2>&1 || missing+=("bun (https://bun.sh/)")
 command -v claude >/dev/null 2>&1 || missing+=("claude (Claude Code CLI)")
-command -v deltachat-rpc-server >/dev/null 2>&1 || missing+=("deltachat-rpc-server (pipx install deltachat-rpc-server)")
 command -v zip >/dev/null 2>&1 || missing+=("zip (sudo apt install zip)")
+# deltachat-rpc-server is NOT listed as a prereq — it's installed automatically
+# via @deltachat/stdio-rpc-server's optional-dependencies when bun install runs.
 
 if [ ${#missing[@]} -gt 0 ]; then
   echo "Missing prerequisites:"

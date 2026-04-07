@@ -4,15 +4,42 @@ Talk to and code securely with Claude from your phone. A Claude Code channel plu
 
 ## Prerequisites
 
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
-- [Bun](https://bun.sh/) (v1.1+)
-- [deltachat-rpc-server](https://github.com/deltachat/deltachat-core-rust) — the Delta Chat core binary (`pipx install deltachat-rpc-server`)
-- `zip` — for building WebXDC apps (`sudo apt install zip` on Ubuntu)
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) v2.1.80 or later
+- [Bun](https://bun.sh/) (v1.1+) on your `$PATH`
 - [Delta Chat](https://delta.chat/) on your phone (Android, iOS, or desktop) with a [chatmail](https://chatmail.at/) account
+
+No Rust toolchain needed — the `deltachat-rpc-server` binary is installed automatically via npm optional dependencies when `bun install` runs.
 
 ## Installation
 
-### 1. Clone and install
+### Install via marketplace (recommended)
+
+In any Claude Code session:
+
+```
+/plugin marketplace add jhayashi/dc-claude-channel
+/plugin install deltachat@dc-claude-channel
+```
+
+Then launch Claude Code with the research-preview channel flag:
+
+```bash
+claude --dangerously-load-development-channels plugin:deltachat@dc-claude-channel
+```
+
+> **Why the `--dangerously-load-development-channels` flag?** During the Claude Code channels research preview, third-party channel plugins must be either on the official Anthropic allowlist or loaded with this flag. We're working toward allowlist approval — see [issue #8](https://github.com/jhayashi/dc-claude-channel/issues/8) for status. Team and Enterprise admins can alternatively add this plugin to their org's `allowedChannelPlugins` in managed settings to skip the flag.
+
+### Updating
+
+```
+/plugin marketplace update
+```
+
+Then restart your Claude Code session to pick up the new version.
+
+### Install from source (for contributors)
+
+If you want to hack on the plugin itself, clone the repo and run the dev install script:
 
 ```bash
 git clone https://github.com/jhayashi/dc-claude-channel.git
@@ -20,16 +47,7 @@ cd dc-claude-channel
 ./install.sh
 ```
 
-The install script checks prerequisites, installs dependencies, and registers the plugin in `~/.claude/plugins/installed_plugins.json`. If you've already installed, re-running the script safely updates the registration.
-
-### 2. Launch Claude Code with the channel
-
-The install script prints the launch command at the end. It looks like:
-
-```bash
-claude --plugin-dir /path/to/dc-claude-channel/plugin \
-  --dangerously-load-development-channels plugin:deltachat@inline
-```
+This checks prerequisites, installs dependencies, and registers the plugin against your local clone so you can edit files in place. See the [Development](#development) section below.
 
 ## First-Time Setup
 

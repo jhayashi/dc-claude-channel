@@ -10,17 +10,35 @@ cd plugin && bun install && bun test
 
 ## Testing the channel (research preview)
 
+### Primary path — marketplace install (for end users and release testing)
+
+```
+/plugin marketplace add jhayashi/dc-claude-channel
+/plugin install deltachat@dc-claude-channel
+```
+
+```bash
+claude --dangerously-load-development-channels plugin:deltachat@dc-claude-channel
+```
+
+Testing against a local unpushed change: use `/plugin marketplace add /path/to/dc-claude-channel` (absolute local path) instead of the GitHub slug. Relative-path plugin sources resolve against the marketplace root (the repo root), so `./plugin` finds the right place.
+
+### Dev path — in-place editing (for active development)
+
 ```bash
 claude --plugin-dir /path/to/dc-claude-channel/plugin --dangerously-load-development-channels plugin:deltachat@inline
 ```
 
-Prerequisites:
-- `~/.claude/plugins/installed_plugins.json` must have `"deltachat@inline"` entry
+Use this when iterating on `server.ts` or other source files and you want edits to take effect without running `/plugin marketplace update`.
+
+Prerequisites for the dev path:
+- `~/.claude/plugins/installed_plugins.json` must have `"deltachat@inline"` entry (run `./install.sh` once)
 - Do NOT add to `enabledPlugins` in settings.json (causes account lock contention)
 - No project-level `.mcp.json` defining deltachat (creates duplicate server)
-- `--plugin-dir` registers plugins with marketplace name `inline` internally.
-- Plugin must be in `installed_plugins.json` (as `deltachat@inline`) for the channel flag to accept it.
-- `/mcp` should show `plugin:deltachat:deltachat` not plain `deltachat` under Project MCPs.
+- `--plugin-dir` registers plugins with marketplace name `inline` internally
+- Plugin must be in `installed_plugins.json` (as `deltachat@inline`) for the channel flag to accept it
+- `/mcp` should show `plugin:deltachat:deltachat` not plain `deltachat` under Project MCPs
+- Never run Claude Code from inside this repo — the project-level `plugin/.mcp.json` conflicts with the plugin-installed server
 
 ## Key Gotchas
 
