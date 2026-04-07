@@ -11,9 +11,10 @@
  * The builder appends the version to the manifest name automatically.
  */
 
-import { readFileSync, mkdtempSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { readFileSync, mkdtempSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { zipSync, strToU8 } from 'fflate'
 
 export interface XDCAppConfig {
   /** Path to the HTML file */
@@ -63,27 +64,19 @@ export async function buildXDC(config: XDCAppConfig): Promise<{ xdcPath: string;
 
   const dir = mkdtempSync(join(tmpdir(), 'claude-dc-xdc-'))
   const xdcPath = join(dir, `${name.toLowerCase().replace(/[^\x20-\x7e]+/g, '').trim().replace(/\s+/g, '-')}.xdc`)
-  const contentDir = join(dir, 'content')
-  mkdirSync(contentDir)
-  writeFileSync(join(contentDir, 'index.html'), html)
-  writeFileSync(join(contentDir, 'manifest.toml'), manifest)
 
-  const zipArgs = [
-    'zip', '-j', xdcPath,
-    join(contentDir, 'index.html'),
-    join(contentDir, 'manifest.toml'),
-  ]
+  const files: Record<string, Uint8Array> = {
+    'index.html': html instanceof Uint8Array ? html : new Uint8Array(html.buffer, html.byteOffset, html.byteLength),
+    'manifest.toml': strToU8(manifest),
+  }
 
   if (iconPath && existsSync(iconPath)) {
     const icon = readFileSync(iconPath)
-    writeFileSync(join(contentDir, 'icon.png'), icon)
-    zipArgs.push(join(contentDir, 'icon.png'))
+    files['icon.png'] = new Uint8Array(icon.buffer, icon.byteOffset, icon.byteLength)
   }
 
-  const result = Bun.spawnSync(zipArgs)
-  if (result.exitCode !== 0) {
-    throw new Error(`zip failed for ${name}: ${result.stderr.toString()}`)
-  }
+  const zipped = zipSync(files)
+  writeFileSync(xdcPath, zipped)
 
   return { xdcPath, version }
 }
