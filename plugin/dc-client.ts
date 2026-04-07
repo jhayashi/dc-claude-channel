@@ -37,6 +37,8 @@ export interface Message {
   viewType?: string;
   /** Delta Chat contact ID of the sender */
   fromId?: number;
+  /** System message type (e.g. "MemberRemovedFromGroup") when this is a system info msg */
+  systemMessageType?: string;
 }
 
 export interface BotStatus {
@@ -233,6 +235,7 @@ export class DCClient {
           fileName: snap.fileName ?? undefined,
           viewType: snap.viewType ?? undefined,
           fromId: snap.fromId,
+          systemMessageType: snap.systemMessageType ?? undefined,
         });
       } catch (err) {
         this.log('dc-client: incoming message error: %v', err);
@@ -356,6 +359,12 @@ export class DCClient {
   async getChatContacts(chatId: number): Promise<number[]> {
     const { rpc, accountId } = this.ensureAccount();
     return await rpc.getChatContacts(accountId, chatId);
+  }
+
+  /** Delete a chat locally (does not affect other members). */
+  async deleteChat(chatId: number): Promise<void> {
+    const { rpc, accountId } = this.ensureAccount();
+    await rpc.deleteChat(accountId, chatId);
   }
 
   async getGroupInviteLink(chatId: number): Promise<string> {

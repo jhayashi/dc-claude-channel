@@ -26,6 +26,7 @@ import { apps } from './apps.js'
 import type { WebXDCApp, AppContext } from './webxdc-app.js'
 import { filterUpdatesByOwner } from './webxdc-filter.js'
 import * as tutorial from './tutorial.js'
+import { decideCleanup } from './cleanup.js'
 
 // ── Logging ─────────────────────────────────────────────────────────────
 
@@ -571,6 +572,47 @@ async function main(): Promise<void> {
   // Incoming messages — event-driven, no polling.
   client.onIncomingMessage(async (msg) => {
     if (shuttingDown) return
+
+    // System messages never reach Claude. Some (like member removal) trigger
+    // cleanup; the rest are dropped silently.
+    if (msg.systemMessageType) {
+      if (msg.systemMessageType === 'MemberRemovedFromGroup' && access.isAllowed(msg.chatId)) {
+        try {
+          const contacts = await client.getChatContacts(msg.chatId)
+          const decision = decideCleanup(msg.systemMessageType, contacts)
+          if (decision.cleanup) {
+            logf('dc channel: cleanup chat %d (%s)', msg.chatId, decision.reason)
+            // Drop any WebXDC session bindings for this chat.
+            for (const [mid, entry] of webxdcAppRegistry.entries()) {
+              if (entry.chatId === msg.chatId) {
+                webxdcAppRegistry.delete(mid)
+                webxdcLastSerial.delete(mid)
+              }
+            }
+            // Drop file-reviewer session state.
+            try {
+              const fileReviewer = await import('./file-reviewer.js')
+              fileReviewer.deleteViewer(msg.chatId)
+            } catch (err) {
+              logf('dc channel: cleanup file-reviewer error: %v', err)
+            }
+            // Clear any in-flight tutorial state.
+            tutorial.clearTutorial(msg.chatId)
+            // Remove from the allowlist.
+            access.removeChat(msg.chatId)
+            // Delete the chat from DC core last — after this, the chatId may be invalid.
+            try {
+              await client.deleteChat(msg.chatId)
+            } catch (err) {
+              logf('dc channel: cleanup deleteChat error: %v', err)
+            }
+          }
+        } catch (err) {
+          logf('dc channel: cleanup error for chat %d: %v', msg.chatId, err)
+        }
+      }
+      return
+    }
 
     if (!access.isAllowed(msg.chatId)) {
       // Once an owner is established, only known owners can initiate new pairings.
