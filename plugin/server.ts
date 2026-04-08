@@ -103,7 +103,7 @@ const pendingPermissions = new Map<string, { connectionId: string; chatId: numbe
 
 async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
   const subagentId = `sub-${chatId}-${randomBytes(4).toString('hex')}`
-  const { settingsPath } = generateHookConfig({ hookScriptPath: HOOK_SCRIPT })
+  const { settingsPath, tempDir } = generateHookConfig({ hookScriptPath: HOOK_SCRIPT })
   const sub = new SubagentProcess({
     chatId,
     subagentId,
@@ -117,6 +117,11 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
   sub.close = async () => {
     subagentRegistry.delete(subagentId)
     await origClose()
+    // Clean up the per-subagent settings tempdir generateHookConfig created.
+    try {
+      const { rmSync } = await import('node:fs')
+      rmSync(tempDir, { recursive: true, force: true })
+    } catch {}
   }
   return sub
 }

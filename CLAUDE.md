@@ -51,17 +51,38 @@ Prerequisites for the dev path:
 
 ## Architecture
 
-- `plugin/server.ts` — MCP server entry point (core tools, channel pump, generic app wiring)
+- `plugin/server.ts` — Dispatcher entry point. Owns the DC RPC connection, the MCP server for the user's terminal Claude Code session, and the Unix-socket server that subagents connect to.
+- `plugin/dispatcher/` — Subagent-per-chat machinery (v0.9+):
+  - `subagent-cache.ts` — Bounded LRU cache of persistent `claude -p` processes, one per recently active chat (default 4 active, 15 min idle timeout)
+  - `subagent-process.ts` — Wraps one persistent `claude -p` child with stream-json I/O over stdin/stdout
+  - `socket-server.ts` — Unix socket listener with hello auth + frame routing
+  - `permission-hook.sh` + `permission-hook-client.ts` — PreToolUse hook that forwards built-in tool permission prompts from the subagent to the dispatcher; dispatcher relays to the existing permissions-app WebXDC flow
+  - `hook-config.ts` — Generates per-subagent settings.json
+  - `message-router.ts` — Classifies incoming DC events (regular, system, ChatModified, unpaired) and dispatches
+- `plugin/shared/protocol.ts` — Wire protocol types + Zod schemas (single source of truth for socket frames)
 - `plugin/webxdc-app.ts` — `WebXDCApp` interface that all apps implement
 - `plugin/apps.ts` — App registry (explicit imports, no auto-discovery)
 - `plugin/apps/` — App implementations:
   - `markdown-viewer-app.ts` — File reviewer: rendered markdown + syntax-highlighted source + inline commenting (1 tool, event-driven updates)
-  - `permissions-app.ts` — Permission prompt via WebXDC (notification handler + polling)
+  - `permissions-app.ts` — Permission prompt via WebXDC (notification handler + polling). Phase 2: requires explicit `chat_id` on every request.
 - `plugin/dc-client.ts` — Wraps `@deltachat/jsonrpc-client` + `@deltachat/stdio-rpc-server`
 - `plugin/access.ts` — File-based allowlist + pairing codes (~/.claude/channels/deltachat/approved/)
 - `plugin/tutorial.ts` — Onboarding tutorial state machine
 - `plugin/webxdc-filter.ts` — Centralized owner verification for WebXDC updates
-- State dir: `~/.claude/channels/deltachat/` (.env, dc-data/, approved/, debug.log)
+- State dir: `~/.claude/channels/deltachat/` (.env, dc-data/, approved/, dispatcher.sock, debug.log)
+
+## Subagent model (v0.9+)
+
+Every paired chat that recently sent a message has a persistent `claude -p` subagent process handling it. Subagents are kept alive in an LRU cache bounded by `DC_SUBAGENT_MAX_ACTIVE` (default 4) so the common case — a small number of active chats — gets sub-second turnaround after the first cold spawn (~6 s). Idle subagents self-exit after `DC_SUBAGENT_IDLE_TIMEOUT_MIN` (default 15 minutes). The dispatcher's own MCP server stays running for the user's terminal Claude Code session — only per-chat messaging is rerouted through subagents.
+
+Subagents run with `--permission-mode default` and the built-in CWD sandbox. When Claude wants to run a tool like Bash or Edit, a PreToolUse hook fires, connects to the dispatcher's Unix socket, and blocks waiting for a verdict. The dispatcher forwards the prompt to the existing permissions-app WebXDC flow in the bound chat and writes the user's Allow/Deny back to the hook. This preserves the v0.8.3 permission UX exactly while adding per-chat targeting (no `lastActiveChatId` TOCTOU).
+
+DC tool calls (`dc_send`, `dc_send_file`, `dc_chat_history`, etc.) from a subagent flow through a tools-proxy MCP server loaded in that subagent, over the same Unix socket. The dispatcher enforces `chat_id` authorization at the socket boundary — a subagent bound to chat A cannot call DC tools against chat B.
+
+Config:
+- `DC_SUBAGENT_MAX_ACTIVE` — cache size (default 4, range 1-16)
+- `DC_SUBAGENT_IDLE_TIMEOUT_MIN` — idle timeout (default 15)
+- `DC_HOOK_TIMEOUT_SEC` — max wait for a permission verdict (default 300)
 
 ## Building a WebXDC App
 
