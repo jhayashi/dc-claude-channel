@@ -73,6 +73,7 @@ export class SubagentProcess {
       '--verbose',
       '--settings', opts.settingsPath,
       '--permission-mode', 'default',
+      '--append-system-prompt', `Today's date is ${new Date().toISOString().slice(0, 10)}.`,
     ]
     for (const dir of opts.addDirs ?? []) {
       args.push('--add-dir', dir)

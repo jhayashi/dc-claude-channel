@@ -754,6 +754,29 @@ async function main(): Promise<void> {
     }
   }
 
+  /**
+   * Run one subagent turn for a chat: dispatch via the LRU cache, send the
+   * reply back to DC, and surface any permission denials as a status message.
+   * Used by the router for paired chats and by the auto-pair fall-through.
+   */
+  const runSubagentTurn = async (chatId: number, text: string): Promise<void> => {
+    try {
+      const result = await subagentCache.dispatch(chatId, text)
+      if (result.text) {
+        await client.send(chatId, result.text)
+      }
+      if (result.denials.length > 0) {
+        const summary = result.denials
+          .map((d) => `• ${d.tool_name}${d.command ? ': ' + d.command.slice(0, 80) : ''}`)
+          .join('\n')
+        await client.send(chatId, `\u26a0\ufe0f Some actions were blocked by policy:\n${summary}`)
+      }
+    } catch (err) {
+      logf('dispatch error chat=%d: %v', chatId, err)
+      await client.send(chatId, `\u26a0\ufe0f Internal error: ${err}`).catch(() => {})
+    }
+  }
+
   const handleUnpairedMessage = async (msg: Message): Promise<void> => {
     // Once an owner is established, only known owners can initiate new pairings.
     if (access.hasAnyOwner() && msg.fromId && !access.isKnownOwner(msg.fromId)) {
@@ -764,8 +787,12 @@ async function main(): Promise<void> {
     if (msg.fromId && access.isKnownOwner(msg.fromId)) {
       access.addChat(msg.chatId, msg.fromId)
       logf('dc channel: auto-paired chat %d to known owner %d', msg.chatId, msg.fromId)
-      // Fall through to dispatch the message now that it's paired.
-      await dispatchPairedMessage(msg)
+      // The owner has already completed the tutorial in another chat — skip
+      // it for this auto-paired chat and route directly to the subagent.
+      // (This was the v0.9 regression: the previous fall-through called
+      // dispatchPairedMessage which goes through the legacy MCP-notification
+      // path and prompts for permission on the dispatcher's reply tool.)
+      await runSubagentTurn(msg.chatId, msg.text)
       return
     }
     try {
@@ -880,21 +907,7 @@ async function main(): Promise<void> {
         await dispatchPairedMessage(pseudo)
         return
       }
-      try {
-        const result = await subagentCache.dispatch(chatId, text)
-        if (result.text) {
-          await client.send(chatId, result.text)
-        }
-        if (result.denials.length > 0) {
-          const summary = result.denials
-            .map((d) => `• ${d.tool_name}${d.command ? ': ' + d.command.slice(0, 80) : ''}`)
-            .join('\n')
-          await client.send(chatId, `\u26a0\ufe0f Some actions were blocked by policy:\n${summary}`)
-        }
-      } catch (err) {
-        logf('dispatch error chat=%d: %v', chatId, err)
-        await client.send(chatId, `\u26a0\ufe0f Internal error: ${err}`).catch(() => {})
-      }
+      await runSubagentTurn(chatId, text)
     },
     handleSystemMessage,
     handleChatModified,
