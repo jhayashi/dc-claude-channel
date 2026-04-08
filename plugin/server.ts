@@ -124,6 +124,10 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
     toolsProxyPath: TOOLS_PROXY,
     toolDefs,
   })
+  // Subagents inherit the dispatcher's cwd (the plugin/ subdir). Add
+  // the repo root so they can read/edit docs, plans, etc. outside plugin/
+  // without needing per-file permission prompts.
+  const repoRoot = join(import.meta.dir, '..')
   const sub = new SubagentProcess({
     chatId,
     subagentId,
@@ -131,6 +135,7 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
     mcpConfigPath,
     dispatcherSocket: DISPATCHER_SOCKET,
     dispatcherSecret: DISPATCHER_SECRET,
+    addDirs: [repoRoot],
     logf,
   })
   subagentRegistry.set(subagentId, { chatId })
