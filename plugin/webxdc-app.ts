@@ -34,8 +34,6 @@ export interface AppContext {
   registerWebXDCMsg: (msgId: number, app: WebXDCApp, chatId: number) => void
   /** Unregister a WebXDC msgId (e.g. on session clear). */
   unregisterWebXDCMsg: (msgId: number) => void
-  /** The chat that most recently sent a message (for targeting permission prompts). */
-  lastActiveChatId: () => number | null
 }
 
 export interface WebXDCApp {

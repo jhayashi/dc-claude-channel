@@ -86,9 +86,6 @@ function safeName(s: string): string {
 const webxdcAppRegistry = new Map<number, { app: WebXDCApp; chatId: number }>()
 const webxdcLastSerial = new Map<number, number>()
 
-/** The chat that most recently sent a message — used to target permission prompts. */
-let lastActiveChatId: number | null = null
-
 // ── Dispatcher ──────────────────────────────────────────────────────────
 
 const DISPATCHER_SOCKET = join(STATE_DIR, 'dispatcher.sock')
@@ -185,9 +182,6 @@ ctx = {
   unregisterWebXDCMsg(msgId: number) {
     webxdcAppRegistry.delete(msgId)
     webxdcLastSerial.delete(msgId)
-  },
-  lastActiveChatId() {
-    return lastActiveChatId
   },
 }
 
@@ -787,9 +781,6 @@ async function main(): Promise<void> {
    * path and for tutorial messages.
    */
   const dispatchPairedMessage = async (msg: Message): Promise<void> => {
-    // Track active chat for permission prompt targeting.
-    lastActiveChatId = msg.chatId
-
     // Tutorial intercept.
     const tutorialAction = tutorial.handleMessage(msg.chatId, msg.text)
     if (!tutorialAction.passThrough) {
