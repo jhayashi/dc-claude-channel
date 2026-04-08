@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "spike-1e": {
+      "command": "bun",
+      "args": ["plugin/spikes/1e-mcp-server.ts"]
+    }
+  }
+}
