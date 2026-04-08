@@ -18,6 +18,7 @@ import {
 import { readFileSync, appendFileSync, chmodSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
 
 import { DCClient } from './dc-client.js'
 import * as access from './access.js'
@@ -27,6 +28,13 @@ import type { WebXDCApp, AppContext } from './webxdc-app.js'
 import { filterUpdatesByOwner } from './webxdc-filter.js'
 import * as tutorial from './tutorial.js'
 import { decideCleanup } from './cleanup.js'
+import { SocketServer, type SocketRequest } from './dispatcher/socket-server.js'
+import { SubagentCache } from './dispatcher/subagent-cache.js'
+import { SubagentProcess } from './dispatcher/subagent-process.js'
+import { generateHookConfig } from './dispatcher/hook-config.js'
+import { createMessageRouter } from './dispatcher/message-router.js'
+import type { ServerMessage } from './shared/protocol.js'
+import type { Message } from './dc-client.js'
 
 // ── Logging ─────────────────────────────────────────────────────────────
 
@@ -80,6 +88,48 @@ const webxdcLastSerial = new Map<number, number>()
 
 /** The chat that most recently sent a message — used to target permission prompts. */
 let lastActiveChatId: number | null = null
+
+// ── Dispatcher ──────────────────────────────────────────────────────────
+
+const DISPATCHER_SOCKET = join(STATE_DIR, 'dispatcher.sock')
+const DISPATCHER_SECRET = randomBytes(32).toString('hex')
+const HOOK_SCRIPT = join(import.meta.dir, 'dispatcher', 'permission-hook.sh')
+
+const MAX_ACTIVE = Math.max(1, Math.min(16, Number(process.env.DC_SUBAGENT_MAX_ACTIVE ?? '4')))
+const IDLE_MIN = Math.max(1, Number(process.env.DC_SUBAGENT_IDLE_TIMEOUT_MIN ?? '15'))
+
+/** Registry of currently-active subagents for hello authorization. */
+const subagentRegistry = new Map<string, { chatId: number }>()
+
+/** Pending hook permission requests by id. */
+const pendingPermissions = new Map<string, { connectionId: string; chatId: number; resolve: (v: ServerMessage) => void }>()
+
+async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
+  const subagentId = `sub-${chatId}-${randomBytes(4).toString('hex')}`
+  const { settingsPath } = generateHookConfig({ hookScriptPath: HOOK_SCRIPT })
+  const sub = new SubagentProcess({
+    chatId,
+    subagentId,
+    settingsPath,
+    dispatcherSocket: DISPATCHER_SOCKET,
+    dispatcherSecret: DISPATCHER_SECRET,
+    logf,
+  })
+  subagentRegistry.set(subagentId, { chatId })
+  const origClose = sub.close.bind(sub)
+  sub.close = async () => {
+    subagentRegistry.delete(subagentId)
+    await origClose()
+  }
+  return sub
+}
+
+const subagentCache = new SubagentCache({
+  maxActive: MAX_ACTIVE,
+  idleTimeoutMs: IDLE_MIN * 60_000,
+  spawnFn: spawnSubagentForChat,
+  logf,
+})
 
 // ── App context ─────────────────────────────────────────────────────────
 
@@ -151,6 +201,72 @@ function rebuildAppToolMap(): void {
   }
 }
 rebuildAppToolMap()
+
+// ── Dispatcher socket server ────────────────────────────────────────────
+
+const socketServer = new SocketServer({
+  path: DISPATCHER_SOCKET,
+  secret: DISPATCHER_SECRET,
+  hasSubagent: (id) => subagentRegistry.has(id),
+  getSubagentChat: (id) => subagentRegistry.get(id)?.chatId ?? null,
+  onRequest: async (req: SocketRequest): Promise<ServerMessage> => {
+    if (req.frame.kind === 'permissionRequest') {
+      const permApp = appToolMap.get('dc_test_permission')
+      if (!permApp) {
+        return { kind: 'permissionVerdict', id: req.frame.id, verdict: 'deny', message: 'permission app not registered' }
+      }
+      return await new Promise<ServerMessage>((resolve) => {
+        pendingPermissions.set(req.frame.id, {
+          connectionId: req.connectionId,
+          chatId: req.chatId,
+          resolve,
+        })
+        ;(async () => {
+          try {
+            const params = {
+              chat_id: String(req.chatId),
+              tool_name: (req.frame as { tool?: string }).tool ?? 'unknown',
+              tool_input: JSON.stringify((req.frame as { input?: unknown }).input ?? {}),
+              request_id: req.frame.id,
+            }
+            await permApp.callTool('dc_test_permission', params, ctx)
+          } catch (err) {
+            logf('socket: failed to issue permission prompt: %v', err)
+            const pending = pendingPermissions.get(req.frame.id)
+            if (pending) {
+              pendingPermissions.delete(req.frame.id)
+              pending.resolve({ kind: 'permissionVerdict', id: req.frame.id, verdict: 'deny', message: String(err) })
+            }
+          }
+        })()
+      })
+    }
+
+    if (req.frame.kind === 'toolCall') {
+      const args = req.frame.args as { chat_id?: string }
+      const argChatId = args.chat_id ? Number(args.chat_id) : null
+      if (argChatId !== null && argChatId !== req.chatId) {
+        return { kind: 'toolError', id: req.frame.id, error: { code: 'chat_mismatch', message: 'tool call chat_id does not match subagent binding' } }
+      }
+      const appTool = appToolMap.get(req.frame.tool)
+      if (!appTool) {
+        return { kind: 'toolError', id: req.frame.id, error: { code: 'unknown_tool', message: req.frame.tool } }
+      }
+      try {
+        const result = await appTool.callTool(req.frame.tool, req.frame.args, ctx)
+        if (!result) {
+          return { kind: 'toolError', id: req.frame.id, error: { code: 'tool_null', message: 'tool returned null' } }
+        }
+        return { kind: 'toolResult', id: req.frame.id, result }
+      } catch (err) {
+        return { kind: 'toolError', id: req.frame.id, error: { code: 'tool_crash', message: String(err) } }
+      }
+    }
+
+    return { kind: 'toolError', id: (req.frame as { id?: string }).id ?? 'unknown', error: { code: 'unhandled', message: (req.frame as { kind: string }).kind } }
+  },
+  logf,
+})
 
 // ── Core tool definitions ───────────────────────────────────────────────
 
@@ -609,74 +725,72 @@ async function main(): Promise<void> {
     }
   }
 
-  // Incoming messages — event-driven, no polling.
-  client.onIncomingMessage(async (msg) => {
-    if (shuttingDown) return
+  // Extracted helpers so the router can call them.
 
-    // System messages never reach Claude. Some (like member removal) trigger
-    // cleanup; the rest are dropped silently.
-    if (msg.systemMessageType) {
-      logf('dc channel: system message id=%d chat=%d type=%s', msg.id, msg.chatId, msg.systemMessageType)
-      if (msg.systemMessageType === 'MemberRemovedFromGroup' && access.isAllowed(msg.chatId)) {
-        try {
-          const contacts = await client.getChatContacts(msg.chatId)
-          const decision = decideCleanup(msg.systemMessageType, contacts)
-          if (decision.cleanup) {
-            await cleanupChat(msg.chatId, decision.reason ?? 'unknown')
-          }
-        } catch (err) {
-          logf('dc channel: cleanup error for chat %d: %v', msg.chatId, err)
+  const handleSystemMessage = async (msg: Message): Promise<void> => {
+    logf('dc channel: system message id=%d chat=%d type=%s', msg.id, msg.chatId, msg.systemMessageType)
+    if (msg.systemMessageType === 'MemberRemovedFromGroup' && access.isAllowed(msg.chatId)) {
+      try {
+        const contacts = await client.getChatContacts(msg.chatId)
+        const decision = decideCleanup(msg.systemMessageType, contacts)
+        if (decision.cleanup) {
+          await cleanupChat(msg.chatId, decision.reason ?? 'unknown')
         }
+      } catch (err) {
+        logf('dc channel: cleanup error for chat %d: %v', msg.chatId, err)
       }
+    }
+  }
+
+  const handleChatModified = async (chatId: number): Promise<void> => {
+    if (!access.isAllowed(chatId)) return
+    try {
+      const contacts = await client.getChatContacts(chatId)
+      const decision = decideCleanup('ChatModified', contacts)
+      if (decision.cleanup) {
+        await cleanupChat(chatId, decision.reason ?? 'unknown')
+      }
+    } catch (err) {
+      logf('dc channel: ChatModified cleanup error for chat %d: %v', chatId, err)
+    }
+  }
+
+  const handleUnpairedMessage = async (msg: Message): Promise<void> => {
+    // Once an owner is established, only known owners can initiate new pairings.
+    if (access.hasAnyOwner() && msg.fromId && !access.isKnownOwner(msg.fromId)) {
+      logf('dc channel: ignoring pairing request from unknown contact %d in chat %d', msg.fromId, msg.chatId)
       return
     }
-
-    if (!access.isAllowed(msg.chatId)) {
-      // Once an owner is established, only known owners can initiate new pairings.
-      // Strangers get no response — they don't even know the bot exists.
-      if (access.hasAnyOwner() && msg.fromId && !access.isKnownOwner(msg.fromId)) {
-        logf('dc channel: ignoring pairing request from unknown contact %d in chat %d', msg.fromId, msg.chatId)
-        return
-      }
-      // Auto-pair: if the sender is already a known owner from another chat,
-      // silently approve this chat with the same owner. The owner-only rule
-      // below still gates non-owner messages in groups, so this adds no
-      // incremental risk vs. the original per-chat pairing handshake.
-      if (msg.fromId && access.isKnownOwner(msg.fromId)) {
-        access.addChat(msg.chatId, msg.fromId)
-        logf('dc channel: auto-paired chat %d to known owner %d', msg.chatId, msg.fromId)
-        // Fall through to normal message handling below.
-      } else {
-        try {
-          const code = access.startPairing(msg.chatId, msg.fromId ?? 0)
-          const pairMsg = 'Pairing required \u2014 run in Claude Code:\n\n/deltachat:access pair ' + code
-          await client.send(msg.chatId, pairMsg)
-        } catch (err) {
-          logf('dc channel: pairing error for chat %d: %v', msg.chatId, err)
-        }
-        return
-      }
+    // Auto-pair: sender is already a known owner from another chat.
+    if (msg.fromId && access.isKnownOwner(msg.fromId)) {
+      access.addChat(msg.chatId, msg.fromId)
+      logf('dc channel: auto-paired chat %d to known owner %d', msg.chatId, msg.fromId)
+      // Fall through to dispatch the message now that it's paired.
+      await dispatchPairedMessage(msg)
+      return
     }
-
-    // In group chats, only the owner (person who paired the chat) can command Claude.
-    // This prevents other group members from accessing private tools and data.
-    if (msg.fromId) {
-      const owner = access.getOwner(msg.chatId)
-      if (owner && msg.fromId !== owner) {
-        const contacts = await client.getChatContacts(msg.chatId)
-        // More than 2 contacts means it's a group (bot + owner + others)
-        if (contacts.length > 2) {
-          logf('dc channel: ignoring non-owner %d in group chat %d (owner: %d)', msg.fromId, msg.chatId, owner)
-          return
-        }
-      }
+    try {
+      const code = access.startPairing(msg.chatId, msg.fromId ?? 0)
+      const pairMsg = 'Pairing required \u2014 run in Claude Code:\n\n/deltachat:access pair ' + code
+      await client.send(msg.chatId, pairMsg)
+    } catch (err) {
+      logf('dc channel: pairing error for chat %d: %v', msg.chatId, err)
     }
+  }
 
-    // Track active chat for permission prompt targeting — must be set before
-    // any code path that could trigger a permission prompt (including tutorial).
+  /**
+   * Handle a paired, authorized incoming message — tutorial intercept first,
+   * then notify the MCP host (terminal Claude Code).
+   *
+   * NOTE: in Phase 2, regular user text is routed through the subagent cache
+   * by the router. This function is only called for the auto-pair fall-through
+   * path and for tutorial messages.
+   */
+  const dispatchPairedMessage = async (msg: Message): Promise<void> => {
+    // Track active chat for permission prompt targeting.
     lastActiveChatId = msg.chatId
 
-    // Tutorial intercept — handle tutorial responses before forwarding to Claude.
+    // Tutorial intercept.
     const tutorialAction = tutorial.handleMessage(msg.chatId, msg.text)
     if (!tutorialAction.passThrough) {
       for (const text of tutorialAction.messages) {
@@ -717,7 +831,6 @@ async function main(): Promise<void> {
       user: safeName(msg.senderName),
       ts: msg.timestamp.toISOString(),
     }
-    // Attachment metadata — images get image_path (like Telegram), all files get attachment_* fields
     if (msg.file) {
       if (msg.viewType === 'Image' || msg.viewType === 'Gif') {
         meta.image_path = msg.file
@@ -740,23 +853,67 @@ async function main(): Promise<void> {
       method: 'notifications/claude/channel',
       params: { content: msg.text, meta },
     }).catch(err => logf('dc channel: notification send error: %v', err))
+  }
+
+  // Phase 2 router: classify + dispatch to subagent cache.
+  const router = createMessageRouter({
+    isPaired: (chatId) => access.isAllowed(chatId),
+    isAuthorized: (msg) => {
+      if (!msg.fromId) return true
+      const owner = access.getOwner(msg.chatId)
+      if (!owner) return true
+      if (msg.fromId === owner) return true
+      // Non-owner in a group: silently ignore (router logs).
+      return false
+    },
+    dispatchToSubagent: async (chatId, text) => {
+      // Tutorial intercept runs in the dispatcher, not the subagent —
+      // tutorial state lives here and the onboarding flow drives WebXDC
+      // apps directly via appToolMap.
+      if (tutorial.getState(chatId) !== null) {
+        // Build a minimal Message-ish object for dispatchPairedMessage.
+        // We only need chatId/text/timestamp/senderName/id/fromId.
+        const pseudo: Message = {
+          id: 0,
+          chatId,
+          text,
+          timestamp: new Date(),
+          senderName: '',
+          fromId: access.getOwner(chatId) ?? 0,
+        } as Message
+        await dispatchPairedMessage(pseudo)
+        return
+      }
+      try {
+        const result = await subagentCache.dispatch(chatId, text)
+        if (result.text) {
+          await client.send(chatId, result.text)
+        }
+        if (result.denials.length > 0) {
+          const summary = result.denials
+            .map((d) => `• ${d.tool_name}${d.command ? ': ' + d.command.slice(0, 80) : ''}`)
+            .join('\n')
+          await client.send(chatId, `\u26a0\ufe0f Some actions were blocked by policy:\n${summary}`)
+        }
+      } catch (err) {
+        logf('dispatch error chat=%d: %v', chatId, err)
+        await client.send(chatId, `\u26a0\ufe0f Internal error: ${err}`).catch(() => {})
+      }
+    },
+    handleSystemMessage,
+    handleChatModified,
+    handleUnpaired: handleUnpairedMessage,
+    logf,
   })
 
-  // ChatModified — fires on local membership changes that don't come
-  // through IncomingMsg (e.g. the chat owner leaves a group from their own
-  // device). Re-check contacts and run the same cleanup decision.
-  client.onChatModified(async (chatId) => {
+  client.onIncomingMessage((msg) => {
     if (shuttingDown) return
-    if (!access.isAllowed(chatId)) return
-    try {
-      const contacts = await client.getChatContacts(chatId)
-      const decision = decideCleanup('ChatModified', contacts)
-      if (decision.cleanup) {
-        await cleanupChat(chatId, decision.reason ?? 'unknown')
-      }
-    } catch (err) {
-      logf('dc channel: ChatModified cleanup error for chat %d: %v', chatId, err)
-    }
+    router.onIncomingMessage(msg).catch((err) => logf('router crashed: %v', err))
+  })
+
+  client.onChatModified((chatId) => {
+    if (shuttingDown) return
+    router.onChatModified(chatId).catch((err) => logf('router crashed: %v', err))
   })
 
   // WebXDC updates — event-driven, O(1) dispatch via msgId registry.
@@ -779,6 +936,33 @@ async function main(): Promise<void> {
           webxdcLastSerial.set(msgId, u.serial)
         }
       }
+
+      // Phase 2: intercept permission verdicts intended for pending hook
+      // requests. Resolve the waiting promise and drop the update from the
+      // list before the app handler sees it, so permissions-app doesn't
+      // also try to process it.
+      const passthrough: typeof updates = []
+      for (const u of updates) {
+        const payload = u.payload as { type?: string; request_id?: string; verdict?: 'allow' | 'deny'; reason?: string } | null
+        if (payload && payload.type === 'permission_verdict' && payload.request_id) {
+          const pending = pendingPermissions.get(payload.request_id)
+          if (pending) {
+            pendingPermissions.delete(payload.request_id)
+            pending.resolve({
+              kind: 'permissionVerdict',
+              id: payload.request_id,
+              verdict: payload.verdict ?? 'deny',
+              message: payload.reason,
+            })
+            continue
+          }
+        }
+        passthrough.push(u)
+      }
+      if (passthrough.length === 0) return
+      // Re-point `updates` for the rest of the handler.
+      updates.length = 0
+      updates.push(...passthrough)
 
       // Owner verification: in owned chats, only forward updates from the owner
       const filtered = await filterUpdatesByOwner(updates, {
@@ -812,6 +996,11 @@ async function main(): Promise<void> {
     }
   })
 
+  // Start the dispatcher socket server before IO so subagents spawned
+  // by the first incoming message find the socket ready.
+  await socketServer.start()
+  logf('dispatcher socket listening at %s (max_active=%d idle_min=%d)', DISPATCHER_SOCKET, MAX_ACTIVE, IDLE_MIN)
+
   // NOW start IO — events begin flowing after handlers are ready.
   if (dcAddress) {
     await client.startIO()
@@ -838,7 +1027,12 @@ function shutdown(): void {
     app.stop?.()
   }
   setTimeout(() => process.exit(0), 2000)
-  void client.close().finally(() => process.exit(0))
+  void (async () => {
+    await subagentCache.closeAll().catch(() => {})
+    await socketServer.stop().catch(() => {})
+    await client.close().catch(() => {})
+    process.exit(0)
+  })()
 }
 
 process.stdin.on('end', shutdown)
