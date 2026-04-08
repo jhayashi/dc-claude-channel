@@ -11,7 +11,7 @@ import type { Message } from '../dc-client.js'
 
 export interface RouterHandlers {
   /** Regular user message → dispatch to subagent cache. */
-  dispatchToSubagent: (chatId: number, text: string) => Promise<void>
+  dispatchToSubagent: (msg: Message) => Promise<void>
   /** System message (e.g. "MemberRemovedFromGroup") → legacy cleanup. */
   handleSystemMessage: (msg: Message) => Promise<void>
   /** Locally-triggered ChatModified (e.g. self-leave) → legacy cleanup. */
@@ -55,10 +55,8 @@ export function createMessageRouter(handlers: RouterHandlers): MessageRouter {
         return
       }
 
-      // Empty text (attachment-only, etc.) — still route, let subagent decide.
-      const text = msg.text || '(attachment)'
-      log('router: dispatching chat=%d len=%d', msg.chatId, text.length)
-      await handlers.dispatchToSubagent(msg.chatId, text)
+      log('router: dispatching chat=%d len=%d file=%s', msg.chatId, (msg.text ?? '').length, msg.file ?? '')
+      await handlers.dispatchToSubagent(msg)
     },
 
     async onChatModified(chatId: number): Promise<void> {

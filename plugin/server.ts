@@ -787,9 +787,33 @@ async function main(): Promise<void> {
    * reply back to DC, and surface any permission denials as a status message.
    * Used by the router for paired chats and by the auto-pair fall-through.
    */
-  const runSubagentTurn = async (chatId: number, text: string): Promise<void> => {
+  /** Build the text payload handed to the subagent. Mirrors the `<channel>`
+   *  tag the main terminal session gets: includes attachment paths so the
+   *  subagent can Read the file (image or otherwise). */
+  const formatSubagentInput = (msg: Message): string => {
+    const parts: string[] = []
+    const meta: string[] = [`chat_id=${msg.chatId}`, `message_id=${msg.id}`]
+    if (msg.senderName) meta.push(`from=${safeName(msg.senderName)}`)
+    if (msg.file) {
+      if (msg.viewType === 'Image' || msg.viewType === 'Gif') {
+        meta.push(`image_path=${msg.file}`)
+      }
+      meta.push(`attachment_file=${msg.file}`)
+      if (msg.fileMime) meta.push(`attachment_mime=${msg.fileMime}`)
+      if (msg.fileName) meta.push(`attachment_name=${msg.fileName}`)
+    }
+    parts.push(`[dc ${meta.join(' ')}]`)
+    parts.push(msg.text || '(no text)')
+    if (msg.file) {
+      parts.push(`\n(Read ${msg.file} if you need to see the attached file.)`)
+    }
+    return parts.join('\n')
+  }
+
+  const runSubagentTurn = async (msg: Message): Promise<void> => {
+    const chatId = msg.chatId
     try {
-      const result = await subagentCache.dispatch(chatId, text)
+      const result = await subagentCache.dispatch(chatId, formatSubagentInput(msg))
       if (result.text) {
         await client.send(chatId, result.text)
       }
@@ -820,7 +844,7 @@ async function main(): Promise<void> {
       // (This was the v0.9 regression: the previous fall-through called
       // dispatchPairedMessage which goes through the legacy MCP-notification
       // path and prompts for permission on the dispatcher's reply tool.)
-      await runSubagentTurn(msg.chatId, msg.text)
+      await runSubagentTurn(msg)
       return
     }
     try {
@@ -917,25 +941,15 @@ async function main(): Promise<void> {
       // Non-owner in a group: silently ignore (router logs).
       return false
     },
-    dispatchToSubagent: async (chatId, text) => {
+    dispatchToSubagent: async (msg) => {
       // Tutorial intercept runs in the dispatcher, not the subagent —
       // tutorial state lives here and the onboarding flow drives WebXDC
       // apps directly via appToolMap.
-      if (tutorial.getState(chatId) !== null) {
-        // Build a minimal Message-ish object for dispatchPairedMessage.
-        // We only need chatId/text/timestamp/senderName/id/fromId.
-        const pseudo: Message = {
-          id: 0,
-          chatId,
-          text,
-          timestamp: new Date(),
-          senderName: '',
-          fromId: access.getOwner(chatId) ?? 0,
-        } as Message
-        await dispatchPairedMessage(pseudo)
+      if (tutorial.getState(msg.chatId) !== null) {
+        await dispatchPairedMessage(msg)
         return
       }
-      await runSubagentTurn(chatId, text)
+      await runSubagentTurn(msg)
     },
     handleSystemMessage,
     handleChatModified,
