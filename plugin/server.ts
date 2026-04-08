@@ -934,24 +934,25 @@ async function main(): Promise<void> {
       }
 
       // Phase 2: intercept permission verdicts intended for pending hook
-      // requests. Resolve the waiting promise and drop the update from the
-      // list before the app handler sees it, so permissions-app doesn't
-      // also try to process it.
+      // requests. The permission-prompt.html app sends payloads of the
+      // shape {type: 'response', requestId, granted, senderAddr}. If the
+      // requestId matches a pending hook permission we resolve the
+      // waiting promise and drop the update from the list before the app
+      // handler sees it. Non-matching responses still flow through to
+      // permissions-app for the legacy MCP-relay path.
       const passthrough: typeof updates = []
       for (const u of updates) {
-        const payload = u.payload as { type?: string; request_id?: string; verdict?: 'allow' | 'deny'; reason?: string } | null
-        if (payload && payload.type === 'permission_verdict' && payload.request_id) {
-          const pending = pendingPermissions.get(payload.request_id)
-          if (pending) {
-            pendingPermissions.delete(payload.request_id)
-            pending.resolve({
-              kind: 'permissionVerdict',
-              id: payload.request_id,
-              verdict: payload.verdict ?? 'deny',
-              message: payload.reason,
-            })
-            continue
-          }
+        const payload = u.payload as { type?: string; requestId?: string; granted?: boolean } | null
+        if (payload && payload.type === 'response' && payload.requestId && pendingPermissions.has(payload.requestId)) {
+          const pending = pendingPermissions.get(payload.requestId)!
+          pendingPermissions.delete(payload.requestId)
+          pending.resolve({
+            kind: 'permissionVerdict',
+            id: payload.requestId,
+            verdict: payload.granted ? 'allow' : 'deny',
+          })
+          logf('phase2: intercepted permission verdict %s → %s for chat %d', payload.requestId, payload.granted ? 'allow' : 'deny', pending.chatId)
+          continue
         }
         passthrough.push(u)
       }
