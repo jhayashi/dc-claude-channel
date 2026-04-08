@@ -103,12 +103,22 @@ const pendingPermissions = new Map<string, { connectionId: string; chatId: numbe
 
 const TOOLS_PROXY = join(import.meta.dir, 'dispatcher', 'tools-proxy.ts')
 
+/** Tools that only make sense from the terminal Claude session — filtered
+ *  out of the subagent manifest to avoid confusion (e.g. the LLM calling
+ *  dc_test_permission when the user asks to run a real bash command). */
+const SUBAGENT_TOOL_BLOCKLIST = new Set([
+  'dc_test_permission',
+  'dc_access_pair',
+  'dc_access_list',
+  'dc_access_revoke',
+])
+
 async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
   const subagentId = `sub-${chatId}-${randomBytes(4).toString('hex')}`
   const toolDefs = [
     ...coreTools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
     ...apps.flatMap((a) => a.tools()).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
-  ]
+  ].filter((t) => !SUBAGENT_TOOL_BLOCKLIST.has(t.name))
   const { settingsPath, mcpConfigPath, tempDir } = generateHookConfig({
     hookScriptPath: HOOK_SCRIPT,
     toolsProxyPath: TOOLS_PROXY,
