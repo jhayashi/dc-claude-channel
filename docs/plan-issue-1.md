@@ -703,6 +703,74 @@ Non-owner reactions are ignored (same owner rule as messages).
 This is an opt-in surface — users who don't know about it see only
 the status reactions, which are self-explanatory.
 
+### Cross-chat conversation search (`dc_search_chats`)
+
+Simple form of memory: let any subagent search across the chats its
+owner has access to, so the user can reference past conversations
+("what did I tell you about the rust port last week?") without
+manually pasting context.
+
+**New tool:** `dc_search_chats` exposed to every subagent via the
+tools-proxy MCP server.
+
+**Args:**
+- `query` (string, required) — full-text search term
+- `chat_id` (string, optional) — restrict to a single chat; defaults
+  to "all chats this owner can access"
+- `limit` (number, optional, default 20)
+- `since` (ISO timestamp, optional) — only match newer messages
+
+**Result rows:**
+
+```typescript
+{ chat_id, chat_name, msg_id, sender, snippet, timestamp }
+```
+
+**Implementation:**
+
+- Prefer DC's built-in search RPC if `@deltachat/jsonrpc-client`
+  exposes one (`search_messages` exists in dc-core; verify it's
+  available on the client). Falls back to client-side scanning of
+  `getChatHistory(chatId, N)` per accessible chat with a hard cap on
+  scan depth (e.g. last 200 messages per chat) to avoid runaway.
+- Snippet generation: ~80 chars centered on the match.
+- Results sorted newest-first.
+
+**Authorization (the load-bearing rule):**
+
+The calling subagent is bound to a specific chat, but the search
+tool legitimately needs cross-chat read access. Restrict the result
+set to "chats whose owner matches the calling subagent's owner".
+Concretely:
+
+1. Look up `ownerAddr = access.getOwnerAddr(callingChatId)`.
+2. Build `accessibleChats = access.allowedChats().filter(id =>
+   access.getOwnerAddr(id) === ownerAddr)`.
+3. Execute the search only against `accessibleChats`.
+4. If `args.chat_id` is provided, intersect with `accessibleChats`
+   and return an empty result if outside the set (do not error —
+   make it look like "no matches").
+
+This means a chat owner can search across all their chats but never
+across other people's. It also means a member of someone else's
+group can't pivot to read other groups via the search tool.
+
+**UX in DC:**
+
+When results come back, the subagent quotes them inline ("I found
+this from chat 'Rust Port' on Apr 3: ...") or — if DC supports
+message-id deep links via `mid:` URIs — formats them as tappable
+links so the user can jump to the original message in their DC
+client.
+
+**Future extension (deferred):**
+
+- Embedding-based semantic search instead of literal full-text — out
+  of scope for Phase 4. The full-text version is enough to ship.
+- Per-chat indexing daemon — not needed; dc-core's search is fast
+  enough for the bot's volume.
+- "Memory facts" extraction — a separate feature, not this one.
+
 ## Phase 5 — Migration (1 day)
 
 - Update CLAUDE.md architecture section.
