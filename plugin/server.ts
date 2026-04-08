@@ -961,12 +961,17 @@ async function main(): Promise<void> {
       updates.length = 0
       updates.push(...passthrough)
 
-      // Owner verification: in owned chats, only forward updates from the owner
+      // Owner verification: in owned chats, only forward updates from the owner.
+      // For 1:1 chats the filter takes a fast path (any non-bot sender IS the owner)
+      // because dc-core ≥ 2.48 returns webxdc selfAddr as an anonymized hash that
+      // lookupContactByAddr can't resolve.
+      const chatContacts = await client.getChatContacts(entry.chatId).catch(() => [])
       const filtered = await filterUpdatesByOwner(updates, {
         owner: access.getOwner(entry.chatId),
         chatId: entry.chatId,
         msgId,
         appId: entry.app.id,
+        chatContactCount: chatContacts.length,
         lookupContactByAddr: (addr) => client.lookupContactByAddr(addr),
         logf,
       })

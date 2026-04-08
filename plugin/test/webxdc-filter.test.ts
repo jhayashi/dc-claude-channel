@@ -7,13 +7,16 @@ function update(serial: number, payload: unknown): WebXDCUpdate {
   return { serial, payload };
 }
 
-// Helper to build a FilterContext with defaults
+// Helper to build a FilterContext with defaults. Defaults to a group-style
+// chat (>2 contacts) so the strict check is exercised; tests that need
+// the 1:1 fast path override `chatContactCount: 2`.
 function ctx(overrides: Partial<FilterContext> = {}): FilterContext {
   return {
     owner: 42,
     chatId: 100,
     msgId: 200,
     appId: "test-app",
+    chatContactCount: 5,
     lookupContactByAddr: async () => 42, // resolves to owner by default
     logf: () => {},
     ...overrides,
@@ -127,6 +130,30 @@ describe("filterUpdatesByOwner", () => {
 
   test("empty updates array with no owner returns empty", async () => {
     const result = await filterUpdatesByOwner([], ctx({ owner: null }));
+    expect(result).toEqual([]);
+  });
+
+  test("1:1 chat fast path: senderAddr trusted unconditionally even when contact lookup fails", async () => {
+    // dc-core ≥ 2.48 returns webxdc selfAddr as a 64-char hash that
+    // lookupContactByAddr can't resolve. In a 1:1 chat we accept it
+    // because the only non-bot member IS the owner.
+    const updates = [
+      update(1, { type: "response", senderAddr: "a6d2dc069c906422cb0934ce2a1059e21c02521ddbb159ef664a6ae69e3d98ef" }),
+    ];
+    const result = await filterUpdatesByOwner(updates, ctx({
+      owner: 42,
+      chatContactCount: 2, // bot + 1 user = 1:1
+      lookupContactByAddr: async () => null,
+    }));
+    expect(result).toEqual(updates);
+  });
+
+  test("1:1 chat fast path: still rejects updates without senderAddr", async () => {
+    const updates = [update(1, { type: "response" })];
+    const result = await filterUpdatesByOwner(updates, ctx({
+      owner: 42,
+      chatContactCount: 2,
+    }));
     expect(result).toEqual([]);
   });
 });
