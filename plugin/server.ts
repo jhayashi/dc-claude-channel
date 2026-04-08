@@ -417,6 +417,11 @@ const coreTools = [
     },
   },
   {
+    name: 'dc_exit_session',
+    description: 'Exit the terminal Claude Code session that hosts this channel. If the user is running a keep-alive wrapper, it will restart. Use only when the user explicitly asks to restart or reload the session.',
+    inputSchema: { type: 'object' as const, properties: {} },
+  },
+  {
     name: 'dc_download_attachment',
     description: 'Download an attachment from a Delta Chat message. Use when a message has a file that needs to be downloaded (large files are not auto-downloaded). Returns the local file path.',
     inputSchema: {
@@ -647,6 +652,35 @@ async function callCoreTool(name: string, args: Record<string, unknown>): Promis
           return line
         })
         return { content: [{ type: 'text' as const, text: lines.join('\n') || 'No messages found.' }] }
+      }
+
+      case 'dc_exit_session': {
+        // Walk the PPID chain: dispatcher (this process) → bun wrapper
+        // → claude terminal session. Send SIGTERM to the grandparent
+        // so the terminal claude exits cleanly and a keep-alive wrapper
+        // can re-spawn it. We schedule the signal after returning so
+        // the caller's tool result makes it back over the wire first.
+        const bunPid = process.ppid
+        let terminalPid = 0
+        try {
+          const { readFileSync } = await import('node:fs')
+          const stat = readFileSync(`/proc/${bunPid}/stat`, 'utf8')
+          // /proc/<pid>/stat field 4 is ppid. Skip the comm which may contain spaces.
+          const rparen = stat.lastIndexOf(')')
+          const rest = stat.slice(rparen + 2).split(' ')
+          terminalPid = Number(rest[1]) || 0
+        } catch (err) {
+          return { content: [{ type: 'text' as const, text: `dc_exit_session: could not resolve terminal pid: ${err}` }], isError: true }
+        }
+        if (!terminalPid) {
+          return { content: [{ type: 'text' as const, text: 'dc_exit_session: terminal pid unknown' }], isError: true }
+        }
+        logf('dc_exit_session: scheduling SIGTERM to terminal claude pid=%d (via bun pid=%d)', terminalPid, bunPid)
+        setTimeout(() => {
+          try { process.kill(terminalPid, 'SIGTERM') }
+          catch (err) { logf('dc_exit_session: kill failed: %v', err) }
+        }, 500)
+        return { content: [{ type: 'text' as const, text: `Exiting terminal session (pid ${terminalPid}). If a keep-alive wrapper is running it will restart shortly.` }] }
       }
 
       case 'dc_download_attachment': {

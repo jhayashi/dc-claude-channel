@@ -172,7 +172,7 @@ export class SubagentProcess {
     })
   }
 
-  async send(text: string, turnTimeoutMs = 120000): Promise<TurnResult> {
+  async send(text: string, turnTimeoutMs = 20 * 60 * 1000): Promise<TurnResult> {
     if (!this.alive) throw new Error(`subagent ${this.subagentId} is not alive`)
     if (this.busy) throw new Error(`subagent ${this.subagentId} is busy`)
     this.busy = true
