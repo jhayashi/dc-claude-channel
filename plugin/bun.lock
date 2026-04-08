@@ -9,7 +9,7 @@
         "@deltachat/stdio-rpc-server": "*",
         "@modelcontextprotocol/sdk": "^1.0.0",
         "fflate": "^0.8.2",
-        "zod": "^3.23.0",
+        "zod": "^4.3.6",
       },
       "devDependencies": {
         "prismjs": "^1.30.0",
@@ -239,9 +239,11 @@
 
     "yerpc": ["yerpc@0.6.4", "", { "dependencies": { "@types/ws": "^8.2.2", "isomorphic-ws": "^4.0.1", "typescript": "^4.6.3" }, "optionalDependencies": { "ws": "^8.5.0" } }, "sha512-f/yBGREg5sR9aa6QG0thon6uL8jKJhQuRO/SwGsnOIIe45wFQrMYBV+A5cCNEgqzSHsz+Jl2F7sEO6h7CJfr5w=="],
 
-    "zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
+    "zod": ["zod@4.3.6", "", {}, "sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg=="],
 
     "zod-to-json-schema": ["zod-to-json-schema@3.25.2", "", { "peerDependencies": { "zod": "^3.25.28 || ^4" } }, "sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA=="],
+
+    "@modelcontextprotocol/sdk/zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
 
     "yerpc/isomorphic-ws": ["isomorphic-ws@4.0.1", "", { "peerDependencies": { "ws": "*" } }, "sha512-BhBvN2MBpWTaSHdWRb/bwdZJ1WaehQ2L1KngkCkfLUGF0mAWAT1sQUQacEmQ0jXkFw/czDXPNQSL5u2/Krsz1w=="],
   }
