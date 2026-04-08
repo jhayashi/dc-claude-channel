@@ -639,6 +639,70 @@ recommendation in CLAUDE.md and README will be: "for the dc-claude-channel
 plugin, the dispatcher session can run on haiku since subagents handle
 the reasoning."
 
+## Phase 4 additions (post-v8 planning)
+
+### Per-chat permission mode opt-out
+
+Extend `GroupContext` with `permissionMode?: 'default' | 'bypassPermissions'`
+(default: `'default'`). The subagent spawn factory reads this from
+the group config and:
+
+- `default` → generate per-subagent hook config, launch with
+  `--settings <hook-cfg> --permission-mode default` (Phase 2 behavior).
+- `bypassPermissions` → skip the hook config entirely, launch with
+  `--permission-mode bypassPermissions`. No WebXDC prompts ever.
+  Useful for automation-style groups where the owner explicitly
+  wants no interruption.
+
+The `dc_update_group_prompt` tool gains an optional `permission_mode`
+field validated against the enum. Rejected for unknown values.
+Document the security implication in CLAUDE.md: "choosing
+bypassPermissions grants the subagent full access to the CWD
+sandbox's allowed directories; use only for trusted automation."
+
+### Reactions as status channel and command surface
+
+`@deltachat/jsonrpc-client` exposes `sendReaction(accountId, msgId, reaction)`
+and emits `IncomingReaction` / `ReactionsChanged` events. Phase 4
+wires both directions:
+
+**Outbound — dispatcher reacts to user messages as status:**
+
+| Emoji | Meaning |
+|---|---|
+| 🔄 | Spinning up a new subagent (cold spawn) |
+| 🧠 | Subagent ready, running on the default model (sonnet = 2 brains) |
+| 🧠 × 1 | Running on haiku |
+| 🧠 × 3 | Running on opus |
+| 🍳 | Creating a new group chat |
+| ✅ | Turn completed successfully |
+| ⚠️ | Completed with permission denials |
+| ❌ | Turn errored |
+
+Reactions are additive and the last reaction wins per emoji — so
+the dispatcher can add 🔄 on dispatch and then replace with 🧠
+when the subagent is ready.
+
+**Inbound — reactions as user commands:**
+
+When the bot receives an `IncomingReaction` from the chat owner on
+one of its own messages, it treats certain reactions as commands:
+
+| Input | Command |
+|---|---|
+| `🧠` | Switch subagent to default model (sonnet) |
+| `🧠🧠` (two brain emoji in one reaction string) | Switch to sonnet |
+| `🧠🧠🧠` | Switch to opus |
+| `➕🧠` | Step up one tier (haiku → sonnet → opus) |
+| `➖🧠` | Step down one tier (opus → sonnet → haiku) |
+
+Brain-count reactions trigger a subagent close + respawn with the
+new `--model` (uses the Phase 4 per-group model mechanism).
+Non-owner reactions are ignored (same owner rule as messages).
+
+This is an opt-in surface — users who don't know about it see only
+the status reactions, which are self-explanatory.
+
 ## Phase 5 — Migration (1 day)
 
 - Update CLAUDE.md architecture section.
