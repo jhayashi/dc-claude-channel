@@ -25,9 +25,8 @@ async function sendPermissionRequest(
 ): Promise<void> {
   ctx.logf('permission: received request %s for tool %s', request_id, tool_name)
 
-  // Use explicit target if provided, otherwise fall back to last active chat, then all chats.
-  const activeChatId = targetChatId ?? ctx.lastActiveChatId()
-  const chats = activeChatId && ctx.isAllowed(activeChatId) ? [activeChatId] : ctx.allowedChats()
+  // Use explicit target if provided, otherwise broadcast to all allowed chats.
+  const chats = targetChatId && ctx.isAllowed(targetChatId) ? [targetChatId] : ctx.allowedChats()
   if (chats.length === 0) {
     ctx.logf('permission: no allowed chats to send permission prompt to')
     return
