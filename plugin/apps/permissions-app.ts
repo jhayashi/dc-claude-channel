@@ -14,7 +14,7 @@ export function registerPermissionsSession(chatId: number, msgId: number): void 
   permissionsSessions.set(chatId, { msgId })
 }
 
-async function sendPermissionRequest(
+export async function sendPermissionRequest(
   ctx: AppContext,
   app: WebXDCApp,
   request_id: string,

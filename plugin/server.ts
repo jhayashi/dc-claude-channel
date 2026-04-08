@@ -231,10 +231,6 @@ const socketServer = new SocketServer({
   getSubagentChat: (id) => subagentRegistry.get(id)?.chatId ?? null,
   onRequest: async (req: SocketRequest): Promise<ServerMessage> => {
     if (req.frame.kind === 'permissionRequest') {
-      const permApp = appToolMap.get('dc_test_permission')
-      if (!permApp) {
-        return { kind: 'permissionVerdict', id: req.frame.id, verdict: 'deny', message: 'permission app not registered' }
-      }
       return await new Promise<ServerMessage>((resolve) => {
         pendingPermissions.set(req.frame.id, {
           connectionId: req.connectionId,
@@ -243,13 +239,13 @@ const socketServer = new SocketServer({
         })
         ;(async () => {
           try {
-            const params = {
-              chat_id: String(req.chatId),
-              tool_name: (req.frame as { tool?: string }).tool ?? 'unknown',
-              tool_input: JSON.stringify((req.frame as { input?: unknown }).input ?? {}),
-              request_id: req.frame.id,
-            }
-            await permApp.callTool('dc_test_permission', params, ctx)
+            const toolName = (req.frame as { tool?: string }).tool ?? 'unknown'
+            const input = (req.frame as { input?: unknown }).input ?? {}
+            const inputPreview = JSON.stringify(input)
+            const cmd = (input as { command?: string }).command
+            const description = cmd ? `${toolName}: ${cmd}` : toolName
+            const mod = await import('./apps/permissions-app.js')
+            await mod.sendPermissionRequest(ctx, mod.permissionsApp, req.frame.id, toolName, description, inputPreview, req.chatId)
           } catch (err) {
             logf('socket: failed to issue permission prompt: %v', err)
             const pending = pendingPermissions.get(req.frame.id)
@@ -814,6 +810,7 @@ async function main(): Promise<void> {
     const chatId = msg.chatId
     try {
       const result = await subagentCache.dispatch(chatId, formatSubagentInput(msg))
+      logf('subagent: chat=%d result.text=%s denials=%d', chatId, (result.text ?? '').slice(0, 500).replace(/\n/g, ' '), result.denials.length)
       if (result.text) {
         await client.send(chatId, result.text)
       }
@@ -945,10 +942,13 @@ async function main(): Promise<void> {
       // Tutorial intercept runs in the dispatcher, not the subagent —
       // tutorial state lives here and the onboarding flow drives WebXDC
       // apps directly via appToolMap.
-      if (tutorial.getState(msg.chatId) !== null) {
+      const tutState = tutorial.getState(msg.chatId)
+      if (tutState !== null) {
+        logf('dispatch: chat=%d path=tutorial-legacy state=%s', msg.chatId, String(tutState))
         await dispatchPairedMessage(msg)
         return
       }
+      logf('dispatch: chat=%d path=subagent', msg.chatId)
       await runSubagentTurn(msg)
     },
     handleSystemMessage,

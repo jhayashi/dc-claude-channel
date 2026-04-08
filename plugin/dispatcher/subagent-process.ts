@@ -84,6 +84,11 @@ export class SubagentProcess {
       '--output-format', 'stream-json',
       '--verbose',
       '--settings', opts.settingsPath,
+      // Exclude user-level settings so we don't inherit the user's
+      // SessionStart hooks (e.g. superpowers) which inject wall-of-text
+      // skill prompts into every subagent cold spawn. Our own --settings
+      // file (with the PreToolUse permission hook) is still loaded.
+      '--setting-sources', 'project,local',
       '--permission-mode', 'default',
       '--append-system-prompt', envBlock,
     ]
@@ -91,8 +96,12 @@ export class SubagentProcess {
       args.push('--mcp-config', opts.mcpConfigPath, '--strict-mcp-config')
       // MCP tools can't prompt in headless -p mode and PreToolUse hooks
       // don't fire for them (spike 1E). Whitelist the whole dc server so
-      // dispatcher-side authorization is the only gate.
-      args.push('--allowedTools', 'mcp__dc')
+      // dispatcher-side authorization is the only gate. In headless -p
+      // mode --allowedTools appears to be a hard whitelist (not just a
+      // pre-approval list like the TUI) so we also list the built-in
+      // tools the subagent needs; Bash/Edit/Write/WebFetch/NotebookEdit
+      // still fire the PreToolUse hook for the actual permission check.
+      args.push('--allowedTools', 'mcp__dc Bash Read Edit Write Grep Glob WebFetch NotebookEdit Task TodoWrite')
     }
     for (const dir of opts.addDirs ?? []) {
       args.push('--add-dir', dir)
@@ -133,6 +142,9 @@ export class SubagentProcess {
       if (!line.trim()) continue
       let frame: StreamFrame
       try { frame = JSON.parse(line) } catch { continue }
+      // Compact trace of every frame (debug only).
+      const snippet = line.length > 400 ? line.slice(0, 400) + '...' : line
+      this.logf('subagent %s frame: %s', this.subagentId, snippet)
       if (this.waiters.length) {
         this.waiters.shift()!(frame)
       } else {
