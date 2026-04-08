@@ -1,7 +1,38 @@
-# Plan: Issue #1 — Subagent-per-channel-message architecture (v7)
+# Plan: Issue #1 — Subagent-per-channel-message architecture (v8)
 
 Tracks https://github.com/jhayashi/dc-claude-channel/issues/1
 
+> **v8 changelog (post-Spikes 1F/1G):** The permission story is
+> settled. Spike 1E proved MCP servers cannot receive permission
+> operations. Spike 1F proved stream-json only reports
+> `permission_denials` *after* enforcement. Spike 1G proved
+> **PreToolUse hooks fire synchronously in `claude -p` and can block
+> on an external round-trip**, which is the piece we needed.
+>
+> The Phase 2 permission relay is now:
+>
+> 1. Each subagent launches with `--settings <generated-hook-config>`
+>    pointing at a PreToolUse hook script bound to the subagent's
+>    `chat_id` via an env var.
+> 2. When Claude wants to run Bash/Edit/Write/WebFetch, the hook fires,
+>    reads the tool input from stdin, opens the dispatcher's Unix
+>    socket, sends `{kind: 'permissionRequest', chatId, tool, input}`,
+>    and blocks reading the reply.
+> 3. The dispatcher relays to the existing `permissions-app` WebXDC
+>    flow in the bound chat. The user taps Allow/Deny in Delta Chat
+>    exactly like today.
+> 4. The dispatcher writes the verdict back to the hook socket. The
+>    hook exits 0 (allow) or 2 with a stderr message (deny).
+>
+> This preserves the v0.8.3 UX exactly while gaining per-chat
+> targeting, eliminates `lastActiveChatId` TOCTOU naturally (every
+> permission prompt is bound to its originating subagent, and the
+> subagent is bound to its chat at spawn time), and works inside `-p`.
+>
+> `permissionRequest` / `permissionResponse` return to the wire
+> protocol — the v4 deletion was premature. They're no longer routed
+> via the MCP tools proxy but via a dedicated hook-socket connection.
+>
 > **v7 changelog (post-Spike-1A prototype):** Real measurements from
 > `claude -p` killed the spawn-per-message model:
 >
