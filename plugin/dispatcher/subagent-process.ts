@@ -89,6 +89,10 @@ export class SubagentProcess {
     ]
     if (opts.mcpConfigPath) {
       args.push('--mcp-config', opts.mcpConfigPath, '--strict-mcp-config')
+      // MCP tools can't prompt in headless -p mode and PreToolUse hooks
+      // don't fire for them (spike 1E). Whitelist the whole dc server so
+      // dispatcher-side authorization is the only gate.
+      args.push('--allowedTools', 'mcp__dc')
     }
     for (const dir of opts.addDirs ?? []) {
       args.push('--add-dir', dir)
