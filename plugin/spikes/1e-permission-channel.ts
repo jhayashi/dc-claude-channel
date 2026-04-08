@@ -51,28 +51,34 @@ async function main(): Promise<void> {
   const r = await runClaude()
 
   const mcpLog = existsSync(LOG) ? readFileSync(LOG, 'utf-8') : ''
-  const mcpSawPermission = /permission/i.test(mcpLog)
-  const mcpSawCallTool = /callTool/.test(mcpLog)
+  // Only count real permission operations, not metadata fields like
+  // "permissionMode": "default" or "permission_denials": [].
+  const permissionOpRe = /"(method|type|subtype|name)"\s*:\s*"[a-z_]*permission[a-z_]*(\/[a-z_]+)?"/i
+  const mcpSawPermissionOp = permissionOpRe.test(mcpLog)
+  const mcpSawCallTool = /"method"\s*:\s*"tools\/call"/.test(mcpLog) || /callTool/.test(mcpLog)
   const mcpStarted = /start:/.test(mcpLog)
 
-  const claudeSawPermission = /permission/i.test(r.stdout)
-  const claudeSawBash = /"name"\s*:\s*"Bash"/.test(r.stdout) || /bash/.test(r.stdout)
+  const claudeSawPermissionOp = permissionOpRe.test(r.stdout)
+  const claudeSawBash = /"name"\s*:\s*"Bash"/.test(r.stdout) || /"command"\s*:\s*"bash/.test(r.stdout)
+  // A denied permission shows up as a non-empty permission_denials array.
+  const sawDenial = /"permission_denials"\s*:\s*\[\s*\{/.test(r.stdout)
 
-  const passed = mcpSawPermission || claudeSawPermission
+  const passed = mcpSawPermissionOp || claudeSawPermissionOp || sawDenial
 
   exitFromResult({
     id: '1e-permission-channel',
     title: 'Can an MCP server receive built-in tool permission prompts?',
     passed,
     verdict: passed
-      ? (mcpSawPermission ? 'MCP server received a permission frame' : 'claude stream-json emitted a permission frame')
-      : 'no permission frame seen on either channel; MCP servers cannot act as permission channels for built-in tools',
+      ? (mcpSawPermissionOp ? 'MCP server received a real permission operation' : 'claude stream-json emitted a real permission operation or denial')
+      : 'no permission operation seen on either channel; MCP servers cannot act as permission channels for built-in tools',
     evidence: [
       { label: 'MCP server started', value: mcpStarted ? 'YES' : 'NO' },
-      { label: 'MCP saw callTool frame', value: mcpSawCallTool ? 'YES' : 'NO' },
-      { label: 'MCP saw "permission" frame', value: mcpSawPermission ? 'YES' : 'NO' },
-      { label: 'claude stdout mentions Bash', value: claudeSawBash ? 'YES' : 'NO' },
-      { label: 'claude stdout mentions permission', value: claudeSawPermission ? 'YES' : 'NO' },
+      { label: 'MCP saw tools/call frame', value: mcpSawCallTool ? 'YES' : 'NO' },
+      { label: 'MCP saw real permission op', value: mcpSawPermissionOp ? 'YES' : 'NO' },
+      { label: 'claude stdout mentions Bash tool_use', value: claudeSawBash ? 'YES' : 'NO' },
+      { label: 'claude stdout contained real permission op', value: claudeSawPermissionOp ? 'YES' : 'NO' },
+      { label: 'claude stdout contained a denial', value: sawDenial ? 'YES' : 'NO' },
       { label: 'claude exit code', value: String(r.exitCode) },
       { label: 'MCP log path', value: LOG },
     ],
