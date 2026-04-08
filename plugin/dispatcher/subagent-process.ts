@@ -30,6 +30,8 @@ export interface SubagentSpawnOptions {
   subagentId: string
   /** Path to the generated per-subagent settings.json with the hook config. */
   settingsPath: string
+  /** Path to the per-subagent mcp-config.json (loads dc tools-proxy). */
+  mcpConfigPath?: string
   dispatcherSocket: string
   dispatcherSecret: string
   hookTimeoutSec?: number
@@ -65,6 +67,16 @@ export class SubagentProcess {
     this.sessionId = randomUUID()
     this.logf = opts.logf ?? (() => {})
 
+    const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return 'unknown' } })()
+    const envBlock = [
+      'Environment:',
+      `- Platform: ${process.platform}`,
+      `- Timezone: ${tz}`,
+      `- Working directory: ${opts.cwd ?? process.cwd()}`,
+      `- Bound chat: ${opts.chatId}`,
+      '- For the current date/time, run `date` via Bash (auto-allowed). Other read-only inspection commands (`pwd`, `whoami`, `uname`) are also auto-allowed.',
+    ].join('\n')
+
     const args: string[] = [
       '-p',
       '--session-id', this.sessionId,
@@ -73,8 +85,11 @@ export class SubagentProcess {
       '--verbose',
       '--settings', opts.settingsPath,
       '--permission-mode', 'default',
-      '--append-system-prompt', `Today's date is ${new Date().toISOString().slice(0, 10)}.`,
+      '--append-system-prompt', envBlock,
     ]
+    if (opts.mcpConfigPath) {
+      args.push('--mcp-config', opts.mcpConfigPath, '--strict-mcp-config')
+    }
     for (const dir of opts.addDirs ?? []) {
       args.push('--add-dir', dir)
     }

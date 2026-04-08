@@ -14,7 +14,7 @@ describe('generateHookConfig', () => {
   })
 
   it('writes a settings.json with the default gated tools', () => {
-    const { settingsPath, tempDir } = generateHookConfig({ hookScriptPath: '/tmp/fake-hook.sh' })
+    const { settingsPath, tempDir } = generateHookConfig({ hookScriptPath: '/tmp/fake-hook.sh', toolsProxyPath: '/tmp/proxy.ts', toolDefs: [] })
     cleanups.push(tempDir)
     expect(existsSync(settingsPath)).toBe(true)
     const parsed = JSON.parse(readFileSync(settingsPath, 'utf-8'))
@@ -30,6 +30,8 @@ describe('generateHookConfig', () => {
     const { settingsPath, tempDir } = generateHookConfig({
       hookScriptPath: '/tmp/h.sh',
       gatedTools: ['Bash'],
+      toolsProxyPath: '/tmp/proxy.ts',
+      toolDefs: [],
     })
     cleanups.push(tempDir)
     const parsed = JSON.parse(readFileSync(settingsPath, 'utf-8'))

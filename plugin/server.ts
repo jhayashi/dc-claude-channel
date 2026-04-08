@@ -101,13 +101,24 @@ const subagentRegistry = new Map<string, { chatId: number }>()
 /** Pending hook permission requests by id. */
 const pendingPermissions = new Map<string, { connectionId: string; chatId: number; resolve: (v: ServerMessage) => void }>()
 
+const TOOLS_PROXY = join(import.meta.dir, 'dispatcher', 'tools-proxy.ts')
+
 async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
   const subagentId = `sub-${chatId}-${randomBytes(4).toString('hex')}`
-  const { settingsPath, tempDir } = generateHookConfig({ hookScriptPath: HOOK_SCRIPT })
+  const toolDefs = [
+    ...coreTools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+    ...apps.flatMap((a) => a.tools()).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+  ]
+  const { settingsPath, mcpConfigPath, tempDir } = generateHookConfig({
+    hookScriptPath: HOOK_SCRIPT,
+    toolsProxyPath: TOOLS_PROXY,
+    toolDefs,
+  })
   const sub = new SubagentProcess({
     chatId,
     subagentId,
     settingsPath,
+    mcpConfigPath,
     dispatcherSocket: DISPATCHER_SOCKET,
     dispatcherSecret: DISPATCHER_SECRET,
     logf,
@@ -142,7 +153,7 @@ let ctx: AppContext
 const coreInstructions = [
   'The sender reads Delta Chat, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches their chat.',
   '',
-  'Messages from Delta Chat arrive as <channel source="deltachat" chat_id="..." message_id="..." user="..." ts="...">. Reply with the reply tool — pass chat_id back.',
+  'Messages from Delta Chat arrive as <channel source="deltachat" chat_id="..." message_id="..." user="..." ts="...">. Reply with the reply tool — pass chat_id back. (When you are running as a per-chat subagent, the same tools are exposed through the dc MCP server, so they appear as mcp__dc__reply, mcp__dc__dc_send_file, etc. Use whichever names your tool list shows.)',
   '',
   'If the tag has an image_path attribute, Read that file — it is a photo the sender attached. If it has attachment_file, Read that path for the file contents. Supported attachment attributes: image_path (photos), attachment_file (local path), attachment_mime, attachment_name, attachment_size, attachment_type.',
   '',
@@ -247,11 +258,13 @@ const socketServer = new SocketServer({
       if (argChatId !== null && argChatId !== req.chatId) {
         return { kind: 'toolError', id: req.frame.id, error: { code: 'chat_mismatch', message: 'tool call chat_id does not match subagent binding' } }
       }
-      const appTool = appToolMap.get(req.frame.tool)
-      if (!appTool) {
-        return { kind: 'toolError', id: req.frame.id, error: { code: 'unknown_tool', message: req.frame.tool } }
-      }
       try {
+        const core = await callCoreTool(req.frame.tool, req.frame.args)
+        if (core) return { kind: 'toolResult', id: req.frame.id, result: core }
+        const appTool = appToolMap.get(req.frame.tool)
+        if (!appTool) {
+          return { kind: 'toolError', id: req.frame.id, error: { code: 'unknown_tool', message: req.frame.tool } }
+        }
         const result = await appTool.callTool(req.frame.tool, req.frame.args, ctx)
         if (!result) {
           return { kind: 'toolError', id: req.frame.id, error: { code: 'tool_null', message: 'tool returned null' } }
@@ -416,10 +429,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 // ── Tool dispatch ───────────────────────────────────────────────────────
 
-mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
-  const args = (req.params.arguments ?? {}) as Record<string, unknown>
-  try {
-    switch (req.params.name) {
+async function callCoreTool(name: string, args: Record<string, unknown>): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean } | null> {
+  switch (name) {
       case 'reply': {
         const chatIdRaw = args.chat_id as string
         if (!chatIdRaw) {
@@ -639,15 +650,22 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         return { content: [{ type: 'text' as const, text: msg.file }] }
       }
 
-      default: {
-        let app = appToolMap.get(req.params.name)
-        if (!app) { rebuildAppToolMap(); app = appToolMap.get(req.params.name) }
-        if (app) return await app.callTool(req.params.name, args, ctx)
-        return {
-          content: [{ type: 'text' as const, text: `unknown tool: ${req.params.name}` }],
-          isError: true,
-        }
-      }
+      default:
+        return null
+  }
+}
+
+mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
+  const args = (req.params.arguments ?? {}) as Record<string, unknown>
+  try {
+    const core = await callCoreTool(req.params.name, args)
+    if (core) return core
+    let app = appToolMap.get(req.params.name)
+    if (!app) { rebuildAppToolMap(); app = appToolMap.get(req.params.name) }
+    if (app) return await app.callTool(req.params.name, args, ctx)
+    return {
+      content: [{ type: 'text' as const, text: `unknown tool: ${req.params.name}` }],
+      isError: true,
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

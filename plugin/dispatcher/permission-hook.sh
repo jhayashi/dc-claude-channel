@@ -19,11 +19,29 @@ set -u
 TIMEOUT="${DC_HOOK_TIMEOUT_SEC:-300}"
 REQUEST_ID="p-$$-$RANDOM"
 
+# Fast-path: auto-allow read-only Bash introspection commands so the
+# subagent can answer "what time is it / where am i / who am i" without
+# nagging the user with a permission prompt every turn. Read stdin once
+# and cache it for the relay path below.
+PAYLOAD=$(cat)
+PARSED=$(printf '%s' "$PAYLOAD" | bun -e '
+  let s=""; for await (const c of Bun.stdin.stream()) s+=new TextDecoder().decode(c);
+  try { const j=JSON.parse(s); console.log((j.tool_name||"")+"\t"+((j.tool_input&&j.tool_input.command)||"")) } catch {}
+' 2>/dev/null)
+TOOL="${PARSED%%	*}"
+CMD="${PARSED#*	}"
+if [[ "$TOOL" == "Bash" ]]; then
+  case "$CMD" in
+    date|"date "*|pwd|"pwd "*|whoami|"whoami "*|uname|"uname "*)
+      exit 0 ;;
+  esac
+fi
+
 # Delegate to the Bun client helper shipped alongside this script.
 # The helper reads stdin, speaks the dispatcher protocol, and
 # prints the verdict ("allow" or "deny: <reason>") to its stdout.
 DIR="$(cd "$(dirname "$0")" && pwd)"
-VERDICT=$(timeout "$TIMEOUT" bun "$DIR/permission-hook-client.ts" "$REQUEST_ID" 2>/dev/null)
+VERDICT=$(printf '%s' "$PAYLOAD" | timeout "$TIMEOUT" bun "$DIR/permission-hook-client.ts" "$REQUEST_ID" 2>/dev/null)
 RC=$?
 
 if [[ $RC -ne 0 ]]; then
