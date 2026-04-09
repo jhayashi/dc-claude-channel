@@ -88,11 +88,11 @@ export function buildSubagentArgs(
     '--output-format', 'stream-json',
     '--verbose',
     '--settings', opts.settingsPath,
-    // Exclude user-level settings so we don't inherit the user's
-    // SessionStart hooks (e.g. superpowers) which inject wall-of-text
-    // skill prompts into every subagent cold spawn. Our own --settings
-    // file (with the PreToolUse permission hook) is still loaded.
-    '--setting-sources', 'project,local',
+    // User-level settings (hooks, skills, superpowers, etc.) are
+    // inherited by default. This is especially useful for coding
+    // agents where the user's superpowers / skills / hooks give
+    // real value. Per-group opt-out will come through the group
+    // setup flow later.
     '--permission-mode', 'default',
     '--append-system-prompt', envBlock,
   ]

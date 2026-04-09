@@ -23,8 +23,7 @@ describe('buildSubagentArgs', () => {
     expect(args).not.toContain('--resume')
     expect(args).toContain('--settings')
     expect(args).toContain('/tmp/settings.json')
-    expect(args).toContain('--setting-sources')
-    expect(args).toContain('project,local')
+    expect(args).not.toContain('--setting-sources') // user-level settings inherited
     expect(args).toContain('--permission-mode')
     expect(args).toContain('default')
     expect(args).toContain('--append-system-prompt')
