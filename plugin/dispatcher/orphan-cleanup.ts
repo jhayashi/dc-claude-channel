@@ -35,7 +35,7 @@ export function cleanupOrphanSubagents(opts: OrphanCleanupOptions): number {
   // identifies our subagents and won't catch the user's terminal
   // claude session.
   const marker = '--input-format stream-json --output-format stream-json'
-  const result = spawnSync('pgrep', ['-af', marker], { encoding: 'utf8' })
+  const result = spawnSync('pgrep', ['-af', '--', marker], { encoding: 'utf8' })
   if (result.status !== 0) {
     // pgrep returns 1 when no matches; that's the common-case "clean boot".
     if (result.status === 1) {
