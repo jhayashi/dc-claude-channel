@@ -173,11 +173,21 @@ export const groupSetupApp: WebXDCApp = {
         }
         const cfg = parsed.data
 
-        // Get the owner of the source chat — they'll become the owner of the new group.
-        const ownerContactId = access.getOwner(session.sourceChatId)
+        // Get the owner contact — for 1:1 chats, extract from contacts; for groups, use the stored owner.
+        let ownerContactId = access.getOwner(session.sourceChatId)
         if (!ownerContactId) {
-          ctx.logf('group-setup: source chat %d has no owner; aborting create', session.sourceChatId)
-          continue
+          // 1:1 chats don't have owner entries; extract the contact (non-bot ID)
+          try {
+            const contacts = await ctx.client.getChatContacts(session.sourceChatId)
+            ownerContactId = contacts.find(id => id !== 1)
+            if (!ownerContactId) {
+              ctx.logf('group-setup: could not find contact in source chat %d', session.sourceChatId)
+              continue
+            }
+          } catch (err) {
+            ctx.logf('group-setup: getChatContacts failed for chat %d: %v', session.sourceChatId, err)
+            continue
+          }
         }
 
         try {
