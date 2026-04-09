@@ -264,6 +264,76 @@ export const agentSetupApp: WebXDCApp = {
         }
       }
 
+      if (payload.type === 'edit') {
+        // Edit an existing agent. Re-open the setup card with the agent pre-filled.
+        const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
+        if (!agentId) {
+          ctx.logf('agent-setup: edit payload missing agentId')
+          continue
+        }
+        const agent = agents.getAgent(agentId)
+        if (!agent) {
+          ctx.logf('agent-setup: edit requested agent %s not found', agentId)
+          continue
+        }
+        const draft: ServerDraft = {
+          id: agent.id,
+          name: agent.name,
+          model: agent.model,
+          system: agent.system,
+          tools: agent.tools ?? [],
+          'x-dc-type': agent['x-dc-type'],
+          'x-dc-description': agent['x-dc-description'] ?? '',
+          'x-dc-createdAt': agent['x-dc-createdAt'],
+          _inheritClaudeMd: agents.AGENT_TYPES[agent['x-dc-type']].inheritClaudeMd,
+        }
+        try {
+          await sendInit(ctx, agentSetupApp, session.sourceChatId, draft)
+          ctx.logf('agent-setup: sent edit screen for agent %s', agentId)
+        } catch (err) {
+          ctx.logf('agent-setup: edit send failed: %v', err)
+        }
+        continue
+      }
+
+      if (payload.type === 'delete') {
+        // Delete an existing agent. Check binding count first.
+        const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
+        if (!agentId) {
+          ctx.logf('agent-setup: delete payload missing agentId')
+          continue
+        }
+        const agent = agents.getAgent(agentId)
+        if (!agent) {
+          ctx.logf('agent-setup: delete requested agent %s not found', agentId)
+          continue
+        }
+        const bindingCount = bindings.countByAgentId(agentId)
+        if (bindingCount > 0) {
+          ctx.logf('agent-setup: delete blocked for agent %s (still in %d chat(s))', agentId, bindingCount)
+          const update = JSON.stringify({
+            payload: { type: 'deleteBlocked', message: `Cannot delete: still bound to ${bindingCount} chat(s).` },
+            summary: 'Delete blocked',
+          })
+          await ctx.client.sendWebXDCUpdate(session.msgId, update)
+          continue
+        }
+        try {
+          agents.deleteAgent(agentId)
+          ctx.logf('agent-setup: deleted agent %s', agentId)
+          const update = JSON.stringify({
+            payload: { type: 'deleted', name: agent.name },
+            summary: 'Agent deleted',
+          })
+          await ctx.client.sendWebXDCUpdate(session.msgId, update)
+          ctx.unregisterWebXDCMsg(msgId)
+          sessions.delete(session.sourceChatId)
+        } catch (err) {
+          ctx.logf('agent-setup: delete failed: %v', err)
+        }
+        continue
+      }
+
       if (payload.type === 'bind') {
         // Reuse an existing agent definition in a new DC chat.
         const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
