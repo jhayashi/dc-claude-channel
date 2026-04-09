@@ -22,6 +22,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import YAML from 'yaml'
 import { z } from 'zod'
+import * as bindings from './bindings.js'
 
 let AGENTS_DIR = join(homedir(), '.claude', 'channels', 'deltachat', 'agents')
 
@@ -140,6 +141,11 @@ export function saveAgent(def: AgentDef): void {
   const tmpPath = `${finalPath}.tmp.${process.pid}`
   writeFileSync(tmpPath, YAML.stringify(validated))
   renameSync(tmpPath, finalPath)
+}
+
+/** Check whether an agent has zero bindings (not used by any chat). */
+export function isOrphaned(agentId: string): boolean {
+  return bindings.countByAgentId(agentId) === 0
 }
 
 /** Delete an agent. Returns true if a file was removed. */
