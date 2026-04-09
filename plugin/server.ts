@@ -354,7 +354,7 @@ const socketServer = new SocketServer({
         return { kind: 'toolError', id: req.frame.id, error: { code: 'rate_limited', message: `rate limit exceeded (${RATE_LIMIT}/min per chat)` } }
       }
       try {
-        const core = await callCoreTool(req.frame.tool, req.frame.args)
+        const core = await callCoreTool(req.frame.tool, req.frame.args, req.chatId)
         if (core) return { kind: 'toolResult', id: req.frame.id, result: core }
         const appTool = appToolMap.get(req.frame.tool)
         if (!appTool) {
@@ -547,7 +547,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 // ── Tool dispatch ───────────────────────────────────────────────────────
 
-async function callCoreTool(name: string, args: Record<string, unknown>): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean } | null> {
+async function callCoreTool(name: string, args: Record<string, unknown>, callerChatId?: number): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean } | null> {
   switch (name) {
       case 'reply': {
         const chatIdRaw = args.chat_id as string
@@ -762,13 +762,21 @@ async function callCoreTool(name: string, args: Record<string, unknown>): Promis
         // Evict every cached subagent bound to this agent so the next turn
         // respawns with the new prompt/model. With the agent registry shared
         // across chats, this may affect more than the caller's chat.
+        // EXCEPT: don't evict the caller's own subagent yet — let it finish this
+        // response and exit naturally. Other chats bound to the same agent are
+        // evicted immediately so they pick up the change on next message.
         const affected = bindings.listBindings().filter(b => b.agentId === agentId)
         await Promise.all(
-          affected.map(b =>
-            subagentCache.evictChat(b.chatId).catch(err =>
+          affected.map(b => {
+            if (b.chatId === callerChatId) {
+              // Caller's subagent will self-exit after responding; don't kill it now.
+              logf('dc_update_agent: deferring evict of caller chat %d (will respawn on next message)', b.chatId)
+              return Promise.resolve()
+            }
+            return subagentCache.evictChat(b.chatId).catch(err =>
               logf('dc_update_agent: evict failed chat=%d: %v', b.chatId, err),
-            ),
-          ),
+            )
+          }),
         )
         return { content: [{ type: 'text' as const, text: `Updated ${changes.join(', ')} for agent ${agentId} (${affected.length} chat(s) bound).` }] }
       }
