@@ -79,13 +79,13 @@ export const groupSetupApp: WebXDCApp = {
 
   instructions:
     'When the user wants to create a new agent with a specific behavior ' +
-    '(coding assistant, quick Q&A, general chat, etc.), call dc_propose_group with ' +
+    '(coding assistant, quick Q&A, general chat, etc.), call dc_propose_agent with ' +
     'their description. This sends an agent setup card to the chat for them to review and create.',
 
   tools(): ToolDef[] {
     return [
       {
-        name: 'dc_propose_group',
+        name: 'dc_propose_agent',
         description:
           'Send an agent setup card to the user. The card lets them pick an agent type, ' +
           'edit the name/prompt, and create a new agent with that config.',
@@ -108,18 +108,18 @@ export const groupSetupApp: WebXDCApp = {
   },
 
   async callTool(name: string, args: Record<string, unknown>, ctx: AppContext): Promise<ToolResult | null> {
-    if (name !== 'dc_propose_group') return null
+    if (name !== 'dc_propose_agent') return null
 
     const sourceChatId = Number(args.source_chat_id as string)
     if (!sourceChatId || Number.isNaN(sourceChatId)) {
-      return { content: [{ type: 'text', text: 'dc_propose_group: invalid source_chat_id' }], isError: true }
+      return { content: [{ type: 'text', text: 'dc_propose_agent: invalid source_chat_id' }], isError: true }
     }
     if (!ctx.isAllowed(sourceChatId)) {
-      return { content: [{ type: 'text', text: `dc_propose_group: chat ${sourceChatId} not allowed` }], isError: true }
+      return { content: [{ type: 'text', text: `dc_propose_agent: chat ${sourceChatId} not allowed` }], isError: true }
     }
     const description = ((args.description as string) ?? '').trim()
     if (!description) {
-      return { content: [{ type: 'text', text: 'dc_propose_group: description is required' }], isError: true }
+      return { content: [{ type: 'text', text: 'dc_propose_agent: description is required' }], isError: true }
     }
 
     const draft = groups.draftConfigFromDescription(description)
@@ -127,7 +127,7 @@ export const groupSetupApp: WebXDCApp = {
       await sendInit(ctx, groupSetupApp, sourceChatId, draft)
     } catch (err) {
       ctx.logf('group-setup: send failed: %v', err)
-      return { content: [{ type: 'text', text: `dc_propose_group: send failed: ${(err as Error).message}` }], isError: true }
+      return { content: [{ type: 'text', text: `dc_propose_agent: send failed: ${(err as Error).message}` }], isError: true }
     }
 
     return {

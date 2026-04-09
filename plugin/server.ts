@@ -439,21 +439,21 @@ const coreTools = [
     },
   },
   {
-    name: 'dc_create_group',
-    description: 'Create a Delta Chat group with a behavior prompt. The bot creates an encrypted group, adds the user, and stores the prompt. Future messages in this group will be handled according to the prompt.',
+    name: 'dc_create_agent',
+    description: 'Create a Delta Chat agent with a behavior prompt. The bot creates an encrypted group, adds the user, and stores the prompt. Future messages in this agent will be handled according to the prompt.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        name: { type: 'string', description: 'Group name (e.g., "Links to summarize")' },
-        prompt: { type: 'string', description: 'Short behavior instruction for this group (e.g., "Summarize any links shared. Tag by topic.")' },
-        user_chat_id: { type: 'string', description: 'The chat_id from the user\'s 1:1 conversation (used to find their contact ID to add to the group)' },
+        name: { type: 'string', description: 'Agent name (e.g., "Marketing Agent")' },
+        prompt: { type: 'string', description: 'Short behavior instruction for this agent (e.g., "Summarize any links shared. Tag by topic.")' },
+        user_chat_id: { type: 'string', description: 'The chat_id from the user\'s 1:1 conversation (used to find their contact ID to add to the agent)' },
       },
       required: ['name', 'prompt', 'user_chat_id'],
     },
   },
   {
-    name: 'dc_get_group_prompt',
-    description: 'Get the behavior prompt for a Delta Chat group.',
+    name: 'dc_get_agent_prompt',
+    description: 'Get the behavior prompt for a Delta Chat agent.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -665,19 +665,19 @@ async function callCoreTool(name: string, args: Record<string, unknown>): Promis
         return { content: [{ type: 'text' as const, text: `Revoked chat ${chatId}.` }] }
       }
 
-      case 'dc_create_group': {
+      case 'dc_create_agent': {
         const name = ((args.name as string) ?? '').trim()
         const prompt = ((args.prompt as string) ?? '').trim()
         const userChatIdStr = args.user_chat_id as string
         if (!name || !prompt || !userChatIdStr) {
-          return { content: [{ type: 'text' as const, text: 'dc_create_group: name, prompt, and user_chat_id are required' }], isError: true }
+          return { content: [{ type: 'text' as const, text: 'dc_create_agent: name, prompt, and user_chat_id are required' }], isError: true }
         }
         const userChatId = Number(userChatIdStr)
 
         const contacts = await client.getChatContacts(userChatId)
         const userContactId = contacts.find(id => id !== 1)
         if (!userContactId) {
-          return { content: [{ type: 'text' as const, text: 'dc_create_group: could not find user contact from chat' }], isError: true }
+          return { content: [{ type: 'text' as const, text: 'dc_create_agent: could not find user contact from chat' }], isError: true }
         }
 
         const groupId = await client.createGroup(name)
@@ -685,7 +685,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>): Promis
 
         access.addChat(groupId, userContactId)
         groups.setGroupContext(groupId, groups.draftConfigFromDescription(prompt))
-        // Override the drafted name/prompt with what dc_create_group was given.
+        // Override the drafted name/prompt with what dc_create_agent was given.
         {
           const draft = groups.getGroupContext(groupId)!
           draft.name = name
@@ -698,21 +698,21 @@ async function callCoreTool(name: string, args: Record<string, unknown>): Promis
           inviteLink = await client.getGroupInviteLink(groupId)
         } catch {}
 
-        const result = `Created group "${name}" (chat ${groupId}).\nPrompt: ${prompt}` +
+        const result = `Created agent "${name}" (chat ${groupId}).\nPrompt: ${prompt}` +
           (inviteLink ? `\nInvite link: ${inviteLink}` : '')
         return { content: [{ type: 'text' as const, text: result }] }
       }
 
-      case 'dc_get_group_prompt': {
+      case 'dc_get_agent_prompt': {
         const chatId = Number(args.chat_id as string)
         if (!chatId || Number.isNaN(chatId)) {
-          return { content: [{ type: 'text' as const, text: 'dc_get_group_prompt: chat_id is required' }], isError: true }
+          return { content: [{ type: 'text' as const, text: 'dc_get_agent_prompt: chat_id is required' }], isError: true }
         }
         const groupCtx = groups.getGroupContext(chatId)
         if (!groupCtx) {
-          return { content: [{ type: 'text' as const, text: `No group context found for chat ${chatId}.` }] }
+          return { content: [{ type: 'text' as const, text: `No agent context found for chat ${chatId}.` }] }
         }
-        return { content: [{ type: 'text' as const, text: `Group: ${groupCtx.name}\nPrompt: ${groupCtx.systemPrompt}` }] }
+        return { content: [{ type: 'text' as const, text: `Agent: ${groupCtx.name}\nPrompt: ${groupCtx.systemPrompt}` }] }
       }
 
       case 'dc_update_agent': {
