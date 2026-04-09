@@ -453,6 +453,13 @@ export class DCClient {
     return await rpc.getChatContacts(accountId, chatId);
   }
 
+  /** True if chatId is a 1:1 ("Single") chat, false for groups/mailinglists/broadcasts. */
+  async isSingleChat(chatId: number): Promise<boolean> {
+    const { rpc, accountId } = this.ensureAccount();
+    const info = await rpc.getBasicChatInfo(accountId, chatId);
+    return info.chatType === 'Single';
+  }
+
   /** Delete a chat locally (does not affect other members). */
   async deleteChat(chatId: number): Promise<void> {
     const { rpc, accountId } = this.ensureAccount();

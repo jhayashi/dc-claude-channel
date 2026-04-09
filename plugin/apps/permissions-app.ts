@@ -25,8 +25,31 @@ export async function sendPermissionRequest(
 ): Promise<void> {
   ctx.logf('permission: received request %s for tool %s', request_id, tool_name)
 
-  // Use explicit target if provided, otherwise broadcast to all allowed chats.
-  const chats = targetChatId && ctx.isAllowed(targetChatId) ? [targetChatId] : ctx.allowedChats()
+  // Use explicit target if provided. Otherwise (terminal Claude Code
+  // permission prompts with no chat_id), broadcast only to 1:1 chats —
+  // permission prompts in groups leak tool details to every member and
+  // spam everyone's notifications. If no 1:1 chats exist, fall back to
+  // all allowed chats so the prompt isn't dropped silently.
+  let chats: number[]
+  if (targetChatId && ctx.isAllowed(targetChatId)) {
+    chats = [targetChatId]
+  } else {
+    const all = ctx.allowedChats()
+    const singles: number[] = []
+    for (const chatId of all) {
+      try {
+        if (await ctx.client.isSingleChat(chatId)) singles.push(chatId)
+      } catch (err) {
+        ctx.logf('permission: isSingleChat(%d) failed: %v', chatId, err)
+      }
+    }
+    if (singles.length > 0) {
+      chats = singles
+    } else {
+      ctx.logf('permission: no 1:1 chats found, falling back to all allowed chats')
+      chats = all
+    }
+  }
   if (chats.length === 0) {
     ctx.logf('permission: no allowed chats to send permission prompt to')
     return
