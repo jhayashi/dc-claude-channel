@@ -125,7 +125,20 @@ const SUBAGENT_TOOL_BLOCKLIST = new Set([
   'dc_access_revoke',
 ])
 
-async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
+async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | null> {
+  const resolvedCheck = bindings.resolveChat(chatId)
+  if (!resolvedCheck) {
+    const binding = bindings.getBinding(chatId)
+    if (binding && binding.agentId) {
+      logf('subagent: chat %d binding orphaned (agent %s was deleted)', chatId, binding.agentId)
+      try {
+        await client.send(chatId, `\u26a0\ufe0f Your agent was deleted. Go to a 1:1 chat and send a message like "create agent" or "set up agent" to bind a new one, then return here.`)
+      } catch (err) {
+        logf('subagent: failed to send orphan message: %v', err)
+      }
+    }
+    return null
+  }
   const subagentId = `sub-${chatId}-${randomBytes(4).toString('hex')}`
   const toolDefs = [
     ...coreTools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),

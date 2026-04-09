@@ -33,7 +33,7 @@ export interface SubagentLike {
 export interface SubagentCacheOptions {
   maxActive: number
   idleTimeoutMs: number
-  spawnFn: (chatId: number) => Promise<SubagentLike>
+  spawnFn: (chatId: number) => Promise<SubagentLike | null>
   logf?: (fmt: string, ...args: unknown[]) => void
   /** Per-turn timeout forwarded to SubagentLike.send. */
   turnTimeoutMs?: number
@@ -113,6 +113,7 @@ export class SubagentCache {
   private async spawn(chatId: number): Promise<CacheEntry> {
     await this.ensureCapacity()
     const sub = await this.opts.spawnFn(chatId)
+    if (!sub) throw new Error('subagent spawn skipped (no agent bound)')
     const entry: CacheEntry = { sub, idleTimer: null, queue: [], busy: false }
     this.entries.set(chatId, entry)
     this.touch(chatId)
