@@ -56,6 +56,11 @@ export function listBindings(): Binding[] {
   return out.sort((a, b) => a.chatId - b.chatId)
 }
 
+/** Count how many bindings reference the given agentId. */
+export function countByAgentId(agentId: string): number {
+  return listBindings().filter((b) => b.agentId === agentId).length
+}
+
 /** Get a single binding by chatId. Returns null if missing or invalid. */
 export function getBinding(chatId: number): Binding | null {
   const path = bindingPath(chatId)
