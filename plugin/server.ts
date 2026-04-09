@@ -22,7 +22,8 @@ import { randomBytes } from 'node:crypto'
 
 import { DCClient } from './dc-client.js'
 import * as access from './access.js'
-import * as groups from './groups.js'
+import * as agents from './agents.js'
+import * as bindings from './bindings.js'
 import { apps } from './apps.js'
 import type { WebXDCApp, AppContext } from './webxdc-app.js'
 import { filterUpdatesByOwner } from './webxdc-filter.js'
@@ -33,7 +34,6 @@ import { SubagentCache } from './dispatcher/subagent-cache.js'
 import { cleanupOrphanSubagents } from './dispatcher/orphan-cleanup.js'
 import { RateLimiter } from './dispatcher/rate-limit.js'
 import { SubagentProcess } from './dispatcher/subagent-process.js'
-import { SessionStore } from './dispatcher/session-store.js'
 import { generateHookConfig } from './dispatcher/hook-config.js'
 import { createMessageRouter } from './dispatcher/message-router.js'
 import { ReactionRouter } from './dispatcher/reaction-router.js'
@@ -115,10 +115,6 @@ const pendingPermissions = new Map<string, { connectionId: string; chatId: numbe
 
 const TOOLS_PROXY = join(import.meta.dir, 'dispatcher', 'tools-proxy.ts')
 
-/** Persistent per-chat claude session ids. Survives subagent process death
- *  so the next spawn can `--resume <id>` and rehydrate prior turn history. */
-const sessionStore = new SessionStore(join(STATE_DIR, 'sessions'))
-
 /** Tools that only make sense from the terminal Claude session — filtered
  *  out of the subagent manifest to avoid confusion (e.g. the LLM calling
  *  dc_test_permission when the user asks to run a real bash command). */
@@ -144,12 +140,18 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
   // the repo root so they can read/edit docs, plans, etc. outside plugin/
   // without needing per-file permission prompts.
   const repoRoot = join(import.meta.dir, '..')
-  const groupCfg = groups.getGroupContext(chatId)
-  let { record: sessionRec, created } = sessionStore.loadOrCreate(chatId)
+  const resolved = bindings.resolveChat(chatId)
+  let { sessionId, created } = bindings.loadOrCreateSessionId(chatId)
   logf(
     'subagent: chat=%d session=%s %s',
-    chatId, sessionRec.sessionId, created ? 'NEW' : 'RESUME',
+    chatId, sessionId, created ? 'NEW' : 'RESUME',
   )
+  // If the binding has an explicit inheritClaudeMd flag, honor it.
+  // Otherwise pass undefined so SubagentProcess uses its default (inherit).
+  const suppressUserClaudeMd =
+    resolved && resolved.binding.inheritClaudeMd !== undefined
+      ? !resolved.binding.inheritClaudeMd
+      : undefined
   let resumeFailed = false
   let sub = new SubagentProcess({
     chatId,
@@ -158,12 +160,12 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
     mcpConfigPath,
     dispatcherSocket: DISPATCHER_SOCKET,
     dispatcherSecret: DISPATCHER_SECRET,
-    sessionId: sessionRec.sessionId,
+    sessionId,
     resume: !created,
     addDirs: [repoRoot],
-    model: groupCfg?.model ?? 'claude-sonnet-4-6',
-    systemPrompt: groupCfg?.systemPrompt,
-    suppressUserClaudeMd: groupCfg ? !groupCfg.inheritClaudeMd : undefined,
+    model: resolved?.agent.model ?? 'claude-sonnet-4-6',
+    systemPrompt: resolved?.agent.system,
+    suppressUserClaudeMd,
     logf,
   })
   // Resume-fallback probe: if --resume was used and the child dies within
@@ -176,9 +178,9 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
       logf('subagent: resume probe failed chat=%d, dropping session and respawning fresh', chatId)
       resumeFailed = true
       try { await sub.close() } catch {}
-      sessionStore.delete(chatId)
-      const fresh = sessionStore.loadOrCreate(chatId)
-      sessionRec = fresh.record
+      bindings.clearSessionId(chatId)
+      const fresh = bindings.loadOrCreateSessionId(chatId)
+      sessionId = fresh.sessionId
       created = true
       sub = new SubagentProcess({
         chatId,
@@ -187,12 +189,12 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
         mcpConfigPath,
         dispatcherSocket: DISPATCHER_SOCKET,
         dispatcherSecret: DISPATCHER_SECRET,
-        sessionId: sessionRec.sessionId,
+        sessionId,
         resume: false,
         addDirs: [repoRoot],
-        model: groupCfg?.model ?? 'claude-sonnet-4-6',
-        systemPrompt: groupCfg?.systemPrompt,
-        suppressUserClaudeMd: groupCfg ? !groupCfg.inheritClaudeMd : undefined,
+        model: resolved?.agent.model ?? 'claude-sonnet-4-6',
+        systemPrompt: resolved?.agent.system,
+        suppressUserClaudeMd,
         logf,
       })
     }
@@ -251,7 +253,7 @@ const coreInstructions = [
   '',
   'Use dc_chat_history to read recent messages from a chat. Use dc_download_attachment to download files from messages that weren\'t auto-downloaded.',
   '',
-  'Agents are groups with behavior prompts (group_prompt attribute). When present, follow that prompt for all messages in that agent. If the user asks to change how Claude handles messages in an agent (e.g., "switch to Opus"), call dc_update_agent_prompt. In an agent with just the owner, respond to every message. In larger groups, only the owner (person who paired the chat) can command Claude — messages from other members are silently ignored to protect private data.',
+  'Agents are DC chats with behavior prompts (agent_prompt attribute). When present, follow that prompt for all messages in that chat. If the user asks to change how Claude handles messages in an agent (e.g., "switch to Opus"), call dc_update_agent. In an agent chat with just the owner, respond to every message. In larger groups, only the owner (person who paired the chat) can command Claude — messages from other members are silently ignored to protect private data.',
   '',
   'Permission prompts are sent as numbered text messages (1 — Allow, 2 — Deny). The user replies with the number.',
   '',
@@ -464,11 +466,11 @@ const coreTools = [
   },
   {
     name: 'dc_update_agent',
-    description: 'Update the behavior prompt and/or model for an existing agent. Use when the user asks to change how Claude handles messages in an agent, or to switch which model (haiku/sonnet/opus) runs the agent. At least one of prompt or model must be provided. Changing model evicts the cached subagent so the next message respawns on the new model.',
+    description: 'Update the behavior prompt and/or model for an existing agent. Use when the user asks to change how Claude handles messages in an agent, or to switch which model (haiku/sonnet/opus) runs it. At least one of prompt or model must be provided. Changes apply to all chats bound to the same agent (agent definitions are now shared/reusable); cached subagents are evicted so the next message respawns under the new config.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        chat_id: { type: 'string', description: 'Group chat ID' },
+        chat_id: { type: 'string', description: 'Chat ID of an agent chat (used to look up which agent definition to update)' },
         prompt: { type: 'string', description: 'Updated behavior prompt (optional)' },
         model: {
           type: 'string',
@@ -684,13 +686,24 @@ async function callCoreTool(name: string, args: Record<string, unknown>): Promis
         await client.addContactToChat(groupId, userContactId)
 
         access.addChat(groupId, userContactId)
-        groups.setGroupContext(groupId, groups.draftConfigFromDescription(prompt))
-        // Override the drafted name/prompt with what dc_create_agent was given.
-        {
-          const draft = groups.getGroupContext(groupId)!
-          draft.name = name
-          draft.systemPrompt = prompt
-          groups.setGroupContext(groupId, draft)
+
+        // Draft an agent from the free-form prompt, then override with the
+        // explicit name/prompt the tool was given. Save agent + bind to chat.
+        const { agent: draft, inheritClaudeMd } = agents.draftAgentFromDescription(prompt)
+        const agentId = agents.synthesizeAgentId(name)
+        try {
+          agents.saveAgent({
+            ...draft,
+            id: agentId,
+            name,
+            system: prompt,
+          })
+          bindings.bindAgent(groupId, agentId, { inheritClaudeMd })
+        } catch (err) {
+          // Roll back so we don't leave a dangling agent or half-bound chat.
+          try { agents.deleteAgent(agentId) } catch {}
+          try { bindings.deleteBinding(groupId) } catch {}
+          return { content: [{ type: 'text' as const, text: `dc_create_agent: failed to persist agent: ${(err as Error).message}` }], isError: true }
         }
 
         let inviteLink = ''
@@ -698,7 +711,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>): Promis
           inviteLink = await client.getGroupInviteLink(groupId)
         } catch {}
 
-        const result = `Created agent "${name}" (chat ${groupId}).\nPrompt: ${prompt}` +
+        const result = `Created agent "${name}" (chat ${groupId}, agent_id=${agentId}).\nPrompt: ${prompt}` +
           (inviteLink ? `\nInvite link: ${inviteLink}` : '')
         return { content: [{ type: 'text' as const, text: result }] }
       }
@@ -708,11 +721,11 @@ async function callCoreTool(name: string, args: Record<string, unknown>): Promis
         if (!chatId || Number.isNaN(chatId)) {
           return { content: [{ type: 'text' as const, text: 'dc_get_agent_prompt: chat_id is required' }], isError: true }
         }
-        const groupCtx = groups.getGroupContext(chatId)
-        if (!groupCtx) {
-          return { content: [{ type: 'text' as const, text: `No agent context found for chat ${chatId}.` }] }
+        const resolved = bindings.resolveChat(chatId)
+        if (!resolved) {
+          return { content: [{ type: 'text' as const, text: `No agent configured for chat ${chatId}.` }] }
         }
-        return { content: [{ type: 'text' as const, text: `Agent: ${groupCtx.name}\nPrompt: ${groupCtx.systemPrompt}` }] }
+        return { content: [{ type: 'text' as const, text: `Agent: ${resolved.agent.name}\nPrompt: ${resolved.agent.system}` }] }
       }
 
       case 'dc_update_agent': {
@@ -725,25 +738,39 @@ async function callCoreTool(name: string, args: Record<string, unknown>): Promis
         if (!prompt && !model) {
           return { content: [{ type: 'text' as const, text: 'dc_update_agent: at least one of prompt or model must be provided' }], isError: true }
         }
-        if (model && !groups.ALLOWED_MODELS.includes(model as groups.AllowedModel)) {
-          return { content: [{ type: 'text' as const, text: `dc_update_agent: invalid model "${model}". Allowed: ${groups.ALLOWED_MODELS.join(', ')}` }], isError: true }
+        if (model && !agents.ALLOWED_MODELS.includes(model as agents.AllowedModel)) {
+          return { content: [{ type: 'text' as const, text: `dc_update_agent: invalid model "${model}". Allowed: ${agents.ALLOWED_MODELS.join(', ')}` }], isError: true }
         }
+        const resolved = bindings.resolveChat(chatId)
+        if (!resolved) {
+          return { content: [{ type: 'text' as const, text: `No agent configured for chat ${chatId}. Use dc_propose_agent first.` }], isError: true }
+        }
+        const agentId = resolved.agent.id
         const changes: string[] = []
         if (prompt) {
-          if (!groups.updateGroupPrompt(chatId, prompt)) {
-            return { content: [{ type: 'text' as const, text: `No agent context found for chat ${chatId}. Use dc_propose_group first.` }], isError: true }
+          if (!agents.updateAgentPrompt(agentId, prompt)) {
+            return { content: [{ type: 'text' as const, text: `Agent ${agentId} not found.` }], isError: true }
           }
           changes.push('prompt')
         }
         if (model) {
-          if (!groups.updateGroupModel(chatId, model as groups.AllowedModel)) {
-            return { content: [{ type: 'text' as const, text: `No agent context found for chat ${chatId}. Use dc_propose_group first.` }], isError: true }
+          if (!agents.updateAgentModel(agentId, model as agents.AllowedModel)) {
+            return { content: [{ type: 'text' as const, text: `Agent ${agentId} not found.` }], isError: true }
           }
           changes.push(`model=${model}`)
-          // Evict cached subagent so the next turn respawns with the new model.
-          await subagentCache.evictChat(chatId).catch((err) => logf('dc_update_agent: evict failed chat=%d: %v', chatId, err))
         }
-        return { content: [{ type: 'text' as const, text: `Updated ${changes.join(', ')} for agent ${chatId}.` }] }
+        // Evict every cached subagent bound to this agent so the next turn
+        // respawns with the new prompt/model. With the agent registry shared
+        // across chats, this may affect more than the caller's chat.
+        const affected = bindings.listBindings().filter(b => b.agentId === agentId)
+        await Promise.all(
+          affected.map(b =>
+            subagentCache.evictChat(b.chatId).catch(err =>
+              logf('dc_update_agent: evict failed chat=%d: %v', b.chatId, err),
+            ),
+          ),
+        )
+        return { content: [{ type: 'text' as const, text: `Updated ${changes.join(', ')} for agent ${agentId} (${affected.length} chat(s) bound).` }] }
       }
 
       case 'dc_send_webxdc': {
@@ -924,8 +951,10 @@ async function main(): Promise<void> {
     }
     // Clear any in-flight tutorial state.
     tutorial.clearTutorial(chatId)
-    // Drop the persistent claude session id so the next pairing starts fresh.
-    sessionStore.delete(chatId)
+    // Drop the binding (session uuid + agent link) so the next pairing
+    // starts fresh. Agent definitions are reusable and intentionally
+    // left on disk — a user may want to rebind them to a later chat.
+    bindings.deleteBinding(chatId)
     // Remove from the allowlist.
     access.removeChat(chatId)
     // Delete the chat from DC core last — after this, the chatId may be invalid.
@@ -1110,10 +1139,10 @@ async function main(): Promise<void> {
       if (msg.fileBytes) meta.attachment_size = String(msg.fileBytes)
       if (msg.viewType) meta.attachment_type = msg.viewType
     }
-    const groupCtx = groups.getGroupContext(msg.chatId)
-    if (groupCtx) {
-      meta.group_name = groupCtx.name
-      meta.group_prompt = groupCtx.systemPrompt
+    const resolvedAgent = bindings.resolveChat(msg.chatId)
+    if (resolvedAgent) {
+      meta.agent_name = resolvedAgent.agent.name
+      meta.agent_prompt = resolvedAgent.agent.system
     }
 
     logf('dc channel: incoming message: content=%s meta=%s', msg.text, JSON.stringify(meta))

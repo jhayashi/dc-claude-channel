@@ -2,17 +2,82 @@
 
 Delta Chat channel plugin for Claude Code (TypeScript/Bun). Matches the official Telegram/Discord plugin architecture.
 
+## Agent model (v0.10+)
+
+An "agent chat" is a DC chat bound to a reusable **agent definition** (name,
+model, system prompt, tools) via a per-chat **binding** record that also holds
+the claude session UUID used for `--resume`.
+
+Three concerns, three storage locations:
+
+- **Agent definitions** — portable YAML files in
+  `~/.claude/channels/deltachat/agents/<agentId>.yaml`. Schema matches
+  Claude Managed Agents (`name`, `model`, `system`, `tools`) with
+  `x-dc-*` extensions for fields unique to this plugin (`x-dc-type`,
+  `x-dc-description`, `x-dc-createdAt`). Reusable across chats — one
+  definition may be bound to many DC chats at once. Managed by
+  `plugin/agents.ts`.
+- **Bindings** — host-local JSON files in
+  `~/.claude/channels/deltachat/bindings/<chatId>.json`. Each record
+  links a chat to an agent and holds runtime state: `agentId`,
+  `sessionId` (for `--resume`), `inheritClaudeMd` flag, `createdAt`.
+  Deleted on unpair; agent definitions are NOT deleted because they're
+  reusable. Managed by `plugin/bindings.ts`.
+- **Subagent processes** — ephemeral `claude -p` children in an LRU
+  cache, spawned on demand. See "Subagent model" below.
+
+`inheritClaudeMd` lives on the **binding**, not the agent, because it's a
+host-local/environment concern (whether to include the dispatcher's
+`CLAUDE.md` in the spawn) — an exported agent YAML should not carry
+host-specific assumptions.
+
+Editing an agent definition **mutates in place**: changes apply on the
+next turn in every chat bound to that agent. The resumed claude session
+keeps its prior history, so the next turn runs under the new prompt but
+"remembers" things said under the old one. Usually fine; if you want a
+clean slate, start a new chat.
+
+**Forward compat:** the `tools: []` field is written on every agent as
+a no-op hook. Per-agent tool capability restrictions are deferred.
+
 ## Subagent session resume
 
-Each chat has a persistent claude session id stored at
-`~/.claude/channels/deltachat/sessions/<chatId>.json`. The first spawn for a
+Each binding holds a persistent claude session UUID. The first spawn for a
 chat creates a fresh UUID and passes `--session-id <uuid>`; every subsequent
 (re)spawn — after idle timeout, LRU eviction, or crash — passes
 `--resume <uuid>` so claude rehydrates the prior in-process turn history
-(TodoWrites, plans, tool outputs). The session file is deleted on unpair
-in `cleanupChat`. Phase-1 spikes showed `--resume` adds ~10 s on respawn vs
-~6 s cold; respawns are rare so we accept the cost in exchange for not
-losing assistant-side context that `dc_chat_history` can't recover.
+(TodoWrites, plans, tool outputs). The session UUID is cleared (and a fresh
+one generated on next spawn) in the resume-fallback path if claude refuses to
+resume a stale id. The whole binding is deleted on unpair in `cleanupChat`.
+Phase-1 spikes showed `--resume` adds ~10 s on respawn vs ~6 s cold; respawns
+are rare so we accept the cost in exchange for not losing assistant-side
+context that `dc_chat_history` can't recover.
+
+Sample files on disk:
+
+```yaml
+# ~/.claude/channels/deltachat/agents/marketing-agent.yaml
+id: marketing-agent
+name: Marketing Agent
+model: claude-sonnet-4-6
+system: |
+  You are a marketing specialist...
+tools: []
+x-dc-type: basic
+x-dc-description: ''
+x-dc-createdAt: 2026-04-09T12:34:56.000Z
+```
+
+```json
+// ~/.claude/channels/deltachat/bindings/42.json
+{
+  "chatId": 42,
+  "agentId": "marketing-agent",
+  "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+  "inheritClaudeMd": false,
+  "createdAt": "2026-04-09T12:34:56.000Z"
+}
+```
 
 ## Development
 
@@ -75,13 +140,17 @@ Prerequisites for the dev path:
 - `plugin/webxdc-app.ts` — `WebXDCApp` interface that all apps implement
 - `plugin/apps.ts` — App registry (explicit imports, no auto-discovery)
 - `plugin/apps/` — App implementations:
-  - `markdown-viewer-app.ts` — File reviewer: rendered markdown + syntax-highlighted source + inline commenting (1 tool, event-driven updates)
+  - `file-reviewer-app.ts` — File reviewer: rendered markdown + syntax-highlighted source + inline commenting (1 tool, event-driven updates)
   - `permissions-app.ts` — Permission prompt via WebXDC (notification handler + polling). Phase 2: requires explicit `chat_id` on every request.
+  - `agent-setup-app.ts` — Agent setup card: pick an existing agent or create a new one; creates the DC chat + persists agent + binding on confirm.
+- `plugin/agents.ts` — Agent definition registry (YAML, reusable, matches Claude Managed Agents schema)
+- `plugin/bindings.ts` — Per-chat binding records (chat ↔ agent link + session UUID + inheritClaudeMd)
+- `plugin/agent-setup.ts` — XDC builder for the agent setup WebXDC app
 - `plugin/dc-client.ts` — Wraps `@deltachat/jsonrpc-client` + `@deltachat/stdio-rpc-server`
 - `plugin/access.ts` — File-based allowlist + pairing codes (~/.claude/channels/deltachat/approved/)
 - `plugin/tutorial.ts` — Onboarding tutorial state machine
 - `plugin/webxdc-filter.ts` — Centralized owner verification for WebXDC updates
-- State dir: `~/.claude/channels/deltachat/` (.env, dc-data/, approved/, dispatcher.sock, debug.log)
+- State dir: `~/.claude/channels/deltachat/` (.env, dc-data/, approved/, agents/, bindings/, dispatcher.sock, debug.log)
 
 ## Subagent model (v0.9+)
 

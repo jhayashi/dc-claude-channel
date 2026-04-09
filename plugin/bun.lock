@@ -9,6 +9,7 @@
         "@deltachat/stdio-rpc-server": "*",
         "@modelcontextprotocol/sdk": "^1.0.0",
         "fflate": "^0.8.2",
+        "yaml": "^2.8.3",
         "zod": "^4.3.6",
       },
       "devDependencies": {
@@ -236,6 +237,8 @@
     "wrappy": ["wrappy@1.0.2", "", {}, "sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ=="],
 
     "ws": ["ws@8.20.0", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-sAt8BhgNbzCtgGbt2OxmpuryO63ZoDk/sqaB/znQm94T4fCEsy/yV+7CdC1kJhOU9lboAEU7R3kquuycDoibVA=="],
+
+    "yaml": ["yaml@2.8.3", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-AvbaCLOO2Otw/lW5bmh9d/WEdcDFdQp2Z2ZUH3pX9U2ihyUY0nvLv7J6TrWowklRGPYbB/IuIMfYgxaCPg5Bpg=="],
 
     "yerpc": ["yerpc@0.6.4", "", { "dependencies": { "@types/ws": "^8.2.2", "isomorphic-ws": "^4.0.1", "typescript": "^4.6.3" }, "optionalDependencies": { "ws": "^8.5.0" } }, "sha512-f/yBGREg5sR9aa6QG0thon6uL8jKJhQuRO/SwGsnOIIe45wFQrMYBV+A5cCNEgqzSHsz+Jl2F7sEO6h7CJfr5w=="],
 

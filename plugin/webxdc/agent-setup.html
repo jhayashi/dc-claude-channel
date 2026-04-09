@@ -30,7 +30,7 @@ body {
 .header h1 { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
 .header .sub { font-size: 12px; color: #8b949e; }
 .body { padding: 18px 20px; }
-.type-card {
+.type-card, .existing-card {
   display: block;
   width: 100%;
   text-align: left;
@@ -44,15 +44,15 @@ body {
   color: inherit;
   transition: border-color 0.15s, transform 0.1s;
 }
-.type-card:hover { border-color: #58a6ff; }
-.type-card:active { transform: scale(0.98); }
+.type-card:hover, .existing-card:hover { border-color: #58a6ff; }
+.type-card:active, .existing-card:active { transform: scale(0.98); }
 .type-card.recommended { border-color: #1f6feb; }
-.type-card .label {
+.type-card .label, .existing-card .label {
   font-size: 15px;
   font-weight: 600;
   margin-bottom: 4px;
 }
-.type-card .label .badge {
+.type-card .label .badge, .existing-card .label .badge {
   display: inline-block;
   font-size: 10px;
   font-weight: 600;
@@ -64,7 +64,33 @@ body {
   margin-left: 6px;
   vertical-align: middle;
 }
-.type-card .desc { font-size: 12px; color: #8b949e; line-height: 1.4; }
+.type-card .desc, .existing-card .desc { font-size: 12px; color: #8b949e; line-height: 1.4; }
+.section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #6e7681;
+  margin: 4px 0 10px;
+  font-weight: 600;
+}
+.create-new-btn {
+  display: block;
+  width: 100%;
+  background: #1f6feb22;
+  border: 1px dashed #1f6feb77;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  cursor: pointer;
+  font-family: inherit;
+  color: #58a6ff;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  transition: background 0.15s;
+}
+.create-new-btn:hover { background: #1f6feb33; }
+.create-new-btn:active { transform: scale(0.98); }
 label.field {
   display: block;
   font-size: 12px;
@@ -100,8 +126,8 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .btn:disabled { opacity: 0.4; cursor: default; }
 .btn-create { background: linear-gradient(135deg, #238636 0%, #2ea043 100%); color: white; }
 .btn-back { background: #30363d; color: #e6edf3; }
-#step1, #step2, #created, #outdated, #loading { display: none; }
-#step1.visible, #step2.visible, #created.visible, #outdated.visible, #loading.visible { display: block; }
+#step0, #step1, #step2, #created, #outdated, #loading { display: none; }
+#step0.visible, #step1.visible, #step2.visible, #created.visible, #outdated.visible, #loading.visible { display: block; }
 .center { text-align: center; padding: 50px 20px; color: #8b949e; }
 .spinner { width: 28px; height: 28px; border: 3px solid #30363d; border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 14px; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -122,6 +148,14 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     <div class="center"><div class="spinner"></div>Waiting for setup details...</div>
   </div>
 
+  <div id="step0">
+    <div class="body">
+      <button class="create-new-btn" onclick="gotoStep1()">+ Create a new agent</button>
+      <div class="section-label">Or reuse an existing agent</div>
+      <div id="existing-list"></div>
+    </div>
+  </div>
+
   <div id="step1">
     <div class="body">
       <button class="type-card" id="card-coding" onclick="pickType('coding')">
@@ -137,6 +171,9 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         <div class="desc">Balanced agent for general-purpose tasks.</div>
       </button>
     </div>
+    <div class="actions" id="step1-actions">
+      <button class="btn btn-back" id="step1-back" onclick="back()" style="display:none">Back</button>
+    </div>
   </div>
 
   <div id="step2">
@@ -149,7 +186,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       <textarea id="prompt" class="text"></textarea>
     </div>
     <div class="actions">
-      <button class="btn btn-back" onclick="back()">Back</button>
+      <button class="btn btn-back" onclick="backFromStep2()">Back</button>
       <button class="btn btn-create" id="create-btn" onclick="create()">Create agent</button>
     </div>
   </div>
@@ -175,20 +212,63 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.03;
+var APP_VERSION = 1.10;
 // Single in-memory state. Replay rebuilds it from scratch each open.
-var draft = null;          // GroupConfig draft from server
-var pickedType = null;     // user's current type selection (may differ from draft.type)
+var draft = null;          // draft agent from server (no id yet)
+var existingAgents = [];   // [{id, name, type, description}, ...]
+var pickedType = null;     // user's current type selection (may differ from draft['x-dc-type'])
 var creating = false;
 var created = false;
 var versionMismatchSent = false;
 
 function show(id) {
-  var ids = ['loading', 'step1', 'step2', 'created', 'outdated'];
+  var ids = ['loading', 'step0', 'step1', 'step2', 'created', 'outdated'];
   for (var i = 0; i < ids.length; i++) {
     var el = document.getElementById(ids[i]);
     if (ids[i] === id) el.classList.add('visible'); else el.classList.remove('visible');
   }
+}
+
+function renderExistingList() {
+  var container = document.getElementById('existing-list');
+  container.textContent = '';
+  for (var i = 0; i < existingAgents.length; i++) {
+    var a = existingAgents[i];
+    var btn = document.createElement('button');
+    btn.className = 'existing-card';
+    btn.onclick = (function(id){ return function(){ pickExisting(id); }; })(a.id);
+    var label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = a.name + ' ';
+    var badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = a.type || 'basic';
+    label.appendChild(badge);
+    btn.appendChild(label);
+    if (a.description) {
+      var desc = document.createElement('div');
+      desc.className = 'desc';
+      desc.textContent = a.description;
+      btn.appendChild(desc);
+    }
+    container.appendChild(btn);
+  }
+}
+
+function gotoStep1() {
+  // Show the "Back" button only when we came from step 0.
+  var backBtn = document.getElementById('step1-back');
+  if (backBtn) backBtn.style.display = existingAgents.length > 0 ? '' : 'none';
+  show('step1');
+}
+
+function pickExisting(agentId) {
+  if (creating || created) return;
+  creating = true;
+  window.webxdc.sendUpdate({
+    payload: { type: 'bind', agentId: agentId, senderAddr: window.webxdc.selfAddr },
+    summary: 'Bind agent: ' + agentId
+  }, 'Bind agent');
 }
 
 function pickType(t) {
@@ -196,12 +276,12 @@ function pickType(t) {
   // The draft was prefilled by the server with a guess; if the user picks a
   // different type, swap in that type's defaults but keep the user-visible
   // name/description from the original draft.
-  if (draft && draft.type !== t && draft._defaultsByType && draft._defaultsByType[t]) {
+  if (draft && draft['x-dc-type'] !== t && draft._defaultsByType && draft._defaultsByType[t]) {
     var def = draft._defaultsByType[t];
-    draft.type = t;
-    draft.systemPrompt = def.systemPrompt;
+    draft['x-dc-type'] = t;
+    draft.system = def.system;
     draft.model = def.model;
-    draft.inheritClaudeMd = def.inheritClaudeMd;
+    draft._inheritClaudeMd = def.inheritClaudeMd;
   }
   populateForm();
   show('step2');
@@ -210,11 +290,16 @@ function pickType(t) {
 function populateForm() {
   if (!draft) return;
   document.getElementById('name').value = draft.name || '';
-  document.getElementById('desc').value = draft.description || '';
-  document.getElementById('prompt').value = draft.systemPrompt || '';
+  document.getElementById('desc').value = draft['x-dc-description'] || '';
+  document.getElementById('prompt').value = draft.system || '';
 }
 
 function back() {
+  // From step 1 back to step 0 (only meaningful if we came from step 0).
+  if (existingAgents.length > 0) show('step0');
+}
+
+function backFromStep2() {
   show('step1');
 }
 
@@ -223,16 +308,21 @@ function create() {
   creating = true;
   document.getElementById('create-btn').disabled = true;
   var cfg = {
-    type: draft.type,
     name: document.getElementById('name').value.trim() || draft.name,
-    description: document.getElementById('desc').value.trim(),
-    systemPrompt: document.getElementById('prompt').value,
     model: draft.model,
-    inheritClaudeMd: draft.inheritClaudeMd,
-    createdAt: draft.createdAt
+    system: document.getElementById('prompt').value,
+    tools: [],
+    'x-dc-type': draft['x-dc-type'],
+    'x-dc-description': document.getElementById('desc').value.trim(),
+    'x-dc-createdAt': draft['x-dc-createdAt']
   };
   window.webxdc.sendUpdate({
-    payload: { type: 'create', config: cfg, senderAddr: window.webxdc.selfAddr },
+    payload: {
+      type: 'create',
+      config: cfg,
+      inheritClaudeMd: draft._inheritClaudeMd,
+      senderAddr: window.webxdc.selfAddr
+    },
     summary: 'Create agent: ' + cfg.name
   }, 'Create agent');
 }
@@ -252,11 +342,21 @@ window.webxdc.setUpdateListener(function(update) {
       return;
     }
     draft = d.draft || null;
+    existingAgents = d.existingAgents || [];
     if (draft) {
-      pickedType = draft.type;
+      pickedType = draft['x-dc-type'];
       populateForm();
     }
-    if (!created) show('step1');
+    if (!created) {
+      renderExistingList();
+      // If there are existing agents to reuse, start at the picker.
+      // Otherwise jump straight to the type picker.
+      if (existingAgents.length > 0) {
+        show('step0');
+      } else {
+        gotoStep1();
+      }
+    }
   }
 
   if (d.type === 'created') {
