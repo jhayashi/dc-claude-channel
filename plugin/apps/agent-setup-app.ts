@@ -334,6 +334,39 @@ export const agentSetupApp: WebXDCApp = {
         continue
       }
 
+      if (payload.type === 'saveEdit') {
+        const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
+        if (!agentId) {
+          ctx.logf('agent-setup: saveEdit missing agentId')
+          continue
+        }
+        const agent = agents.getAgent(agentId)
+        if (!agent) {
+          ctx.logf('agent-setup: saveEdit requested agent %s not found', agentId)
+          continue
+        }
+        const parsed = agents.DraftAgentSchema.safeParse(payload.config)
+        if (!parsed.success) {
+          ctx.logf('agent-setup: invalid config from chat %d: %v', session.sourceChatId, parsed.error)
+          continue
+        }
+        const draft = parsed.data
+        try {
+          agents.saveAgent({ ...draft, id: agentId })
+          ctx.logf('agent-setup: edited agent %s', agentId)
+          const update = JSON.stringify({
+            payload: { type: 'editComplete', name: draft.name },
+            summary: 'Agent updated',
+          })
+          await ctx.client.sendWebXDCUpdate(session.msgId, update)
+          ctx.unregisterWebXDCMsg(msgId)
+          sessions.delete(session.sourceChatId)
+        } catch (err) {
+          ctx.logf('agent-setup: saveEdit failed: %v', err)
+        }
+        continue
+      }
+
       if (payload.type === 'bind') {
         // Reuse an existing agent definition in a new DC chat.
         const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
