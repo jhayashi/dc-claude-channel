@@ -28,7 +28,7 @@ export interface HookConfigInput {
   toolDefs: ToolDef[]
 }
 
-export const DEFAULT_GATED_TOOLS = ['Bash', 'Edit', 'Write', 'NotebookEdit', 'WebFetch']
+export const DEFAULT_GATED_TOOLS = ['Bash', 'Edit', 'Write', 'NotebookEdit', 'WebFetch', 'WebSearch']
 
 export interface GeneratedHookConfig {
   settingsPath: string

@@ -101,7 +101,7 @@ export function buildSubagentArgs(
   }
   if (opts.mcpConfigPath) {
     args.push('--mcp-config', opts.mcpConfigPath, '--strict-mcp-config')
-    args.push('--allowedTools', 'mcp__dc Bash Read Edit Write Grep Glob WebFetch NotebookEdit Task TodoWrite')
+    args.push('--allowedTools', 'mcp__dc Bash Read Edit Write Grep Glob WebFetch WebSearch NotebookEdit Task TodoWrite')
   }
   for (const dir of opts.addDirs ?? []) {
     args.push('--add-dir', dir)
