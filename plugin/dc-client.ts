@@ -460,6 +460,16 @@ export class DCClient {
     return info.chatType === 'Single';
   }
 
+  async setChatName(chatId: number, name: string): Promise<void> {
+    const { rpc, accountId } = this.ensureAccount();
+    await rpc.setChatName(accountId, chatId, name);
+  }
+
+  async setChatProfileImage(chatId: number, imagePath: string | null): Promise<void> {
+    const { rpc, accountId } = this.ensureAccount();
+    await rpc.setChatProfileImage(accountId, chatId, imagePath);
+  }
+
   /** Delete a chat locally (does not affect other members). */
   async deleteChat(chatId: number): Promise<void> {
     const { rpc, accountId } = this.ensureAccount();

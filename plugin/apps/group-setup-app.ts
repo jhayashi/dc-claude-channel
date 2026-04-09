@@ -186,6 +186,22 @@ export const groupSetupApp: WebXDCApp = {
           access.addChat(newChatId, ownerContactId)
           groups.setGroupContext(newChatId, cfg)
 
+          // Set agent icon based on type
+          try {
+            const variant = Math.floor(Math.random() * 3) + 1 // 1-3
+            const iconMap: Record<string, string> = {
+              quick: `quick-dog-${variant}.png`,
+              basic: `basic-dolphin-${variant}.png`,
+              coding: `coding-elephant-${variant}.png`,
+            }
+            const iconName = iconMap[cfg.type] || 'quick-dog-1.png'
+            const iconPath = new URL(`../assets/agent-icons/${iconName}`, import.meta.url).pathname
+            await ctx.client.setChatProfileImage(newChatId, iconPath)
+            ctx.logf('group-setup: set agent icon to %s', iconName)
+          } catch (err) {
+            ctx.logf('group-setup: set icon failed: %v', err)
+          }
+
           // Send an intro message so the group materializes on the owner's device.
           // Without this, DC won't deliver the group until *someone* sends to it.
           try {

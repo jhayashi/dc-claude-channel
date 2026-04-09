@@ -142,15 +142,31 @@ export function draftConfigFromDescription(description: string): GroupContext {
     type = 'quick'
   }
   const t = GROUP_TYPES[type]
-  // Crude name guess: first 5 words, title-cased.
-  const name =
-    description
-      .trim()
+
+  // Extract purpose-only name by removing preamble words like "I want a", "create a", "need a".
+  let name = description.trim()
+  // Remove common preamble patterns (case-insensitive)
+  name = name.replace(/^(i\s+want\s+[an\s]+|create\s+[an\s]+|i\s+need\s+[an\s]+|set\s+up\s+[an\s]+|make\s+[an\s]+)/i, '')
+  // Take first few words (up to 4)
+  name =
+    name
       .split(/\s+/)
-      .slice(0, 5)
+      .slice(0, 4)
       .join(' ')
       .replace(/[^\w\s-]/g, '')
-      .trim() || `${t.label} group`
+      .trim() || `${t.label} Agent`
+
+  // Title-case the name
+  name = name
+    .split(/\s+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+
+  // If name doesn't already end with "Agent" or "Assistant", append "Agent"
+  if (!/\b(agent|assistant)$/i.test(name)) {
+    name += ' Agent'
+  }
+
   return {
     type,
     name,
