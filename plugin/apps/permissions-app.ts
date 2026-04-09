@@ -168,7 +168,10 @@ export const permissionsApp: WebXDCApp = {
         }),
       }),
       async ({ params }) => {
-        await sendPermissionRequest(ctx, permissionsApp, params.request_id, params.tool_name, params.description, params.input_preview)
+        // Terminal-generated permissions are handled by Claude's built-in permission-mode.
+        // Only subagent permissions (which pass chatId via socket) should route through DC.
+        // This prevents leaking tool details to DC chats and avoids redundant prompts.
+        ctx.logf('permission: skipping DC broadcast for terminal request %s (will use terminal permission-mode)', params.request_id)
       },
     )
   },
