@@ -43,12 +43,15 @@ function defaultsByType(): Record<agents.AgentType, { system: string; model: str
 }
 
 /** Summarize agents for the picker screen. */
-function listExistingForPicker(): Array<{ id: string; name: string; type: string; description: string }> {
+function listExistingForPicker(sourceChatId: number): Array<{ id: string; name: string; type: string; description: string; bindingCount: number; isCurrentAgent: boolean }> {
+  const sourceBinding = bindings.getBinding(sourceChatId)
   return agents.listAgents().map(a => ({
     id: a.id,
     name: a.name,
     type: a['x-dc-type'],
     description: a['x-dc-description'] ?? '',
+    bindingCount: bindings.countByAgentId(a.id),
+    isCurrentAgent: sourceBinding?.agentId === a.id,
   }))
 }
 
@@ -64,7 +67,7 @@ async function sendInit(
     type: 'init' as const,
     version: agentSetup.getAgentSetupVersion(),
     draft: { ...draft, _defaultsByType: defaultsByType() },
-    existingAgents: listExistingForPicker(),
+    existingAgents: listExistingForPicker(sourceChatId),
   }
   // Info text MUST be unique per call — DC dedupes consecutive identical
   // info text and the user gets no notification. Include the draft name
