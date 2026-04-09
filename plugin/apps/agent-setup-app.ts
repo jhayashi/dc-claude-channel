@@ -55,6 +55,18 @@ function listExistingForPicker(sourceChatId: number): Array<{ id: string; name: 
   }))
 }
 
+/** Delete the agent if it has no remaining bindings. */
+async function removeBindingIfOrphaned(ctx: AppContext, agentId: string): Promise<void> {
+  if (agents.isOrphaned(agentId)) {
+    try {
+      agents.deleteAgent(agentId)
+      ctx.logf('agent-setup: auto-deleted orphaned agent %s', agentId)
+    } catch (err) {
+      ctx.logf('agent-setup: auto-delete failed for %s: %v', agentId, err)
+    }
+  }
+}
+
 async function sendInit(
   ctx: AppContext,
   app: WebXDCApp,
