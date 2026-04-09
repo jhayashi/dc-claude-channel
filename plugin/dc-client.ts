@@ -328,6 +328,16 @@ export class DCClient {
     return msgId;
   }
 
+  /**
+   * React to a message with an emoji. Pass an empty string to clear
+   * our own reaction. DC reactions are per-contact; the last value
+   * from us wins.
+   */
+  async sendReaction(messageId: number, emoji: string): Promise<void> {
+    const { rpc, accountId } = this.ensureAccount();
+    await rpc.sendReaction(accountId, messageId, emoji ? [emoji] : []);
+  }
+
   async sendWebXDC(chatId: number, xdcPath: string): Promise<number> {
     const { rpc, accountId } = this.ensureAccount();
     const msgId = await rpc.sendMsg(accountId, chatId, {

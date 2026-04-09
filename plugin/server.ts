@@ -965,6 +965,15 @@ async function main(): Promise<void> {
 
   const runSubagentTurn = async (msg: Message): Promise<void> => {
     const chatId = msg.chatId
+    // If no live subagent is cached for this chat, the next dispatch will
+    // cold-spawn (~6s). React to the user's message with a spinner so they
+    // know we're working on it. Fire-and-forget; failures shouldn't block.
+    const coldStart = !subagentCache.hasLive(chatId)
+    if (coldStart) {
+      client.sendReaction(msg.id, '\u{1F504}').catch((err) =>
+        logf('reaction: cold-start react failed chat=%d msg=%d: %v', chatId, msg.id, err),
+      )
+    }
     try {
       const result = await subagentCache.dispatch(chatId, formatSubagentInput(msg))
       logf('subagent: chat=%d result.text=%s denials=%d', chatId, (result.text ?? '').slice(0, 500).replace(/\n/g, ' '), result.denials.length)

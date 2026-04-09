@@ -68,6 +68,12 @@ export class SubagentCache {
 
   size(): number { return this.entries.size }
 
+  /** True if a live subagent is already cached for this chat (i.e., next dispatch is warm). */
+  hasLive(chatId: number): boolean {
+    const e = this.entries.get(chatId)
+    return !!(e && e.sub.alive)
+  }
+
   private touch(chatId: number): void {
     const idx = this.lruOrder.indexOf(chatId)
     if (idx >= 0) this.lruOrder.splice(idx, 1)
