@@ -33,34 +33,49 @@ export function cleanupOrphanSubagents(opts: OrphanCleanupOptions): number {
 
   // Match the literal stream-json arg pair we always pass — uniquely
   // identifies our subagents and won't catch the user's terminal
-  // claude session.
+  // claude session. We use `ps` (not pgrep) so we can see each
+  // candidate's PPID and only kill processes that have been reparented
+  // to init (PPID == 1), i.e. truly orphaned. A subagent owned by a
+  // concurrent sibling dispatcher has PPID == that dispatcher's pid
+  // and must be left alone — otherwise two dispatchers racing on
+  // startup will SIGTERM each other's live subagents.
   const marker = '--input-format stream-json --output-format stream-json'
-  const result = spawnSync('pgrep', ['-af', '--', marker], { encoding: 'utf8' })
+  const result = spawnSync('ps', ['-eo', 'pid=,ppid=,args='], { encoding: 'utf8' })
   if (result.status !== 0) {
-    // pgrep returns 1 when no matches; that's the common-case "clean boot".
-    if (result.status === 1) {
-      logf('orphan-cleanup: no orphans found')
-      return 0
-    }
-    logf('orphan-cleanup: pgrep failed status=%d err=%s', result.status, result.stderr)
+    logf('orphan-cleanup: ps failed status=%d err=%s', result.status, result.stderr)
     return -1
   }
 
   let killed = 0
+  let skippedLive = 0
   for (const line of result.stdout.split('\n')) {
     const trimmed = line.trim()
     if (!trimmed) continue
-    const spaceIdx = trimmed.indexOf(' ')
-    if (spaceIdx < 0) continue
-    const pid = Number(trimmed.slice(0, spaceIdx))
+    if (!trimmed.includes(marker)) continue
+    // Format: "<pid> <ppid> <args...>"
+    const m = trimmed.match(/^(\d+)\s+(\d+)\s+(.*)$/)
+    if (!m) continue
+    const pid = Number(m[1])
+    const ppid = Number(m[2])
+    const cmd = m[3]
     if (!Number.isFinite(pid) || pid === opts.selfPid) continue
+    if (ppid !== 1) {
+      // Owned by a live parent (likely a sibling dispatcher). Skip.
+      skippedLive++
+      continue
+    }
     try {
       process.kill(pid, 'SIGTERM')
-      logf('orphan-cleanup: SIGTERM pid=%d cmd=%s', pid, trimmed.slice(spaceIdx + 1))
+      logf('orphan-cleanup: SIGTERM pid=%d (ppid=1) cmd=%s', pid, cmd)
       killed++
     } catch (err) {
       logf('orphan-cleanup: kill pid=%d failed: %v', pid, err)
     }
+  }
+  if (killed === 0 && skippedLive === 0) {
+    logf('orphan-cleanup: no orphans found')
+  } else if (skippedLive > 0) {
+    logf('orphan-cleanup: skipped %d live subagent(s) owned by sibling dispatcher', skippedLive)
   }
   return killed
 }
