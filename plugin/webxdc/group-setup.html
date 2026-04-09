@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="webxdc.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #0e1117;
+  color: #e6edf3;
+  padding: 20px 16px;
+}
+.card {
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 16px;
+  overflow: hidden;
+}
+.header {
+  background: linear-gradient(135deg, #1a1f2b 0%, #161b22 100%);
+  padding: 18px 20px;
+  border-bottom: 1px solid #30363d;
+}
+.header h1 { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
+.header .sub { font-size: 12px; color: #8b949e; }
+.body { padding: 18px 20px; }
+.type-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+  transition: border-color 0.15s, transform 0.1s;
+}
+.type-card:hover { border-color: #58a6ff; }
+.type-card:active { transform: scale(0.98); }
+.type-card.recommended { border-color: #1f6feb; }
+.type-card .label {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.type-card .label .badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  color: #58a6ff;
+  background: #1f6feb22;
+  border: 1px solid #1f6feb44;
+  border-radius: 6px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.type-card .desc { font-size: 12px; color: #8b949e; line-height: 1.4; }
+label.field {
+  display: block;
+  font-size: 12px;
+  color: #8b949e;
+  margin-bottom: 6px;
+  margin-top: 14px;
+  font-weight: 500;
+}
+input.text, textarea.text {
+  width: 100%;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #e6edf3;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+}
+textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Cascadia Code', monospace; font-size: 12px; }
+.actions { display: flex; gap: 10px; padding: 16px 20px 20px; }
+.btn {
+  flex: 1;
+  padding: 13px 16px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.btn-create { background: linear-gradient(135deg, #238636 0%, #2ea043 100%); color: white; }
+.btn-back { background: #30363d; color: #e6edf3; }
+#step1, #step2, #created, #outdated, #loading { display: none; }
+#step1.visible, #step2.visible, #created.visible, #outdated.visible, #loading.visible { display: block; }
+.center { text-align: center; padding: 50px 20px; color: #8b949e; }
+.spinner { width: 28px; height: 28px; border: 3px solid #30363d; border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 14px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.result-icon { font-size: 48px; margin-bottom: 12px; }
+.result-text { font-size: 16px; font-weight: 600; color: #3fb950; }
+.result-sub { font-size: 12px; color: #8b949e; margin-top: 6px; }
+.back-hint { font-size: 14px; font-weight: 600; color: #58a6ff; margin-top: 18px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <h1>Set up a group</h1>
+    <div class="sub" id="header-sub">Pick a group type to get started.</div>
+  </div>
+
+  <div id="loading" class="visible">
+    <div class="center"><div class="spinner"></div>Waiting for setup details...</div>
+  </div>
+
+  <div id="step1">
+    <div class="body">
+      <button class="type-card" id="card-coding" onclick="pickType('coding')">
+        <div class="label">Coding<span class="badge">opus</span></div>
+        <div class="desc">Long-form coding work. Full project context.</div>
+      </button>
+      <button class="type-card" id="card-quick" onclick="pickType('quick')">
+        <div class="label">Quick<span class="badge">haiku</span></div>
+        <div class="desc">Fast Q&amp;A and short tasks. Minimal context.</div>
+      </button>
+      <button class="type-card" id="card-basic" onclick="pickType('basic')">
+        <div class="label">Basic<span class="badge">sonnet</span></div>
+        <div class="desc">General-purpose assistant.</div>
+      </button>
+    </div>
+  </div>
+
+  <div id="step2">
+    <div class="body">
+      <label class="field" for="name">Group name</label>
+      <input id="name" class="text" type="text" maxlength="80">
+      <label class="field" for="desc">Description (optional)</label>
+      <input id="desc" class="text" type="text" maxlength="200">
+      <label class="field" for="prompt">System prompt</label>
+      <textarea id="prompt" class="text"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn btn-back" onclick="back()">Back</button>
+      <button class="btn btn-create" id="create-btn" onclick="create()">Create group</button>
+    </div>
+  </div>
+
+  <div id="created">
+    <div class="center">
+      <div class="result-icon">&#x2705;</div>
+      <div class="result-text">Group created</div>
+      <div class="result-sub" id="created-name"></div>
+      <div class="result-sub" style="margin-top:14px;color:#e6edf3;">Open the new group in your chat list and send a quick &ldquo;hello&rdquo; so it&rsquo;s delivered to your device.</div>
+      <div class="back-hint">&#x2190; Swipe or tap back to return to chat</div>
+    </div>
+  </div>
+
+  <div id="outdated">
+    <div class="center">
+      <div class="result-icon">&#x2B06;&#xFE0F;</div>
+      <div class="result-text">New version available</div>
+      <div class="result-sub">A newer setup card has been sent to this chat.</div>
+      <div class="back-hint">&#x2190; Swipe or tap back to return to chat</div>
+    </div>
+  </div>
+</div>
+
+<script>
+var APP_VERSION = 1.01;
+// Single in-memory state. Replay rebuilds it from scratch each open.
+var draft = null;          // GroupConfig draft from server
+var pickedType = null;     // user's current type selection (may differ from draft.type)
+var creating = false;
+var created = false;
+var versionMismatchSent = false;
+
+function show(id) {
+  var ids = ['loading', 'step1', 'step2', 'created', 'outdated'];
+  for (var i = 0; i < ids.length; i++) {
+    var el = document.getElementById(ids[i]);
+    if (ids[i] === id) el.classList.add('visible'); else el.classList.remove('visible');
+  }
+}
+
+function pickType(t) {
+  pickedType = t;
+  // The draft was prefilled by the server with a guess; if the user picks a
+  // different type, swap in that type's defaults but keep the user-visible
+  // name/description from the original draft.
+  if (draft && draft.type !== t && draft._defaultsByType && draft._defaultsByType[t]) {
+    var def = draft._defaultsByType[t];
+    draft.type = t;
+    draft.systemPrompt = def.systemPrompt;
+    draft.model = def.model;
+    draft.inheritClaudeMd = def.inheritClaudeMd;
+  }
+  populateForm();
+  show('step2');
+}
+
+function populateForm() {
+  if (!draft) return;
+  document.getElementById('name').value = draft.name || '';
+  document.getElementById('desc').value = draft.description || '';
+  document.getElementById('prompt').value = draft.systemPrompt || '';
+}
+
+function back() {
+  show('step1');
+}
+
+function create() {
+  if (creating || created || !draft) return;
+  creating = true;
+  document.getElementById('create-btn').disabled = true;
+  var cfg = {
+    type: draft.type,
+    name: document.getElementById('name').value.trim() || draft.name,
+    description: document.getElementById('desc').value.trim(),
+    systemPrompt: document.getElementById('prompt').value,
+    model: draft.model,
+    inheritClaudeMd: draft.inheritClaudeMd,
+    createdAt: draft.createdAt
+  };
+  window.webxdc.sendUpdate({
+    payload: { type: 'create', config: cfg, senderAddr: window.webxdc.selfAddr },
+    summary: 'Create group: ' + cfg.name
+  }, 'Create group');
+}
+
+window.webxdc.setUpdateListener(function(update) {
+  var d = update.payload;
+  if (!d) return;
+
+  if (d.type === 'init') {
+    if (d.version && d.version > APP_VERSION && !versionMismatchSent) {
+      versionMismatchSent = true;
+      window.webxdc.sendUpdate({
+        payload: { type: 'version_mismatch', appVersion: APP_VERSION, serverVersion: d.version, senderAddr: window.webxdc.selfAddr },
+        summary: 'Update requested'
+      }, 'Version mismatch');
+      show('outdated');
+      return;
+    }
+    draft = d.draft || null;
+    if (draft) {
+      pickedType = draft.type;
+      populateForm();
+    }
+    if (!created) show('step1');
+  }
+
+  if (d.type === 'created') {
+    created = true;
+    var nameEl = document.getElementById('created-name');
+    if (nameEl) nameEl.textContent = d.name || '';
+    show('created');
+  }
+}, 0);
+</script>
+</body>
+</html>

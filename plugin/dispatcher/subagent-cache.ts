@@ -26,6 +26,8 @@ export interface SubagentLike {
     denials: Array<{ tool_name?: string; command?: string }>
   }>
   close(): Promise<void>
+  /** Optional: extend the in-flight turn deadline (used to pause-on-permission). */
+  extendDeadline?(extraMs: number): void
 }
 
 export interface SubagentCacheOptions {
@@ -33,6 +35,14 @@ export interface SubagentCacheOptions {
   idleTimeoutMs: number
   spawnFn: (chatId: number) => Promise<SubagentLike>
   logf?: (fmt: string, ...args: unknown[]) => void
+  /** Per-turn timeout forwarded to SubagentLike.send. */
+  turnTimeoutMs?: number
+  /** Max queued prompts per chat while a turn is in flight. Defaults to 10. */
+  queueMax?: number
+  /** Fired when a cached subagent is detected dead between turns or after a send failure. */
+  onCrash?: (chatId: number) => void
+  /** Fired when a queued prompt is dropped because the per-chat queue is full. */
+  onQueueDrop?: (chatId: number) => void
 }
 
 interface CacheEntry {
@@ -42,16 +52,18 @@ interface CacheEntry {
   busy: boolean
 }
 
-const MAX_QUEUE_DEPTH = 10
+const DEFAULT_QUEUE_DEPTH = 10
 
 export class SubagentCache {
   private entries = new Map<number, CacheEntry>()
   /** Ordered by most-recently used; entries[0] is the LRU victim. */
   private lruOrder: number[] = []
   private logf: (fmt: string, ...args: unknown[]) => void
+  private queueMax: number
 
   constructor(private opts: SubagentCacheOptions) {
     this.logf = opts.logf ?? (() => {})
+    this.queueMax = Math.max(1, opts.queueMax ?? DEFAULT_QUEUE_DEPTH)
   }
 
   size(): number { return this.entries.size }
@@ -110,8 +122,10 @@ export class SubagentCache {
       return existing
     }
     if (existing && !existing.sub.alive) {
-      // Crashed. Remove and respawn.
+      // Crashed. Remove, notify, and respawn.
+      this.logf('cache: detected dead subagent chat=%d, respawning', chatId)
       await this.evict(chatId)
+      try { this.opts.onCrash?.(chatId) } catch {}
     }
     return await this.spawn(chatId)
   }
@@ -123,9 +137,11 @@ export class SubagentCache {
 
   private runOrQueue(entry: CacheEntry, chatId: number, text: string): Promise<{ text: string; denials: Array<{ tool_name?: string; command?: string }> }> {
     if (entry.busy) {
-      if (entry.queue.length >= MAX_QUEUE_DEPTH) {
+      if (entry.queue.length >= this.queueMax) {
         const dropped = entry.queue.shift()
         if (dropped) dropped.reject(new Error('dropped: queue overflow'))
+        this.logf('cache: queue overflow chat=%d, dropped oldest', chatId)
+        try { this.opts.onQueueDrop?.(chatId) } catch {}
       }
       return new Promise((resolve, reject) => {
         entry.queue.push({ text, resolve: resolve as (r: unknown) => void, reject })
@@ -137,10 +153,16 @@ export class SubagentCache {
   private async runNow(entry: CacheEntry, chatId: number, text: string): Promise<{ text: string; denials: Array<{ tool_name?: string; command?: string }> }> {
     entry.busy = true
     try {
-      const result = await entry.sub.send(text)
+      const result = await entry.sub.send(text, this.opts.turnTimeoutMs)
       this.touch(chatId)
       this.resetIdleTimer(chatId)
       return result
+    } catch (err) {
+      if (!entry.sub.alive) {
+        this.logf('cache: subagent died during send chat=%d', chatId)
+        try { this.opts.onCrash?.(chatId) } catch {}
+      }
+      throw err
     } finally {
       entry.busy = false
       // Drain one queued message if any
@@ -149,6 +171,16 @@ export class SubagentCache {
         this.runNow(entry, chatId, next.text).then(next.resolve).catch(next.reject)
       }
     }
+  }
+
+  /**
+   * Extend the in-flight turn deadline for a chat's subagent. No-op if no
+   * subagent is cached or it doesn't support extension.
+   */
+  extendTurnDeadline(chatId: number, extraMs: number): void {
+    const entry = this.entries.get(chatId)
+    if (!entry || !entry.busy) return
+    entry.sub.extendDeadline?.(extraMs)
   }
 
   async closeAll(): Promise<void> {

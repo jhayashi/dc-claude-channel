@@ -2,6 +2,18 @@
 
 Delta Chat channel plugin for Claude Code (TypeScript/Bun). Matches the official Telegram/Discord plugin architecture.
 
+## Subagent session resume
+
+Each chat has a persistent claude session id stored at
+`~/.claude/channels/deltachat/sessions/<chatId>.json`. The first spawn for a
+chat creates a fresh UUID and passes `--session-id <uuid>`; every subsequent
+(re)spawn — after idle timeout, LRU eviction, or crash — passes
+`--resume <uuid>` so claude rehydrates the prior in-process turn history
+(TodoWrites, plans, tool outputs). The session file is deleted on unpair
+in `cleanupChat`. Phase-1 spikes showed `--resume` adds ~10 s on respawn vs
+~6 s cold; respawns are rare so we accept the cost in exchange for not
+losing assistant-side context that `dc_chat_history` can't recover.
+
 ## Development
 
 ```bash

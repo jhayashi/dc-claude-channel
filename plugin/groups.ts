@@ -1,45 +1,147 @@
 /**
- * Group context store — maps Delta Chat group chat IDs to behavior prompts.
+ * Group context store — maps Delta Chat group chat IDs to behavior config.
  *
- * Each group has a short prompt that tells Claude how to handle messages
- * in that group (e.g., "Summarize any links shared. Tag by topic.").
+ * Each group has a typed config (coding / quick / basic) plus a system prompt
+ * that augments Claude's behavior in that group, and a model selection.
  *
- * State stored in ~/.claude/channels/deltachat/groups/<chatId>.json
+ * State stored in ~/.claude/channels/deltachat/groups/<chatId>.json.
+ *
+ * Backwards compatibility: old files containing only {name, prompt} are
+ * migrated on read to a full GroupContext with sensible defaults.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { z } from 'zod'
 
-const GROUPS_DIR = join(homedir(), '.claude', 'channels', 'deltachat', 'groups')
+let GROUPS_DIR = join(homedir(), '.claude', 'channels', 'deltachat', 'groups')
 
-export interface GroupContext {
-  name: string
-  prompt: string
+/** Override the storage directory (for tests). */
+export function setGroupsDir(dir: string): void {
+  GROUPS_DIR = dir
 }
+
+export const GROUP_TYPES = {
+  coding: {
+    label: 'Coding',
+    description: 'Long-form coding work. Opus, full project context.',
+    model: 'claude-opus-4-6' as const,
+    inheritClaudeMd: true,
+    defaultPrompt:
+      'You are helping with software engineering work in this group. ' +
+      'Read code carefully, prefer surgical edits, and explain non-obvious decisions.',
+  },
+  quick: {
+    label: 'Quick',
+    description: 'Fast Q&A and short tasks. Haiku, minimal context.',
+    model: 'claude-haiku-4-5' as const,
+    inheritClaudeMd: false,
+    defaultPrompt:
+      'You are answering quick questions in this group. Be concise and direct. ' +
+      'Skip preamble; one or two sentences is usually enough.',
+  },
+  basic: {
+    label: 'Basic',
+    description: 'General-purpose assistant. Sonnet.',
+    model: 'claude-sonnet-4-6' as const,
+    inheritClaudeMd: true,
+    defaultPrompt:
+      'You are a helpful assistant in this group. Match the tone of the conversation.',
+  },
+} as const
+
+export type GroupType = keyof typeof GROUP_TYPES
+
+export const GroupConfigSchema = z.object({
+  type: z.enum(['coding', 'quick', 'basic']),
+  name: z.string().min(1),
+  description: z.string(),
+  systemPrompt: z.string(),
+  model: z.enum(['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5']),
+  inheritClaudeMd: z.boolean(),
+  createdAt: z.string(),
+})
+
+export type GroupContext = z.infer<typeof GroupConfigSchema>
 
 /** Get the context for a group, or null if not a managed group. */
 export function getGroupContext(chatId: number): GroupContext | null {
   const path = join(GROUPS_DIR, `${chatId}.json`)
   if (!existsSync(path)) return null
+  let raw: unknown
   try {
-    return JSON.parse(readFileSync(path, 'utf-8')) as GroupContext
+    raw = JSON.parse(readFileSync(path, 'utf-8'))
   } catch {
     return null
   }
+  const parsed = GroupConfigSchema.safeParse(raw)
+  if (parsed.success) return parsed.data
+  // Legacy migration: {name, prompt}
+  if (raw && typeof raw === 'object' && 'name' in raw && 'prompt' in raw) {
+    const legacy = raw as { name: string; prompt: string }
+    const t = GROUP_TYPES.basic
+    return {
+      type: 'basic',
+      name: legacy.name,
+      description: '',
+      systemPrompt: legacy.prompt,
+      model: t.model,
+      inheritClaudeMd: t.inheritClaudeMd,
+      createdAt: new Date(0).toISOString(),
+    }
+  }
+  return null
 }
 
-/** Save context for a group. */
+/** Save context for a group. Atomic via temp + rename. */
 export function setGroupContext(chatId: number, ctx: GroupContext): void {
+  const validated = GroupConfigSchema.parse(ctx)
   mkdirSync(GROUPS_DIR, { recursive: true })
-  writeFileSync(join(GROUPS_DIR, `${chatId}.json`), JSON.stringify(ctx, null, 2))
+  const finalPath = join(GROUPS_DIR, `${chatId}.json`)
+  const tmpPath = `${finalPath}.tmp.${process.pid}`
+  writeFileSync(tmpPath, JSON.stringify(validated, null, 2))
+  renameSync(tmpPath, finalPath)
 }
 
-/** Update just the prompt for a group. Returns false if group doesn't exist. */
-export function updateGroupPrompt(chatId: number, prompt: string): boolean {
+/** Update just the system prompt for a group. Returns false if group doesn't exist. */
+export function updateGroupPrompt(chatId: number, systemPrompt: string): boolean {
   const ctx = getGroupContext(chatId)
   if (!ctx) return false
-  ctx.prompt = prompt
+  ctx.systemPrompt = systemPrompt
   setGroupContext(chatId, ctx)
   return true
+}
+
+/**
+ * Build a draft GroupContext from a free-form description by keyword-guessing
+ * the type and using that type's default prompt template. Pure function.
+ */
+export function draftConfigFromDescription(description: string): GroupContext {
+  const d = description.toLowerCase()
+  let type: GroupType = 'basic'
+  if (/\b(cod(e|ing)|repo|bug|debug|refactor|implement|pr|pull request|test|build|compile|typescript|python|rust|go\b)/.test(d)) {
+    type = 'coding'
+  } else if (/\b(quick|fast|short|simple|brief|q\s*&\s*a|qa|ask)/.test(d)) {
+    type = 'quick'
+  }
+  const t = GROUP_TYPES[type]
+  // Crude name guess: first 5 words, title-cased.
+  const name =
+    description
+      .trim()
+      .split(/\s+/)
+      .slice(0, 5)
+      .join(' ')
+      .replace(/[^\w\s-]/g, '')
+      .trim() || `${t.label} group`
+  return {
+    type,
+    name,
+    description,
+    systemPrompt: t.defaultPrompt,
+    model: t.model,
+    inheritClaudeMd: t.inheritClaudeMd,
+    createdAt: new Date().toISOString(),
+  }
 }

@@ -30,7 +30,10 @@ import * as tutorial from './tutorial.js'
 import { decideCleanup } from './cleanup.js'
 import { SocketServer, type SocketRequest } from './dispatcher/socket-server.js'
 import { SubagentCache } from './dispatcher/subagent-cache.js'
+import { cleanupOrphanSubagents } from './dispatcher/orphan-cleanup.js'
+import { RateLimiter } from './dispatcher/rate-limit.js'
 import { SubagentProcess } from './dispatcher/subagent-process.js'
+import { SessionStore } from './dispatcher/session-store.js'
 import { generateHookConfig } from './dispatcher/hook-config.js'
 import { createMessageRouter } from './dispatcher/message-router.js'
 import type { ServerMessage } from './shared/protocol.js'
@@ -94,14 +97,26 @@ const HOOK_SCRIPT = join(import.meta.dir, 'dispatcher', 'permission-hook.sh')
 
 const MAX_ACTIVE = Math.max(1, Math.min(16, Number(process.env.DC_SUBAGENT_MAX_ACTIVE ?? '4')))
 const IDLE_MIN = Math.max(1, Number(process.env.DC_SUBAGENT_IDLE_TIMEOUT_MIN ?? '15'))
+const TURN_TIMEOUT_MS = Math.max(60_000, Number(process.env.DC_SUBAGENT_TIMEOUT_MS ?? String(4 * 60 * 60_000)))
+const QUEUE_MAX = Math.max(1, Math.min(1000, Number(process.env.DC_SUBAGENT_QUEUE_MAX ?? '10')))
+const RATE_LIMIT = Math.max(1, Math.min(10000, Number(process.env.DC_SUBAGENT_RATE_LIMIT ?? '100')))
+const RATE_WINDOW_MS = 60_000
+
+// Per-chat token bucket for tool-proxy calls. Survives subagent respawn so
+// a crash loop can't refill the budget.
+const rateLimiter = new RateLimiter({ limit: RATE_LIMIT, windowMs: RATE_WINDOW_MS })
 
 /** Registry of currently-active subagents for hello authorization. */
 const subagentRegistry = new Map<string, { chatId: number }>()
 
 /** Pending hook permission requests by id. */
-const pendingPermissions = new Map<string, { connectionId: string; chatId: number; resolve: (v: ServerMessage) => void }>()
+const pendingPermissions = new Map<string, { connectionId: string; chatId: number; resolve: (v: ServerMessage) => void; startedAt: number }>()
 
 const TOOLS_PROXY = join(import.meta.dir, 'dispatcher', 'tools-proxy.ts')
+
+/** Persistent per-chat claude session ids. Survives subagent process death
+ *  so the next spawn can `--resume <id>` and rehydrate prior turn history. */
+const sessionStore = new SessionStore(join(STATE_DIR, 'sessions'))
 
 /** Tools that only make sense from the terminal Claude session — filtered
  *  out of the subagent manifest to avoid confusion (e.g. the LLM calling
@@ -128,16 +143,67 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
   // the repo root so they can read/edit docs, plans, etc. outside plugin/
   // without needing per-file permission prompts.
   const repoRoot = join(import.meta.dir, '..')
-  const sub = new SubagentProcess({
+  const groupCfg = groups.getGroupContext(chatId)
+  let { record: sessionRec, created } = sessionStore.loadOrCreate(chatId)
+  logf(
+    'subagent: chat=%d session=%s %s',
+    chatId, sessionRec.sessionId, created ? 'NEW' : 'RESUME',
+  )
+  let resumeFailed = false
+  let sub = new SubagentProcess({
     chatId,
     subagentId,
     settingsPath,
     mcpConfigPath,
     dispatcherSocket: DISPATCHER_SOCKET,
     dispatcherSecret: DISPATCHER_SECRET,
+    sessionId: sessionRec.sessionId,
+    resume: !created,
     addDirs: [repoRoot],
+    model: groupCfg?.model,
+    systemPrompt: groupCfg?.systemPrompt,
+    suppressUserClaudeMd: groupCfg ? !groupCfg.inheritClaudeMd : undefined,
     logf,
   })
+  // Resume-fallback probe: if --resume was used and the child dies within
+  // 1.5s of spawn (likely an unrecognized session id in claude's session
+  // store, e.g. ~/.claude/projects was nuked), drop the stored session and
+  // respawn fresh once. Only fires when resuming, not on cold spawns.
+  if (!created) {
+    await new Promise((r) => setTimeout(r, 1500))
+    if (!sub.alive) {
+      logf('subagent: resume probe failed chat=%d, dropping session and respawning fresh', chatId)
+      resumeFailed = true
+      try { await sub.close() } catch {}
+      sessionStore.delete(chatId)
+      const fresh = sessionStore.loadOrCreate(chatId)
+      sessionRec = fresh.record
+      created = true
+      sub = new SubagentProcess({
+        chatId,
+        subagentId,
+        settingsPath,
+        mcpConfigPath,
+        dispatcherSocket: DISPATCHER_SOCKET,
+        dispatcherSecret: DISPATCHER_SECRET,
+        sessionId: sessionRec.sessionId,
+        resume: false,
+        addDirs: [repoRoot],
+        model: groupCfg?.model,
+        systemPrompt: groupCfg?.systemPrompt,
+        suppressUserClaudeMd: groupCfg ? !groupCfg.inheritClaudeMd : undefined,
+        logf,
+      })
+    }
+  }
+  client.send(
+    chatId,
+    resumeFailed
+      ? '\u26a0\ufe0f Previous session could not be resumed; starting fresh.'
+      : created
+        ? '\u2728 Starting a fresh session.'
+        : '\u21bb Resuming previous session.',
+  ).catch((err) => logf('subagent: status notice send failed chat=%d: %v', chatId, err))
   subagentRegistry.set(subagentId, { chatId })
   const origClose = sub.close.bind(sub)
   sub.close = async () => {
@@ -152,11 +218,25 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
   return sub
 }
 
+// Sweep stale subagents from a previous dispatcher run before we start.
+{
+  const killed = cleanupOrphanSubagents({ selfPid: process.pid, logf })
+  if (killed > 0) logf('orphan-cleanup: killed %d stale subagent(s)', killed)
+}
+
 const subagentCache = new SubagentCache({
   maxActive: MAX_ACTIVE,
   idleTimeoutMs: IDLE_MIN * 60_000,
   spawnFn: spawnSubagentForChat,
   logf,
+  turnTimeoutMs: TURN_TIMEOUT_MS,
+  queueMax: QUEUE_MAX,
+  onCrash: (chatId) => {
+    client.send(chatId, '\u26a0\ufe0f subagent crashed, next message will respawn').catch(() => {})
+  },
+  onQueueDrop: (chatId) => {
+    client.send(chatId, '\u26a0\ufe0f message dropped \u2014 agent busy, queue full').catch(() => {})
+  },
 })
 
 // ── App context ─────────────────────────────────────────────────────────
@@ -241,6 +321,7 @@ const socketServer = new SocketServer({
           connectionId: req.connectionId,
           chatId: req.chatId,
           resolve,
+          startedAt: Date.now(),
         })
         ;(async () => {
           try {
@@ -268,6 +349,10 @@ const socketServer = new SocketServer({
       const argChatId = args.chat_id ? Number(args.chat_id) : null
       if (argChatId !== null && argChatId !== req.chatId) {
         return { kind: 'toolError', id: req.frame.id, error: { code: 'chat_mismatch', message: 'tool call chat_id does not match subagent binding' } }
+      }
+      if (!rateLimiter.check(req.chatId)) {
+        logf('rate-limit: chat=%d exceeded %d calls/min', req.chatId, RATE_LIMIT)
+        return { kind: 'toolError', id: req.frame.id, error: { code: 'rate_limited', message: `rate limit exceeded (${RATE_LIMIT}/min per chat)` } }
       }
       try {
         const core = await callCoreTool(req.frame.tool, req.frame.args)
@@ -563,7 +648,14 @@ async function callCoreTool(name: string, args: Record<string, unknown>): Promis
         await client.addContactToChat(groupId, userContactId)
 
         access.addChat(groupId, userContactId)
-        groups.setGroupContext(groupId, { name, prompt })
+        groups.setGroupContext(groupId, groups.draftConfigFromDescription(prompt))
+        // Override the drafted name/prompt with what dc_create_group was given.
+        {
+          const draft = groups.getGroupContext(groupId)!
+          draft.name = name
+          draft.systemPrompt = prompt
+          groups.setGroupContext(groupId, draft)
+        }
 
         let inviteLink = ''
         try {
@@ -584,7 +676,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>): Promis
         if (!groupCtx) {
           return { content: [{ type: 'text' as const, text: `No group context found for chat ${chatId}.` }] }
         }
-        return { content: [{ type: 'text' as const, text: `Group: ${groupCtx.name}\nPrompt: ${groupCtx.prompt}` }] }
+        return { content: [{ type: 'text' as const, text: `Group: ${groupCtx.name}\nPrompt: ${groupCtx.systemPrompt}` }] }
       }
 
       case 'dc_update_group_prompt': {
@@ -777,6 +869,8 @@ async function main(): Promise<void> {
     }
     // Clear any in-flight tutorial state.
     tutorial.clearTutorial(chatId)
+    // Drop the persistent claude session id so the next pairing starts fresh.
+    sessionStore.delete(chatId)
     // Remove from the allowlist.
     access.removeChat(chatId)
     // Delete the chat from DC core last — after this, the chatId may be invalid.
@@ -955,7 +1049,7 @@ async function main(): Promise<void> {
     const groupCtx = groups.getGroupContext(msg.chatId)
     if (groupCtx) {
       meta.group_name = groupCtx.name
-      meta.group_prompt = groupCtx.prompt
+      meta.group_prompt = groupCtx.systemPrompt
     }
 
     logf('dc channel: incoming message: content=%s meta=%s', msg.text, JSON.stringify(meta))
@@ -1040,12 +1134,14 @@ async function main(): Promise<void> {
         if (payload && payload.type === 'response' && payload.requestId && pendingPermissions.has(payload.requestId)) {
           const pending = pendingPermissions.get(payload.requestId)!
           pendingPermissions.delete(payload.requestId)
+          const elapsed = Date.now() - pending.startedAt
+          subagentCache.extendTurnDeadline(pending.chatId, elapsed)
           pending.resolve({
             kind: 'permissionVerdict',
             id: payload.requestId,
             verdict: payload.granted ? 'allow' : 'deny',
           })
-          logf('phase2: intercepted permission verdict %s → %s for chat %d', payload.requestId, payload.granted ? 'allow' : 'deny', pending.chatId)
+          logf('phase2: intercepted permission verdict %s → %s for chat %d (paused turn timeout +%dms)', payload.requestId, payload.granted ? 'allow' : 'deny', pending.chatId, elapsed)
           continue
         }
         passthrough.push(u)
@@ -1095,7 +1191,7 @@ async function main(): Promise<void> {
   // Start the dispatcher socket server before IO so subagents spawned
   // by the first incoming message find the socket ready.
   await socketServer.start()
-  logf('dispatcher socket listening at %s (max_active=%d idle_min=%d)', DISPATCHER_SOCKET, MAX_ACTIVE, IDLE_MIN)
+  logf('dispatcher socket listening at %s (max_active=%d idle_min=%d turn_timeout_ms=%d queue_max=%d)', DISPATCHER_SOCKET, MAX_ACTIVE, IDLE_MIN, TURN_TIMEOUT_MS, QUEUE_MAX)
 
   // NOW start IO — events begin flowing after handlers are ready.
   if (dcAddress) {

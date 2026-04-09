@@ -14,7 +14,6 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
 
 interface StreamFrame {
   type: string
@@ -35,11 +34,79 @@ export interface SubagentSpawnOptions {
   dispatcherSocket: string
   dispatcherSecret: string
   hookTimeoutSec?: number
+  /**
+   * Stable per-chat session id. Required. The first spawn for a chat
+   * passes a fresh UUID with `resume: false` (creates the session); every
+   * subsequent (re)spawn passes the same UUID with `resume: true` so the
+   * child rehydrates the prior in-process turn history.
+   */
+  sessionId: string
+  /** If true, use `--resume <sessionId>` instead of `--session-id <sessionId>`. */
+  resume: boolean
   /** Working directory for the subagent. Defaults to process.cwd(). */
   cwd?: string
   /** Additional directories the subagent is allowed to touch. */
   addDirs?: string[]
+  /** Override the model (e.g. 'claude-opus-4-6'). Defaults to CLI default. */
+  model?: string
+  /** Extra system prompt appended to the standard env block. */
+  systemPrompt?: string
+  /**
+   * If true, attempt to suppress the user-level CLAUDE.md from being loaded.
+   * Phase 1: this is currently a no-op — there is no verified CLI flag for
+   * this and the plan defers the toggle to Phase 2. Accepted here so callers
+   * can pass it without breaking when the mechanism lands.
+   */
+  suppressUserClaudeMd?: boolean
   logf?: (fmt: string, ...args: unknown[]) => void
+}
+
+/**
+ * Build the argv for the `claude` child process. Extracted from the
+ * constructor so it can be unit-tested without spawning a real process.
+ */
+export function buildSubagentArgs(
+  opts: SubagentSpawnOptions,
+): { args: string[]; envBlock: string } {
+  const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return 'unknown' } })()
+  let envBlock = [
+    'Environment:',
+    `- Platform: ${process.platform}`,
+    `- Timezone: ${tz}`,
+    `- Working directory: ${opts.cwd ?? process.cwd()}`,
+    `- Bound chat: ${opts.chatId}`,
+    '- For the current date/time, run `date` via Bash (auto-allowed). Other read-only inspection commands (`pwd`, `whoami`, `uname`) are also auto-allowed.',
+  ].join('\n')
+  if (opts.systemPrompt && opts.systemPrompt.trim()) {
+    envBlock += '\n\n' + opts.systemPrompt.trim()
+  }
+
+  const args: string[] = [
+    '-p',
+    ...(opts.resume ? ['--resume', opts.sessionId] : ['--session-id', opts.sessionId]),
+    '--input-format', 'stream-json',
+    '--output-format', 'stream-json',
+    '--verbose',
+    '--settings', opts.settingsPath,
+    // Exclude user-level settings so we don't inherit the user's
+    // SessionStart hooks (e.g. superpowers) which inject wall-of-text
+    // skill prompts into every subagent cold spawn. Our own --settings
+    // file (with the PreToolUse permission hook) is still loaded.
+    '--setting-sources', 'project,local',
+    '--permission-mode', 'default',
+    '--append-system-prompt', envBlock,
+  ]
+  if (opts.model) {
+    args.push('--model', opts.model)
+  }
+  if (opts.mcpConfigPath) {
+    args.push('--mcp-config', opts.mcpConfigPath, '--strict-mcp-config')
+    args.push('--allowedTools', 'mcp__dc Bash Read Edit Write Grep Glob WebFetch NotebookEdit Task TodoWrite')
+  }
+  for (const dir of opts.addDirs ?? []) {
+    args.push('--add-dir', dir)
+  }
+  return { args, envBlock }
 }
 
 export interface TurnResult {
@@ -64,48 +131,21 @@ export class SubagentProcess {
   constructor(opts: SubagentSpawnOptions) {
     this.chatId = opts.chatId
     this.subagentId = opts.subagentId
-    this.sessionId = randomUUID()
+    this.sessionId = opts.sessionId
     this.logf = opts.logf ?? (() => {})
 
-    const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return 'unknown' } })()
-    const envBlock = [
-      'Environment:',
-      `- Platform: ${process.platform}`,
-      `- Timezone: ${tz}`,
-      `- Working directory: ${opts.cwd ?? process.cwd()}`,
-      `- Bound chat: ${opts.chatId}`,
-      '- For the current date/time, run `date` via Bash (auto-allowed). Other read-only inspection commands (`pwd`, `whoami`, `uname`) are also auto-allowed.',
-    ].join('\n')
-
-    const args: string[] = [
-      '-p',
-      '--session-id', this.sessionId,
-      '--input-format', 'stream-json',
-      '--output-format', 'stream-json',
-      '--verbose',
-      '--settings', opts.settingsPath,
-      // Exclude user-level settings so we don't inherit the user's
-      // SessionStart hooks (e.g. superpowers) which inject wall-of-text
-      // skill prompts into every subagent cold spawn. Our own --settings
-      // file (with the PreToolUse permission hook) is still loaded.
-      '--setting-sources', 'project,local',
-      '--permission-mode', 'default',
-      '--append-system-prompt', envBlock,
-    ]
-    if (opts.mcpConfigPath) {
-      args.push('--mcp-config', opts.mcpConfigPath, '--strict-mcp-config')
-      // MCP tools can't prompt in headless -p mode and PreToolUse hooks
-      // don't fire for them (spike 1E). Whitelist the whole dc server so
-      // dispatcher-side authorization is the only gate. In headless -p
-      // mode --allowedTools appears to be a hard whitelist (not just a
-      // pre-approval list like the TUI) so we also list the built-in
-      // tools the subagent needs; Bash/Edit/Write/WebFetch/NotebookEdit
-      // still fire the PreToolUse hook for the actual permission check.
-      args.push('--allowedTools', 'mcp__dc Bash Read Edit Write Grep Glob WebFetch NotebookEdit Task TodoWrite')
+    if (opts.suppressUserClaudeMd) {
+      this.logf(
+        'subagent %s: suppressUserClaudeMd=true requested, but no verified ' +
+        'mechanism exists yet (Phase 1 deferred toggle). Ignoring.',
+        opts.subagentId,
+      )
     }
-    for (const dir of opts.addDirs ?? []) {
-      args.push('--add-dir', dir)
-    }
+    const { args } = buildSubagentArgs(opts)
+    this.logf(
+      'subagent %s: spawning chat=%d session=%s resume=%s',
+      opts.subagentId, opts.chatId, opts.sessionId, String(opts.resume),
+    )
 
     this.child = spawn('claude', args, {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -153,26 +193,47 @@ export class SubagentProcess {
     }
   }
 
+  /** Mutable deadline for the in-flight readFrame; extendDeadline mutates this. */
+  private pendingDeadline = 0
+  private pendingTimer: NodeJS.Timeout | null = null
+
+  /**
+   * Extend the in-flight turn deadline by extraMs. Used to pause the turn
+   * timeout while a permission prompt is awaiting user input.
+   */
+  extendDeadline(extraMs: number): void {
+    if (!this.pendingTimer || extraMs <= 0) return
+    this.pendingDeadline += extraMs
+  }
+
   private readFrame(predicate: (f: StreamFrame) => boolean, timeoutMs: number): Promise<StreamFrame> {
     for (let i = 0; i < this.frameQueue.length; i++) {
       if (predicate(this.frameQueue[i])) return Promise.resolve(this.frameQueue.splice(i, 1)[0])
     }
     return new Promise<StreamFrame>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const idx = this.waiters.indexOf(resolveWrapper)
-        if (idx >= 0) this.waiters.splice(idx, 1)
-        reject(new Error(`timeout after ${timeoutMs}ms`))
-      }, timeoutMs)
+      this.pendingDeadline = Date.now() + timeoutMs
+      const arm = () => {
+        const remaining = Math.max(0, this.pendingDeadline - Date.now())
+        this.pendingTimer = setTimeout(() => {
+          // Deadline may have been extended while we were sleeping; re-arm.
+          if (Date.now() < this.pendingDeadline) { arm(); return }
+          const idx = this.waiters.indexOf(resolveWrapper)
+          if (idx >= 0) this.waiters.splice(idx, 1)
+          this.pendingTimer = null
+          reject(new Error(`timeout after ${timeoutMs}ms`))
+        }, remaining)
+      }
+      arm()
       const resolveWrapper = (f: StreamFrame) => {
         if (!predicate(f)) { this.frameQueue.push(f); this.waiters.push(resolveWrapper); return }
-        clearTimeout(timer)
+        if (this.pendingTimer) { clearTimeout(this.pendingTimer); this.pendingTimer = null }
         resolve(f)
       }
       this.waiters.push(resolveWrapper)
     })
   }
 
-  async send(text: string, turnTimeoutMs = 20 * 60 * 1000): Promise<TurnResult> {
+  async send(text: string, turnTimeoutMs = 4 * 60 * 60 * 1000): Promise<TurnResult> {
     if (!this.alive) throw new Error(`subagent ${this.subagentId} is not alive`)
     if (this.busy) throw new Error(`subagent ${this.subagentId} is busy`)
     this.busy = true
