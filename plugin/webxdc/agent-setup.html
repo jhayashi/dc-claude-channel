@@ -65,6 +65,13 @@ body {
   vertical-align: middle;
 }
 .type-card .desc, .existing-card .desc { font-size: 12px; color: #8b949e; line-height: 1.4; }
+.existing-card.current-agent { border-color: #238636; }
+.existing-card.current-agent::before { content: '✓ '; font-weight: 600; color: #238636; }
+.badge-count { background: #161b22; border-color: #6e7681; color: #8b949e; margin-left: 4px; }
+.card-actions { display: flex; gap: 6px; margin-top: 8px; }
+.card-action-btn { flex: 1; font-size: 12px; padding: 6px 8px; background: #30363d; border: 1px solid #444c56; border-radius: 6px; color: #c9d1d9; cursor: pointer; font-family: inherit; }
+.card-action-btn:hover { background: #3d444d; }
+.card-action-btn:active { transform: scale(0.96); }
 .section-label {
   font-size: 11px;
   text-transform: uppercase;
@@ -236,6 +243,7 @@ function renderExistingList() {
     var a = existingAgents[i];
     var btn = document.createElement('button');
     btn.className = 'existing-card';
+    if (a.isCurrentAgent) btn.classList.add('current-agent');
     btn.onclick = (function(id){ return function(){ pickExisting(id); }; })(a.id);
     var label = document.createElement('div');
     label.className = 'label';
@@ -244,6 +252,10 @@ function renderExistingList() {
     badge.className = 'badge';
     badge.textContent = a.type || 'basic';
     label.appendChild(badge);
+    var countBadge = document.createElement('span');
+    countBadge.className = 'badge badge-count';
+    countBadge.textContent = (a.bindingCount || 0) + ' chat' + ((a.bindingCount !== 1) ? 's' : '');
+    label.appendChild(countBadge);
     btn.appendChild(label);
     if (a.description) {
       var desc = document.createElement('div');
@@ -251,6 +263,19 @@ function renderExistingList() {
       desc.textContent = a.description;
       btn.appendChild(desc);
     }
+    var actions = document.createElement('div');
+    actions.className = 'card-actions';
+    var editBtn = document.createElement('button');
+    editBtn.className = 'card-action-btn';
+    editBtn.textContent = '✎ Edit';
+    editBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); editAgent(id); }; })(a.id);
+    actions.appendChild(editBtn);
+    var deleteBtn = document.createElement('button');
+    deleteBtn.className = 'card-action-btn';
+    deleteBtn.textContent = '✕ Delete';
+    deleteBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); deleteAgent(id); }; })(a.id);
+    actions.appendChild(deleteBtn);
+    btn.appendChild(actions);
     container.appendChild(btn);
   }
 }
@@ -327,6 +352,31 @@ function create() {
   }, 'Create agent');
 }
 
+function editAgent(agentId) {
+  if (creating || created) return;
+  creating = true;
+  window.webxdc.sendUpdate({
+    payload: { type: 'edit', agentId: agentId, senderAddr: window.webxdc.selfAddr },
+    summary: 'Edit agent: ' + agentId
+  }, 'Edit agent');
+}
+
+function deleteAgent(agentId) {
+  if (creating || created) return;
+  var agent = existingAgents.find(function(a){ return a.id === agentId; });
+  if (!agent) return;
+  var message = agent.bindingCount > 0
+    ? 'Cannot delete: this agent is bound to ' + agent.bindingCount + ' chat(s). Switch those chats to another agent first.'
+    : 'Delete "' + agent.name + '"? This cannot be undone.';
+  if (!confirm(message)) return;
+  if (agent.bindingCount > 0) return;
+  creating = true;
+  window.webxdc.sendUpdate({
+    payload: { type: 'delete', agentId: agentId, senderAddr: window.webxdc.selfAddr },
+    summary: 'Delete agent: ' + agentId
+  }, 'Delete agent');
+}
+
 window.webxdc.setUpdateListener(function(update) {
   var d = update.payload;
   if (!d) return;
@@ -364,6 +414,19 @@ window.webxdc.setUpdateListener(function(update) {
     var nameEl = document.getElementById('created-name');
     if (nameEl) nameEl.textContent = d.name || '';
     show('created');
+  }
+
+  if (d.type === 'deleteBlocked') {
+    alert(d.message || 'Cannot delete this agent.');
+    creating = false;
+    return;
+  }
+
+  if (d.type === 'deleted') {
+    created = true;
+    show('created');
+    var nameEl = document.getElementById('created-name');
+    if (nameEl) nameEl.textContent = 'Deleted: ' + (d.name || 'agent');
   }
 }, 0);
 </script>
