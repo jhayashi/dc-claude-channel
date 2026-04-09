@@ -133,8 +133,8 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .btn:disabled { opacity: 0.4; cursor: default; }
 .btn-create { background: linear-gradient(135deg, #238636 0%, #2ea043 100%); color: white; }
 .btn-back { background: #30363d; color: #e6edf3; }
-#step0, #step1, #step2, #created, #outdated, #loading { display: none; }
-#step0.visible, #step1.visible, #step2.visible, #created.visible, #outdated.visible, #loading.visible { display: block; }
+#step0, #step1, #step2, #step3, #created, #outdated, #loading { display: none; }
+#step0.visible, #step1.visible, #step2.visible, #step3.visible, #created.visible, #outdated.visible, #loading.visible { display: block; }
 .center { text-align: center; padding: 50px 20px; color: #8b949e; }
 .spinner { width: 28px; height: 28px; border: 3px solid #30363d; border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 14px; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -198,6 +198,21 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     </div>
   </div>
 
+  <div id="step3">
+    <div class="body">
+      <label class="field" for="edit-name">Agent name</label>
+      <input id="edit-name" class="text" type="text" maxlength="80">
+      <label class="field" for="edit-desc">Description (optional)</label>
+      <input id="edit-desc" class="text" type="text" maxlength="200">
+      <label class="field" for="edit-prompt">System prompt</label>
+      <textarea id="edit-prompt" class="text"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn btn-back" onclick="backFromStep3()">Cancel</button>
+      <button class="btn btn-create" id="save-btn" onclick="saveEdit()">Save changes</button>
+    </div>
+  </div>
+
   <div id="created">
     <div class="center">
       <div class="result-icon">&#x2705;</div>
@@ -219,7 +234,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.10;
+var APP_VERSION = 1.11;
 // Single in-memory state. Replay rebuilds it from scratch each open.
 var draft = null;          // draft agent from server (no id yet)
 var existingAgents = [];   // [{id, name, type, description}, ...]
@@ -227,9 +242,10 @@ var pickedType = null;     // user's current type selection (may differ from dra
 var creating = false;
 var created = false;
 var versionMismatchSent = false;
+var editingAgentId = null;  // set when editing an existing agent
 
 function show(id) {
-  var ids = ['loading', 'step0', 'step1', 'step2', 'created', 'outdated'];
+  var ids = ['loading', 'step0', 'step1', 'step2', 'step3', 'created', 'outdated'];
   for (var i = 0; i < ids.length; i++) {
     var el = document.getElementById(ids[i]);
     if (ids[i] === id) el.classList.add('visible'); else el.classList.remove('visible');
@@ -328,6 +344,41 @@ function backFromStep2() {
   show('step1');
 }
 
+function populateEditForm() {
+  if (!draft) return;
+  document.getElementById('edit-name').value = draft.name || '';
+  document.getElementById('edit-desc').value = draft['x-dc-description'] || '';
+  document.getElementById('edit-prompt').value = draft.system || '';
+}
+
+function backFromStep3() {
+  show('step0');
+}
+
+function saveEdit() {
+  if (creating || created || !draft || !editingAgentId) return;
+  creating = true;
+  document.getElementById('save-btn').disabled = true;
+  var cfg = {
+    name: document.getElementById('edit-name').value.trim() || draft.name,
+    model: draft.model,
+    system: document.getElementById('edit-prompt').value,
+    tools: [],
+    'x-dc-type': draft['x-dc-type'],
+    'x-dc-description': document.getElementById('edit-desc').value.trim(),
+    'x-dc-createdAt': draft['x-dc-createdAt']
+  };
+  window.webxdc.sendUpdate({
+    payload: {
+      type: 'saveEdit',
+      agentId: editingAgentId,
+      config: cfg,
+      senderAddr: window.webxdc.selfAddr
+    },
+    summary: 'Edit agent: ' + editingAgentId
+  }, 'Save edit');
+}
+
 function create() {
   if (creating || created || !draft) return;
   creating = true;
@@ -377,6 +428,12 @@ function deleteAgent(agentId) {
   }, 'Delete agent');
 }
 
+function resetCreatingFlag() {
+  creating = false;
+  var saveBtn = document.getElementById('save-btn');
+  if (saveBtn) saveBtn.disabled = false;
+}
+
 window.webxdc.setUpdateListener(function(update) {
   var d = update.payload;
   if (!d) return;
@@ -409,6 +466,17 @@ window.webxdc.setUpdateListener(function(update) {
     }
   }
 
+  if (d.type === 'edit') {
+    editingAgentId = d.draft.id || null;
+    draft = d.draft || null;
+    if (draft) {
+      pickedType = draft['x-dc-type'];
+      populateEditForm();
+    }
+    resetCreatingFlag();
+    show('step3');
+  }
+
   if (d.type === 'created') {
     created = true;
     var nameEl = document.getElementById('created-name');
@@ -427,6 +495,14 @@ window.webxdc.setUpdateListener(function(update) {
     show('created');
     var nameEl = document.getElementById('created-name');
     if (nameEl) nameEl.textContent = 'Deleted: ' + (d.name || 'agent');
+  }
+
+  if (d.type === 'editComplete') {
+    created = true;
+    resetCreatingFlag();
+    show('created');
+    var nameEl = document.getElementById('created-name');
+    if (nameEl) nameEl.textContent = 'Updated: ' + (d.name || 'agent');
   }
 }, 0);
 </script>
