@@ -392,6 +392,19 @@ const coreTools = [
     },
   },
   {
+    name: 'dc_react',
+    description: 'Add or clear an emoji reaction on a Delta Chat message. Pass an empty emoji to remove your previous reaction. Only one reaction per sender per message — reacting again replaces the previous one.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        chat_id: { type: 'string', description: 'Chat ID the message belongs to (for authorization)' },
+        message_id: { type: 'string', description: 'Delta Chat message id from the inbound <channel> tag' },
+        emoji: { type: 'string', description: 'Single emoji (e.g. "👍"). Pass an empty string to clear.' },
+      },
+      required: ['chat_id', 'message_id', 'emoji'],
+    },
+  },
+  {
     name: 'dc_status',
     description: 'Show the current bot identity and connection status.',
     inputSchema: { type: 'object' as const, properties: {} },
@@ -555,6 +568,27 @@ async function callCoreTool(name: string, args: Record<string, unknown>): Promis
         }
         const msgId = await client.send(chatId, text)
         return { content: [{ type: 'text' as const, text: `sent (id: ${msgId})` }] }
+      }
+
+      case 'dc_react': {
+        const chatId = Number(args.chat_id as string)
+        const messageId = Number(args.message_id as string)
+        const emoji = typeof args.emoji === 'string' ? args.emoji : ''
+        if (!chatId || Number.isNaN(chatId)) {
+          return { content: [{ type: 'text' as const, text: 'dc_react: chat_id is required' }], isError: true }
+        }
+        if (!messageId || Number.isNaN(messageId)) {
+          return { content: [{ type: 'text' as const, text: 'dc_react: message_id is required' }], isError: true }
+        }
+        if (!access.isAllowed(chatId)) {
+          return { content: [{ type: 'text' as const, text: `dc_react: chat ${chatId} is not accessible` }], isError: true }
+        }
+        try {
+          await client.sendReaction(messageId, emoji)
+        } catch (err) {
+          return { content: [{ type: 'text' as const, text: `dc_react: failed: ${err}` }], isError: true }
+        }
+        return { content: [{ type: 'text' as const, text: emoji ? `reacted ${emoji} to msg ${messageId}` : `cleared reaction on msg ${messageId}` }] }
       }
 
       case 'dc_status': {
