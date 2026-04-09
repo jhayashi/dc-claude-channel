@@ -160,7 +160,7 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
     sessionId: sessionRec.sessionId,
     resume: !created,
     addDirs: [repoRoot],
-    model: groupCfg?.model,
+    model: groupCfg?.model ?? 'claude-sonnet-4-6',
     systemPrompt: groupCfg?.systemPrompt,
     suppressUserClaudeMd: groupCfg ? !groupCfg.inheritClaudeMd : undefined,
     logf,
@@ -189,7 +189,7 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
         sessionId: sessionRec.sessionId,
         resume: false,
         addDirs: [repoRoot],
-        model: groupCfg?.model,
+        model: groupCfg?.model ?? 'claude-sonnet-4-6',
         systemPrompt: groupCfg?.systemPrompt,
         suppressUserClaudeMd: groupCfg ? !groupCfg.inheritClaudeMd : undefined,
         logf,
@@ -454,14 +454,19 @@ const coreTools = [
   },
   {
     name: 'dc_update_group_prompt',
-    description: 'Update the behavior prompt for an existing Delta Chat group. Use when the user asks to change how Claude handles messages in a group.',
+    description: 'Update the behavior prompt and/or subagent model for an existing Delta Chat group. Use when the user asks to change how Claude handles messages in a group, or to switch which model (haiku/sonnet/opus) runs the group. At least one of prompt or model must be provided. Changing model evicts the cached subagent so the next message respawns on the new model.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         chat_id: { type: 'string', description: 'Group chat ID' },
-        prompt: { type: 'string', description: 'Updated behavior prompt' },
+        prompt: { type: 'string', description: 'Updated behavior prompt (optional)' },
+        model: {
+          type: 'string',
+          description: 'Updated subagent model (optional). One of: claude-haiku-4-5, claude-sonnet-4-6, claude-opus-4-6.',
+          enum: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-6'],
+        },
       },
-      required: ['chat_id', 'prompt'],
+      required: ['chat_id'],
     },
   },
   {
@@ -681,14 +686,33 @@ async function callCoreTool(name: string, args: Record<string, unknown>): Promis
 
       case 'dc_update_group_prompt': {
         const chatId = Number(args.chat_id as string)
-        const prompt = ((args.prompt as string) ?? '').trim()
-        if (!chatId || Number.isNaN(chatId) || !prompt) {
-          return { content: [{ type: 'text' as const, text: 'dc_update_group_prompt: chat_id and prompt are required' }], isError: true }
+        const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
+        const model = typeof args.model === 'string' ? args.model.trim() : ''
+        if (!chatId || Number.isNaN(chatId)) {
+          return { content: [{ type: 'text' as const, text: 'dc_update_group_prompt: chat_id is required' }], isError: true }
         }
-        if (!groups.updateGroupPrompt(chatId, prompt)) {
-          return { content: [{ type: 'text' as const, text: `No group context found for chat ${chatId}. Use dc_create_group first.` }], isError: true }
+        if (!prompt && !model) {
+          return { content: [{ type: 'text' as const, text: 'dc_update_group_prompt: at least one of prompt or model must be provided' }], isError: true }
         }
-        return { content: [{ type: 'text' as const, text: `Updated prompt for chat ${chatId}.` }] }
+        if (model && !groups.ALLOWED_MODELS.includes(model as groups.AllowedModel)) {
+          return { content: [{ type: 'text' as const, text: `dc_update_group_prompt: invalid model "${model}". Allowed: ${groups.ALLOWED_MODELS.join(', ')}` }], isError: true }
+        }
+        const changes: string[] = []
+        if (prompt) {
+          if (!groups.updateGroupPrompt(chatId, prompt)) {
+            return { content: [{ type: 'text' as const, text: `No group context found for chat ${chatId}. Use dc_create_group first.` }], isError: true }
+          }
+          changes.push('prompt')
+        }
+        if (model) {
+          if (!groups.updateGroupModel(chatId, model as groups.AllowedModel)) {
+            return { content: [{ type: 'text' as const, text: `No group context found for chat ${chatId}. Use dc_create_group first.` }], isError: true }
+          }
+          changes.push(`model=${model}`)
+          // Evict cached subagent so the next turn respawns with the new model.
+          await subagentCache.evictChat(chatId).catch((err) => logf('dc_update_group_prompt: evict failed chat=%d: %v', chatId, err))
+        }
+        return { content: [{ type: 'text' as const, text: `Updated ${changes.join(', ')} for chat ${chatId}.` }] }
       }
 
       case 'dc_send_webxdc': {

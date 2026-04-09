@@ -113,6 +113,22 @@ export function updateGroupPrompt(chatId: number, systemPrompt: string): boolean
   return true
 }
 
+/** Allowed model ids for group subagent overrides. */
+export const ALLOWED_MODELS = ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5'] as const
+export type AllowedModel = typeof ALLOWED_MODELS[number]
+
+/** Update just the model for a group. Returns false if group doesn't exist. Throws on invalid model. */
+export function updateGroupModel(chatId: number, model: AllowedModel): boolean {
+  if (!ALLOWED_MODELS.includes(model)) {
+    throw new Error(`invalid model: ${model}`)
+  }
+  const ctx = getGroupContext(chatId)
+  if (!ctx) return false
+  ctx.model = model
+  setGroupContext(chatId, ctx)
+  return true
+}
+
 /**
  * Build a draft GroupContext from a free-form description by keyword-guessing
  * the type and using that type's default prompt template. Pure function.

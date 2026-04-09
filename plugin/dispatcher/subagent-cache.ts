@@ -183,6 +183,11 @@ export class SubagentCache {
     entry.sub.extendDeadline?.(extraMs)
   }
 
+  /** Evict one chat's cached subagent (if any). No-op if absent. Public for config-change invalidation. */
+  async evictChat(chatId: number): Promise<void> {
+    await this.evict(chatId)
+  }
+
   async closeAll(): Promise<void> {
     const chatIds = [...this.entries.keys()]
     for (const id of chatIds) await this.evict(id)
