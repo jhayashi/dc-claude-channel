@@ -57,12 +57,22 @@ describe('buildSubagentArgs', () => {
     expect(args[i + 1]).toBe(envBlock)
   })
 
-  test('mcpConfigPath adds --mcp-config and --allowedTools', () => {
+  test('mcpConfigPath adds --mcp-config and --allowedTools (no --strict-mcp-config)', () => {
     const { args } = buildSubagentArgs(baseOpts({ mcpConfigPath: '/tmp/mcp.json' }))
     expect(args).toContain('--mcp-config')
     expect(args).toContain('/tmp/mcp.json')
-    expect(args).toContain('--strict-mcp-config')
+    // User's global MCP servers merge in; we do NOT use --strict-mcp-config.
+    expect(args).not.toContain('--strict-mcp-config')
     expect(args).toContain('--allowedTools')
+    const i = args.indexOf('--allowedTools')
+    const list = args[i + 1]
+    expect(list).toContain('mcp__dc')
+    expect(list).toContain('Skill')
+    expect(list).toContain('ToolSearch')
+    expect(list).toContain('WebSearch')
+    expect(list).toContain('LSP')
+    expect(list).not.toContain('CronCreate')
+    expect(list).not.toContain('RemoteTrigger')
   })
 
   test('addDirs are passed as --add-dir', () => {

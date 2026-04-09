@@ -100,8 +100,36 @@ export function buildSubagentArgs(
     args.push('--model', opts.model)
   }
   if (opts.mcpConfigPath) {
-    args.push('--mcp-config', opts.mcpConfigPath, '--strict-mcp-config')
-    args.push('--allowedTools', 'mcp__dc Bash Read Edit Write Grep Glob WebFetch WebSearch NotebookEdit Task TodoWrite')
+    // No --strict-mcp-config: our dc server is merged with the user's
+    // global MCP config (Gmail, Calendar, Telegram, etc.) so subagents
+    // inherit the same MCP tools the terminal session has.
+    args.push('--mcp-config', opts.mcpConfigPath)
+    args.push(
+      '--allowedTools',
+      [
+        // Our DC MCP server — whole server allowed, dispatcher-side
+        // authorization gates chat_id.
+        'mcp__dc',
+        // Core built-ins. Gated ones (Bash/Edit/Write/NotebookEdit/
+        // WebFetch/WebSearch) still fire the PreToolUse hook.
+        'Bash', 'Read', 'Edit', 'Write', 'Grep', 'Glob',
+        'WebFetch', 'WebSearch', 'NotebookEdit',
+        // Task tooling (spawn/monitor/stop sub-subagents).
+        'Task', 'TaskOutput', 'TaskStop', 'TodoWrite',
+        // User skills and deferred-tool loading — required now that
+        // user-level settings are inherited.
+        'Skill', 'ToolSearch',
+        // Structured prompting + language-server queries.
+        'AskUserQuestion', 'LSP',
+        // Plan mode + worktree management — useful for coding agents.
+        'EnterPlanMode', 'ExitPlanMode', 'EnterWorktree', 'ExitWorktree',
+        // Intentionally excluded: CronCreate/Delete/List and
+        // RemoteTrigger. These have persistence side effects (jobs
+        // that outlive the turn / out-of-band invocation) that
+        // shouldn't be triggered from a DC chat without further
+        // thought.
+      ].join(' '),
+    )
   }
   for (const dir of opts.addDirs ?? []) {
     args.push('--add-dir', dir)
