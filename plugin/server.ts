@@ -197,14 +197,10 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess> {
       })
     }
   }
-  client.send(
-    chatId,
-    resumeFailed
-      ? '\u26a0\ufe0f Previous session could not be resumed; starting fresh.'
-      : created
-        ? '\u2728 Starting a fresh session.'
-        : '\u21bb Resuming previous session.',
-  ).catch((err) => logf('subagent: status notice send failed chat=%d: %v', chatId, err))
+  // Spawn status is now surfaced via the cold-start 🔄 reaction on the
+  // user's message (see runSubagentTurn). Only log server-side; avoid
+  // noisy chat messages on every respawn.
+  logf('subagent: chat=%d spawn %s', chatId, resumeFailed ? 'RESUME_FAILED→FRESH' : created ? 'FRESH' : 'RESUME')
   subagentRegistry.set(subagentId, { chatId })
   const origClose = sub.close.bind(sub)
   sub.close = async () => {
