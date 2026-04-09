@@ -1,5 +1,5 @@
 /**
- * Group setup WebXDC builder.
+ * Agent setup WebXDC builder.
  */
 
 import { join } from 'node:path'

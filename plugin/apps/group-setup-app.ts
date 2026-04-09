@@ -1,7 +1,7 @@
 /**
- * Group setup WebXDC app — sends a setup card into a paired chat that
- * lets the user pick a group type, edit the name and system prompt, then
- * creates a new DC group with that config persisted to groups storage.
+ * Agent setup WebXDC app — sends a setup card into a paired chat that
+ * lets the user pick an agent type, edit the name and system prompt, then
+ * creates a new DC agent (group) with that config persisted to storage.
  */
 
 import type { WebXDCApp, ToolDef, ToolResult, AppContext } from '../webxdc-app.js'
