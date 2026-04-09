@@ -251,7 +251,7 @@ const coreInstructions = [
   '',
   'Use dc_chat_history to read recent messages from a chat. Use dc_download_attachment to download files from messages that weren\'t auto-downloaded.',
   '',
-  'Group chats can have a behavior prompt (group_prompt attribute). When present, follow that prompt for all messages in that group. If the user asks to change how you handle messages in a group, call dc_update_group_prompt. In a group with just you and one other person, respond to every message. In larger groups, only the owner (person who paired the chat) can command Claude — messages from other members are silently ignored to protect private data.',
+  'Agents are groups with behavior prompts (group_prompt attribute). When present, follow that prompt for all messages in that agent. If the user asks to change how Claude handles messages in an agent (e.g., "switch to Opus"), call dc_update_agent_prompt. In an agent with just the owner, respond to every message. In larger groups, only the owner (person who paired the chat) can command Claude — messages from other members are silently ignored to protect private data.',
   '',
   'Permission prompts are sent as numbered text messages (1 — Allow, 2 — Deny). The user replies with the number.',
   '',
@@ -463,8 +463,8 @@ const coreTools = [
     },
   },
   {
-    name: 'dc_update_group_prompt',
-    description: 'Update the behavior prompt and/or subagent model for an existing Delta Chat group. Use when the user asks to change how Claude handles messages in a group, or to switch which model (haiku/sonnet/opus) runs the group. At least one of prompt or model must be provided. Changing model evicts the cached subagent so the next message respawns on the new model.',
+    name: 'dc_update_agent',
+    description: 'Update the behavior prompt and/or model for an existing agent. Use when the user asks to change how Claude handles messages in an agent, or to switch which model (haiku/sonnet/opus) runs the agent. At least one of prompt or model must be provided. Changing model evicts the cached subagent so the next message respawns on the new model.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -715,35 +715,35 @@ async function callCoreTool(name: string, args: Record<string, unknown>): Promis
         return { content: [{ type: 'text' as const, text: `Group: ${groupCtx.name}\nPrompt: ${groupCtx.systemPrompt}` }] }
       }
 
-      case 'dc_update_group_prompt': {
+      case 'dc_update_agent': {
         const chatId = Number(args.chat_id as string)
         const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
         const model = typeof args.model === 'string' ? args.model.trim() : ''
         if (!chatId || Number.isNaN(chatId)) {
-          return { content: [{ type: 'text' as const, text: 'dc_update_group_prompt: chat_id is required' }], isError: true }
+          return { content: [{ type: 'text' as const, text: 'dc_update_agent: chat_id is required' }], isError: true }
         }
         if (!prompt && !model) {
-          return { content: [{ type: 'text' as const, text: 'dc_update_group_prompt: at least one of prompt or model must be provided' }], isError: true }
+          return { content: [{ type: 'text' as const, text: 'dc_update_agent: at least one of prompt or model must be provided' }], isError: true }
         }
         if (model && !groups.ALLOWED_MODELS.includes(model as groups.AllowedModel)) {
-          return { content: [{ type: 'text' as const, text: `dc_update_group_prompt: invalid model "${model}". Allowed: ${groups.ALLOWED_MODELS.join(', ')}` }], isError: true }
+          return { content: [{ type: 'text' as const, text: `dc_update_agent: invalid model "${model}". Allowed: ${groups.ALLOWED_MODELS.join(', ')}` }], isError: true }
         }
         const changes: string[] = []
         if (prompt) {
           if (!groups.updateGroupPrompt(chatId, prompt)) {
-            return { content: [{ type: 'text' as const, text: `No group context found for chat ${chatId}. Use dc_create_group first.` }], isError: true }
+            return { content: [{ type: 'text' as const, text: `No agent context found for chat ${chatId}. Use dc_propose_group first.` }], isError: true }
           }
           changes.push('prompt')
         }
         if (model) {
           if (!groups.updateGroupModel(chatId, model as groups.AllowedModel)) {
-            return { content: [{ type: 'text' as const, text: `No group context found for chat ${chatId}. Use dc_create_group first.` }], isError: true }
+            return { content: [{ type: 'text' as const, text: `No agent context found for chat ${chatId}. Use dc_propose_group first.` }], isError: true }
           }
           changes.push(`model=${model}`)
           // Evict cached subagent so the next turn respawns with the new model.
-          await subagentCache.evictChat(chatId).catch((err) => logf('dc_update_group_prompt: evict failed chat=%d: %v', chatId, err))
+          await subagentCache.evictChat(chatId).catch((err) => logf('dc_update_agent: evict failed chat=%d: %v', chatId, err))
         }
-        return { content: [{ type: 'text' as const, text: `Updated ${changes.join(', ')} for chat ${chatId}.` }] }
+        return { content: [{ type: 'text' as const, text: `Updated ${changes.join(', ')} for agent ${chatId}.` }] }
       }
 
       case 'dc_send_webxdc': {
