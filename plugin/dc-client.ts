@@ -56,6 +56,20 @@ export interface Message {
   systemMessageType?: string;
 }
 
+/**
+ * A reaction change event surfaced by DC's ReactionsChanged event.
+ * `reaction` is the new reaction string for the reactor; empty string
+ * means the reactor cleared their previous reaction.
+ */
+export interface ReactionEvent {
+  chatId: number;
+  msgId: number;
+  fromId: number;
+  senderName: string;
+  reaction: string;
+  timestamp: Date;
+}
+
 export interface BotStatus {
   address: string;
   connected: boolean;
@@ -267,6 +281,43 @@ export class DCClient {
 
     this.contextEvents.on('WebxdcStatusUpdate', (event: { msgId: number; statusUpdateSerial: number }) => {
       handler(event.msgId, event.statusUpdateSerial);
+    });
+  }
+
+  /**
+   * Register a handler for reaction changes on any message in the account.
+   * Fires for both additions and removals. Self-reactions (from CONTACT_SELF)
+   * are filtered out at this layer to avoid feedback loops with our own
+   * outbound reactions (e.g. the cold-start spinner). Register BEFORE calling
+   * startIO().
+   */
+  onReaction(handler: (ev: ReactionEvent) => void): void {
+    if (!this.contextEvents) throw new Error('Account not initialized');
+    const { rpc, accountId } = this.ensureAccount();
+
+    this.contextEvents.on('ReactionsChanged', async (event: { chatId: number; msgId: number; contactId: number }) => {
+      try {
+        if (event.contactId === CONTACT_SELF) return;
+        // Read the full reaction set for the message to discover what the
+        // reactor's current reaction is (the event itself doesn't carry it).
+        const reactions = await rpc.getMessageReactions(accountId, event.msgId);
+        const byContact = (reactions?.reactionsByContact ?? {}) as Record<string, string[]>;
+        const list = byContact[String(event.contactId)] ?? [];
+        // DC stores an array per contact; in practice there's at most one
+        // emoji per sender per message. Empty array = reactor cleared.
+        const reaction = list.length > 0 ? list.join('') : '';
+        const contact = await rpc.getContact(accountId, event.contactId).catch(() => null);
+        handler({
+          chatId: event.chatId,
+          msgId: event.msgId,
+          fromId: event.contactId,
+          senderName: contact?.displayName ?? `contact:${event.contactId}`,
+          reaction,
+          timestamp: new Date(),
+        });
+      } catch (err) {
+        this.log('dc-client: reaction event error: %v', err);
+      }
     });
   }
 

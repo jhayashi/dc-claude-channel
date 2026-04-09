@@ -36,6 +36,7 @@ import { SubagentProcess } from './dispatcher/subagent-process.js'
 import { SessionStore } from './dispatcher/session-store.js'
 import { generateHookConfig } from './dispatcher/hook-config.js'
 import { createMessageRouter } from './dispatcher/message-router.js'
+import { ReactionRouter } from './dispatcher/reaction-router.js'
 import type { ServerMessage } from './shared/protocol.js'
 import type { Message } from './dc-client.js'
 
@@ -1165,6 +1166,29 @@ async function main(): Promise<void> {
   client.onChatModified((chatId) => {
     if (shuttingDown) return
     router.onChatModified(chatId).catch((err) => logf('router crashed: %v', err))
+  })
+
+  // Reaction event router — see dispatcher/reaction-router.ts.
+  const reactionRouter = new ReactionRouter({
+    isAllowed: (chatId) => access.isAllowed(chatId),
+    getOwner: (chatId) => access.getOwner(chatId),
+    hasLiveSubagent: (chatId) => subagentCache.hasLive(chatId),
+    dispatchSynthetic: async (chatId, text) => {
+      try {
+        const result = await subagentCache.dispatch(chatId, text)
+        logf('reaction: chat=%d synthetic result.text=%s denials=%d', chatId, (result.text ?? '').slice(0, 300).replace(/\n/g, ' '), result.denials.length)
+        if (result.text) {
+          await client.send(chatId, result.text)
+        }
+      } catch (err) {
+        logf('reaction: synthetic dispatch error chat=%d: %v', chatId, err)
+      }
+    },
+    logf,
+  })
+  client.onReaction((ev) => {
+    if (shuttingDown) return
+    reactionRouter.handle(ev)
   })
 
   // WebXDC updates — event-driven, O(1) dispatch via msgId registry.
