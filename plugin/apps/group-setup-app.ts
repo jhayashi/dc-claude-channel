@@ -44,12 +44,12 @@ async function sendInit(
   // Info text MUST be unique per call — DC dedupes consecutive identical
   // info text and the user gets no notification. Include the draft name
   // so each setup card produces a fresh tappable info message.
-  const prefix = 'Tap to setup group: '
+  const prefix = 'Tap to create agent: '
   const maxName = 80 - prefix.length
   const shortName = draft.name.length > maxName ? draft.name.slice(0, maxName - 1) + '\u2026' : draft.name
   const update = JSON.stringify({
     payload,
-    summary: 'Group setup',
+    summary: 'Agent setup',
     info: prefix + shortName,
     href: 'index.html',
   })
@@ -78,17 +78,17 @@ export const groupSetupApp: WebXDCApp = {
   id: 'group-setup',
 
   instructions:
-    'When the user wants to create a new Delta Chat group with a specific behavior ' +
+    'When the user wants to create a new agent with a specific behavior ' +
     '(coding assistant, quick Q&A, general chat, etc.), call dc_propose_group with ' +
-    'their description. This sends a setup card to the chat for them to confirm.',
+    'their description. This sends an agent setup card to the chat for them to review and create.',
 
   tools(): ToolDef[] {
     return [
       {
         name: 'dc_propose_group',
         description:
-          'Send a group setup card to the user. The card lets them pick a group type, ' +
-          'edit the name/prompt, and create a new DC group with that config.',
+          'Send an agent setup card to the user. The card lets them pick an agent type, ' +
+          'edit the name/prompt, and create a new agent with that config.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -191,18 +191,18 @@ export const groupSetupApp: WebXDCApp = {
           try {
             await ctx.client.send(
               newChatId,
-              `Hi! This is your new "${cfg.name}" group (${cfg.type}). Send a message here to get started.`,
+              `Hi! This is your new "${cfg.name}" agent (${cfg.type}). Send a message here to get started.`,
             )
           } catch (err) {
             ctx.logf('group-setup: intro message send failed: %v', err)
           }
 
-          ctx.logf('group-setup: created group %d (%s) for owner %d', newChatId, cfg.name, ownerContactId)
+          ctx.logf('group-setup: created agent %d (%s) for owner %d', newChatId, cfg.name, ownerContactId)
 
           // Notify the app of success.
           const update = JSON.stringify({
             payload: { type: 'created', chatId: newChatId, name: cfg.name },
-            summary: 'Group created',
+            summary: 'Agent created',
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
 

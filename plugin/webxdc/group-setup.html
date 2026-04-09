@@ -114,8 +114,8 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 <body>
 <div class="card">
   <div class="header">
-    <h1>Set up a group</h1>
-    <div class="sub" id="header-sub">Pick a group type to get started.</div>
+    <h1>Create an agent</h1>
+    <div class="sub" id="header-sub">Pick an agent type to get started.</div>
   </div>
 
   <div id="loading" class="visible">
@@ -126,22 +126,22 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     <div class="body">
       <button class="type-card" id="card-coding" onclick="pickType('coding')">
         <div class="label">Coding<span class="badge">opus</span></div>
-        <div class="desc">Long-form coding work. Full project context.</div>
+        <div class="desc">Expert for long-form coding work and project context.</div>
       </button>
       <button class="type-card" id="card-quick" onclick="pickType('quick')">
         <div class="label">Quick<span class="badge">haiku</span></div>
-        <div class="desc">Fast Q&amp;A and short tasks. Minimal context.</div>
+        <div class="desc">Fast and lightweight for Q&amp;A and quick tasks.</div>
       </button>
       <button class="type-card" id="card-basic" onclick="pickType('basic')">
         <div class="label">Basic<span class="badge">sonnet</span></div>
-        <div class="desc">General-purpose assistant.</div>
+        <div class="desc">Balanced agent for general-purpose tasks.</div>
       </button>
     </div>
   </div>
 
   <div id="step2">
     <div class="body">
-      <label class="field" for="name">Group name</label>
+      <label class="field" for="name">Agent name</label>
       <input id="name" class="text" type="text" maxlength="80">
       <label class="field" for="desc">Description (optional)</label>
       <input id="desc" class="text" type="text" maxlength="200">
@@ -150,16 +150,16 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     </div>
     <div class="actions">
       <button class="btn btn-back" onclick="back()">Back</button>
-      <button class="btn btn-create" id="create-btn" onclick="create()">Create group</button>
+      <button class="btn btn-create" id="create-btn" onclick="create()">Create agent</button>
     </div>
   </div>
 
   <div id="created">
     <div class="center">
       <div class="result-icon">&#x2705;</div>
-      <div class="result-text">Group created</div>
+      <div class="result-text">Agent created</div>
       <div class="result-sub" id="created-name"></div>
-      <div class="result-sub" style="margin-top:14px;color:#e6edf3;">Open the new group in your chat list and send a quick &ldquo;hello&rdquo; so it&rsquo;s delivered to your device.</div>
+      <div class="result-sub" style="margin-top:14px;color:#e6edf3;">Open the agent in your chat list and send a message to activate it.</div>
       <div class="back-hint">&#x2190; Swipe or tap back to return to chat</div>
     </div>
   </div>
@@ -175,7 +175,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.01;
+var APP_VERSION = 1.02;
 // Single in-memory state. Replay rebuilds it from scratch each open.
 var draft = null;          // GroupConfig draft from server
 var pickedType = null;     // user's current type selection (may differ from draft.type)
@@ -233,8 +233,8 @@ function create() {
   };
   window.webxdc.sendUpdate({
     payload: { type: 'create', config: cfg, senderAddr: window.webxdc.selfAddr },
-    summary: 'Create group: ' + cfg.name
-  }, 'Create group');
+    summary: 'Create agent: ' + cfg.name
+  }, 'Create agent');
 }
 
 window.webxdc.setUpdateListener(function(update) {
