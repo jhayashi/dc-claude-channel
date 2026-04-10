@@ -975,7 +975,20 @@ async function main(): Promise<void> {
     // Drop the binding (session uuid + agent link) so the next pairing
     // starts fresh. Agent definitions are reusable and intentionally
     // left on disk — a user may want to rebind them to a later chat.
+    const binding = bindings.getBinding(chatId)
     bindings.deleteBinding(chatId)
+    // Auto-delete the agent if this was its last binding.
+    if (binding) {
+      const agents = await import('./agents.js')
+      if (agents.isOrphaned(binding.agentId)) {
+        try {
+          agents.deleteAgent(binding.agentId)
+          logf('dc channel: auto-deleted orphaned agent %s', binding.agentId)
+        } catch (err) {
+          logf('dc channel: auto-delete failed for %s: %v', binding.agentId, err)
+        }
+      }
+    }
     // Remove from the allowlist.
     access.removeChat(chatId)
     // Delete the chat from DC core last — after this, the chatId may be invalid.
