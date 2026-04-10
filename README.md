@@ -95,11 +95,24 @@ Reply "yes" to start, or "no" to skip. You can start using Claude immediately ei
 
 <p align="center">
   <img src="screenshots/chat-list.jpg" width="250" alt="Chat list with agent chats">
+  &nbsp;&nbsp;
   <img src="screenshots/agent-setup.jpg" width="250" alt="Agent setup card">
 </p>
 <p align="center">
+  <em>Multiple agents, each with their own chat and model</em>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <em>Agent setup and management in a WebXDC app</em>
+</p>
+
+<p align="center">
   <img src="screenshots/permission-prompt.jpg" width="250" alt="Permission prompt">
+  &nbsp;&nbsp;
   <img src="screenshots/file-reviewer.jpg" width="250" alt="File reviewer">
+</p>
+<p align="center">
+  <em>Tap to Allow or Deny tool permissions</em>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <em>Review and comment on code from your phone</em>
 </p>
 
 ## How It Compares
