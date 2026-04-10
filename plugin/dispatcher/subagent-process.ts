@@ -271,9 +271,12 @@ export class SubagentProcess {
       this.child.stdin.write(JSON.stringify(inputFrame) + '\n')
 
       const resultFrame = await this.readFrame(
-        (f) => f.type === 'result' && f.subtype === 'success',
+        (f) => f.type === 'result' && (f.subtype === 'success' || f.subtype === 'error_during_execution'),
         turnTimeoutMs,
       )
+      if (resultFrame.subtype === 'error_during_execution') {
+        throw new Error(`subagent ${this.subagentId} error_during_execution (session ${resultFrame.session_id})`)
+      }
       const denials = (resultFrame.permission_denials ?? []).map((d) => ({
         tool_name: d.tool_name,
         command: d.tool_input?.command,
