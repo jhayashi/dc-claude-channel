@@ -293,7 +293,7 @@ export const agentSetupApp: WebXDCApp = {
               type: 'edit',
               draft,
               version: agentSetup.getAgentSetupVersion(),
-              senderAddr: '', // Server responses include empty senderAddr to bypass filter
+              senderAddr: 'server', // Server response marker (non-empty to pass filter)
             },
             summary: 'Editing agent',
           })
@@ -324,7 +324,7 @@ export const agentSetupApp: WebXDCApp = {
             payload: {
               type: 'deleteBlocked',
               message: `Cannot delete: still bound to ${bindingCount} chat(s).`,
-              senderAddr: '',
+              senderAddr: 'server',
             },
             summary: 'Delete blocked',
           })
@@ -335,7 +335,7 @@ export const agentSetupApp: WebXDCApp = {
           agents.deleteAgent(agentId)
           ctx.logf('agent-setup: deleted agent %s', agentId)
           const update = JSON.stringify({
-            payload: { type: 'deleted', name: agent.name, senderAddr: '' },
+            payload: { type: 'deleted', name: agent.name, senderAddr: 'server' },
             summary: 'Agent deleted',
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
@@ -368,7 +368,7 @@ export const agentSetupApp: WebXDCApp = {
           agents.saveAgent({ ...draft, id: agentId })
           ctx.logf('agent-setup: edited agent %s', agentId)
           const update = JSON.stringify({
-            payload: { type: 'editComplete', name: draft.name, senderAddr: '' },
+            payload: { type: 'editComplete', name: draft.name, senderAddr: 'server' },
             summary: 'Agent updated',
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
