@@ -160,7 +160,8 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
           }
           agents.saveAgent(defaultAgent)
         }
-        // Update or create binding with agent
+        // Update or create binding with agent.
+        // Clear any stale sessionId so a fresh session is created.
         const newBinding: bindings.Binding = {
           chatId,
           agentId: defaultAgent.id,
@@ -168,8 +169,9 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
           createdAt: new Date().toISOString(),
         }
         bindings.saveBinding(newBinding)
-        logf('subagent: auto-repaired chat %d with agent %s', chatId, defaultAgent.id)
-        // Recursively try to spawn now that binding is fixed
+        bindings.clearSessionId(chatId)
+        logf('subagent: auto-repaired chat %d with agent %s, cleared stale session', chatId, defaultAgent.id)
+        // Recursively try to spawn now that binding is fixed and session is cleared
         return spawnSubagentForChat(chatId)
       } catch (err) {
         logf('subagent: auto-repair failed for chat %d: %v', chatId, err)
