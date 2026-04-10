@@ -126,10 +126,6 @@ const SUBAGENT_TOOL_BLOCKLIST = new Set([
 ])
 
 async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | null> {
-  // Ensure a minimal binding exists (with sessionId) even if unbound.
-  // This allows us to send recovery messages and track sessions across rebinds.
-  bindings.loadOrCreateSessionId(chatId)
-
   const resolvedCheck = bindings.resolveChat(chatId)
   if (!resolvedCheck) {
     const binding = bindings.getBinding(chatId)
