@@ -142,11 +142,42 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
       }
     } else {
       // Chat has no binding or binding has no agentId — unbound state.
-      logf('subagent: chat %d has no agent bound', chatId)
+      // Try to auto-repair by binding to a default quick agent.
+      logf('subagent: chat %d unbound, attempting auto-repair', chatId)
       try {
-        await client.send(chatId, `\u26a0\ufe0f This chat is not bound to an agent. Go to a 1:1 chat and send a message like "create agent" or "set up agent" to bind one, then return here.`)
+        let defaultAgent = agents.listAgents().find(a => a['x-dc-type'] === 'quick')
+        if (!defaultAgent) {
+          // Create a default quick agent if needed
+          defaultAgent = {
+            id: 'default-quick-agent',
+            name: 'Quick Assistant',
+            model: 'claude-haiku-4-5',
+            system: agents.AGENT_TYPES.quick.defaultPrompt,
+            tools: [],
+            'x-dc-type': 'quick',
+            'x-dc-description': 'Default quick assistant for the 1:1 chat',
+            'x-dc-createdAt': new Date().toISOString(),
+          }
+          agents.saveAgent(defaultAgent)
+        }
+        // Update or create binding with agent
+        const newBinding: bindings.Binding = {
+          chatId,
+          agentId: defaultAgent.id,
+          inheritClaudeMd: true,
+          createdAt: new Date().toISOString(),
+        }
+        bindings.saveBinding(newBinding)
+        logf('subagent: auto-repaired chat %d with agent %s', chatId, defaultAgent.id)
+        // Recursively try to spawn now that binding is fixed
+        return spawnSubagentForChat(chatId)
       } catch (err) {
-        logf('subagent: failed to send unbound message: %v', err)
+        logf('subagent: auto-repair failed for chat %d: %v', chatId, err)
+        try {
+          await client.send(chatId, `\u26a0\ufe0f This chat is not bound to an agent. Go to a 1:1 chat and send a message like "create agent" or "set up agent" to bind one, then return here.`)
+        } catch (err2) {
+          logf('subagent: failed to send unbound message: %v', err2)
+        }
       }
     }
     return null
