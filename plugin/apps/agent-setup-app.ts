@@ -288,7 +288,11 @@ export const agentSetupApp: WebXDCApp = {
           _inheritClaudeMd: agents.AGENT_TYPES[agent['x-dc-type']].inheritClaudeMd,
         }
         try {
-          await sendInit(ctx, agentSetupApp, session.sourceChatId, draft)
+          const update = JSON.stringify({
+            payload: { type: 'edit', draft, version: agentSetup.getAgentSetupVersion() },
+            summary: 'Editing agent',
+          })
+          await ctx.client.sendWebXDCUpdate(session.msgId, update)
           ctx.logf('agent-setup: sent edit screen for agent %s', agentId)
         } catch (err) {
           ctx.logf('agent-setup: edit send failed: %v', err)
