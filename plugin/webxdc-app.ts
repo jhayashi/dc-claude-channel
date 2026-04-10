@@ -34,6 +34,8 @@ export interface AppContext {
   registerWebXDCMsg: (msgId: number, app: WebXDCApp, chatId: number) => void
   /** Unregister a WebXDC msgId (e.g. on session clear). */
   unregisterWebXDCMsg: (msgId: number) => void
+  /** Evict a cached subagent for a chat so the next message triggers a respawn (e.g. after model change). */
+  evictSubagent: (chatId: number) => Promise<void>
 }
 
 export interface WebXDCApp {

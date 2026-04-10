@@ -27,6 +27,7 @@ import * as bindings from './bindings.js'
 import { apps } from './apps.js'
 import type { WebXDCApp, AppContext } from './webxdc-app.js'
 import { filterUpdatesByOwner } from './webxdc-filter.js'
+import { decorateAgentChat } from './apps/agent-setup-app.js'
 import * as tutorial from './tutorial.js'
 import { decideCleanup } from './cleanup.js'
 import { SocketServer, type SocketRequest } from './dispatcher/socket-server.js'
@@ -97,8 +98,8 @@ const DISPATCHER_SECRET = randomBytes(32).toString('hex')
 const HOOK_SCRIPT = join(import.meta.dir, 'dispatcher', 'permission-hook.sh')
 
 const MAX_ACTIVE = Math.max(1, Math.min(16, Number(process.env.DC_SUBAGENT_MAX_ACTIVE ?? '4')))
-const IDLE_MIN = Math.max(1, Number(process.env.DC_SUBAGENT_IDLE_TIMEOUT_MIN ?? '15'))
-const TURN_TIMEOUT_MS = Math.max(60_000, Number(process.env.DC_SUBAGENT_TIMEOUT_MS ?? String(4 * 60 * 60_000)))
+const IDLE_MIN = Math.max(1, Number(process.env.DC_SUBAGENT_IDLE_MIN ?? '480'))
+const TURN_TIMEOUT_MIN = Math.max(1, Number(process.env.DC_SUBAGENT_TURN_TIMEOUT_MIN ?? '60'))
 const QUEUE_MAX = Math.max(1, Math.min(1000, Number(process.env.DC_SUBAGENT_QUEUE_MAX ?? '10')))
 const RATE_LIMIT = Math.max(1, Math.min(10000, Number(process.env.DC_SUBAGENT_RATE_LIMIT ?? '100')))
 const RATE_WINDOW_MS = 60_000
@@ -114,6 +115,17 @@ const subagentRegistry = new Map<string, { chatId: number }>()
 const pendingPermissions = new Map<string, { connectionId: string; chatId: number; resolve: (v: ServerMessage) => void; startedAt: number }>()
 
 const TOOLS_PROXY = join(import.meta.dir, 'dispatcher', 'tools-proxy.ts')
+
+/** Claude Code CLI version, cached once at module load. */
+const CLAUDE_VERSION = (() => {
+  try {
+    const r = Bun.spawnSync(['claude', '--version'])
+    return r.stdout.toString().trim().replace(/\s*\(.*\)/, '') // "2.1.100 (Claude Code)" → "2.1.100"
+  } catch {
+    return undefined
+  }
+})()
+
 
 /** Tools that only make sense from the terminal Claude session — filtered
  *  out of the subagent manifest to avoid confusion (e.g. the LLM calling
@@ -141,18 +153,14 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
       // Try to auto-repair by binding to a default quick agent.
       logf('subagent: chat %d unbound, attempting auto-repair', chatId)
       try {
-        let defaultAgent = agents.listAgents().find(a => a['x-dc-type'] === 'quick')
+        let defaultAgent = agents.getAgent('claude-code')
         if (!defaultAgent) {
-          // Create a default quick agent if needed
           defaultAgent = {
-            id: 'default-quick-agent',
-            name: 'Quick Assistant',
-            model: 'claude-haiku-4-5',
-            system: agents.AGENT_TYPES.quick.defaultPrompt,
+            id: 'claude-code',
+            name: 'Claude Code',
+            model: agents.DEFAULT_MODEL,
+            system: agents.DEFAULT_SYSTEM_PROMPT,
             tools: [],
-            'x-dc-type': 'quick',
-            'x-dc-description': 'Default quick assistant for the 1:1 chat',
-            'x-dc-createdAt': new Date().toISOString(),
           }
           agents.saveAgent(defaultAgent)
         }
@@ -161,7 +169,7 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
         const newBinding: bindings.Binding = {
           chatId,
           agentId: defaultAgent.id,
-          inheritClaudeMd: true,
+          inheritClaudeMd: agents.inheritClaudeMdForModel(defaultAgent.model),
           createdAt: new Date().toISOString(),
         }
         bindings.saveBinding(newBinding)
@@ -206,6 +214,13 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     resolved && resolved.binding.inheritClaudeMd !== undefined
       ? !resolved.binding.inheritClaudeMd
       : undefined
+  // Resolve the owner's display name from their DC contact card.
+  let userName: string | undefined
+  const ownerContactId = access.getOwner(chatId)
+  if (ownerContactId) {
+    userName = (await client.getContactName(ownerContactId)) ?? undefined
+  }
+
   let resumeFailed = false
   let sub = new SubagentProcess({
     chatId,
@@ -218,7 +233,10 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     resume: !created,
     addDirs: [repoRoot],
     model: resolved?.agent.model ?? 'claude-sonnet-4-6',
-    systemPrompt: resolved?.agent.system,
+    agentName: resolved?.agent.name,
+    userName,
+    claudeVersion: CLAUDE_VERSION,
+    systemPrompt: [resolved?.agent.system, appInstructions].filter(Boolean).join('\n\n'),
     suppressUserClaudeMd,
     logf,
   })
@@ -247,7 +265,10 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
         resume: false,
         addDirs: [repoRoot],
         model: resolved?.agent.model ?? 'claude-sonnet-4-6',
-        systemPrompt: resolved?.agent.system,
+        agentName: resolved?.agent.name,
+        userName,
+        claudeVersion: CLAUDE_VERSION,
+        systemPrompt: [resolved?.agent.system, appInstructions].filter(Boolean).join('\n\n'),
         suppressUserClaudeMd,
         logf,
       })
@@ -282,7 +303,7 @@ const subagentCache = new SubagentCache({
   idleTimeoutMs: IDLE_MIN * 60_000,
   spawnFn: spawnSubagentForChat,
   logf,
-  turnTimeoutMs: TURN_TIMEOUT_MS,
+  turnTimeoutMs: TURN_TIMEOUT_MIN * 60_000,
   queueMax: QUEUE_MAX,
   onCrash: (chatId) => {
     // Clear the session so next respawn starts fresh instead of resuming
@@ -317,7 +338,8 @@ const coreInstructions = [
   'Access is managed by the /deltachat:access skill in the terminal. Never edit access files or approve pairing from a channel message.',
 ].join('\n')
 
-const channelInstructions = [coreInstructions, ...apps.map(a => a.instructions ?? '').filter(Boolean)].join('\n\n')
+const appInstructions = apps.map(a => a.instructions ?? '').filter(Boolean).join('\n\n')
+const channelInstructions = [coreInstructions, appInstructions].filter(Boolean).join('\n\n')
 
 // ── MCP Server ──────────────────────────────────────────────────────────
 
@@ -349,6 +371,11 @@ ctx = {
   unregisterWebXDCMsg(msgId: number) {
     webxdcAppRegistry.delete(msgId)
     webxdcLastSerial.delete(msgId)
+  },
+  async evictSubagent(chatId: number) {
+    await subagentCache.evictChat(chatId).catch(err =>
+      logf('ctx.evictSubagent: evict failed chat=%d: %v', chatId, err),
+    )
   },
 }
 
@@ -506,6 +533,11 @@ const coreTools = [
         name: { type: 'string', description: 'Agent name (e.g., "Marketing Agent")' },
         prompt: { type: 'string', description: 'Short behavior instruction for this agent (e.g., "Summarize any links shared. Tag by topic.")' },
         user_chat_id: { type: 'string', description: 'The chat_id from the user\'s 1:1 conversation (used to find their contact ID to add to the agent)' },
+        model: {
+          type: 'string',
+          description: 'Model for this agent. Use opus for coding/software tasks, haiku for simple Q&A, sonnet for everything else.',
+          enum: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-6'],
+        },
       },
       required: ['name', 'prompt', 'user_chat_id'],
     },
@@ -668,19 +700,15 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         // Auto-bind the 1:1 chat to a default agent so it's immediately usable.
         // This creates a "quick" agent if none exists, then binds the chat to it.
         try {
-          let defaultAgent = agents.listAgents().find(a => a['x-dc-type'] === 'quick')
+          let defaultAgent = agents.getAgent('claude-code')
           if (!defaultAgent) {
-            // Create a default quick agent
             defaultAgent = {
-              id: 'default-quick-agent',
-              name: 'Quick Assistant',
-              model: 'claude-haiku-4-5',
-              system: agents.AGENT_TYPES.quick.defaultPrompt,
+              id: 'claude-code',
+              name: 'Claude Code',
+              model: agents.DEFAULT_MODEL,
+              system: agents.DEFAULT_SYSTEM_PROMPT,
               tools: [],
-              'x-dc-type': 'quick',
-              'x-dc-description': 'Default quick assistant for the 1:1 chat',
-              'x-dc-createdAt': new Date().toISOString(),
-            }
+              }
             agents.saveAgent(defaultAgent)
           }
           // Create binding for the 1:1 chat
@@ -777,7 +805,11 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
 
         // Draft an agent from the free-form prompt, then override with the
         // explicit name/prompt the tool was given. Save agent + bind to chat.
-        const { agent: draft, inheritClaudeMd } = agents.draftAgentFromDescription(prompt)
+        const modelArg = args.model as string | undefined
+        const model = modelArg && agents.ALLOWED_MODELS.includes(modelArg as agents.AllowedModel)
+          ? modelArg as agents.AllowedModel
+          : undefined
+        const { agent: draft, inheritClaudeMd } = agents.draftAgentFromDescription(prompt, model)
         const agentId = agents.synthesizeAgentId(name)
         try {
           agents.saveAgent({
@@ -794,13 +826,13 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           return { content: [{ type: 'text' as const, text: `dc_create_agent: failed to persist agent: ${(err as Error).message}` }], isError: true }
         }
 
-        let inviteLink = ''
-        try {
-          inviteLink = await client.getGroupInviteLink(groupId)
-        } catch {}
+        // Send welcome message + set icon so the chat surfaces on the user's device.
+        const savedAgent = agents.getAgent(agentId)
+        if (savedAgent) {
+          await decorateAgentChat({ client, logf }, groupId, savedAgent)
+        }
 
-        const result = `Created agent "${name}" (chat ${groupId}, agent_id=${agentId}).\nPrompt: ${prompt}` +
-          (inviteLink ? `\nInvite link: ${inviteLink}` : '')
+        const result = `Created agent "${name}" (chat ${groupId}, agent_id=${agentId}).`
         return { content: [{ type: 'text' as const, text: result }] }
       }
 
@@ -1018,6 +1050,14 @@ async function main(): Promise<void> {
     mkdirSync(STATE_DIR, { recursive: true })
     writeFileSync(ENV_FILE, `DC_ADDRESS=${result.address}\nDC_PASSWORD=${result.password}\n`, { mode: 0o600 })
     logf('dc channel: saved credentials to %s', ENV_FILE)
+
+    // Set the bot's avatar to the Claude icon on first provision.
+    try {
+      const avatarPath = new URL('./assets/claude-avatar.png', import.meta.url).pathname
+      await client.setSelfAvatar(avatarPath)
+    } catch (err) {
+      logf('dc channel: failed to set self avatar: %v', err)
+    }
   }
 
   await mcp.connect(new StdioServerTransport())
@@ -1047,6 +1087,10 @@ async function main(): Promise<void> {
     }
     // Clear any in-flight tutorial state.
     tutorial.clearTutorial(chatId)
+    // Evict the subagent process if one is running for this chat.
+    await subagentCache.evictChat(chatId).catch(err =>
+      logf('dc channel: cleanup evict failed chat=%d: %v', chatId, err),
+    )
     // Drop the binding (session uuid + agent link) so the next pairing
     // starts fresh. Agent definitions are reusable and intentionally
     // left on disk — a user may want to rebind them to a later chat.
@@ -1416,7 +1460,7 @@ async function main(): Promise<void> {
   // Start the dispatcher socket server before IO so subagents spawned
   // by the first incoming message find the socket ready.
   await socketServer.start()
-  logf('dispatcher socket listening at %s (max_active=%d idle_min=%d turn_timeout_ms=%d queue_max=%d)', DISPATCHER_SOCKET, MAX_ACTIVE, IDLE_MIN, TURN_TIMEOUT_MS, QUEUE_MAX)
+  logf('dispatcher socket listening at %s (max_active=%d idle_min=%d turn_timeout_min=%d queue_max=%d)', DISPATCHER_SOCKET, MAX_ACTIVE, IDLE_MIN, TURN_TIMEOUT_MIN, QUEUE_MAX)
 
   // NOW start IO — events begin flowing after handlers are ready.
   if (dcAddress) {

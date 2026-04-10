@@ -32,11 +32,9 @@ function makeDef(overrides: Partial<agents.AgentDef> = {}): agents.AgentDef {
     id: 'test-agent',
     name: 'Test Agent',
     model: 'claude-sonnet-4-6',
+    description: '',
     system: 'you are helpful',
     tools: [],
-    'x-dc-type': 'basic',
-    'x-dc-description': '',
-    'x-dc-createdAt': '2026-04-09T00:00:00.000Z',
     ...overrides,
   }
 }
@@ -54,7 +52,6 @@ describe('agents registry', () => {
       name: 'Disk Agent',
       model: 'claude-haiku-4-5',
       system: 'be quick',
-      'x-dc-type': 'quick',
     })
     agents.saveAgent(def)
     const contents = readFileSync(join(testDir, 'disk-agent.yaml'), 'utf-8')
@@ -62,7 +59,7 @@ describe('agents registry', () => {
     expect(parsed).toEqual(def)
     // Sanity: it's actually YAML, not JSON
     expect(contents).toContain('id: disk-agent')
-    expect(contents).toContain('x-dc-type: quick')
+    expect(contents).toContain('model: claude-haiku-4-5')
   })
 
   test('getAgent returns null for missing id', () => {
@@ -179,36 +176,34 @@ describe('synthesizeAgentId', () => {
 })
 
 describe('draftAgentFromDescription', () => {
-  test('guesses type by keywords', () => {
-    expect(
-      agents.draftAgentFromDescription('debug a python bug').agent['x-dc-type'],
-    ).toBe('coding')
-    expect(
-      agents.draftAgentFromDescription('refactor the auth module').agent['x-dc-type'],
-    ).toBe('coding')
-    expect(
-      agents.draftAgentFromDescription('quick questions about anything').agent['x-dc-type'],
-    ).toBe('quick')
-    expect(
-      agents.draftAgentFromDescription('chat about books').agent['x-dc-type'],
-    ).toBe('basic')
+  test('defaults to sonnet when no model specified', () => {
+    const { agent } = agents.draftAgentFromDescription('marketing help')
+    expect(agent.model).toBe('claude-sonnet-4-6')
   })
 
-  test('assigns matching model and prompt for type', () => {
-    const coding = agents.draftAgentFromDescription('typescript bug')
-    expect(coding.agent.model).toBe('claude-opus-4-6')
-    expect(coding.agent.system).toBe(agents.AGENT_TYPES.coding.defaultPrompt)
-
-    const quick = agents.draftAgentFromDescription('quick QA')
-    expect(quick.agent.model).toBe('claude-haiku-4-5')
-
-    const basic = agents.draftAgentFromDescription('chat about books')
-    expect(basic.agent.model).toBe('claude-sonnet-4-6')
+  test('uses caller-specified model', () => {
+    expect(
+      agents.draftAgentFromDescription('debug a python bug', 'claude-opus-4-6').agent.model,
+    ).toBe('claude-opus-4-6')
+    expect(
+      agents.draftAgentFromDescription('quick questions', 'claude-haiku-4-5').agent.model,
+    ).toBe('claude-haiku-4-5')
   })
 
-  test('returns default inheritClaudeMd per type', () => {
-    expect(agents.draftAgentFromDescription('debug code').inheritClaudeMd).toBe(true)
-    expect(agents.draftAgentFromDescription('quick q&a').inheritClaudeMd).toBe(false)
+  test('assigns matching system prompt for model', () => {
+    const opus = agents.draftAgentFromDescription('coding', 'claude-opus-4-6')
+    expect(opus.agent.system).toContain('software engineering')
+
+    const haiku = agents.draftAgentFromDescription('quick QA', 'claude-haiku-4-5')
+    expect(haiku.agent.system).toContain('concise')
+
+    const sonnet = agents.draftAgentFromDescription('chat about books')
+    expect(sonnet.agent.system).toBe(agents.DEFAULT_SYSTEM_PROMPT)
+  })
+
+  test('returns inheritClaudeMd based on model', () => {
+    expect(agents.draftAgentFromDescription('code', 'claude-opus-4-6').inheritClaudeMd).toBe(true)
+    expect(agents.draftAgentFromDescription('qa', 'claude-haiku-4-5').inheritClaudeMd).toBe(false)
     expect(agents.draftAgentFromDescription('general chat').inheritClaudeMd).toBe(true)
   })
 

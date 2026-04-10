@@ -12,44 +12,23 @@ import * as agents from '../agents.js'
 import * as bindings from '../bindings.js'
 import * as access from '../access.js'
 
-/**
- * Server-side draft carried between sendInit and the user confirming.
- * Extends DraftAgent with a private _inheritClaudeMd field that lives
- * on the binding (not the agent definition). The WebXDC echoes this
- * back in the `create` payload so the server knows what to save on
- * the binding.
- */
-interface ServerDraft extends agents.DraftAgent {
-  _inheritClaudeMd: boolean
-}
-
 interface Session {
   msgId: number
   sourceChatId: number
-  draft: ServerDraft
+  draft: agents.DraftAgent
 }
 
 // Sessions are keyed by the chat the user is messaging from (source chat).
 // One active setup card per source chat.
 const sessions = new Map<number, Session>()
 
-/** Per-type defaults for the WebXDC to swap in when the user changes type. */
-function defaultsByType(): Record<agents.AgentType, { system: string; model: string; inheritClaudeMd: boolean }> {
-  const out: Partial<Record<agents.AgentType, { system: string; model: string; inheritClaudeMd: boolean }>> = {}
-  for (const [k, v] of Object.entries(agents.AGENT_TYPES) as Array<[agents.AgentType, typeof agents.AGENT_TYPES[agents.AgentType]]>) {
-    out[k] = { system: v.defaultPrompt, model: v.model, inheritClaudeMd: v.inheritClaudeMd }
-  }
-  return out as Record<agents.AgentType, { system: string; model: string; inheritClaudeMd: boolean }>
-}
-
 /** Summarize agents for the picker screen. */
-function listExistingForPicker(sourceChatId: number): Array<{ id: string; name: string; type: string; description: string; bindingCount: number; isCurrentAgent: boolean }> {
+function listExistingForPicker(sourceChatId: number): Array<{ id: string; name: string; model: string; bindingCount: number; isCurrentAgent: boolean }> {
   const sourceBinding = bindings.getBinding(sourceChatId)
   return agents.listAgents().map(a => ({
     id: a.id,
     name: a.name,
-    type: a['x-dc-type'],
-    description: a['x-dc-description'] ?? '',
+    model: a.model,
     bindingCount: bindings.countByAgentId(a.id),
     isCurrentAgent: sourceBinding?.agentId === a.id,
   }))
@@ -71,20 +50,21 @@ async function sendInit(
   ctx: AppContext,
   app: WebXDCApp,
   sourceChatId: number,
-  draft: ServerDraft,
+  draft: agents.DraftAgent,
 ): Promise<Session> {
   // Reuse existing session if present.
   const existing = sessions.get(sourceChatId)
   const payload = {
     type: 'init' as const,
     version: agentSetup.getAgentSetupVersion(),
-    draft: { ...draft, _defaultsByType: defaultsByType() },
+    draft,
     existingAgents: listExistingForPicker(sourceChatId),
+    senderAddr: 'server',
   }
   // Info text MUST be unique per call — DC dedupes consecutive identical
   // info text and the user gets no notification. Include the draft name
   // so each setup card produces a fresh tappable info message.
-  const prefix = 'Tap to create agent: '
+  const prefix = 'Agent setup: '
   const maxName = 80 - prefix.length
   const shortName = draft.name.length > maxName ? draft.name.slice(0, maxName - 1) + '\u2026' : draft.name
   const update = JSON.stringify({
@@ -114,23 +94,39 @@ async function sendInit(
   return session
 }
 
+/** Icon filename per model. */
+const MODEL_ICON: Record<string, string> = {
+  'claude-opus-4-6': 'agent-opus.png',
+  'claude-sonnet-4-6': 'agent-sonnet.png',
+  'claude-haiku-4-5': 'agent-haiku.png',
+}
+
+/** Minimal context for decorating agent chats (icon + welcome). */
+export interface DecorateContext {
+  client: Pick<import('../dc-client.js').DCClient, 'setChatProfileImage' | 'send'>
+  logf: (format: string, ...args: unknown[]) => void
+}
+
+/** Set the chat profile image to the model-appropriate icon. */
+export async function setAgentIcon(
+  ctx: DecorateContext,
+  chatId: number,
+  model: string,
+): Promise<void> {
+  const iconName = MODEL_ICON[model] || 'agent-sonnet.png'
+  const iconPath = new URL(`../assets/agent-icons/${iconName}`, import.meta.url).pathname
+  await ctx.client.setChatProfileImage(chatId, iconPath)
+  ctx.logf('agent-setup: set agent icon to %s for chat %d', iconName, chatId)
+}
+
 /** Apply icon + intro message after a chat has been bound to an agent. */
-async function decorateAgentChat(
-  ctx: AppContext,
+export async function decorateAgentChat(
+  ctx: DecorateContext,
   chatId: number,
   agent: agents.AgentDef,
 ): Promise<void> {
   try {
-    const variant = Math.floor(Math.random() * 3) + 1 // 1-3
-    const iconMap: Record<string, string> = {
-      quick: `quick-dog-${variant}.png`,
-      basic: `basic-dolphin-${variant}.png`,
-      coding: `coding-elephant-${variant}.png`,
-    }
-    const iconName = iconMap[agent['x-dc-type']] || 'quick-dog-1.png'
-    const iconPath = new URL(`../assets/agent-icons/${iconName}`, import.meta.url).pathname
-    await ctx.client.setChatProfileImage(chatId, iconPath)
-    ctx.logf('agent-setup: set agent icon to %s', iconName)
+    await setAgentIcon(ctx, chatId, agent.model)
   } catch (err) {
     ctx.logf('agent-setup: set icon failed: %v', err)
   }
@@ -138,7 +134,7 @@ async function decorateAgentChat(
   try {
     await ctx.client.send(
       chatId,
-      `Hi! This is your new "${agent.name}" agent (${agent['x-dc-type']}). Send a message here to get started.`,
+      `Hi! This is your new "${agent.name}" agent. Send a message here to get started.`,
     )
   } catch (err) {
     ctx.logf('agent-setup: intro message send failed: %v', err)
@@ -149,18 +145,26 @@ export const agentSetupApp: WebXDCApp = {
   id: 'agent-setup',
 
   instructions:
-    'When the user wants to create a new agent with a specific behavior ' +
-    '(coding assistant, quick Q&A, general chat, etc.), call dc_propose_agent with ' +
-    'their description. This sends an agent setup card to the chat for them to review and create.',
+    'CRITICAL — AGENT MANAGEMENT RULES:\n' +
+    '1. When the user mentions ANYTHING about agents — creating, editing, deleting, ' +
+    'managing, settings, "agent app", "agent card", "settings app", "send me the app", ' +
+    '"change the model", "change my prompt", "edit this agent" — you MUST call ' +
+    'dc_propose_agent. No exceptions.\n' +
+    '2. NEVER build or send agent-setup.xdc yourself via Bash/dc_send_webxdc. ' +
+    'NEVER read agent-setup.ts or agent-setup-app.ts. NEVER read or edit agent YAML files.\n' +
+    '3. NEVER offer to change agent settings through conversation.\n' +
+    '4. dc_propose_agent is the ONLY way to manage agents. It sends a setup card ' +
+    'that handles everything: create, edit, delete, bind.\n' +
+    '5. Use a short description (e.g. "manage agents", "edit agent settings").',
 
   tools(): ToolDef[] {
     return [
       {
         name: 'dc_propose_agent',
         description:
-          'Send an agent setup card to the user. The card lets them reuse an ' +
-          'existing agent definition or create a new one by picking a type and ' +
-          'editing the name/prompt. In either case, a new DC chat is created on confirm.',
+          'Send an agent setup card to the user. The card lets them create new ' +
+          'agents, reuse existing ones, edit agent settings (name, model, prompt), ' +
+          'or delete agents. Call this whenever the user asks about agent management.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -171,6 +175,11 @@ export const agentSetupApp: WebXDCApp = {
             description: {
               type: 'string',
               description: 'Free-form description of what the agent is for.',
+            },
+            model: {
+              type: 'string',
+              description: 'Suggested model. Use opus for coding/software tasks, haiku for simple Q&A, sonnet for everything else.',
+              enum: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-6'],
             },
           },
           required: ['source_chat_id', 'description'],
@@ -194,10 +203,13 @@ export const agentSetupApp: WebXDCApp = {
       return { content: [{ type: 'text', text: 'dc_propose_agent: description is required' }], isError: true }
     }
 
-    const { agent, inheritClaudeMd } = agents.draftAgentFromDescription(description)
-    const draft: ServerDraft = { ...agent, _inheritClaudeMd: inheritClaudeMd }
+    const modelArg = args.model as string | undefined
+    const model = modelArg && agents.ALLOWED_MODELS.includes(modelArg as agents.AllowedModel)
+      ? modelArg as agents.AllowedModel
+      : undefined
+    const { agent } = agents.draftAgentFromDescription(description, model)
     try {
-      await sendInit(ctx, agentSetupApp, sourceChatId, draft)
+      await sendInit(ctx, agentSetupApp, sourceChatId, agent)
     } catch (err) {
       ctx.logf('agent-setup: send failed: %v', err)
       return { content: [{ type: 'text', text: `dc_propose_agent: send failed: ${(err as Error).message}` }], isError: true }
@@ -206,7 +218,7 @@ export const agentSetupApp: WebXDCApp = {
     return {
       content: [{
         type: 'text',
-        text: `Setup card sent to chat ${sourceChatId} (drafted as type=${draft['x-dc-type']}, model=${draft.model}). Tap to review and confirm.`,
+        text: `Setup card sent to chat ${sourceChatId} (drafted as model=${agent.model}). Tap to review and confirm.`,
       }],
     }
   },
@@ -264,7 +276,7 @@ export const agentSetupApp: WebXDCApp = {
         }
       }
 
-      if (payload.type === 'edit') {
+      if (payload.type === 'editRequest') {
         // Edit an existing agent. Re-open the setup card with the agent pre-filled.
         const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
         if (!agentId) {
@@ -276,24 +288,20 @@ export const agentSetupApp: WebXDCApp = {
           ctx.logf('agent-setup: edit requested agent %s not found', agentId)
           continue
         }
-        const draft: ServerDraft = {
+        const editDraft = {
           id: agent.id,
           name: agent.name,
           model: agent.model,
           system: agent.system,
           tools: agent.tools ?? [],
-          'x-dc-type': agent['x-dc-type'],
-          'x-dc-description': agent['x-dc-description'] ?? '',
-          'x-dc-createdAt': agent['x-dc-createdAt'],
-          _inheritClaudeMd: agents.AGENT_TYPES[agent['x-dc-type']].inheritClaudeMd,
         }
         try {
           const update = JSON.stringify({
             payload: {
               type: 'edit',
-              draft,
+              draft: editDraft,
               version: agentSetup.getAgentSetupVersion(),
-              senderAddr: 'server', // Server response marker (non-empty to pass filter)
+              senderAddr: 'server',
             },
             summary: 'Editing agent',
           })
@@ -306,7 +314,6 @@ export const agentSetupApp: WebXDCApp = {
       }
 
       if (payload.type === 'delete') {
-        // Delete an existing agent. Check binding count first.
         const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
         if (!agentId) {
           ctx.logf('agent-setup: delete payload missing agentId')
@@ -317,30 +324,44 @@ export const agentSetupApp: WebXDCApp = {
           ctx.logf('agent-setup: delete requested agent %s not found', agentId)
           continue
         }
-        const bindingCount = bindings.countByAgentId(agentId)
-        if (bindingCount > 0) {
-          ctx.logf('agent-setup: delete blocked for agent %s (still in %d chat(s))', agentId, bindingCount)
-          const update = JSON.stringify({
-            payload: {
-              type: 'deleteBlocked',
-              message: `Cannot delete: still bound to ${bindingCount} chat(s).`,
-              senderAddr: 'server',
-            },
-            summary: 'Delete blocked',
-          })
-          await ctx.client.sendWebXDCUpdate(session.msgId, update)
-          continue
-        }
         try {
+          // Unbind affected chats: notify, evict subagents, delete bindings.
+          // Auto-repair in spawnSubagentForChat will bind them to default-quick-agent
+          // on the next message.
+          const affected = bindings.listBindings().filter(b => b.agentId === agentId)
+          if (affected.length > 0) {
+            await Promise.all(
+              affected.map(b =>
+                ctx.client.send(
+                  b.chatId,
+                  `The "${agent.name}" agent was deleted. This chat will use a default assistant.`,
+                ).catch(() => {}),
+              ),
+            )
+            await Promise.all(
+              affected.map(async b => {
+                await ctx.evictSubagent(b.chatId)
+                bindings.deleteBinding(b.chatId)
+              }),
+            )
+            ctx.logf('agent-setup: unbound %d chat(s) from agent %s', affected.length, agentId)
+          }
+
           agents.deleteAgent(agentId)
           ctx.logf('agent-setup: deleted agent %s', agentId)
           const update = JSON.stringify({
-            payload: { type: 'deleted', name: agent.name, senderAddr: 'server' },
+            payload: {
+              type: 'deleted',
+              name: agent.name,
+              existingAgents: listExistingForPicker(session.sourceChatId),
+              version: agentSetup.getAgentSetupVersion(),
+              senderAddr: 'server',
+            },
             summary: 'Agent deleted',
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
-          ctx.unregisterWebXDCMsg(msgId)
-          sessions.delete(session.sourceChatId)
+          // Keep the session alive — user stays on the main screen
+          // and may want to delete/edit more agents.
         } catch (err) {
           ctx.logf('agent-setup: delete failed: %v', err)
         }
@@ -367,13 +388,65 @@ export const agentSetupApp: WebXDCApp = {
         try {
           agents.saveAgent({ ...draft, id: agentId })
           ctx.logf('agent-setup: edited agent %s', agentId)
+
+          // Evict all cached subagents bound to this agent so they respawn
+          // with the new model/prompt on the next message. Also update
+          // inheritClaudeMd on each binding in case the model changed
+          // (e.g. haiku→sonnet flips inherit from false→true).
+          //
+          // If the model changed, clear session IDs too — Claude Code's
+          // built-in system prompt ("You are powered by model X") is baked
+          // into the session store at creation time and replayed on resume.
+          // There's no way to override it, so a model change requires a
+          // fresh session.
+          const modelChanged = agent.model !== draft.model
+          const affected = bindings.listBindings().filter(b => b.agentId === agentId)
+          const newInherit = agents.inheritClaudeMdForModel(draft.model)
+
+          // Notify affected chats before evicting so the user knows
+          // the pause is intentional, not a hang.
+          if (affected.length > 0) {
+            const restartMsg = modelChanged
+              ? `Agent updated. Restarting with new model (${draft.model.replace('claude-', '')})...`
+              : 'Agent updated. Restarting...'
+            await Promise.all(
+              affected.map(b => ctx.client.send(b.chatId, restartMsg).catch(() => {})),
+            )
+          }
+
+          await Promise.all(
+            affected.map(async b => {
+              if (b.inheritClaudeMd !== newInherit) {
+                bindings.saveBinding({ ...b, inheritClaudeMd: newInherit })
+              }
+              if (modelChanged) {
+                bindings.clearSessionId(b.chatId)
+                await setAgentIcon(ctx, b.chatId, draft.model).catch(err =>
+                  ctx.logf('agent-setup: icon update failed chat=%d: %v', b.chatId, err),
+                )
+              }
+              await ctx.evictSubagent(b.chatId)
+            }),
+          )
+          if (affected.length > 0) {
+            ctx.logf(
+              'agent-setup: evicted %d subagent(s) for agent %s%s',
+              affected.length, agentId, modelChanged ? ' (model changed, sessions cleared)' : '',
+            )
+          }
+
           const update = JSON.stringify({
-            payload: { type: 'editComplete', name: draft.name, senderAddr: 'server' },
+            payload: {
+              type: 'editComplete',
+              name: draft.name,
+              existingAgents: listExistingForPicker(session.sourceChatId),
+              version: agentSetup.getAgentSetupVersion(),
+              senderAddr: 'server',
+            },
             summary: 'Agent updated',
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
-          ctx.unregisterWebXDCMsg(msgId)
-          sessions.delete(session.sourceChatId)
+          // Keep the session alive — user stays on the main screen.
         } catch (err) {
           ctx.logf('agent-setup: saveEdit failed: %v', err)
         }
@@ -400,7 +473,7 @@ export const agentSetupApp: WebXDCApp = {
           await ctx.client.addContactToChat(newChatId, ownerContactId)
           access.addChat(newChatId, ownerContactId)
           bindings.bindAgent(newChatId, agent.id, {
-            inheritClaudeMd: agents.AGENT_TYPES[agent['x-dc-type']].inheritClaudeMd,
+            inheritClaudeMd: agents.inheritClaudeMdForModel(agent.model),
           })
           await decorateAgentChat(ctx, newChatId, agent)
           ctx.logf('agent-setup: bound existing agent %s to new chat %d for owner %d', agent.id, newChatId, ownerContactId)
@@ -426,7 +499,7 @@ export const agentSetupApp: WebXDCApp = {
           continue
         }
         const draft = parsed.data
-        const inheritClaudeMd = payload.inheritClaudeMd ?? session.draft._inheritClaudeMd
+        const inheritClaudeMd = agents.inheritClaudeMdForModel(draft.model)
         const ownerContactId = await resolveOwner()
         if (!ownerContactId) continue
 

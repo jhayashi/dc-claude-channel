@@ -41,11 +41,9 @@ function makeAgent(id: string, overrides: Partial<agents.AgentDef> = {}): agents
     id,
     name: `Test ${id}`,
     model: 'claude-sonnet-4-6',
+    description: '',
     system: 'system prompt',
     tools: [],
-    'x-dc-type': 'basic',
-    'x-dc-description': '',
-    'x-dc-createdAt': '2026-04-09T00:00:00.000Z',
     ...overrides,
   }
 }

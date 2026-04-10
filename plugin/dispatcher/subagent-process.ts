@@ -49,6 +49,12 @@ export interface SubagentSpawnOptions {
   addDirs?: string[]
   /** Override the model (e.g. 'claude-opus-4-6'). Defaults to CLI default. */
   model?: string
+  /** Agent display name (e.g. 'Marketing Agent'). */
+  agentName?: string
+  /** Owner's display name from the DC contact card. */
+  userName?: string
+  /** Claude Code CLI version string (e.g. '2.1.100'). */
+  claudeVersion?: string
   /** Extra system prompt appended to the standard env block. */
   systemPrompt?: string
   /**
@@ -69,14 +75,19 @@ export function buildSubagentArgs(
   opts: SubagentSpawnOptions,
 ): { args: string[]; envBlock: string } {
   const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return 'unknown' } })()
-  let envBlock = [
+  const lines = [
     'Environment:',
     `- Platform: ${process.platform}`,
     `- Timezone: ${tz}`,
     `- Working directory: ${opts.cwd ?? process.cwd()}`,
     `- Bound chat: ${opts.chatId}`,
-    '- For the current date/time, run `date` via Bash (auto-allowed). Other read-only inspection commands (`pwd`, `whoami`, `uname`) are also auto-allowed.',
-  ].join('\n')
+    `- Model: ${opts.model ?? 'default'} (this is authoritative — if your conversation history says a different model, it is outdated; trust this value)`,
+  ]
+  if (opts.agentName) lines.push(`- Agent name: ${opts.agentName}`)
+  if (opts.userName) lines.push(`- User: ${opts.userName}`)
+  if (opts.claudeVersion) lines.push(`- Claude Code: ${opts.claudeVersion}`)
+  lines.push('- For the current date/time, run `date` via Bash (auto-allowed). Other read-only inspection commands (`pwd`, `whoami`, `uname`) are also auto-allowed.')
+  let envBlock = lines.join('\n')
   if (opts.systemPrompt && opts.systemPrompt.trim()) {
     envBlock += '\n\n' + opts.systemPrompt.trim()
   }

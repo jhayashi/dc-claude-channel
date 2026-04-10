@@ -39,57 +39,37 @@ export const ALLOWED_MODELS = [
 ] as const
 export type AllowedModel = typeof ALLOWED_MODELS[number]
 
+/** Default system prompt for newly created agents. */
+export const DEFAULT_SYSTEM_PROMPT =
+  'You are a helpful assistant in this chat. Match the tone of the conversation.'
+
+/** Default model for newly created agents. */
+export const DEFAULT_MODEL: AllowedModel = 'claude-sonnet-4-6'
+
 /**
- * Archetypes that seed a new agent from a description. Drives icon
- * selection, default model, default prompt, and the default
- * inheritClaudeMd flag (which lives on the binding, not the agent).
+ * Whether an agent should inherit the dispatcher's CLAUDE.md.
+ * Haiku agents skip it (minimal context); others get full project context.
  */
-export const AGENT_TYPES = {
-  coding: {
-    label: 'Coding',
-    description: 'Long-form coding work. Opus, full project context.',
-    model: 'claude-opus-4-6' as const,
-    inheritClaudeMd: true,
-    defaultPrompt:
-      'You are helping with software engineering work in this chat. ' +
-      'Read code carefully, prefer surgical edits, and explain non-obvious decisions.',
-  },
-  quick: {
-    label: 'Quick',
-    description: 'Fast Q&A and short tasks. Haiku, minimal context.',
-    model: 'claude-haiku-4-5' as const,
-    inheritClaudeMd: false,
-    defaultPrompt:
-      'You are answering quick questions in this chat. Be concise and direct. ' +
-      'Skip preamble; one or two sentences is usually enough.',
-  },
-  basic: {
-    label: 'Basic',
-    description: 'General-purpose assistant. Sonnet.',
-    model: 'claude-sonnet-4-6' as const,
-    inheritClaudeMd: true,
-    defaultPrompt:
-      'You are a helpful assistant in this chat. Match the tone of the conversation.',
-  },
-} as const
-
-export type AgentType = keyof typeof AGENT_TYPES
+export function inheritClaudeMdForModel(model: AllowedModel): boolean {
+  return model !== 'claude-haiku-4-5'
+}
 
 /**
- * Agent definition schema. Matches the Claude Managed Agents format
- * (name, model, system, tools) plus x-dc-* extensions for fields unique
- * to this plugin. The x-dc-* namespace prevents collision with future
- * upstream fields.
+ * Agent definition schema. Matches the Claude Managed Agents API format
+ * (name, model, description, system, tools, skills, mcp_servers,
+ * metadata). Optional fields are accepted on import but not yet
+ * exposed in the UI.
  */
 export const AgentDefSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'id must be a lowercase slug'),
-  name: z.string().min(1).max(80),
+  name: z.string().min(1).max(256),
   model: z.enum(ALLOWED_MODELS),
-  system: z.string(),
+  description: z.string().max(2048).default(''),
+  system: z.string().max(100_000).default(''),
   tools: z.array(z.object({ type: z.string() })).default([]),
-  'x-dc-type': z.enum(['coding', 'quick', 'basic']),
-  'x-dc-description': z.string().default(''),
-  'x-dc-createdAt': z.string(),
+  skills: z.array(z.unknown()).optional(),
+  mcp_servers: z.array(z.unknown()).optional(),
+  metadata: z.record(z.unknown()).optional(),
 })
 
 export type AgentDef = z.infer<typeof AgentDefSchema>
@@ -203,29 +183,31 @@ export function synthesizeAgentId(name: string): string {
   return `${base}-${n}`
 }
 
+/** System prompt templates per model tier. */
+const SYSTEM_PROMPTS: Record<string, string> = {
+  'claude-opus-4-6':
+    'You are helping with software engineering work in this chat. ' +
+    'Read code carefully, prefer surgical edits, and explain non-obvious decisions.',
+  'claude-haiku-4-5':
+    'You are answering quick questions in this chat. Be concise and direct. ' +
+    'Skip preamble; one or two sentences is usually enough.',
+}
+
 /**
- * Build a draft agent from a free-form description by keyword-guessing
- * the type and using that type's default prompt. Pure function (except
- * for Date.now for the createdAt timestamp). Returns the draft agent
- * (without id — synthesized on save) plus the default inheritClaudeMd
- * for the binding.
+ * Build a draft agent from a free-form description. Defaults to Sonnet;
+ * callers (dc_propose_agent, dc_create_agent) can override the model
+ * via an optional `model` parameter — the calling LLM has full
+ * conversation context and picks the best tier.
  */
-export function draftAgentFromDescription(description: string): {
+export function draftAgentFromDescription(
+  description: string,
+  model?: AllowedModel,
+): {
   agent: DraftAgent
   inheritClaudeMd: boolean
 } {
-  const d = description.toLowerCase()
-  let type: AgentType = 'basic'
-  if (
-    /\b(cod(e|ing)|repo|bug|debug|refactor|implement|pr|pull request|test|build|compile|typescript|python|rust|go\b)/.test(
-      d,
-    )
-  ) {
-    type = 'coding'
-  } else if (/\b(quick|fast|short|simple|brief|q\s*&\s*a|qa|ask)/.test(d)) {
-    type = 'quick'
-  }
-  const t = AGENT_TYPES[type]
+  const effectiveModel = model ?? DEFAULT_MODEL
+  const system = SYSTEM_PROMPTS[effectiveModel] ?? DEFAULT_SYSTEM_PROMPT
 
   // Extract purpose-only name by removing preamble like "I want a", "create a".
   let name = description.trim()
@@ -239,7 +221,7 @@ export function draftAgentFromDescription(description: string): {
       .slice(0, 4)
       .join(' ')
       .replace(/[^\w\s-]/g, '')
-      .trim() || `${t.label} Agent`
+      .trim() || 'New Agent'
   name = name
     .split(/\s+/)
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
@@ -251,13 +233,10 @@ export function draftAgentFromDescription(description: string): {
   return {
     agent: {
       name,
-      model: t.model,
-      system: t.defaultPrompt,
+      model: effectiveModel,
+      system,
       tools: [],
-      'x-dc-type': type,
-      'x-dc-description': description,
-      'x-dc-createdAt': new Date().toISOString(),
     },
-    inheritClaudeMd: t.inheritClaudeMd,
+    inheritClaudeMd: inheritClaudeMdForModel(effectiveModel),
   }
 }

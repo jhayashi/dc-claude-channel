@@ -13,8 +13,7 @@ Three concerns, three storage locations:
 - **Agent definitions** — portable YAML files in
   `~/.claude/channels/deltachat/agents/<agentId>.yaml`. Schema matches
   Claude Managed Agents (`name`, `model`, `system`, `tools`) with
-  `x-dc-*` extensions for fields unique to this plugin (`x-dc-type`,
-  `x-dc-description`, `x-dc-createdAt`). Reusable across chats — one
+  `x-dc-createdAt` for the creation timestamp. Reusable across chats — one
   definition may be bound to many DC chats at once. Managed by
   `plugin/agents.ts`.
 - **Bindings** — host-local JSON files in
@@ -63,8 +62,6 @@ model: claude-sonnet-4-6
 system: |
   You are a marketing specialist...
 tools: []
-x-dc-type: basic
-x-dc-description: ''
 x-dc-createdAt: 2026-04-09T12:34:56.000Z
 ```
 

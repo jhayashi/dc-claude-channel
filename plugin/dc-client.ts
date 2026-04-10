@@ -465,6 +465,12 @@ export class DCClient {
     await rpc.setChatName(accountId, chatId, name);
   }
 
+  /** Set the bot's own avatar (selfavatar config key). */
+  async setSelfAvatar(imagePath: string): Promise<void> {
+    const { rpc, accountId } = this.ensureAccount();
+    await rpc.setConfig(accountId, 'selfavatar', imagePath);
+  }
+
   async setChatProfileImage(chatId: number, imagePath: string | null): Promise<void> {
     const { rpc, accountId } = this.ensureAccount();
     await rpc.setChatProfileImage(accountId, chatId, imagePath);
@@ -534,6 +540,16 @@ export class DCClient {
   async lookupContactByAddr(addr: string): Promise<number | null> {
     const { rpc, accountId } = this.ensureAccount();
     return await rpc.lookupContactIdByAddr(accountId, addr);
+  }
+
+  async getContactName(contactId: number): Promise<string | null> {
+    const { rpc, accountId } = this.ensureAccount();
+    try {
+      const contact = await rpc.getContact(accountId, contactId);
+      return contact?.displayName ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async close(): Promise<void> {
