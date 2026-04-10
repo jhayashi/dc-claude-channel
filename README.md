@@ -86,15 +86,29 @@ Reply "yes" to start, or "no" to skip. You can start using Claude immediately ei
 - **Mobile friendly File Reviewer** — send code and documents as interactive WebXDC apps with syntax highlighting (TypeScript, Python, Go, Bash, and more) and inline commenting. Long-press a line to leave feedback, Claude reads your comments and makes changes.
 - **WebXDC apps** — Claude can build single and multiplayer games, tools, and interactive apps as self-contained WebXDC bundles. Share them with friends by forwarding.
 - **Screenshots** — send photos and screenshots from your phone. Claude sees them and can fix visual bugs.
-- **Group chats** — create groups with behavior prompts (e.g., "Summarize any links shared"). Only the owner can command Claude in groups — other members' messages are silently ignored.
+- **Custom agents** — create specialized Claude agents, each with its own model (Opus for deep coding, Sonnet for general work, Haiku for quick Q&A), system prompt, and isolated conversation context. Agent definitions are YAML files compatible with the [Claude Managed Agents API](https://docs.anthropic.com/en/docs/agents-and-tools/managed-agents) schema. Manage everything from your phone via an interactive setup card — create, edit, delete, or reuse the same agent across multiple chats. Sessions persist across restarts so Claude picks up where you left off.
+- **Parallel subagent architecture** — each chat runs as an independent subagent process, so a long coding task in one chat never blocks a quick question in another. Claude stays responsive across all your conversations. An LRU cache keeps recently active chats warm for sub-second response times while idle agents gracefully exit to free resources.
 - **Attachments** — send and receive images, PDFs, and files. Large files auto-download.
 - **Access control** — pairing codes, owner tracking, stranger lockout. Once paired, unknown contacts can't even trigger a pairing prompt.
+
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/chat-list.jpg" width="250" alt="Chat list with agent chats">
+  <img src="screenshots/agent-setup.jpg" width="250" alt="Agent setup card">
+</p>
+<p align="center">
+  <img src="screenshots/permission-prompt.jpg" width="250" alt="Permission prompt">
+  <img src="screenshots/file-reviewer.jpg" width="250" alt="File reviewer">
+</p>
 
 ## How It Compares
 
 |  | Delta Chat | Telegram | Discord |
 |--|-----------|----------|---------|
 | **Encryption** | E2E encrypted (Autocrypt) | Server-side only (no E2E for bots) | None |
+| **Custom agents** | Per-chat model, prompt, and isolated context; Managed Agents API compatible | Single bot config | Single bot config |
+| **Parallelism** | Independent subagent per chat — long tasks never block other chats | Single event loop | Single event loop |
 | **Chat-native apps** | WebXDC apps (games, tools, GUIs) | Inline keyboards only | Slash commands only | 
 | **Permission UX** | Interactive WebXDC app (tap Allow/Deny) | Text-based numbered replies | Text-based |
 | **File review** | Syntax-highlighted viewer + inline commenting | Plain file attachment | Plain file attachment |
