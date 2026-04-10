@@ -289,6 +289,9 @@ const subagentCache = new SubagentCache({
   turnTimeoutMs: TURN_TIMEOUT_MS,
   queueMax: QUEUE_MAX,
   onCrash: (chatId) => {
+    // Clear the session so next respawn starts fresh instead of resuming
+    // a potentially broken session (e.g. error_during_execution on first turn).
+    bindings.clearSessionId(chatId)
     client.send(chatId, '\u26a0\ufe0f subagent crashed, next message will respawn').catch(() => {})
   },
   onQueueDrop: (chatId) => {
