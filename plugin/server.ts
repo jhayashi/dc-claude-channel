@@ -126,15 +126,27 @@ const SUBAGENT_TOOL_BLOCKLIST = new Set([
 ])
 
 async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | null> {
+  // Ensure a minimal binding exists (with sessionId) even if unbound.
+  // This allows us to send recovery messages and track sessions across rebinds.
+  bindings.loadOrCreateSessionId(chatId)
+
   const resolvedCheck = bindings.resolveChat(chatId)
   if (!resolvedCheck) {
     const binding = bindings.getBinding(chatId)
-    if (binding && binding.agentId) {
+    if (binding?.agentId) {
       logf('subagent: chat %d binding orphaned (agent %s was deleted)', chatId, binding.agentId)
       try {
         await client.send(chatId, `\u26a0\ufe0f Your agent was deleted. Go to a 1:1 chat and send a message like "create agent" or "set up agent" to bind a new one, then return here.`)
       } catch (err) {
         logf('subagent: failed to send orphan message: %v', err)
+      }
+    } else {
+      // Chat has no binding or binding has no agentId — unbound state.
+      logf('subagent: chat %d has no agent bound', chatId)
+      try {
+        await client.send(chatId, `\u26a0\ufe0f This chat is not bound to an agent. Go to a 1:1 chat and send a message like "create agent" or "set up agent" to bind one, then return here.`)
+      } catch (err) {
+        logf('subagent: failed to send unbound message: %v', err)
       }
     }
     return null
