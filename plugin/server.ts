@@ -633,6 +633,37 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         }
         const chatId = access.completePairing(code)
 
+        // Auto-bind the 1:1 chat to a default agent so it's immediately usable.
+        // This creates a "quick" agent if none exists, then binds the chat to it.
+        try {
+          let defaultAgent = agents.listAgents().find(a => a['x-dc-type'] === 'quick')
+          if (!defaultAgent) {
+            // Create a default quick agent
+            defaultAgent = {
+              id: 'default-quick-agent',
+              name: 'Quick Assistant',
+              model: 'claude-haiku-4-5',
+              system: agents.AGENT_TYPES.quick.defaultPrompt,
+              tools: [],
+              'x-dc-type': 'quick',
+              'x-dc-description': 'Default quick assistant for the 1:1 chat',
+              'x-dc-createdAt': new Date().toISOString(),
+            }
+            agents.saveAgent(defaultAgent)
+          }
+          // Create binding for the 1:1 chat
+          const binding: bindings.Binding = {
+            chatId,
+            agentId: defaultAgent.id,
+            inheritClaudeMd: true,
+            createdAt: new Date().toISOString(),
+          }
+          bindings.saveBinding(binding)
+          logf('dc channel: auto-bound 1:1 chat %d to agent %s', chatId, defaultAgent.id)
+        } catch (err) {
+          logf('dc channel: auto-bind failed for chat %d: %v', chatId, err)
+        }
+
         // Start onboarding tutorial — send bare apps first, then explanation
         const action = tutorial.startTutorial(chatId)
         if (action.sendApps) {
