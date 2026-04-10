@@ -289,7 +289,12 @@ export const agentSetupApp: WebXDCApp = {
         }
         try {
           const update = JSON.stringify({
-            payload: { type: 'edit', draft, version: agentSetup.getAgentSetupVersion() },
+            payload: {
+              type: 'edit',
+              draft,
+              version: agentSetup.getAgentSetupVersion(),
+              senderAddr: '', // Server responses include empty senderAddr to bypass filter
+            },
             summary: 'Editing agent',
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
@@ -316,7 +321,11 @@ export const agentSetupApp: WebXDCApp = {
         if (bindingCount > 0) {
           ctx.logf('agent-setup: delete blocked for agent %s (still in %d chat(s))', agentId, bindingCount)
           const update = JSON.stringify({
-            payload: { type: 'deleteBlocked', message: `Cannot delete: still bound to ${bindingCount} chat(s).` },
+            payload: {
+              type: 'deleteBlocked',
+              message: `Cannot delete: still bound to ${bindingCount} chat(s).`,
+              senderAddr: '',
+            },
             summary: 'Delete blocked',
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
@@ -326,7 +335,7 @@ export const agentSetupApp: WebXDCApp = {
           agents.deleteAgent(agentId)
           ctx.logf('agent-setup: deleted agent %s', agentId)
           const update = JSON.stringify({
-            payload: { type: 'deleted', name: agent.name },
+            payload: { type: 'deleted', name: agent.name, senderAddr: '' },
             summary: 'Agent deleted',
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
@@ -359,7 +368,7 @@ export const agentSetupApp: WebXDCApp = {
           agents.saveAgent({ ...draft, id: agentId })
           ctx.logf('agent-setup: edited agent %s', agentId)
           const update = JSON.stringify({
-            payload: { type: 'editComplete', name: draft.name },
+            payload: { type: 'editComplete', name: draft.name, senderAddr: '' },
             summary: 'Agent updated',
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
