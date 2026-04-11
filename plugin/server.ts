@@ -39,6 +39,7 @@ import { generateHookConfig } from './dispatcher/hook-config.js'
 import { createMessageRouter } from './dispatcher/message-router.js'
 import { ReactionRouter } from './dispatcher/reaction-router.js'
 import { tryAutoApprove } from './dispatcher/skip-permissions.js'
+import { createActivityReactor, type ActivityReactor } from './dispatcher/activity-reactions.js'
 import * as audit from './audit.js'
 import type { ServerMessage } from './shared/protocol.js'
 import type { Message } from './dc-client.js'
@@ -392,6 +393,13 @@ function rebuildAppToolMap(): void {
 }
 rebuildAppToolMap()
 
+// ── Activity reactions (skip-permissions agents only) ──────────────────
+// Wired to client.sendReaction so reactor tests can stay pure.
+const activityReactor: ActivityReactor = createActivityReactor({
+  sendReaction: (msgId, emoji) => client.sendReaction(msgId, emoji),
+  logf,
+})
+
 // ── Dispatcher socket server ────────────────────────────────────────────
 
 const socketServer = new SocketServer({
@@ -408,8 +416,12 @@ const socketServer = new SocketServer({
       try {
         const auto = tryAutoApprove(req.chatId, req.frame as { id: string; tool?: string; input?: unknown })
         if (auto) {
+          const toolName = (req.frame as { tool?: string }).tool ?? 'unknown'
+          const input = (req.frame as { input?: unknown }).input
+          // Fire-and-forget — the reactor never throws, so no try/catch needed.
+          activityReactor.reactForTool(req.chatId, toolName, input)
           logf('skip-permissions: auto-allowed %s for chat %d (req %s)',
-            (req.frame as { tool?: string }).tool ?? 'unknown',
+            toolName,
             req.chatId,
             req.frame.id)
           return auto
@@ -1243,9 +1255,12 @@ async function main(): Promise<void> {
 
   const runSubagentTurn = async (msg: Message): Promise<void> => {
     const chatId = msg.chatId
+    activityReactor.setTurnTarget(chatId, msg.id)
     // If no live subagent is cached for this chat, the next dispatch will
     // cold-spawn (~6s). React to the user's message with a spinner so they
     // know we're working on it. Fire-and-forget; failures shouldn't block.
+    // The spinner is independent of the activity reactor — the first tool
+    // call will overwrite it with a class emoji.
     const coldStart = !subagentCache.hasLive(chatId)
     if (coldStart) {
       client.sendReaction(msg.id, '\u{1F504}').catch((err) =>
@@ -1267,6 +1282,8 @@ async function main(): Promise<void> {
     } catch (err) {
       logf('dispatch error chat=%d: %v', chatId, err)
       await client.send(chatId, `\u26a0\ufe0f Internal error: ${err}`).catch(() => {})
+    } finally {
+      activityReactor.clearTurnTarget(chatId)
     }
   }
 
