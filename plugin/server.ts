@@ -100,7 +100,7 @@ const DISPATCHER_SOCKET = join(STATE_DIR, 'dispatcher.sock')
 const DISPATCHER_SECRET = randomBytes(32).toString('hex')
 const HOOK_SCRIPT = join(import.meta.dir, 'dispatcher', 'permission-hook.sh')
 
-const MAX_ACTIVE = Math.max(1, Math.min(16, Number(process.env.DC_SUBAGENT_MAX_ACTIVE ?? '4')))
+const MAX_ACTIVE = Math.max(1, Math.min(16, Number(process.env.DC_SUBAGENT_MAX_ACTIVE ?? '8')))
 const IDLE_MIN = Math.max(1, Number(process.env.DC_SUBAGENT_IDLE_MIN ?? '480'))
 const TURN_TIMEOUT_MIN = Math.max(1, Number(process.env.DC_SUBAGENT_TURN_TIMEOUT_MIN ?? '60'))
 const QUEUE_MAX = Math.max(1, Math.min(1000, Number(process.env.DC_SUBAGENT_QUEUE_MAX ?? '10')))

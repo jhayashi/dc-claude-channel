@@ -127,7 +127,7 @@ Prerequisites for the dev path:
 
 - `plugin/server.ts` — Dispatcher entry point. Owns the DC RPC connection, the MCP server for the user's terminal Claude Code session, and the Unix-socket server that subagents connect to.
 - `plugin/dispatcher/` — Subagent-per-chat machinery (v0.9+):
-  - `subagent-cache.ts` — Bounded LRU cache of persistent `claude -p` processes, one per recently active chat (default 4 active, 15 min idle timeout)
+  - `subagent-cache.ts` — Bounded LRU cache of persistent `claude -p` processes, one per recently active chat (default 8 active, 15 min idle timeout)
   - `subagent-process.ts` — Wraps one persistent `claude -p` child with stream-json I/O over stdin/stdout
   - `socket-server.ts` — Unix socket listener with hello auth + frame routing
   - `permission-hook.sh` + `permission-hook-client.ts` — PreToolUse hook that forwards built-in tool permission prompts from the subagent to the dispatcher; dispatcher relays to the existing permissions-app WebXDC flow
@@ -151,7 +151,7 @@ Prerequisites for the dev path:
 
 ## Subagent model (v0.9+)
 
-Every paired chat that recently sent a message has a persistent `claude -p` subagent process handling it. Subagents are kept alive in an LRU cache bounded by `DC_SUBAGENT_MAX_ACTIVE` (default 4) so the common case — a small number of active chats — gets sub-second turnaround after the first cold spawn (~6 s). Idle subagents self-exit after `DC_SUBAGENT_IDLE_TIMEOUT_MIN` (default 15 minutes). The dispatcher's own MCP server stays running for the user's terminal Claude Code session — only per-chat messaging is rerouted through subagents.
+Every paired chat that recently sent a message has a persistent `claude -p` subagent process handling it. Subagents are kept alive in an LRU cache bounded by `DC_SUBAGENT_MAX_ACTIVE` (default 8) so the common case — a small number of active chats — gets sub-second turnaround after the first cold spawn (~6 s). Idle subagents self-exit after `DC_SUBAGENT_IDLE_TIMEOUT_MIN` (default 15 minutes). The dispatcher's own MCP server stays running for the user's terminal Claude Code session — only per-chat messaging is rerouted through subagents.
 
 Subagents run with `--permission-mode default` and the built-in CWD sandbox. When Claude wants to run a tool like Bash or Edit, a PreToolUse hook fires, connects to the dispatcher's Unix socket, and blocks waiting for a verdict. The dispatcher forwards the prompt to the existing permissions-app WebXDC flow in the bound chat and writes the user's Allow/Deny back to the hook. This preserves the v0.8.3 permission UX exactly while adding per-chat targeting (no `lastActiveChatId` TOCTOU).
 
@@ -160,7 +160,7 @@ DC tool calls (`dc_send`, `dc_send_file`, `dc_chat_history`, etc.) from a subage
 **Skip-permissions mode:** An agent can opt into "trusted" mode via `metadata['x-dc-skipPermissions']` on its definition (exposed as a checkbox in the agent-setup WebXDC card, and via `getSkipPermissions` / `setSkipPermissions` in `agents.ts`). When a subagent bound to such an agent triggers the PreToolUse hook, the dispatcher short-circuits in `plugin/dispatcher/skip-permissions.ts` — it auto-approves the verdict and appends an entry to `~/.claude/channels/deltachat/audit/<chatId>.md` instead of showing the WebXDC permission card. The `dc_show_audit` core tool lets the subagent send the audit file back to the user via the file reviewer when asked (e.g. "what did you run?"). Audit files are append-only; there is no rotation.
 
 Config:
-- `DC_SUBAGENT_MAX_ACTIVE` — cache size (default 4, range 1-16)
+- `DC_SUBAGENT_MAX_ACTIVE` — cache size (default 8, range 1-16)
 - `DC_SUBAGENT_IDLE_TIMEOUT_MIN` — idle timeout (default 15)
 - `DC_HOOK_TIMEOUT_SEC` — max wait for a permission verdict (default 300)
 
