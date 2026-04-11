@@ -103,7 +103,10 @@ function buildChunks(title: string, content: string, language: string | undefine
 export const fileReviewerApp: WebXDCApp = {
   id: 'file-reviewer',
 
-  instructions: 'When you receive file review comments from the File Reviewer app, read each comment carefully. Find the referenced lines or paragraphs using the context provided. Apply the requested changes to the file content. Reply in the chat summarizing what you changed. Send the updated file back using dc_send_file with the same title.',
+  instructions: [
+    'Prefer dc_send_file (File Reviewer) over inline chat messages for any structured or long markdown you produce: plans, proposals, specs, designs, reviews, reports, changelogs, or any reply with headings, multiple bullet sections, or more than ~15 lines. The user can scroll, comment inline on specific lines or paragraphs, and reply with targeted edits — inline chat messages can only be read top-to-bottom. Example: when asked "write me a plan for X", send the plan via dc_send_file with a short title (e.g. "X plan"), not as an inline reply. Short conversational replies, single-paragraph answers, and quick status updates stay inline. This is a default, not a hard rule — use judgment.',
+    'When you receive file review comments from the File Reviewer app, read each comment carefully. Find the referenced lines or paragraphs using the context provided. Apply the requested changes to the file content. Reply in the chat summarizing what you changed. Send the updated file back using dc_send_file with the same title.',
+  ].join('\n\n'),
 
   tools(): ToolDef[] {
     return [
