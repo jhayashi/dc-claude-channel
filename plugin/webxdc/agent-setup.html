@@ -263,7 +263,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.27;
+var APP_VERSION = 1.28;
 var draft = null;
 var existingAgents = [];
 var creating = false;
@@ -271,6 +271,7 @@ var versionMismatchSent = false;
 var editingAgentId = null;
 var modalTimer = null;
 var modalCountdown = 0;
+var initialReplayComplete = false;
 
 var MODEL_LABELS = {
   'claude-opus-4-6': 'opus',
@@ -543,8 +544,8 @@ window.webxdc.setUpdateListener(function(update) {
 
   if (d.type === 'created') {
     if (createTimeout) { clearTimeout(createTimeout); createTimeout = null; }
-    showModal('Agent created', 'Open the new chat in your chat list to get started.');
     refreshList();
+    if (initialReplayComplete) showModal('Agent created', 'Open the new chat in your chat list to get started.');
   }
 
   if (d.type === 'deleted') {
@@ -553,7 +554,7 @@ window.webxdc.setUpdateListener(function(update) {
     creating = false;
     editingAgentId = null;
     refreshList();
-    showModal('Agent deleted', '"' + (d.name || 'Agent') + '" has been removed.');
+    if (initialReplayComplete) showModal('Agent deleted', '"' + (d.name || 'Agent') + '" has been removed.');
   }
 
   if (d.type === 'editComplete') {
@@ -562,9 +563,11 @@ window.webxdc.setUpdateListener(function(update) {
     editingAgentId = null;
     if (d.existingAgents) existingAgents = d.existingAgents;
     refreshList();
-    showModal('Agent updated', 'Changes to "' + (d.name || 'Agent') + '" take effect on the next message.');
+    if (initialReplayComplete) showModal('Agent updated', 'Changes to "' + (d.name || 'Agent') + '" take effect on the next message.');
   }
-}, 0);
+}, 0).then(function() {
+  initialReplayComplete = true;
+});
 </script>
 </body>
 </html>
