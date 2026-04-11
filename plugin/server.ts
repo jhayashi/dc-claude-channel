@@ -1727,7 +1727,29 @@ async function main(): Promise<void> {
   scheduleStore = new ScheduleStore(SCHEDULES_DIR)
   scheduler = new Scheduler({
     store: scheduleStore,
-    dispatch: async (chatId, text) => subagentCache.dispatch(chatId, text),
+    dispatch: async (chatId, text) => {
+      try {
+        const result = await subagentCache.dispatch(chatId, text)
+        logf(
+          'scheduler dispatch: chat=%d result.text=%s denials=%d',
+          chatId,
+          (result.text ?? '').slice(0, 500).replace(/\n/g, ' '),
+          result.denials.length,
+        )
+        if (result.text) {
+          await client.send(chatId, result.text)
+        }
+        if (result.denials.length > 0) {
+          const summary = result.denials
+            .map((d) => `• ${d.tool_name}${d.command ? ': ' + d.command.slice(0, 80) : ''}`)
+            .join('\n')
+          await client.send(chatId, `\u26a0\ufe0f Some actions were blocked by policy:\n${summary}`)
+        }
+      } catch (err) {
+        logf('scheduler dispatch error chat=%d: %v', chatId, err)
+        await client.send(chatId, `\u26a0\ufe0f Scheduled job error: ${err}`).catch(() => {})
+      }
+    },
     isAllowed: (chatId) => access.isAllowed(chatId),
     logf,
   })
