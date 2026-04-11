@@ -5,6 +5,32 @@ import type { ScheduledJob, ScheduleStore } from './schedule-store.ts'
 // If a job is further out than that, arm for the max and rearm on wake.
 const MAX_TIMER_MS = 2_147_483_647
 
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000
+
+/**
+ * Count how many times a cron expression would fire in the 7 days after
+ * `now`. Used for the `dc_schedule` soft-warn threshold (> 30 triggers a
+ * warning in the tool response). Throws if the cron is unparseable.
+ */
+export function countFiresIn7Days(cron: string, now: number): number {
+  const end = now + ONE_WEEK_MS
+  const iter = CronExpressionParser.parse(cron, {
+    currentDate: new Date(now),
+    endDate: new Date(end),
+  })
+  let count = 0
+  // Cap at 10_000 to defend against pathological expressions.
+  while (count < 10_000) {
+    try {
+      iter.next()
+      count += 1
+    } catch {
+      break
+    }
+  }
+  return count
+}
+
 export interface SchedulerDeps {
   store: ScheduleStore
   dispatch: (chatId: number, text: string) => Promise<unknown>

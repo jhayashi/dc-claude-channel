@@ -664,6 +664,44 @@ const coreTools = [
       required: ['chat_id'],
     },
   },
+  {
+    name: 'dc_schedule',
+    description: 'Schedule a recurring or one-shot prompt that the dispatcher will fire into this chat as a synthetic user turn. Jobs persist across dispatcher restarts and run independently of subagent lifetime. Returns a job_id, next_fire_at, and an optional warning when the schedule would fire more than 30 times in the next 7 days.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        chat_id:    { type: 'string',  description: 'Chat ID (must match the calling subagent\'s bound chat)' },
+        cron:       { type: 'string',  description: 'Standard 5-field cron expression (M H DoM Mon DoW), local server timezone' },
+        prompt:     { type: 'string',  description: 'The text that becomes the fired user turn body (max 4000 chars)' },
+        recurring:  { type: 'boolean', description: 'If false, the job is deleted after the first fire. Default true.' },
+        expires_at: { type: 'string',  description: 'Optional ISO-8601 timestamp; absent means the job runs until explicitly deleted or the chat is unpaired' },
+      },
+      required: ['chat_id', 'cron', 'prompt'],
+    },
+  },
+  {
+    name: 'dc_schedule_list',
+    description: 'List all scheduled jobs for this chat. Returns an array of {job_id, cron, prompt, recurring, next_fire_at, expires_at, created_at, last_fired_at}.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        chat_id: { type: 'string', description: 'Chat ID (must match the calling subagent\'s bound chat)' },
+      },
+      required: ['chat_id'],
+    },
+  },
+  {
+    name: 'dc_schedule_delete',
+    description: 'Delete a scheduled job by its job_id. Returns {deleted: true} on success or {deleted: false} if the job did not exist.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        chat_id: { type: 'string', description: 'Chat ID (must match the calling subagent\'s bound chat)' },
+        job_id:  { type: 'string', description: 'The job ID returned from dc_schedule' },
+      },
+      required: ['chat_id', 'job_id'],
+    },
+  },
 ]
 
 // ── Tool list ───────────────────────────────────────────────────────────

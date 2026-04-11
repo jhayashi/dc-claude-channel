@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ScheduleStore, type ScheduledJob } from '../dispatcher/schedule-store.ts'
-import { Scheduler } from '../dispatcher/scheduler.ts'
+import { Scheduler, countFiresIn7Days } from '../dispatcher/scheduler.ts'
 
 interface FakeTimer {
   cb: () => void
@@ -292,5 +292,26 @@ describe('Scheduler timer overflow', () => {
     expect(h.dispatched.length).toBe(0)
     const liveAfter = h.timers.filter(t => !t.cancelled && !t.fired)
     expect(liveAfter.length).toBe(1)
+  })
+})
+
+describe('countFiresIn7Days', () => {
+  test('every 5 minutes: > 30 fires', () => {
+    const now = Date.parse('2026-04-13T09:00:00Z')
+    expect(countFiresIn7Days('*/5 * * * *', now)).toBeGreaterThan(30)
+  })
+
+  test('daily 9am weekdays: 5 fires', () => {
+    const now = Date.parse('2026-04-13T00:00:00Z') // Monday
+    expect(countFiresIn7Days('0 9 * * 1-5', now)).toBe(5)
+  })
+
+  test('hourly: 168 fires', () => {
+    const now = Date.parse('2026-04-13T00:00:00Z')
+    expect(countFiresIn7Days('0 * * * *', now)).toBe(168)
+  })
+
+  test('malformed cron: throws', () => {
+    expect(() => countFiresIn7Days('not a cron', Date.now())).toThrow()
   })
 })
