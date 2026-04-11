@@ -226,6 +226,15 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         <input id="edit-skip-permissions" type="checkbox" style="margin-top:3px;flex-shrink:0;">
         <span style="font-weight:400;font-size:12px;line-height:1.4;">Skip permission prompts (trusted agent). Tool calls auto-approve and are recorded in an audit log you can pull up later by asking the agent to show it.</span>
       </label>
+      <label class="field" style="margin-top:12px;">Icon orientation</label>
+      <div style="display:flex;gap:16px;font-size:13px;">
+        <label style="display:flex;align-items:center;gap:6px;font-weight:400;">
+          <input type="radio" name="edit-icon-mirror" value="false"> Facing right
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-weight:400;">
+          <input type="radio" name="edit-icon-mirror" value="true"> Facing left
+        </label>
+      </div>
     </div>
     <div class="actions">
       <button class="btn btn-back" onclick="backFromStep3()">Cancel</button>
@@ -254,7 +263,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.25;
+var APP_VERSION = 1.27;
 var draft = null;
 var existingAgents = [];
 var creating = false;
@@ -378,6 +387,11 @@ function populateEditForm() {
   document.getElementById('edit-model').value = draft.model || 'claude-sonnet-4-6';
   document.getElementById('edit-system').value = draft.system || '';
   document.getElementById('edit-skip-permissions').checked = !!draft.skipPermissions;
+  var mirrorValue = draft.iconMirror ? 'true' : 'false';
+  var radios = document.getElementsByName('edit-icon-mirror');
+  for (var i = 0; i < radios.length; i++) {
+    radios[i].checked = (radios[i].value === mirrorValue);
+  }
 }
 
 function backFromStep3() {
@@ -398,12 +412,18 @@ function saveEdit() {
     tools: [],
   };
   var skipPermissions = document.getElementById('edit-skip-permissions').checked;
+  var iconMirror = false;
+  var radios = document.getElementsByName('edit-icon-mirror');
+  for (var i = 0; i < radios.length; i++) {
+    if (radios[i].checked) { iconMirror = (radios[i].value === 'true'); break; }
+  }
   window.webxdc.sendUpdate({
     payload: {
       type: 'saveEdit',
       agentId: editingAgentId,
       config: cfg,
       skipPermissions: skipPermissions,
+      iconMirror: iconMirror,
       senderAddr: window.webxdc.selfAddr
     },
     summary: 'Edit agent: ' + editingAgentId
