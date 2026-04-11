@@ -41,6 +41,9 @@ import { ReactionRouter } from './dispatcher/reaction-router.js'
 import { tryAutoApprove } from './dispatcher/skip-permissions.js'
 import { createActivityReactor, type ActivityReactor } from './dispatcher/activity-reactions.js'
 import * as audit from './audit.js'
+import { ScheduleStore, type ScheduledJob } from './dispatcher/schedule-store.js'
+import { Scheduler, countFiresIn7Days } from './dispatcher/scheduler.js'
+import { CronExpressionParser } from 'cron-parser'
 import type { ServerMessage } from './shared/protocol.js'
 import type { Message } from './dc-client.js'
 
@@ -69,6 +72,7 @@ function logf(format: string, ...args: unknown[]): void {
 
 const STATE_DIR = join(homedir(), '.claude', 'channels', 'deltachat')
 const ENV_FILE = join(STATE_DIR, '.env')
+const SCHEDULES_DIR = join(STATE_DIR, 'schedules')
 
 const client = new DCClient()
 client.setLogger(logf)
@@ -318,6 +322,11 @@ const subagentCache = new SubagentCache({
     client.send(chatId, '\u26a0\ufe0f message dropped \u2014 agent busy, queue full').catch(() => {})
   },
 })
+
+// ── Scheduler (constructed at startup below) ────────────────────────────
+
+let scheduleStore: ScheduleStore
+let scheduler: Scheduler
 
 // ── App context ─────────────────────────────────────────────────────────
 
@@ -1110,6 +1119,124 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           return { content: [{ type: 'text' as const, text: 'dc_show_audit: file reviewer failed to send audit log' }], isError: true }
         }
         return { content: [{ type: 'text' as const, text: `audit log sent for chat ${chatId}` }] }
+      }
+
+      case 'dc_schedule': {
+        const chatIdRaw = args.chat_id as string
+        const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
+        if (!Number.isFinite(chatId)) {
+          return { content: [{ type: 'text' as const, text: 'dc_schedule: chat_id is required' }], isError: true }
+        }
+        if (callerChatId !== undefined && callerChatId !== chatId) {
+          return { content: [{ type: 'text' as const, text: `dc_schedule: caller is bound to chat ${callerChatId}, cannot schedule for chat ${chatId}` }], isError: true }
+        }
+        if (!access.isAllowed(chatId)) {
+          return { content: [{ type: 'text' as const, text: `dc_schedule: chat ${chatId} is not accessible` }], isError: true }
+        }
+        const cron = (args.cron as string) ?? ''
+        const prompt = (args.prompt as string) ?? ''
+        const recurring = args.recurring !== false
+        const expiresAt = (args.expires_at as string | undefined) ?? null
+        if (!cron) return { content: [{ type: 'text' as const, text: 'dc_schedule: cron is required' }], isError: true }
+        if (!prompt) return { content: [{ type: 'text' as const, text: 'dc_schedule: prompt is required' }], isError: true }
+        if (prompt.length > 4000) return { content: [{ type: 'text' as const, text: 'dc_schedule: prompt exceeds 4000 chars' }], isError: true }
+        let fireCount: number
+        try {
+          fireCount = countFiresIn7Days(cron, Date.now())
+        } catch (err) {
+          return { content: [{ type: 'text' as const, text: `dc_schedule: invalid cron expression: ${err}` }], isError: true }
+        }
+        let targetMs: number | null = null
+        if (!recurring) {
+          try {
+            targetMs = CronExpressionParser.parse(cron, { currentDate: new Date() }).next().toDate().getTime()
+          } catch {
+            targetMs = null
+          }
+        }
+        const jobId = Math.random().toString(36).slice(2, 8)
+        const job: ScheduledJob = {
+          jobId,
+          chatId,
+          cron,
+          prompt,
+          recurring,
+          createdAt: new Date().toISOString(),
+          expiresAt,
+          lastFiredAt: null,
+          targetMs,
+        }
+        try {
+          scheduler.add(job)
+        } catch (err) {
+          return { content: [{ type: 'text' as const, text: `dc_schedule: ${err}` }], isError: true }
+        }
+        let nextFireAt = ''
+        try {
+          nextFireAt = recurring
+            ? CronExpressionParser.parse(cron).next().toDate().toISOString()
+            : (targetMs !== null ? new Date(targetMs).toISOString() : '')
+        } catch {}
+        const body: Record<string, unknown> = { job_id: jobId, next_fire_at: nextFireAt }
+        if (fireCount > 30) {
+          body.warning = `This schedule will fire ${fireCount} times in the next 7 days. Consider whether you need it that often.`
+        }
+        return { content: [{ type: 'text' as const, text: JSON.stringify(body, null, 2) }] }
+      }
+
+      case 'dc_schedule_list': {
+        const chatIdRaw = args.chat_id as string
+        const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
+        if (!Number.isFinite(chatId)) {
+          return { content: [{ type: 'text' as const, text: 'dc_schedule_list: chat_id is required' }], isError: true }
+        }
+        if (callerChatId !== undefined && callerChatId !== chatId) {
+          return { content: [{ type: 'text' as const, text: `dc_schedule_list: caller is bound to chat ${callerChatId}, cannot list chat ${chatId}` }], isError: true }
+        }
+        if (!access.isAllowed(chatId)) {
+          return { content: [{ type: 'text' as const, text: `dc_schedule_list: chat ${chatId} is not accessible` }], isError: true }
+        }
+        const jobs = scheduleStore.loadForChat(chatId)
+        const now = Date.now()
+        const payload = jobs.map(j => {
+          let nextFire = ''
+          try {
+            if (!j.recurring && j.targetMs !== null) {
+              nextFire = new Date(j.targetMs).toISOString()
+            } else {
+              nextFire = CronExpressionParser.parse(j.cron, { currentDate: new Date(now) }).next().toDate().toISOString()
+            }
+          } catch {}
+          return {
+            job_id: j.jobId,
+            cron: j.cron,
+            prompt: j.prompt,
+            recurring: j.recurring,
+            next_fire_at: nextFire,
+            expires_at: j.expiresAt,
+            created_at: j.createdAt,
+            last_fired_at: j.lastFiredAt,
+          }
+        })
+        return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] }
+      }
+
+      case 'dc_schedule_delete': {
+        const chatIdRaw = args.chat_id as string
+        const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
+        if (!Number.isFinite(chatId)) {
+          return { content: [{ type: 'text' as const, text: 'dc_schedule_delete: chat_id is required' }], isError: true }
+        }
+        if (callerChatId !== undefined && callerChatId !== chatId) {
+          return { content: [{ type: 'text' as const, text: `dc_schedule_delete: caller is bound to chat ${callerChatId}, cannot delete from chat ${chatId}` }], isError: true }
+        }
+        if (!access.isAllowed(chatId)) {
+          return { content: [{ type: 'text' as const, text: `dc_schedule_delete: chat ${chatId} is not accessible` }], isError: true }
+        }
+        const jobId = (args.job_id as string) ?? ''
+        if (!jobId) return { content: [{ type: 'text' as const, text: 'dc_schedule_delete: job_id is required' }], isError: true }
+        const existed = scheduler.remove(chatId, jobId)
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ deleted: existed }) }] }
       }
 
       default:
