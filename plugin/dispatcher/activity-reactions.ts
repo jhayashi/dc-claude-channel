@@ -37,8 +37,25 @@ export function computeEmoji(toolName: string, toolInput: unknown): string | nul
 }
 
 /**
- * Stub — real implementation in Task 2.
+ * Map a TodoWrite payload to a step-progress emoji: 1️⃣–9️⃣ for
+ * indices 0–8, regional indicators 🇦–🇿 for indices 9–34. Returns
+ * null when there is no in_progress todo, the index is out of range,
+ * or the payload shape is unexpected.
  */
-export function todoStepEmoji(_input: unknown): string | null {
-  return null
+export function todoStepEmoji(input: unknown): string | null {
+  if (!input || typeof input !== 'object') return null
+  const todos = (input as { todos?: unknown }).todos
+  if (!Array.isArray(todos)) return null
+  const idx = todos.findIndex(
+    (t) => t && typeof t === 'object' && (t as { status?: string }).status === 'in_progress',
+  )
+  if (idx < 0) return null
+  if (idx < 9) {
+    // Keycap sequence: DIGIT + VS16 + COMBINING ENCLOSING KEYCAP
+    return `${String(idx + 1)}\uFE0F\u20E3`
+  }
+  const letterIdx = idx - 9
+  if (letterIdx >= 26) return null
+  // Regional indicator A..Z starts at U+1F1E6
+  return String.fromCodePoint(0x1F1E6 + letterIdx)
 }

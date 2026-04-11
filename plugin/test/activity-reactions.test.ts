@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { computeEmoji } from '../dispatcher/activity-reactions'
+import { computeEmoji, todoStepEmoji } from '../dispatcher/activity-reactions'
 
 describe('computeEmoji tool classes', () => {
   test('coding tools → 👨‍💻', () => {
@@ -39,5 +39,77 @@ describe('computeEmoji tool classes', () => {
 
   test('unknown tool returns null', () => {
     expect(computeEmoji('SomeFutureTool', {})).toBeNull()
+  })
+})
+
+describe('todoStepEmoji', () => {
+  test('null / non-object input → null', () => {
+    expect(todoStepEmoji(null)).toBeNull()
+    expect(todoStepEmoji(undefined)).toBeNull()
+    expect(todoStepEmoji('nope')).toBeNull()
+    expect(todoStepEmoji(42)).toBeNull()
+  })
+
+  test('missing todos array → null', () => {
+    expect(todoStepEmoji({})).toBeNull()
+    expect(todoStepEmoji({ todos: 'not an array' })).toBeNull()
+  })
+
+  test('no in_progress todo → null', () => {
+    const todos = [
+      { status: 'completed', content: 'a' },
+      { status: 'pending', content: 'b' },
+    ]
+    expect(todoStepEmoji({ todos })).toBeNull()
+  })
+
+  test('first in_progress at index 0 → 1️⃣', () => {
+    const todos = [{ status: 'in_progress', content: 'a' }]
+    expect(todoStepEmoji({ todos })).toBe('1\uFE0F\u20E3')
+  })
+
+  test('in_progress at index 5 → 6️⃣', () => {
+    const todos = [
+      { status: 'completed' }, { status: 'completed' },
+      { status: 'completed' }, { status: 'completed' },
+      { status: 'completed' }, { status: 'in_progress' },
+    ]
+    expect(todoStepEmoji({ todos })).toBe('6\uFE0F\u20E3')
+  })
+
+  test('in_progress at index 8 → 9️⃣', () => {
+    const todos = Array.from({ length: 9 }, (_, i) => ({
+      status: i === 8 ? 'in_progress' : 'completed',
+    }))
+    expect(todoStepEmoji({ todos })).toBe('9\uFE0F\u20E3')
+  })
+
+  test('in_progress at index 9 → 🇦 (regional indicator A)', () => {
+    const todos = Array.from({ length: 10 }, (_, i) => ({
+      status: i === 9 ? 'in_progress' : 'completed',
+    }))
+    expect(todoStepEmoji({ todos })).toBe('\u{1F1E6}')
+  })
+
+  test('in_progress at index 34 → 🇿 (regional indicator Z)', () => {
+    const todos = Array.from({ length: 35 }, (_, i) => ({
+      status: i === 34 ? 'in_progress' : 'completed',
+    }))
+    expect(todoStepEmoji({ todos })).toBe('\u{1F1FF}')
+  })
+
+  test('in_progress at index 35 → null (out of range)', () => {
+    const todos = Array.from({ length: 36 }, (_, i) => ({
+      status: i === 35 ? 'in_progress' : 'completed',
+    }))
+    expect(todoStepEmoji({ todos })).toBeNull()
+  })
+
+  test('picks FIRST in_progress when multiple exist', () => {
+    const todos = [
+      { status: 'in_progress', content: 'first' },
+      { status: 'in_progress', content: 'second' },
+    ]
+    expect(todoStepEmoji({ todos })).toBe('1\uFE0F\u20E3')
   })
 })
