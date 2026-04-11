@@ -38,6 +38,7 @@ import { SubagentProcess } from './dispatcher/subagent-process.js'
 import { generateHookConfig } from './dispatcher/hook-config.js'
 import { createMessageRouter } from './dispatcher/message-router.js'
 import { ReactionRouter } from './dispatcher/reaction-router.js'
+import { tryAutoApprove } from './dispatcher/skip-permissions.js'
 import type { ServerMessage } from './shared/protocol.js'
 import type { Message } from './dc-client.js'
 
@@ -399,6 +400,22 @@ const socketServer = new SocketServer({
   getSubagentChat: (id) => subagentRegistry.get(id)?.chatId ?? null,
   onRequest: async (req: SocketRequest): Promise<ServerMessage> => {
     if (req.frame.kind === 'permissionRequest') {
+      // Short-circuit: if the bound agent has x-dc-skipPermissions set,
+      // auto-approve and append an audit entry without touching the
+      // WebXDC permission card. Falls through to the normal prompt path
+      // otherwise.
+      try {
+        const auto = tryAutoApprove(req.chatId, req.frame as { id: string; tool?: string; input?: unknown })
+        if (auto) {
+          logf('skip-permissions: auto-allowed %s for chat %d (req %s)',
+            (req.frame as { tool?: string }).tool ?? 'unknown',
+            req.chatId,
+            req.frame.id)
+          return auto
+        }
+      } catch (err) {
+        logf('skip-permissions: tryAutoApprove crashed, falling through: %v', err)
+      }
       return await new Promise<ServerMessage>((resolve) => {
         pendingPermissions.set(req.frame.id, {
           connectionId: req.connectionId,
