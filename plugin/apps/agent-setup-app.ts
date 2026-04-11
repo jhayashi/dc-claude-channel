@@ -412,18 +412,30 @@ export const agentSetupApp: WebXDCApp = {
         const draft = parsed.data
         const skipPerms = (payload as { skipPermissions?: boolean }).skipPermissions === true
         const iconMirror = (payload as { iconMirror?: boolean }).iconMirror === true
+        // Snapshot the pre-edit state BEFORE mutating metadata below. We
+        // must clone metadata because `updated` shares the object otherwise,
+        // and the setters mutate in place — which would make the "changed"
+        // checks below always return false.
+        const prevModel = agent.model
+        const prevSystem = agent.system
+        const prevSkip = agents.getSkipPermissions(agent)
+        const prevMirror = agents.getIconMirror(agent)
         try {
           // Preserve existing metadata (e.g. x-dc-createdAt) across edits, then
-          // apply the new skipPermissions / iconMirror flags.
+          // apply the new skipPermissions / iconMirror flags. Clone to avoid
+          // aliasing the original `agent.metadata` reference.
           const updated: agents.AgentDef = {
             ...draft,
             id: agentId,
-            metadata: agent.metadata,
+            metadata: agent.metadata ? { ...agent.metadata } : undefined,
           }
           agents.setSkipPermissions(updated, skipPerms)
           agents.setIconMirror(updated, iconMirror)
           agents.saveAgent(updated)
-          ctx.logf('agent-setup: edited agent %s', agentId)
+          ctx.logf(
+            'agent-setup: edited agent %s (model=%s skip=%s mirror=%s)',
+            agentId, draft.model, skipPerms, iconMirror,
+          )
 
           // Evict all cached subagents bound to this agent so they respawn
           // with the new model/prompt on the next message. Also update
@@ -435,15 +447,23 @@ export const agentSetupApp: WebXDCApp = {
           // into the session store at creation time and replayed on resume.
           // There's no way to override it, so a model change requires a
           // fresh session.
-          const modelChanged = agent.model !== draft.model
-          const skipPermsChanged = agents.getSkipPermissions(agent) !== skipPerms
-          const mirrorChanged = agents.getIconMirror(agent) !== iconMirror
+          const modelChanged = prevModel !== draft.model
+          const systemChanged = prevSystem !== draft.system
+          const skipPermsChanged = prevSkip !== skipPerms
+          const mirrorChanged = prevMirror !== iconMirror
+          // Restart only for changes that are baked in at subagent spawn
+          // time: the model (passed as --model and cached in the session
+          // store) and the system prompt (read from disk at spawn). Cosmetic
+          // changes (name, icon orientation) and skipPermissions — which the
+          // dispatcher re-reads on every hook call — don't need a restart.
+          const needsRestart = modelChanged || systemChanged
+          const iconChanged = modelChanged || skipPermsChanged || mirrorChanged
           const affected = bindings.listBindings().filter(b => b.agentId === agentId)
           const newInherit = agents.inheritClaudeMdForModel(draft.model)
 
           // Notify affected chats before evicting so the user knows
           // the pause is intentional, not a hang.
-          if (affected.length > 0) {
+          if (needsRestart && affected.length > 0) {
             const restartMsg = modelChanged
               ? `Agent updated. Restarting with new model (${draft.model.replace('claude-', '')})...`
               : 'Agent updated. Restarting...'
@@ -460,15 +480,17 @@ export const agentSetupApp: WebXDCApp = {
               if (modelChanged) {
                 bindings.clearSessionId(b.chatId)
               }
-              if (modelChanged || skipPermsChanged || mirrorChanged) {
+              if (iconChanged) {
                 await setAgentIcon(ctx, b.chatId, draft.model, skipPerms, iconMirror).catch(err =>
                   ctx.logf('agent-setup: icon update failed chat=%d: %v', b.chatId, err),
                 )
               }
-              await ctx.evictSubagent(b.chatId)
+              if (needsRestart) {
+                await ctx.evictSubagent(b.chatId)
+              }
             }),
           )
-          if (affected.length > 0) {
+          if (needsRestart && affected.length > 0) {
             ctx.logf(
               'agent-setup: evicted %d subagent(s) for agent %s%s',
               affected.length, agentId, modelChanged ? ' (model changed, sessions cleared)' : '',
