@@ -23,7 +23,7 @@ interface Session {
 const sessions = new Map<number, Session>()
 
 /** Summarize agents for the picker screen. */
-function listExistingForPicker(sourceChatId: number): Array<{ id: string; name: string; model: string; bindingCount: number; isCurrentAgent: boolean }> {
+function listExistingForPicker(sourceChatId: number): Array<{ id: string; name: string; model: string; bindingCount: number; isCurrentAgent: boolean; isUndeletable: boolean }> {
   const sourceBinding = bindings.getBinding(sourceChatId)
   return agents.listAgents().map(a => ({
     id: a.id,
@@ -31,11 +31,13 @@ function listExistingForPicker(sourceChatId: number): Array<{ id: string; name: 
     model: a.model,
     bindingCount: bindings.countByAgentId(a.id),
     isCurrentAgent: sourceBinding?.agentId === a.id,
+    isUndeletable: agents.isUndeletableAgent(a.id),
   }))
 }
 
-/** Delete the agent if it has no remaining bindings. */
+/** Delete the agent if it has no remaining bindings and is deletable. */
 async function removeBindingIfOrphaned(ctx: AppContext, agentId: string): Promise<void> {
+  if (agents.isUndeletableAgent(agentId)) return
   if (agents.isOrphaned(agentId)) {
     try {
       agents.deleteAgent(agentId)
@@ -360,6 +362,10 @@ export const agentSetupApp: WebXDCApp = {
         const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
         if (!agentId) {
           ctx.logf('agent-setup: delete payload missing agentId')
+          continue
+        }
+        if (agents.isUndeletableAgent(agentId)) {
+          ctx.logf('agent-setup: refusing to delete built-in default agent %s', agentId)
           continue
         }
         const agent = agents.getAgent(agentId)

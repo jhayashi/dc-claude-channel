@@ -47,6 +47,41 @@ export const DEFAULT_SYSTEM_PROMPT =
 export const DEFAULT_MODEL: AllowedModel = 'claude-sonnet-4-6'
 
 /**
+ * Sentinel id for the built-in default agent. This agent is always
+ * present (auto-seeded by listAgents / ensureDefaultAgent) and cannot
+ * be deleted (deleteAgent throws on this id). Its name / model /
+ * prompt / metadata are still editable — only the id and its existence
+ * are immutable.
+ */
+export const DEFAULT_AGENT_ID = 'claude-code'
+
+/** Whether an agent id is the undeletable built-in default. */
+export function isUndeletableAgent(id: string): boolean {
+  return id === DEFAULT_AGENT_ID
+}
+
+/**
+ * Ensure the built-in default agent exists on disk, writing a seed
+ * definition if it doesn't. Returns the current (possibly user-edited)
+ * agent definition. Safe to call repeatedly; existing edits are
+ * preserved.
+ */
+export function ensureDefaultAgent(): AgentDef {
+  const existing = getAgent(DEFAULT_AGENT_ID)
+  if (existing) return existing
+  const seed: AgentDef = {
+    id: DEFAULT_AGENT_ID,
+    name: 'Claude Code',
+    model: DEFAULT_MODEL,
+    description: '',
+    system: DEFAULT_SYSTEM_PROMPT,
+    tools: [],
+  }
+  saveAgent(seed)
+  return seed
+}
+
+/**
  * Whether an agent should inherit the dispatcher's CLAUDE.md.
  * Haiku agents skip it (minimal context); others get full project context.
  */
@@ -86,9 +121,14 @@ function agentPath(id: string): string {
   return join(AGENTS_DIR, `${id}.yaml`)
 }
 
-/** List all agent definitions on disk, sorted by id. Invalid files skipped. */
+/**
+ * List all agent definitions on disk, sorted by id. Invalid files skipped.
+ * Auto-seeds the built-in default agent (DEFAULT_AGENT_ID) if it's missing,
+ * so the agent list is never empty.
+ */
 export function listAgents(): AgentDef[] {
-  if (!existsSync(AGENTS_DIR)) return []
+  mkdirSync(AGENTS_DIR, { recursive: true })
+  ensureDefaultAgent()
   const out: AgentDef[] = []
   for (const entry of readdirSync(AGENTS_DIR)) {
     if (!entry.endsWith('.yaml')) continue
@@ -128,8 +168,16 @@ export function isOrphaned(agentId: string): boolean {
   return bindings.countByAgentId(agentId) === 0
 }
 
-/** Delete an agent. Returns true if a file was removed. */
+/**
+ * Delete an agent. Returns true if a file was removed.
+ * Throws if `id` is the built-in undeletable default agent — that
+ * definition is always resurrected by listAgents / ensureDefaultAgent
+ * so a delete would be meaningless anyway.
+ */
 export function deleteAgent(id: string): boolean {
+  if (isUndeletableAgent(id)) {
+    throw new Error(`cannot delete built-in default agent: ${id}`)
+  }
   const path = agentPath(id)
   if (!existsSync(path)) return false
   unlinkSync(path)

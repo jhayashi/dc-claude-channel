@@ -160,17 +160,7 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
       // Try to auto-repair by binding to a default quick agent.
       logf('subagent: chat %d unbound, attempting auto-repair', chatId)
       try {
-        let defaultAgent = agents.getAgent('claude-code')
-        if (!defaultAgent) {
-          defaultAgent = {
-            id: 'claude-code',
-            name: 'Claude Code',
-            model: agents.DEFAULT_MODEL,
-            system: agents.DEFAULT_SYSTEM_PROMPT,
-            tools: [],
-          }
-          agents.saveAgent(defaultAgent)
-        }
+        const defaultAgent = agents.ensureDefaultAgent()
         // Update or create binding with agent.
         // Clear any stale sessionId so a fresh session is created.
         const newBinding: bindings.Binding = {
@@ -784,20 +774,10 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         }
         const chatId = access.completePairing(code)
 
-        // Auto-bind the 1:1 chat to a default agent so it's immediately usable.
-        // This creates a "quick" agent if none exists, then binds the chat to it.
+        // Auto-bind the 1:1 chat to the built-in default agent so it's
+        // immediately usable. ensureDefaultAgent writes the seed if missing.
         try {
-          let defaultAgent = agents.getAgent('claude-code')
-          if (!defaultAgent) {
-            defaultAgent = {
-              id: 'claude-code',
-              name: 'Claude Code',
-              model: agents.DEFAULT_MODEL,
-              system: agents.DEFAULT_SYSTEM_PROMPT,
-              tools: [],
-              }
-            agents.saveAgent(defaultAgent)
-          }
+          const defaultAgent = agents.ensureDefaultAgent()
           // Create binding for the 1:1 chat
           const binding: bindings.Binding = {
             chatId,

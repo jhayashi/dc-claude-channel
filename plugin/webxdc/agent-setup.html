@@ -64,6 +64,10 @@ body {
 .card-action-btn { flex: 1; font-size: 12px; padding: 6px 8px; background: #30363d; border: 1px solid #444c56; border-radius: 6px; color: #c9d1d9; cursor: pointer; font-family: inherit; }
 .card-action-btn:hover { background: #3d444d; }
 .card-action-btn:active { transform: scale(0.96); }
+.card-action-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.card-action-btn:disabled:hover { background: #30363d; }
+.card-action-btn:disabled:active { transform: none; }
+.card-hint { font-size: 11px; color: #8b949e; margin-top: 4px; font-style: italic; }
 .section-label {
   font-size: 11px;
   text-transform: uppercase;
@@ -263,7 +267,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.30;
+var APP_VERSION = 1.31;
 var draft = null;
 var existingAgents = [];
 var creating = false;
@@ -354,9 +358,20 @@ function renderExistingList() {
     var deleteBtn = document.createElement('button');
     deleteBtn.className = 'card-action-btn';
     deleteBtn.textContent = '\u2715 Delete';
-    deleteBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); deleteAgent(id); }; })(a.id);
+    if (a.isUndeletable) {
+      deleteBtn.disabled = true;
+      deleteBtn.title = 'Built-in default agent — cannot be removed';
+    } else {
+      deleteBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); deleteAgent(id); }; })(a.id);
+    }
     actions.appendChild(deleteBtn);
     btn.appendChild(actions);
+    if (a.isUndeletable) {
+      var hint = document.createElement('div');
+      hint.className = 'card-hint';
+      hint.textContent = 'Default \u2014 can\u2019t be removed';
+      btn.appendChild(hint);
+    }
     container.appendChild(btn);
   }
 }

@@ -95,18 +95,22 @@ describe('agents registry', () => {
     agents.saveAgent(makeDef({ id: 'zebra' }))
     agents.saveAgent(makeDef({ id: 'alpha' }))
     agents.saveAgent(makeDef({ id: 'mike' }))
-    expect(agents.listAgents().map(a => a.id)).toEqual(['alpha', 'mike', 'zebra'])
+    // claude-code is auto-seeded by listAgents (built-in default agent).
+    expect(agents.listAgents().map(a => a.id)).toEqual(['alpha', 'claude-code', 'mike', 'zebra'])
   })
 
   test('listAgents skips invalid files without throwing', () => {
     agents.saveAgent(makeDef({ id: 'good' }))
     writeFileSync(join(testDir, 'broken.yaml'), '::: garbage')
-    expect(agents.listAgents().map(a => a.id)).toEqual(['good'])
+    // claude-code is auto-seeded by listAgents.
+    expect(agents.listAgents().map(a => a.id)).toEqual(['claude-code', 'good'])
   })
 
-  test('listAgents returns empty array when directory missing', () => {
+  test('listAgents auto-seeds directory and default agent when missing', () => {
     rmSync(testDir, { recursive: true, force: true })
-    expect(agents.listAgents()).toEqual([])
+    // listAgents now recreates the dir and seeds the default agent,
+    // so the list is never empty.
+    expect(agents.listAgents().map(a => a.id)).toEqual(['claude-code'])
   })
 
   test('deleteAgent removes the file', () => {
@@ -309,5 +313,81 @@ describe('iconMirror helpers', () => {
     agents.saveAgent(def)
     const loaded = agents.getAgent('mirror-yaml')
     expect(agents.getIconMirror(loaded!)).toBe(true)
+  })
+})
+
+describe('default agent (undeletable)', () => {
+  test('isUndeletableAgent recognises the sentinel and nothing else', () => {
+    expect(agents.isUndeletableAgent(agents.DEFAULT_AGENT_ID)).toBe(true)
+    expect(agents.isUndeletableAgent('claude-code')).toBe(true)
+    expect(agents.isUndeletableAgent('claude-code-2')).toBe(false)
+    expect(agents.isUndeletableAgent('anything-else')).toBe(false)
+  })
+
+  test('ensureDefaultAgent seeds the default agent on an empty dir', () => {
+    expect(agents.getAgent(agents.DEFAULT_AGENT_ID)).toBeNull()
+    const seeded = agents.ensureDefaultAgent()
+    expect(seeded.id).toBe(agents.DEFAULT_AGENT_ID)
+    expect(seeded.name).toBe('Claude Code')
+    expect(seeded.model).toBe(agents.DEFAULT_MODEL)
+    expect(seeded.system).toBe(agents.DEFAULT_SYSTEM_PROMPT)
+    expect(agents.getAgent(agents.DEFAULT_AGENT_ID)).not.toBeNull()
+  })
+
+  test('ensureDefaultAgent preserves user edits on subsequent calls', () => {
+    agents.ensureDefaultAgent()
+    const custom = agents.getAgent(agents.DEFAULT_AGENT_ID)!
+    custom.name = 'My Custom Default'
+    custom.system = 'you are my personal assistant'
+    custom.model = 'claude-opus-4-6'
+    agents.saveAgent(custom)
+
+    const after = agents.ensureDefaultAgent()
+    expect(after.name).toBe('My Custom Default')
+    expect(after.system).toBe('you are my personal assistant')
+    expect(after.model).toBe('claude-opus-4-6')
+  })
+
+  test('listAgents auto-seeds the default when no files exist', () => {
+    const list = agents.listAgents()
+    expect(list.length).toBe(1)
+    expect(list[0]!.id).toBe(agents.DEFAULT_AGENT_ID)
+  })
+
+  test('listAgents includes both default and user-created agents', () => {
+    agents.saveAgent(makeDef({ id: 'user-agent', name: 'User Agent' }))
+    const list = agents.listAgents()
+    const ids = list.map(a => a.id)
+    expect(ids).toContain(agents.DEFAULT_AGENT_ID)
+    expect(ids).toContain('user-agent')
+  })
+
+  test('deleteAgent refuses the sentinel id', () => {
+    agents.ensureDefaultAgent()
+    expect(() => agents.deleteAgent(agents.DEFAULT_AGENT_ID)).toThrow(
+      /cannot delete built-in default agent/,
+    )
+    expect(agents.getAgent(agents.DEFAULT_AGENT_ID)).not.toBeNull()
+  })
+
+  test('deleteAgent still works on a non-sentinel agent', () => {
+    agents.saveAgent(makeDef({ id: 'throwaway' }))
+    expect(agents.deleteAgent('throwaway')).toBe(true)
+    expect(agents.getAgent('throwaway')).toBeNull()
+  })
+
+  test('name / model / prompt edits on the sentinel persist', () => {
+    agents.ensureDefaultAgent()
+    expect(agents.updateAgentPrompt(agents.DEFAULT_AGENT_ID, 'new system')).toBe(true)
+    expect(agents.updateAgentModel(agents.DEFAULT_AGENT_ID, 'claude-haiku-4-5')).toBe(true)
+
+    const def = agents.getAgent(agents.DEFAULT_AGENT_ID)!
+    def.name = 'Renamed Default'
+    agents.saveAgent(def)
+
+    const reloaded = agents.getAgent(agents.DEFAULT_AGENT_ID)!
+    expect(reloaded.name).toBe('Renamed Default')
+    expect(reloaded.model).toBe('claude-haiku-4-5')
+    expect(reloaded.system).toBe('new system')
   })
 })
