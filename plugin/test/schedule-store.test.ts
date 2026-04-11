@@ -95,3 +95,35 @@ describe('ScheduleStore.delete', () => {
     expect(store.countForChat(87)).toBe(1)
   })
 })
+
+describe('ScheduleStore robustness', () => {
+  test('corrupt JSON file is skipped, other jobs still load', () => {
+    store.save(fixture({ chatId: 22, jobId: 'good11' }))
+    writeFileSync(join(dir, '22-bad222.json'), '{not valid json')
+    const loaded = store.loadAll()
+    expect(loaded.length).toBe(1)
+    expect(loaded[0].jobId).toBe('good11')
+  })
+
+  test('non-.json files in the dir are ignored', () => {
+    store.save(fixture({ chatId: 22, jobId: 'good11' }))
+    writeFileSync(join(dir, 'notes.txt'), 'hello')
+    writeFileSync(join(dir, '22-tmp.json.tmp'), '{}')
+    const loaded = store.loadAll()
+    expect(loaded.length).toBe(1)
+  })
+
+  test('save leaves no .tmp file behind on success', () => {
+    store.save(fixture({ chatId: 22, jobId: 'abc123' }))
+    const leftovers = readdirSync(dir).filter(n => n.endsWith('.tmp'))
+    expect(leftovers).toEqual([])
+  })
+
+  test('save overwrites existing job atomically', () => {
+    store.save(fixture({ chatId: 22, jobId: 'abc123', prompt: 'v1' }))
+    store.save(fixture({ chatId: 22, jobId: 'abc123', prompt: 'v2' }))
+    const loaded = store.loadForChat(22)
+    expect(loaded.length).toBe(1)
+    expect(loaded[0].prompt).toBe('v2')
+  })
+})
