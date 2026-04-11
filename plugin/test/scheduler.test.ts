@@ -226,3 +226,71 @@ describe('Scheduler fire handler', () => {
     expect(h.dispatched.length).toBe(2)
   })
 })
+
+describe('Scheduler startup skip-missed policy', () => {
+  test('recurring: start() uses cron.next(now), so missed fires are skipped for free', () => {
+    const h = makeHarness()
+    // Clock is 10:00:30Z. A daily 09:00Z job would have fired today at
+    // 09:00Z if we'd been up — we do NOT catch up.
+    h.setClock('2026-04-13T10:00:30Z')
+    h.store.save(fixture({
+      jobId: 'skip11',
+      cron: '0 9 * * *',
+      lastFiredAt: null,
+    }))
+    h.scheduler.start()
+    const live = h.timers.filter(t => !t.cancelled)
+    expect(live.length).toBe(1)
+    // ~(24h - 1h - 30s) away = 82770s = 82_770_000 ms.
+    expect(live[0].ms).toBeGreaterThan(82_000_000)
+    expect(live[0].ms).toBeLessThan(83_000_000)
+    expect(h.dispatched.length).toBe(0)
+  })
+
+  test('past-due one-shot: silently deleted at start() with a log line', () => {
+    const h = makeHarness()
+    h.setClock('2026-04-13T10:00:30Z')
+    h.store.save(fixture({
+      jobId: 'gone11',
+      cron: '0 9 * * *',
+      recurring: false,
+      targetMs: Date.parse('2026-04-12T09:00:00Z'), // yesterday
+    }))
+    h.scheduler.start()
+    expect(h.store.countForChat(22)).toBe(0)
+    expect(h.logs.some(l => l.includes('dropped stale one-shot'))).toBe(true)
+    const live = h.timers.filter(t => !t.cancelled)
+    expect(live.length).toBe(0)
+  })
+
+  test("expired recurring jobs are GC'd at start()", () => {
+    const h = makeHarness()
+    h.setClock('2026-04-13T10:00:30Z')
+    h.store.save(fixture({
+      jobId: 'dead11',
+      cron: '* * * * *',
+      expiresAt: '2026-04-13T09:00:00Z',
+    }))
+    h.scheduler.start()
+    expect(h.store.countForChat(22)).toBe(0)
+  })
+})
+
+describe('Scheduler timer overflow', () => {
+  test('nearest fire beyond 24d: arm for MAX_TIMER_MS and rearm on wake', async () => {
+    const h = makeHarness()
+    h.setClock('2026-04-13T09:00:00Z')
+    // Yearly on Jan 1 00:00Z — ~9 months away, far beyond MAX_TIMER_MS.
+    h.store.save(fixture({ jobId: 'year11', cron: '0 0 1 1 *' }))
+    h.scheduler.start()
+    const live = h.timers.filter(t => !t.cancelled)
+    expect(live.length).toBe(1)
+    expect(live[0].ms).toBe(2_147_483_647)
+
+    // Fire it — the handler should detect overflow and rearm without dispatch.
+    await h.fireLatest()
+    expect(h.dispatched.length).toBe(0)
+    const liveAfter = h.timers.filter(t => !t.cancelled && !t.fired)
+    expect(liveAfter.length).toBe(1)
+  })
+})

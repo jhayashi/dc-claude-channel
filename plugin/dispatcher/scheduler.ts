@@ -60,7 +60,34 @@ export class Scheduler {
 
   start(): void {
     this.started = true
+    this.reapStaleOnStartup()
     this.rearm()
+  }
+
+  /**
+   * On startup: drop expired recurring jobs (explicit expiresAt in the
+   * past) and past-due one-shots (targetMs in the past). Matches the
+   * "skip everything missed, don't catch up" policy.
+   */
+  private reapStaleOnStartup(): void {
+    const now = this.now()
+    for (const job of this.store.loadAll()) {
+      if (isExpired(job, now)) {
+        this.logf(
+          'scheduler: dropping expired job %s chat=%d',
+          job.jobId, job.chatId,
+        )
+        this.store.delete(job.chatId, job.jobId)
+        continue
+      }
+      if (!job.recurring && job.targetMs !== null && job.targetMs <= now) {
+        this.logf(
+          'scheduler: dropped stale one-shot job=%s chat=%d (target was %s)',
+          job.jobId, job.chatId, new Date(job.targetMs).toISOString(),
+        )
+        this.store.delete(job.chatId, job.jobId)
+      }
+    }
   }
 
   stop(): void {
