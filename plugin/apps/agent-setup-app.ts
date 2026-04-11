@@ -57,7 +57,11 @@ async function sendInit(
   const payload = {
     type: 'init' as const,
     version: agentSetup.getAgentSetupVersion(),
-    draft: { ...draft, skipPermissions: agents.getSkipPermissions(draft as agents.AgentDef) },
+    draft: {
+      ...draft,
+      skipPermissions: agents.getSkipPermissions(draft as agents.AgentDef),
+      iconMirror: agents.getIconMirror(draft as agents.AgentDef),
+    },
     existingAgents: listExistingForPicker(sourceChatId),
     senderAddr: 'server',
   }
@@ -94,16 +98,22 @@ async function sendInit(
   return session
 }
 
-/** Icon filename per model, with a "-skip" variant for permissive agents. */
+/** Icon filename per model, with -skip and -mirror orientation variants. */
 const MODEL_ICON_BASE: Record<string, string> = {
   'claude-opus-4-6': 'agent-opus',
   'claude-sonnet-4-6': 'agent-sonnet',
   'claude-haiku-4-5': 'agent-haiku',
 }
 
-export function iconFilenameFor(model: string, skipPermissions: boolean): string {
+export function iconFilenameFor(
+  model: string,
+  skipPermissions: boolean,
+  mirror: boolean,
+): string {
   const base = MODEL_ICON_BASE[model] || 'agent-sonnet'
-  return skipPermissions ? `${base}-skip.png` : `${base}.png`
+  const skipPart = skipPermissions ? '-skip' : ''
+  const mirrorPart = mirror ? '-mirror' : ''
+  return `${base}${skipPart}${mirrorPart}.png`
 }
 
 /** Minimal context for decorating agent chats (icon + welcome). */
@@ -112,14 +122,15 @@ export interface DecorateContext {
   logf: (format: string, ...args: unknown[]) => void
 }
 
-/** Set the chat profile image to the model + permission-appropriate icon. */
+/** Set the chat profile image to the model/permission/orientation icon. */
 export async function setAgentIcon(
   ctx: DecorateContext,
   chatId: number,
   model: string,
   skipPermissions: boolean,
+  mirror: boolean,
 ): Promise<void> {
-  const iconName = iconFilenameFor(model, skipPermissions)
+  const iconName = iconFilenameFor(model, skipPermissions, mirror)
   const iconPath = new URL(`../assets/agent-icons/${iconName}`, import.meta.url).pathname
   await ctx.client.setChatProfileImage(chatId, iconPath)
   ctx.logf('agent-setup: set agent icon to %s for chat %d', iconName, chatId)
@@ -132,7 +143,13 @@ export async function decorateAgentChat(
   agent: agents.AgentDef,
 ): Promise<void> {
   try {
-    await setAgentIcon(ctx, chatId, agent.model, agents.getSkipPermissions(agent))
+    await setAgentIcon(
+      ctx,
+      chatId,
+      agent.model,
+      agents.getSkipPermissions(agent),
+      agents.getIconMirror(agent),
+    )
   } catch (err) {
     ctx.logf('agent-setup: set icon failed: %v', err)
   }
@@ -301,6 +318,7 @@ export const agentSetupApp: WebXDCApp = {
           system: agent.system,
           tools: agent.tools ?? [],
           skipPermissions: agents.getSkipPermissions(agent),
+          iconMirror: agents.getIconMirror(agent),
         }
         try {
           const update = JSON.stringify({
@@ -393,15 +411,17 @@ export const agentSetupApp: WebXDCApp = {
         }
         const draft = parsed.data
         const skipPerms = (payload as { skipPermissions?: boolean }).skipPermissions === true
+        const iconMirror = (payload as { iconMirror?: boolean }).iconMirror === true
         try {
           // Preserve existing metadata (e.g. x-dc-createdAt) across edits, then
-          // apply the new skipPermissions flag.
+          // apply the new skipPermissions / iconMirror flags.
           const updated: agents.AgentDef = {
             ...draft,
             id: agentId,
             metadata: agent.metadata,
           }
           agents.setSkipPermissions(updated, skipPerms)
+          agents.setIconMirror(updated, iconMirror)
           agents.saveAgent(updated)
           ctx.logf('agent-setup: edited agent %s', agentId)
 
@@ -417,6 +437,7 @@ export const agentSetupApp: WebXDCApp = {
           // fresh session.
           const modelChanged = agent.model !== draft.model
           const skipPermsChanged = agents.getSkipPermissions(agent) !== skipPerms
+          const mirrorChanged = agents.getIconMirror(agent) !== iconMirror
           const affected = bindings.listBindings().filter(b => b.agentId === agentId)
           const newInherit = agents.inheritClaudeMdForModel(draft.model)
 
@@ -439,8 +460,8 @@ export const agentSetupApp: WebXDCApp = {
               if (modelChanged) {
                 bindings.clearSessionId(b.chatId)
               }
-              if (modelChanged || skipPermsChanged) {
-                await setAgentIcon(ctx, b.chatId, draft.model, skipPerms).catch(err =>
+              if (modelChanged || skipPermsChanged || mirrorChanged) {
+                await setAgentIcon(ctx, b.chatId, draft.model, skipPerms, iconMirror).catch(err =>
                   ctx.logf('agent-setup: icon update failed chat=%d: %v', b.chatId, err),
                 )
               }
@@ -530,6 +551,9 @@ export const agentSetupApp: WebXDCApp = {
           access.addChat(newChatId, ownerContactId)
           const newAgent: agents.AgentDef = { ...draft, id: agentId }
           agents.setSkipPermissions(newAgent, skipPerms)
+          // Roll a random orientation once at creation so same-model agents
+          // are visually differentiable. Edits can override via the setup card.
+          agents.setIconMirror(newAgent, Math.random() < 0.5)
           agents.saveAgent(newAgent)
           bindings.bindAgent(newChatId, agentId, { inheritClaudeMd })
           const savedAgent = agents.getAgent(agentId)

@@ -191,6 +191,35 @@ export function setSkipPermissions(def: AgentDef, value: boolean): void {
   delete def.metadata[SKIP_PERMISSIONS_META_KEY]
 }
 
+/** Metadata key for the icon mirror flag (true = facing-right variant). */
+export const ICON_MIRROR_META_KEY = 'x-dc-iconMirror'
+
+/**
+ * Read the icon mirror flag from an agent definition. Defaults to false
+ * (original orientation, facing left). When true, the chat profile image
+ * uses the horizontally-flipped variant so the agent's spy faces right.
+ */
+export function getIconMirror(def: AgentDef): boolean {
+  const meta = def.metadata
+  if (!meta) return false
+  return meta[ICON_MIRROR_META_KEY] === true
+}
+
+/**
+ * Write the icon mirror flag into an agent's metadata bag in place.
+ * Setting false removes the key entirely so exported YAML stays minimal.
+ * Does not persist — callers must call saveAgent(def) afterwards.
+ */
+export function setIconMirror(def: AgentDef, value: boolean): void {
+  if (value) {
+    if (!def.metadata) def.metadata = {}
+    def.metadata[ICON_MIRROR_META_KEY] = true
+    return
+  }
+  if (!def.metadata) return
+  delete def.metadata[ICON_MIRROR_META_KEY]
+}
+
 /**
  * Synthesize a slug-based agent id from a name, resolving collisions by
  * suffixing -2, -3, etc. The result always matches AgentDefSchema.id.
