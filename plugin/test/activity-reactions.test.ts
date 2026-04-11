@@ -1,5 +1,9 @@
 import { describe, test, expect } from 'bun:test'
-import { computeEmoji, todoStepEmoji } from '../dispatcher/activity-reactions'
+import {
+  computeEmoji,
+  todoStepEmoji,
+  createActivityReactor,
+} from '../dispatcher/activity-reactions'
 
 describe('computeEmoji tool classes', () => {
   test('coding tools → 👨‍💻', () => {
@@ -111,5 +115,121 @@ describe('todoStepEmoji', () => {
       { status: 'in_progress', content: 'second' },
     ]
     expect(todoStepEmoji({ todos })).toBe('1\uFE0F\u20E3')
+  })
+})
+
+function makeReactor() {
+  const calls: Array<{ msgId: number; emoji: string }> = []
+  const logs: string[] = []
+  const reactor = createActivityReactor({
+    sendReaction: async (msgId, emoji) => {
+      calls.push({ msgId, emoji })
+    },
+    logf: (fmt, ...args) => {
+      logs.push(`${fmt} ${JSON.stringify(args)}`)
+    },
+  })
+  return { reactor, calls, logs }
+}
+
+describe('createActivityReactor', () => {
+  test('no-op when no turn target is set', async () => {
+    const { reactor, calls } = makeReactor()
+    reactor.reactForTool(1, 'Bash', {})
+    // Give the fire-and-forget promise a tick.
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toEqual([])
+  })
+
+  test('fires reaction for a set turn target', async () => {
+    const { reactor, calls } = makeReactor()
+    reactor.setTurnTarget(1, 100)
+    reactor.reactForTool(1, 'Bash', {})
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toEqual([{ msgId: 100, emoji: '\u2699\uFE0F' }])
+  })
+
+  test('debounces repeated same emoji', async () => {
+    const { reactor, calls } = makeReactor()
+    reactor.setTurnTarget(1, 100)
+    reactor.reactForTool(1, 'Read', {})
+    reactor.reactForTool(1, 'Grep', {})
+    reactor.reactForTool(1, 'Glob', {})
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toEqual([{ msgId: 100, emoji: '\u{1F50D}' }])
+  })
+
+  test('fires again when emoji class changes', async () => {
+    const { reactor, calls } = makeReactor()
+    reactor.setTurnTarget(1, 100)
+    reactor.reactForTool(1, 'Read', {})
+    reactor.reactForTool(1, 'Bash', {})
+    reactor.reactForTool(1, 'Edit', {})
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toEqual([
+      { msgId: 100, emoji: '\u{1F50D}' },
+      { msgId: 100, emoji: '\u2699\uFE0F' },
+      { msgId: 100, emoji: '\u{1F468}\u{200D}\u{1F4BB}' },
+    ])
+  })
+
+  test('skips unknown tools without disturbing debounce state', async () => {
+    const { reactor, calls } = makeReactor()
+    reactor.setTurnTarget(1, 100)
+    reactor.reactForTool(1, 'Read', {})
+    reactor.reactForTool(1, 'dc_send', {})   // skipped
+    reactor.reactForTool(1, 'Unknown', {})   // skipped
+    reactor.reactForTool(1, 'Grep', {})      // debounced (still 🔍)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toEqual([{ msgId: 100, emoji: '\u{1F50D}' }])
+  })
+
+  test('clearTurnTarget drops state so subsequent calls no-op', async () => {
+    const { reactor, calls } = makeReactor()
+    reactor.setTurnTarget(1, 100)
+    reactor.reactForTool(1, 'Bash', {})
+    reactor.clearTurnTarget(1)
+    reactor.reactForTool(1, 'Edit', {})
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toEqual([{ msgId: 100, emoji: '\u2699\uFE0F' }])
+  })
+
+  test('setTurnTarget on the same chat resets debounce and target', async () => {
+    const { reactor, calls } = makeReactor()
+    reactor.setTurnTarget(1, 100)
+    reactor.reactForTool(1, 'Bash', {})
+    reactor.setTurnTarget(1, 200)
+    reactor.reactForTool(1, 'Bash', {})  // new turn → fires again
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toEqual([
+      { msgId: 100, emoji: '\u2699\uFE0F' },
+      { msgId: 200, emoji: '\u2699\uFE0F' },
+    ])
+  })
+
+  test('chats are isolated', async () => {
+    const { reactor, calls } = makeReactor()
+    reactor.setTurnTarget(1, 100)
+    reactor.setTurnTarget(2, 200)
+    reactor.reactForTool(1, 'Read', {})
+    reactor.reactForTool(2, 'Bash', {})
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toEqual([
+      { msgId: 100, emoji: '\u{1F50D}' },
+      { msgId: 200, emoji: '\u2699\uFE0F' },
+    ])
+  })
+
+  test('swallows sendReaction failures via logf', async () => {
+    const logs: string[] = []
+    const reactor = createActivityReactor({
+      sendReaction: async () => { throw new Error('boom') },
+      logf: (fmt, ...args) => { logs.push(`${fmt} ${JSON.stringify(args)}`) },
+    })
+    reactor.setTurnTarget(1, 100)
+    reactor.reactForTool(1, 'Bash', {})
+    await new Promise((r) => setTimeout(r, 0))
+    expect(logs.length).toBe(1)
+    expect(logs[0]).toContain('sendReaction failed')
   })
 })

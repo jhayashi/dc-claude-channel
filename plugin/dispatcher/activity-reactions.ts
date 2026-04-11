@@ -59,3 +59,53 @@ export function todoStepEmoji(input: unknown): string | null {
   // Regional indicator A..Z starts at U+1F1E6
   return String.fromCodePoint(0x1F1E6 + letterIdx)
 }
+
+export interface ActivityReactor {
+  /** Call at the start of a turn with the user's message id. */
+  setTurnTarget(chatId: number, msgId: number): void
+  /** Call in the turn's finally block to drop state (leaves last emoji visible). */
+  clearTurnTarget(chatId: number): void
+  /**
+   * Call from the auto-approve path with the about-to-run tool name.
+   * No-op when the chat has no turn target or the tool maps to no emoji.
+   * Fire-and-forget — the DC reaction RPC is dispatched asynchronously so
+   * the caller never blocks.
+   */
+  reactForTool(chatId: number, toolName: string, toolInput: unknown): void
+}
+
+export interface ActivityReactorDeps {
+  sendReaction: (msgId: number, emoji: string) => Promise<void>
+  logf?: (fmt: string, ...args: unknown[]) => void
+}
+
+interface TurnState {
+  msgId: number
+  lastEmoji: string | null
+}
+
+export function createActivityReactor(deps: ActivityReactorDeps): ActivityReactor {
+  const state = new Map<number, TurnState>()
+  const log = deps.logf ?? (() => {})
+
+  return {
+    setTurnTarget(chatId, msgId) {
+      state.set(chatId, { msgId, lastEmoji: null })
+    },
+    clearTurnTarget(chatId) {
+      state.delete(chatId)
+    },
+    reactForTool(chatId, toolName, toolInput) {
+      const entry = state.get(chatId)
+      if (!entry) return
+      const emoji = computeEmoji(toolName, toolInput)
+      if (!emoji) return
+      if (emoji === entry.lastEmoji) return
+      entry.lastEmoji = emoji
+      const { msgId } = entry
+      deps.sendReaction(msgId, emoji).catch((err) => {
+        log('activity-reactions: sendReaction failed chat=%d msg=%d: %v', chatId, msgId, err)
+      })
+    },
+  }
+}
