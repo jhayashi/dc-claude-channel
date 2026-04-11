@@ -157,6 +157,8 @@ Subagents run with `--permission-mode default` and the built-in CWD sandbox. Whe
 
 DC tool calls (`dc_send`, `dc_send_file`, `dc_chat_history`, etc.) from a subagent flow through a tools-proxy MCP server loaded in that subagent, over the same Unix socket. The dispatcher enforces `chat_id` authorization at the socket boundary — a subagent bound to chat A cannot call DC tools against chat B.
 
+**Skip-permissions mode:** An agent can opt into "trusted" mode via `metadata['x-dc-skipPermissions']` on its definition (exposed as a checkbox in the agent-setup WebXDC card, and via `getSkipPermissions` / `setSkipPermissions` in `agents.ts`). When a subagent bound to such an agent triggers the PreToolUse hook, the dispatcher short-circuits in `plugin/dispatcher/skip-permissions.ts` — it auto-approves the verdict and appends an entry to `~/.claude/channels/deltachat/audit/<chatId>.md` instead of showing the WebXDC permission card. The `dc_show_audit` core tool lets the subagent send the audit file back to the user via the file reviewer when asked (e.g. "what did you run?"). Audit files are append-only; there is no rotation.
+
 Config:
 - `DC_SUBAGENT_MAX_ACTIVE` — cache size (default 4, range 1-16)
 - `DC_SUBAGENT_IDLE_TIMEOUT_MIN` — idle timeout (default 15)
