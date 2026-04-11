@@ -133,6 +133,8 @@ Prerequisites for the dev path:
   - `permission-hook.sh` + `permission-hook-client.ts` — PreToolUse hook that forwards built-in tool permission prompts from the subagent to the dispatcher; dispatcher relays to the existing permissions-app WebXDC flow
   - `hook-config.ts` — Generates per-subagent settings.json
   - `message-router.ts` — Classifies incoming DC events (regular, system, ChatModified, unpaired) and dispatches
+  - `schedule-store.ts` — Per-chat persistence for scheduled jobs (one JSON file per job)
+  - `scheduler.ts` — In-process cron scheduler; arms one `setTimeout` for the nearest fire and dispatches synthetic user turns through `subagentCache.dispatch` when jobs fire
 - `plugin/shared/protocol.ts` — Wire protocol types + Zod schemas (single source of truth for socket frames)
 - `plugin/webxdc-app.ts` — `WebXDCApp` interface that all apps implement
 - `plugin/apps.ts` — App registry (explicit imports, no auto-discovery)
@@ -147,7 +149,7 @@ Prerequisites for the dev path:
 - `plugin/access.ts` — File-based allowlist + pairing codes (~/.claude/channels/deltachat/approved/)
 - `plugin/tutorial.ts` — Onboarding tutorial state machine
 - `plugin/webxdc-filter.ts` — Centralized owner verification for WebXDC updates
-- State dir: `~/.claude/channels/deltachat/` (.env, dc-data/, approved/, agents/, bindings/, dispatcher.sock, debug.log)
+- State dir: `~/.claude/channels/deltachat/` (.env, dc-data/, approved/, agents/, bindings/, schedules/, dispatcher.sock, debug.log)
 
 ## Subagent model (v0.9+)
 
@@ -158,6 +160,8 @@ Subagents run with `--permission-mode default` and the built-in CWD sandbox. Whe
 DC tool calls (`dc_send`, `dc_send_file`, `dc_chat_history`, etc.) from a subagent flow through a tools-proxy MCP server loaded in that subagent, over the same Unix socket. The dispatcher enforces `chat_id` authorization at the socket boundary — a subagent bound to chat A cannot call DC tools against chat B.
 
 **Skip-permissions mode:** An agent can opt into "trusted" mode via `metadata['x-dc-skipPermissions']` on its definition (exposed as a checkbox in the agent-setup WebXDC card, and via `getSkipPermissions` / `setSkipPermissions` in `agents.ts`). When a subagent bound to such an agent triggers the PreToolUse hook, the dispatcher short-circuits in `plugin/dispatcher/skip-permissions.ts` — it auto-approves the verdict and appends an entry to `~/.claude/channels/deltachat/audit/<chatId>.md` instead of showing the WebXDC permission card. The `dc_show_audit` core tool lets the subagent send the audit file back to the user via the file reviewer when asked (e.g. "what did you run?"). Audit files are append-only; there is no rotation.
+
+**Scheduled jobs (v0.10+):** Subagents can create recurring or one-shot prompts via `dc_schedule` / `dc_schedule_list` / `dc_schedule_delete`. Jobs persist in `~/.claude/channels/deltachat/schedules/<chatId>-<jobId>.json` and are owned by the dispatcher's in-process scheduler — they survive subagent eviction, idle timeout, and crash. When a job fires the dispatcher cold-spawns (or reuses) the subagent for that chat and sends a synthetic user turn. Missed fires during dispatcher downtime are silently skipped (not caught up); past-due one-shots are reaped at startup with a log line. A soft warning is returned when a new schedule would fire more than 30 times in the next 7 days; there are no hard caps on job count or interval. The scheduler is deterministic TypeScript — it consumes zero model tokens on its own; tokens are only spent when a fire delivers a synthetic turn to the chat's bound agent.
 
 Config:
 - `DC_SUBAGENT_MAX_ACTIVE` — cache size (default 8, range 1-16)
