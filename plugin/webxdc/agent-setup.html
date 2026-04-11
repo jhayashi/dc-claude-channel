@@ -263,7 +263,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.29;
+var APP_VERSION = 1.30;
 var draft = null;
 var existingAgents = [];
 var creating = false;
@@ -271,7 +271,12 @@ var versionMismatchSent = false;
 var editingAgentId = null;
 var modalTimer = null;
 var modalCountdown = 0;
-var initialReplayComplete = false;
+// Set to 'create' | 'delete' | 'edit' when the user initiates an action
+// in THIS js instance. setUpdateListener(fn, 0) replays every update from
+// serial 0 on every open, so we can't rely on the bare event to decide
+// whether to pop the confirmation modal. Module-level state resets on
+// every open, so it's only truthy for live responses.
+var pendingAction = null;
 
 var MODEL_LABELS = {
   'claude-opus-4-6': 'opus',
@@ -405,6 +410,7 @@ var saveTimeout = null;
 function saveEdit() {
   if (creating || !draft || !editingAgentId) return;
   creating = true;
+  pendingAction = 'edit';
   document.getElementById('save-btn').disabled = true;
   var cfg = {
     name: document.getElementById('edit-name').value.trim() || draft.name,
@@ -443,6 +449,7 @@ var createTimeout = null;
 function create() {
   if (creating || !draft) return;
   creating = true;
+  pendingAction = 'create';
   document.getElementById('create-btn').disabled = true;
   var cfg = {
     name: document.getElementById('name').value.trim() || draft.name,
@@ -488,6 +495,7 @@ function deleteAgent(agentId) {
   }
   if (!confirm(message)) return;
   creating = true;
+  pendingAction = 'delete';
   window.webxdc.sendUpdate({
     payload: { type: 'delete', agentId: agentId, senderAddr: window.webxdc.selfAddr },
     summary: 'Delete agent: ' + agentId
@@ -547,7 +555,10 @@ window.webxdc.setUpdateListener(function(update) {
   if (d.type === 'created') {
     if (createTimeout) { clearTimeout(createTimeout); createTimeout = null; }
     refreshList();
-    if (initialReplayComplete) showModal('Agent created', 'Open the new chat in your chat list to get started.');
+    if (pendingAction === 'create') {
+      pendingAction = null;
+      showModal('Agent created', 'Open the new chat in your chat list to get started.');
+    }
   }
 
   if (d.type === 'deleted') {
@@ -556,7 +567,10 @@ window.webxdc.setUpdateListener(function(update) {
     creating = false;
     editingAgentId = null;
     refreshList();
-    if (initialReplayComplete) showModal('Agent deleted', '"' + (d.name || 'Agent') + '" has been removed.');
+    if (pendingAction === 'delete') {
+      pendingAction = null;
+      showModal('Agent deleted', '"' + (d.name || 'Agent') + '" has been removed.');
+    }
   }
 
   if (d.type === 'editComplete') {
@@ -565,11 +579,12 @@ window.webxdc.setUpdateListener(function(update) {
     editingAgentId = null;
     if (d.existingAgents) existingAgents = d.existingAgents;
     refreshList();
-    if (initialReplayComplete) showModal('Agent updated', 'Changes to "' + (d.name || 'Agent') + '" take effect on the next message.');
+    if (pendingAction === 'edit') {
+      pendingAction = null;
+      showModal('Agent updated', 'Changes to "' + (d.name || 'Agent') + '" take effect on the next message.');
+    }
   }
-}, 0).then(function() {
-  initialReplayComplete = true;
-});
+}, 0);
 </script>
 </body>
 </html>
