@@ -263,7 +263,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.28;
+var APP_VERSION = 1.29;
 var draft = null;
 var existingAgents = [];
 var creating = false;
@@ -527,7 +527,9 @@ window.webxdc.setUpdateListener(function(update) {
     dismissModal();
     if (draft) populateForm();
     renderExistingList();
-    if (existingAgents.length > 0) {
+    if (d.startScreen === 'create') {
+      gotoCreate();
+    } else if (existingAgents.length > 0) {
       show('step0');
     } else {
       gotoCreate();

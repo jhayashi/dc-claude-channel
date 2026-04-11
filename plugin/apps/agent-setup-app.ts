@@ -51,6 +51,7 @@ async function sendInit(
   app: WebXDCApp,
   sourceChatId: number,
   draft: agents.DraftAgent,
+  startScreen: 'list' | 'create' = 'list',
 ): Promise<Session> {
   // Reuse existing session if present.
   const existing = sessions.get(sourceChatId)
@@ -63,6 +64,7 @@ async function sendInit(
       iconMirror: agents.getIconMirror(draft as agents.AgentDef),
     },
     existingAgents: listExistingForPicker(sourceChatId),
+    startScreen,
     senderAddr: 'server',
   }
   // Info text MUST be unique per call — DC dedupes consecutive identical
@@ -178,7 +180,11 @@ export const agentSetupApp: WebXDCApp = {
     '3. NEVER offer to change agent settings through conversation.\n' +
     '4. dc_propose_agent is the ONLY way to manage agents. It sends a setup card ' +
     'that handles everything: create, edit, delete, bind.\n' +
-    '5. Use a short description (e.g. "manage agents", "edit agent settings").',
+    '5. Use a short description (e.g. "manage agents", "edit agent settings").\n' +
+    '6. When the user explicitly asks to CREATE a new agent ("create a new agent", ' +
+    '"make an agent for X", "new agent"), pass mode="create" so the card opens ' +
+    'directly on the create form instead of the agent list. Leave mode off for ' +
+    'open-ended requests like "manage agents" or "edit settings".',
 
   tools(): ToolDef[] {
     return [
@@ -187,7 +193,12 @@ export const agentSetupApp: WebXDCApp = {
         description:
           'Send an agent setup card to the user. The card lets them create new ' +
           'agents, reuse existing ones, edit agent settings (name, model, prompt), ' +
-          'or delete agents. Call this whenever the user asks about agent management.',
+          'or delete agents. Call this whenever the user asks about agent management. ' +
+          'Set mode="create" when the user explicitly asks to create a new agent ' +
+          '("create a new agent", "make an agent for X", "new agent") so the card ' +
+          'opens directly on the create form. Leave mode unset (or use "manage") ' +
+          'for open-ended requests like "edit agent settings", "manage my agents", ' +
+          'or "send me the agent app".',
         inputSchema: {
           type: 'object',
           properties: {
@@ -203,6 +214,11 @@ export const agentSetupApp: WebXDCApp = {
               type: 'string',
               description: 'Suggested model. Use opus for coding/software tasks, haiku for simple Q&A, sonnet for everything else.',
               enum: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-6'],
+            },
+            mode: {
+              type: 'string',
+              description: 'Which screen the card should open on. "create" opens directly on the create form; "manage" (default) opens on the agent list.',
+              enum: ['create', 'manage'],
             },
           },
           required: ['source_chat_id', 'description'],
@@ -230,9 +246,11 @@ export const agentSetupApp: WebXDCApp = {
     const model = modelArg && agents.ALLOWED_MODELS.includes(modelArg as agents.AllowedModel)
       ? modelArg as agents.AllowedModel
       : undefined
+    const modeArg = args.mode as string | undefined
+    const startScreen: 'list' | 'create' = modeArg === 'create' ? 'create' : 'list'
     const { agent } = agents.draftAgentFromDescription(description, model)
     try {
-      await sendInit(ctx, agentSetupApp, sourceChatId, agent)
+      await sendInit(ctx, agentSetupApp, sourceChatId, agent, startScreen)
     } catch (err) {
       ctx.logf('agent-setup: send failed: %v', err)
       return { content: [{ type: 'text', text: `dc_propose_agent: send failed: ${(err as Error).message}` }], isError: true }
