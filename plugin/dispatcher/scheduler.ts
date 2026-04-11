@@ -136,6 +136,11 @@ export class Scheduler {
     return existed
   }
 
+  /** Force a rearm — used by cleanupChat after an out-of-band store mutation. */
+  refresh(): void {
+    this.rearm()
+  }
+
   private rearm(): void {
     if (!this.started) return
     if (this.currentTimer !== null) {

@@ -1329,6 +1329,15 @@ async function main(): Promise<void> {
     }
     // Clear any in-flight tutorial state.
     tutorial.clearTutorial(chatId)
+    // Drop any scheduled jobs for this chat and rearm the scheduler in
+    // case the deleted chat held the nearest upcoming fire.
+    try {
+      const n = scheduleStore.deleteForChat(chatId)
+      if (n > 0) logf('dc channel: cleanup deleted %d schedules for chat %d', n, chatId)
+      scheduler.refresh()
+    } catch (err) {
+      logf('dc channel: cleanup schedules error: %v', err)
+    }
     // Evict the subagent process if one is running for this chat.
     await subagentCache.evictChat(chatId).catch(err =>
       logf('dc channel: cleanup evict failed chat=%d: %v', chatId, err),
@@ -1709,6 +1718,23 @@ async function main(): Promise<void> {
   await socketServer.start()
   logf('dispatcher socket listening at %s (max_active=%d idle_min=%d turn_timeout_min=%d queue_max=%d)', DISPATCHER_SOCKET, MAX_ACTIVE, IDLE_MIN, TURN_TIMEOUT_MIN, QUEUE_MAX)
 
+  // Construct and start the scheduler. Must happen after subagentCache
+  // exists (referenced in dispatch) and before IO so any jobs whose
+  // scheduled time has already passed are reaped before events flow.
+  {
+    const { mkdirSync } = await import('node:fs')
+    mkdirSync(SCHEDULES_DIR, { recursive: true })
+  }
+  scheduleStore = new ScheduleStore(SCHEDULES_DIR)
+  scheduler = new Scheduler({
+    store: scheduleStore,
+    dispatch: async (chatId, text) => subagentCache.dispatch(chatId, text),
+    isAllowed: (chatId) => access.isAllowed(chatId),
+    logf,
+  })
+  scheduler.start()
+  logf('scheduler: started, dir=%s', SCHEDULES_DIR)
+
   // NOW start IO — events begin flowing after handlers are ready.
   if (dcAddress) {
     await client.startIO()
@@ -1731,6 +1757,7 @@ function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
   process.stderr.write('deltachat channel: shutting down\n')
+  try { scheduler?.stop() } catch {}
   for (const app of apps) {
     app.stop?.()
   }
