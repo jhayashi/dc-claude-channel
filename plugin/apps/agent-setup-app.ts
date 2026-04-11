@@ -57,7 +57,7 @@ async function sendInit(
   const payload = {
     type: 'init' as const,
     version: agentSetup.getAgentSetupVersion(),
-    draft,
+    draft: { ...draft, skipPermissions: agents.getSkipPermissions(draft as agents.AgentDef) },
     existingAgents: listExistingForPicker(sourceChatId),
     senderAddr: 'server',
   }
@@ -294,6 +294,7 @@ export const agentSetupApp: WebXDCApp = {
           model: agent.model,
           system: agent.system,
           tools: agent.tools ?? [],
+          skipPermissions: agents.getSkipPermissions(agent),
         }
         try {
           const update = JSON.stringify({
@@ -385,8 +386,17 @@ export const agentSetupApp: WebXDCApp = {
           continue
         }
         const draft = parsed.data
+        const skipPerms = (payload as { skipPermissions?: boolean }).skipPermissions === true
         try {
-          agents.saveAgent({ ...draft, id: agentId })
+          // Preserve existing metadata (e.g. x-dc-createdAt) across edits, then
+          // apply the new skipPermissions flag.
+          const updated: agents.AgentDef = {
+            ...draft,
+            id: agentId,
+            metadata: agent.metadata,
+          }
+          agents.setSkipPermissions(updated, skipPerms)
+          agents.saveAgent(updated)
           ctx.logf('agent-setup: edited agent %s', agentId)
 
           // Evict all cached subagents bound to this agent so they respawn
@@ -499,6 +509,7 @@ export const agentSetupApp: WebXDCApp = {
           continue
         }
         const draft = parsed.data
+        const skipPerms = (payload as { skipPermissions?: boolean }).skipPermissions === true
         const inheritClaudeMd = agents.inheritClaudeMdForModel(draft.model)
         const ownerContactId = await resolveOwner()
         if (!ownerContactId) continue
@@ -508,7 +519,9 @@ export const agentSetupApp: WebXDCApp = {
           const newChatId = await ctx.client.createGroup(draft.name)
           await ctx.client.addContactToChat(newChatId, ownerContactId)
           access.addChat(newChatId, ownerContactId)
-          agents.saveAgent({ ...draft, id: agentId })
+          const newAgent: agents.AgentDef = { ...draft, id: agentId }
+          agents.setSkipPermissions(newAgent, skipPerms)
+          agents.saveAgent(newAgent)
           bindings.bindAgent(newChatId, agentId, { inheritClaudeMd })
           const savedAgent = agents.getAgent(agentId)
           if (savedAgent) await decorateAgentChat(ctx, newChatId, savedAgent)
