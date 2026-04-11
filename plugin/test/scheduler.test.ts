@@ -1,0 +1,155 @@
+import { describe, test, expect, afterEach } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { ScheduleStore, type ScheduledJob } from '../dispatcher/schedule-store.ts'
+import { Scheduler } from '../dispatcher/scheduler.ts'
+
+interface FakeTimer {
+  cb: () => void
+  ms: number
+  fired: boolean
+  cancelled: boolean
+}
+
+interface Harness {
+  store: ScheduleStore
+  scheduler: Scheduler
+  timers: FakeTimer[]
+  dispatched: Array<{ chatId: number; text: string }>
+  logs: string[]
+  setClock: (iso: string) => void
+  fireLatest: () => Promise<void>
+  allowed: Set<number>
+}
+
+const afterEachCleanup: Array<() => void> = []
+afterEach(() => {
+  while (afterEachCleanup.length) afterEachCleanup.pop()!()
+})
+
+function makeHarness(): Harness {
+  const dir = mkdtempSync(join(tmpdir(), 'dc-scheduler-'))
+  const store = new ScheduleStore(dir)
+  const timers: FakeTimer[] = []
+  const dispatched: Array<{ chatId: number; text: string }> = []
+  const logs: string[] = []
+  const allowed = new Set<number>([10, 20, 22])
+  let nowMs = Date.parse('2026-04-13T09:00:00Z')
+  const scheduler = new Scheduler({
+    store,
+    dispatch: async (chatId, text) => { dispatched.push({ chatId, text }) },
+    isAllowed: (id) => allowed.has(id),
+    logf: (fmt, ...args) => { logs.push(`${fmt} ${args.join(' ')}`) },
+    now: () => nowMs,
+    setTimer: (cb, ms) => {
+      const t: FakeTimer = { cb, ms, fired: false, cancelled: false }
+      timers.push(t)
+      return t
+    },
+    clearTimer: (h) => { (h as FakeTimer).cancelled = true },
+  })
+  const harness: Harness = {
+    store,
+    scheduler,
+    timers,
+    dispatched,
+    logs,
+    allowed,
+    setClock: (iso: string) => { nowMs = Date.parse(iso) },
+    fireLatest: async () => {
+      for (let i = timers.length - 1; i >= 0; i--) {
+        const t = timers[i]
+        if (!t.fired && !t.cancelled) {
+          t.fired = true
+          t.cb()
+          break
+        }
+      }
+      await new Promise((r) => setTimeout(r, 0))
+    },
+  }
+  afterEachCleanup.push(() => rmSync(dir, { recursive: true, force: true }))
+  return harness
+}
+
+function fixture(overrides: Partial<ScheduledJob> = {}): ScheduledJob {
+  return {
+    jobId: 'aaa111',
+    chatId: 22,
+    cron: '0 9 * * 1-5',
+    prompt: 'morning standup',
+    recurring: true,
+    createdAt: '2026-04-11T10:00:00.000Z',
+    expiresAt: null,
+    lastFiredAt: null,
+    targetMs: null,
+    ...overrides,
+  }
+}
+
+describe('Scheduler arm/rearm', () => {
+  test('start() with no jobs arms no timer', () => {
+    const h = makeHarness()
+    h.scheduler.start()
+    expect(h.timers.filter(t => !t.cancelled).length).toBe(0)
+  })
+
+  test('start() with one future job arms one timer for the nearest fire', () => {
+    const h = makeHarness()
+    // Clock is 2026-04-13 (Monday) 09:00Z. Next fire for "every weekday 09:00Z"
+    // is 2026-04-14 09:00Z. That's ~24h away.
+    h.setClock('2026-04-13T09:00:01Z')
+    h.store.save(fixture())
+    h.scheduler.start()
+    const live = h.timers.filter(t => !t.cancelled)
+    expect(live.length).toBe(1)
+    // Within 2s of 86399s.
+    expect(Math.abs(live[0].ms - 86_399_000)).toBeLessThan(2000)
+  })
+
+  test('add() of a nearer job cancels the old timer and arms a new one', () => {
+    const h = makeHarness()
+    h.setClock('2026-04-13T09:00:01Z')
+    h.store.save(fixture({ jobId: 'far111', cron: '0 9 * * 1-5' })) // ~24h
+    h.scheduler.start()
+    const firstTimer = h.timers[h.timers.length - 1]
+    expect(firstTimer.cancelled).toBe(false)
+
+    h.scheduler.add(fixture({ jobId: 'near22', cron: '* * * * *' }))
+    expect(firstTimer.cancelled).toBe(true)
+    const newTimer = h.timers[h.timers.length - 1]
+    expect(newTimer.cancelled).toBe(false)
+    expect(newTimer.ms).toBeLessThan(65_000)
+  })
+
+  test('remove() of the nearest job rearms to the next nearest', () => {
+    const h = makeHarness()
+    h.setClock('2026-04-13T09:00:01Z')
+    h.store.save(fixture({ jobId: 'near22', cron: '* * * * *' })) // ~1 min
+    h.store.save(fixture({ jobId: 'far111', cron: '0 9 * * 1-5' })) // ~24h
+    h.scheduler.start()
+    const beforeTimer = h.timers[h.timers.length - 1]
+    expect(beforeTimer.ms).toBeLessThan(65_000)
+    h.scheduler.remove(22, 'near22')
+    const afterTimer = h.timers[h.timers.length - 1]
+    expect(afterTimer.cancelled).toBe(false)
+    expect(afterTimer.ms).toBeGreaterThan(80_000_000) // ~24h
+  })
+
+  test('stop() cancels the active timer', () => {
+    const h = makeHarness()
+    h.setClock('2026-04-13T09:00:01Z')
+    h.store.save(fixture())
+    h.scheduler.start()
+    h.scheduler.stop()
+    const live = h.timers.filter(t => !t.cancelled)
+    expect(live.length).toBe(0)
+  })
+
+  test('add() rejects an invalid cron expression', () => {
+    const h = makeHarness()
+    h.scheduler.start()
+    expect(() => h.scheduler.add(fixture({ cron: 'not a cron' }))).toThrow()
+  })
+})
