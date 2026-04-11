@@ -15,6 +15,9 @@ body {
   flex-direction: column;
 }
 .sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   background: #161b22;
   border-bottom: 1px solid #30363d;
   padding: 8px;
@@ -415,7 +418,7 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
 /* %%PRISM_JS%% */
 </script>
 <script>
-var APP_VERSION = 1.13;
+var APP_VERSION = 1.14;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;

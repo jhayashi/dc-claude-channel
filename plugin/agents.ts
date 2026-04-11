@@ -69,7 +69,7 @@ export const AgentDefSchema = z.object({
   tools: z.array(z.object({ type: z.string() })).default([]),
   skills: z.array(z.unknown()).optional(),
   mcp_servers: z.array(z.unknown()).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
 export type AgentDef = z.infer<typeof AgentDefSchema>
@@ -158,6 +158,66 @@ export function updateAgentModel(id: string, model: AllowedModel): boolean {
   agent.model = model
   saveAgent(agent)
   return true
+}
+
+/** Metadata key used to store the skipPermissions flag inside an agent's metadata bag. */
+export const SKIP_PERMISSIONS_META_KEY = 'x-dc-skipPermissions'
+
+/**
+ * Read the skipPermissions flag from an agent definition. Defaults to
+ * false when the metadata bag or key is absent. An agent with this
+ * flag set has its subagent tool calls auto-approved by the dispatcher;
+ * see plugin/dispatcher/permission-handler.ts for the short-circuit path.
+ */
+export function getSkipPermissions(def: AgentDef): boolean {
+  const meta = def.metadata
+  if (!meta) return false
+  return meta[SKIP_PERMISSIONS_META_KEY] === true
+}
+
+/**
+ * Write the skipPermissions flag into an agent's metadata bag in place.
+ * Setting false removes the key entirely so exported YAML stays minimal;
+ * other metadata entries are preserved. Does not persist — callers must
+ * call saveAgent(def) afterwards.
+ */
+export function setSkipPermissions(def: AgentDef, value: boolean): void {
+  if (value) {
+    if (!def.metadata) def.metadata = {}
+    def.metadata[SKIP_PERMISSIONS_META_KEY] = true
+    return
+  }
+  if (!def.metadata) return
+  delete def.metadata[SKIP_PERMISSIONS_META_KEY]
+}
+
+/** Metadata key for the icon mirror flag (true = facing-right variant). */
+export const ICON_MIRROR_META_KEY = 'x-dc-iconMirror'
+
+/**
+ * Read the icon mirror flag from an agent definition. Defaults to false
+ * (original orientation, facing left). When true, the chat profile image
+ * uses the horizontally-flipped variant so the agent's spy faces right.
+ */
+export function getIconMirror(def: AgentDef): boolean {
+  const meta = def.metadata
+  if (!meta) return false
+  return meta[ICON_MIRROR_META_KEY] === true
+}
+
+/**
+ * Write the icon mirror flag into an agent's metadata bag in place.
+ * Setting false removes the key entirely so exported YAML stays minimal.
+ * Does not persist — callers must call saveAgent(def) afterwards.
+ */
+export function setIconMirror(def: AgentDef, value: boolean): void {
+  if (value) {
+    if (!def.metadata) def.metadata = {}
+    def.metadata[ICON_MIRROR_META_KEY] = true
+    return
+  }
+  if (!def.metadata) return
+  delete def.metadata[ICON_MIRROR_META_KEY]
 }
 
 /**

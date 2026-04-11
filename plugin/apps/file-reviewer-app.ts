@@ -7,6 +7,48 @@ const MAX_PAYLOAD_BYTES = 120_000
 // Overhead for JSON wrapper, info, href, etc. (~500 bytes is generous)
 const PAYLOAD_OVERHEAD = 500
 
+// Map file extensions to Prism language ids. Keep in sync with the
+// grammars bundled by plugin/scripts/build-viewer-html.ts.
+const EXT_TO_LANG: Record<string, string> = {
+  js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
+  ts: 'typescript', tsx: 'typescript',
+  py: 'python',
+  sh: 'bash', bash: 'bash',
+  html: 'markup', htm: 'markup', xml: 'markup', svg: 'markup',
+  css: 'css',
+  json: 'json', jsonc: 'json',
+  yaml: 'yaml', yml: 'yaml',
+  toml: 'toml',
+  md: 'markdown', markdown: 'markdown',
+  c: 'c', h: 'c',
+  cpp: 'cpp', cc: 'cpp', cxx: 'cpp', hpp: 'cpp',
+  java: 'java',
+  kt: 'kotlin', kts: 'kotlin',
+  go: 'go',
+  rs: 'rust',
+  swift: 'swift',
+  sql: 'sql',
+  diff: 'diff', patch: 'diff',
+  rb: 'ruby',
+  php: 'php',
+  cs: 'csharp',
+  ps1: 'powershell', psm1: 'powershell',
+  graphql: 'graphql', gql: 'graphql',
+  lua: 'lua',
+  r: 'r',
+  dockerfile: 'docker',
+}
+
+export function langFromPath(filePath: string): string | undefined {
+  const base = filePath.split('/').pop() ?? filePath
+  if (base.toLowerCase() === 'dockerfile') return 'docker'
+  if (base.toLowerCase() === 'makefile') return 'makefile'
+  const dot = base.lastIndexOf('.')
+  if (dot < 0) return undefined
+  const ext = base.slice(dot + 1).toLowerCase()
+  return EXT_TO_LANG[ext]
+}
+
 interface Chunk {
   title: string
   payload: Record<string, unknown>
@@ -61,13 +103,16 @@ function buildChunks(title: string, content: string, language: string | undefine
 export const fileReviewerApp: WebXDCApp = {
   id: 'file-reviewer',
 
-  instructions: 'When you receive file review comments from the File Reviewer app, read each comment carefully. Find the referenced lines or paragraphs using the context provided. Apply the requested changes to the file content. Reply in the chat summarizing what you changed. Send the updated file back using dc_send_file with the same title.',
+  instructions: [
+    'Prefer dc_send_file (File Reviewer) over inline chat messages for any structured or long markdown you produce: plans, proposals, specs, designs, reviews, reports, changelogs, or any reply with headings, multiple bullet sections, or more than ~15 lines. The user can scroll, comment inline on specific lines or paragraphs, and reply with targeted edits — inline chat messages can only be read top-to-bottom. Example: when asked "write me a plan for X", send the plan via dc_send_file with a short title (e.g. "X plan"), not as an inline reply. Short conversational replies, single-paragraph answers, and quick status updates stay inline. This is a default, not a hard rule — use judgment.',
+    'When you receive file review comments from the File Reviewer app, read each comment carefully. Find the referenced lines or paragraphs using the context provided. Apply the requested changes to the file content. Reply in the chat summarizing what you changed. Send the updated file back using dc_send_file with the same title.',
+  ].join('\n\n'),
 
   tools(): ToolDef[] {
     return [
       {
         name: 'dc_send_file',
-        description: 'Send a file to a Delta Chat chat as a WebXDC viewer app. Supports rendered markdown (omit language) and syntax-highlighted source code (provide language). The first call sends the viewer app; subsequent calls to the same chat reuse it. Large files are automatically split into chunks. Provide content directly OR file_path to read from disk.',
+        description: 'Send a file to a Delta Chat chat as a WebXDC viewer app. Supports rendered markdown (omit language) and syntax-highlighted source code (provide language, or omit and let file_path extension auto-detect it). The first call sends the viewer app; subsequent calls to the same chat reuse it. Large files are automatically split into chunks. Provide content directly OR file_path to read from disk.',
         inputSchema: {
           type: 'object' as const,
           properties: {
@@ -75,7 +120,7 @@ export const fileReviewerApp: WebXDCApp = {
             title: { type: 'string', description: 'Document title (shown in the tab bar)' },
             content: { type: 'string', description: 'File content (markdown or source code). Omit if using file_path.' },
             file_path: { type: 'string', description: 'Absolute path to read file content from disk. Use for large files. Omit if providing content directly.' },
-            language: { type: 'string', description: 'Language for syntax highlighting (js, ts, html, css, json, python, bash). Omit for rendered markdown.' },
+            language: { type: 'string', description: 'Language for syntax highlighting (javascript, typescript, python, bash, markup, css, json, yaml, toml, go, rust, java, c, cpp, ruby, php, csharp, sql, diff, and more). Omit to render as markdown, or omit with file_path to auto-detect from extension.' },
           },
           required: ['chat_id', 'title'],
         },
@@ -90,7 +135,7 @@ export const fileReviewerApp: WebXDCApp = {
     const title = ((args.title as string) ?? '').trim()
     const filePath = (args.file_path as string | undefined) ?? undefined
     let content = (args.content as string) ?? ''
-    const language = (args.language as string | undefined) ?? undefined
+    let language = (args.language as string | undefined) ?? undefined
 
     // Read from disk if file_path provided
     if (filePath && !content) {
@@ -99,6 +144,14 @@ export const fileReviewerApp: WebXDCApp = {
         return { content: [{ type: 'text', text: `dc_send_file: file not found: ${filePath}` }], isError: true }
       }
       content = readFileSync(filePath, 'utf-8')
+    }
+
+    // Auto-detect language from file_path extension when not explicitly set.
+    // Markdown extensions are intentionally left undetected so the viewer
+    // renders them instead of syntax-highlighting the source.
+    if (!language && filePath) {
+      const detected = langFromPath(filePath)
+      if (detected && detected !== 'markdown') language = detected
     }
 
     if (!chatId || Number.isNaN(chatId) || !title || !content) {
@@ -115,8 +168,10 @@ export const fileReviewerApp: WebXDCApp = {
 
     // info + href create a tappable notification that opens the app
     const fileIcons: Record<string, string> = {
-      js: '\u{1f7e8}', ts: '\u{1f535}', python: '\u{1f40d}', bash: '\u{1f4df}',
-      html: '\u{1f310}', css: '\u{1f3a8}', json: '\u{1f4cb}',
+      javascript: '\u{1f7e8}', typescript: '\u{1f535}', python: '\u{1f40d}', bash: '\u{1f4df}',
+      markup: '\u{1f310}', css: '\u{1f3a8}', json: '\u{1f4cb}', yaml: '\u{1f4dd}',
+      toml: '\u{1f4dd}', go: '\u{1f439}', rust: '\u{1f980}', java: '\u{2615}',
+      ruby: '\u{1f48e}', diff: '\u{1f504}',
     }
     const icon = (language && fileIcons[language]) || '\u{1f4c4}'
 

@@ -38,6 +38,12 @@ import { SubagentProcess } from './dispatcher/subagent-process.js'
 import { generateHookConfig } from './dispatcher/hook-config.js'
 import { createMessageRouter } from './dispatcher/message-router.js'
 import { ReactionRouter } from './dispatcher/reaction-router.js'
+import { tryAutoApprove } from './dispatcher/skip-permissions.js'
+import { createActivityReactor, type ActivityReactor } from './dispatcher/activity-reactions.js'
+import * as audit from './audit.js'
+import { ScheduleStore, type ScheduledJob } from './dispatcher/schedule-store.js'
+import { Scheduler, countFiresIn7Days } from './dispatcher/scheduler.js'
+import { CronExpressionParser } from 'cron-parser'
 import type { ServerMessage } from './shared/protocol.js'
 import type { Message } from './dc-client.js'
 
@@ -66,6 +72,7 @@ function logf(format: string, ...args: unknown[]): void {
 
 const STATE_DIR = join(homedir(), '.claude', 'channels', 'deltachat')
 const ENV_FILE = join(STATE_DIR, '.env')
+const SCHEDULES_DIR = join(STATE_DIR, 'schedules')
 
 const client = new DCClient()
 client.setLogger(logf)
@@ -97,7 +104,7 @@ const DISPATCHER_SOCKET = join(STATE_DIR, 'dispatcher.sock')
 const DISPATCHER_SECRET = randomBytes(32).toString('hex')
 const HOOK_SCRIPT = join(import.meta.dir, 'dispatcher', 'permission-hook.sh')
 
-const MAX_ACTIVE = Math.max(1, Math.min(16, Number(process.env.DC_SUBAGENT_MAX_ACTIVE ?? '4')))
+const MAX_ACTIVE = Math.max(1, Math.min(16, Number(process.env.DC_SUBAGENT_MAX_ACTIVE ?? '8')))
 const IDLE_MIN = Math.max(1, Number(process.env.DC_SUBAGENT_IDLE_MIN ?? '480'))
 const TURN_TIMEOUT_MIN = Math.max(1, Number(process.env.DC_SUBAGENT_TURN_TIMEOUT_MIN ?? '60'))
 const QUEUE_MAX = Math.max(1, Math.min(1000, Number(process.env.DC_SUBAGENT_QUEUE_MAX ?? '10')))
@@ -316,6 +323,11 @@ const subagentCache = new SubagentCache({
   },
 })
 
+// ── Scheduler (constructed at startup below) ────────────────────────────
+
+let scheduleStore: ScheduleStore
+let scheduler: Scheduler
+
 // ── App context ─────────────────────────────────────────────────────────
 
 let ctx: AppContext
@@ -390,6 +402,12 @@ function rebuildAppToolMap(): void {
 }
 rebuildAppToolMap()
 
+// ── Activity reactions (skip-permissions agents only) ──────────────────
+// Wired to client.sendReaction so reactor tests can stay pure.
+const activityReactor: ActivityReactor = createActivityReactor({
+  sendReaction: (msgId, emoji) => client.sendReaction(msgId, emoji),
+})
+
 // ── Dispatcher socket server ────────────────────────────────────────────
 
 const socketServer = new SocketServer({
@@ -399,6 +417,26 @@ const socketServer = new SocketServer({
   getSubagentChat: (id) => subagentRegistry.get(id)?.chatId ?? null,
   onRequest: async (req: SocketRequest): Promise<ServerMessage> => {
     if (req.frame.kind === 'permissionRequest') {
+      // Short-circuit: if the bound agent has x-dc-skipPermissions set,
+      // auto-approve and append an audit entry without touching the
+      // WebXDC permission card. Falls through to the normal prompt path
+      // otherwise.
+      try {
+        const auto = tryAutoApprove(req.chatId, req.frame as { id: string; tool?: string; input?: unknown })
+        if (auto) {
+          const toolName = (req.frame as { tool?: string }).tool ?? 'unknown'
+          const input = (req.frame as { input?: unknown }).input
+          // Fire-and-forget — the reactor never throws, so no try/catch needed.
+          activityReactor.reactForTool(req.chatId, toolName, input)
+          logf('skip-permissions: auto-allowed %s for chat %d (req %s)',
+            toolName,
+            req.chatId,
+            req.frame.id)
+          return auto
+        }
+      } catch (err) {
+        logf('skip-permissions: tryAutoApprove crashed, falling through: %v', err)
+      }
       return await new Promise<ServerMessage>((resolve) => {
         pendingPermissions.set(req.frame.id, {
           connectionId: req.connectionId,
@@ -621,6 +659,55 @@ const coreTools = [
         message_id: { type: 'string', description: 'Message ID containing the attachment' },
       },
       required: ['message_id'],
+    },
+  },
+  {
+    name: 'dc_show_audit',
+    description: 'Send the auto-approved tool-call audit log for this chat back to the user as a rendered markdown file. Use when the user asks to review what the agent has done (e.g. "what did you run?", "show me the audit log"). Only meaningful when the bound agent is in skip-permissions mode — otherwise the audit file will not exist and this tool returns an error.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        chat_id: { type: 'string', description: 'Chat ID (must match the calling subagent\'s bound chat)' },
+      },
+      required: ['chat_id'],
+    },
+  },
+  {
+    name: 'dc_schedule',
+    description: 'Schedule a recurring or one-shot prompt that the dispatcher will fire into this chat as a synthetic user turn. Jobs persist across dispatcher restarts and run independently of subagent lifetime. Returns a job_id, next_fire_at, and an optional warning when the schedule would fire more than 30 times in the next 7 days.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        chat_id:    { type: 'string',  description: 'Chat ID (must match the calling subagent\'s bound chat)' },
+        cron:       { type: 'string',  description: 'Standard 5-field cron expression (M H DoM Mon DoW), local server timezone' },
+        prompt:     { type: 'string',  description: 'The text that becomes the fired user turn body (max 4000 chars)' },
+        recurring:  { type: 'boolean', description: 'If false, the job is deleted after the first fire. Default true.' },
+        expires_at: { type: 'string',  description: 'Optional ISO-8601 timestamp; absent means the job runs until explicitly deleted or the chat is unpaired' },
+      },
+      required: ['chat_id', 'cron', 'prompt'],
+    },
+  },
+  {
+    name: 'dc_schedule_list',
+    description: 'List all scheduled jobs for this chat. Returns an array of {job_id, cron, prompt, recurring, next_fire_at, expires_at, created_at, last_fired_at}.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        chat_id: { type: 'string', description: 'Chat ID (must match the calling subagent\'s bound chat)' },
+      },
+      required: ['chat_id'],
+    },
+  },
+  {
+    name: 'dc_schedule_delete',
+    description: 'Delete a scheduled job by its job_id. Returns {deleted: true} on success or {deleted: false} if the job did not exist.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        chat_id: { type: 'string', description: 'Chat ID (must match the calling subagent\'s bound chat)' },
+        job_id:  { type: 'string', description: 'The job ID returned from dc_schedule' },
+      },
+      required: ['chat_id', 'job_id'],
     },
   },
 ]
@@ -997,6 +1084,160 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         return { content: [{ type: 'text' as const, text: msg.file }] }
       }
 
+      case 'dc_show_audit': {
+        const chatIdRaw = args.chat_id as string
+        const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
+        if (!Number.isFinite(chatId)) {
+          return { content: [{ type: 'text' as const, text: 'dc_show_audit: chat_id is required' }], isError: true }
+        }
+        if (!access.isAllowed(chatId)) {
+          return { content: [{ type: 'text' as const, text: `dc_show_audit: chat ${chatId} is not accessible` }], isError: true }
+        }
+        // chat_id authorization is enforced upstream at the socket boundary
+        // (see toolCall chat_mismatch check) so a subagent can only pass its
+        // own chat id here.
+        const path = audit.auditFilePathIfExists(chatId)
+        if (!path) {
+          return {
+            content: [
+              { type: 'text' as const, text: `dc_show_audit: no audit log found for chat ${chatId}. This chat's agent may not be in skip-permissions mode.` },
+            ],
+            isError: true,
+          }
+        }
+        const fileApp = appToolMap.get('dc_send_file')
+        if (!fileApp) {
+          return { content: [{ type: 'text' as const, text: 'dc_show_audit: file reviewer is not available' }], isError: true }
+        }
+        const result = await fileApp.callTool('dc_send_file', {
+          chat_id: String(chatId),
+          title: `Audit log — chat ${chatId}`,
+          file_path: path,
+        }, ctx)
+        if (!result || result.isError) {
+          return { content: [{ type: 'text' as const, text: 'dc_show_audit: file reviewer failed to send audit log' }], isError: true }
+        }
+        return { content: [{ type: 'text' as const, text: `audit log sent for chat ${chatId}` }] }
+      }
+
+      case 'dc_schedule': {
+        const chatIdRaw = args.chat_id as string
+        const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
+        if (!Number.isFinite(chatId)) {
+          return { content: [{ type: 'text' as const, text: 'dc_schedule: chat_id is required' }], isError: true }
+        }
+        if (callerChatId !== undefined && callerChatId !== chatId) {
+          return { content: [{ type: 'text' as const, text: `dc_schedule: caller is bound to chat ${callerChatId}, cannot schedule for chat ${chatId}` }], isError: true }
+        }
+        if (!access.isAllowed(chatId)) {
+          return { content: [{ type: 'text' as const, text: `dc_schedule: chat ${chatId} is not accessible` }], isError: true }
+        }
+        const cron = (args.cron as string) ?? ''
+        const prompt = (args.prompt as string) ?? ''
+        const recurring = args.recurring !== false
+        const expiresAt = (args.expires_at as string | undefined) ?? null
+        if (!cron) return { content: [{ type: 'text' as const, text: 'dc_schedule: cron is required' }], isError: true }
+        if (!prompt) return { content: [{ type: 'text' as const, text: 'dc_schedule: prompt is required' }], isError: true }
+        if (prompt.length > 4000) return { content: [{ type: 'text' as const, text: 'dc_schedule: prompt exceeds 4000 chars' }], isError: true }
+        let fireCount: number
+        try {
+          fireCount = countFiresIn7Days(cron, Date.now())
+        } catch (err) {
+          return { content: [{ type: 'text' as const, text: `dc_schedule: invalid cron expression: ${err}` }], isError: true }
+        }
+        let targetMs: number | null = null
+        if (!recurring) {
+          try {
+            targetMs = CronExpressionParser.parse(cron, { currentDate: new Date() }).next().toDate().getTime()
+          } catch {
+            targetMs = null
+          }
+        }
+        const jobId = Math.random().toString(36).slice(2, 8)
+        const job: ScheduledJob = {
+          jobId,
+          chatId,
+          cron,
+          prompt,
+          recurring,
+          createdAt: new Date().toISOString(),
+          expiresAt,
+          lastFiredAt: null,
+          targetMs,
+        }
+        try {
+          scheduler.add(job)
+        } catch (err) {
+          return { content: [{ type: 'text' as const, text: `dc_schedule: ${err}` }], isError: true }
+        }
+        let nextFireAt = ''
+        try {
+          nextFireAt = recurring
+            ? CronExpressionParser.parse(cron).next().toDate().toISOString()
+            : (targetMs !== null ? new Date(targetMs).toISOString() : '')
+        } catch {}
+        const body: Record<string, unknown> = { job_id: jobId, next_fire_at: nextFireAt }
+        if (fireCount > 30) {
+          body.warning = `This schedule will fire ${fireCount} times in the next 7 days. Consider whether you need it that often.`
+        }
+        return { content: [{ type: 'text' as const, text: JSON.stringify(body, null, 2) }] }
+      }
+
+      case 'dc_schedule_list': {
+        const chatIdRaw = args.chat_id as string
+        const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
+        if (!Number.isFinite(chatId)) {
+          return { content: [{ type: 'text' as const, text: 'dc_schedule_list: chat_id is required' }], isError: true }
+        }
+        if (callerChatId !== undefined && callerChatId !== chatId) {
+          return { content: [{ type: 'text' as const, text: `dc_schedule_list: caller is bound to chat ${callerChatId}, cannot list chat ${chatId}` }], isError: true }
+        }
+        if (!access.isAllowed(chatId)) {
+          return { content: [{ type: 'text' as const, text: `dc_schedule_list: chat ${chatId} is not accessible` }], isError: true }
+        }
+        const jobs = scheduleStore.loadForChat(chatId)
+        const now = Date.now()
+        const payload = jobs.map(j => {
+          let nextFire = ''
+          try {
+            if (!j.recurring && j.targetMs !== null) {
+              nextFire = new Date(j.targetMs).toISOString()
+            } else {
+              nextFire = CronExpressionParser.parse(j.cron, { currentDate: new Date(now) }).next().toDate().toISOString()
+            }
+          } catch {}
+          return {
+            job_id: j.jobId,
+            cron: j.cron,
+            prompt: j.prompt,
+            recurring: j.recurring,
+            next_fire_at: nextFire,
+            expires_at: j.expiresAt,
+            created_at: j.createdAt,
+            last_fired_at: j.lastFiredAt,
+          }
+        })
+        return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] }
+      }
+
+      case 'dc_schedule_delete': {
+        const chatIdRaw = args.chat_id as string
+        const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
+        if (!Number.isFinite(chatId)) {
+          return { content: [{ type: 'text' as const, text: 'dc_schedule_delete: chat_id is required' }], isError: true }
+        }
+        if (callerChatId !== undefined && callerChatId !== chatId) {
+          return { content: [{ type: 'text' as const, text: `dc_schedule_delete: caller is bound to chat ${callerChatId}, cannot delete from chat ${chatId}` }], isError: true }
+        }
+        if (!access.isAllowed(chatId)) {
+          return { content: [{ type: 'text' as const, text: `dc_schedule_delete: chat ${chatId} is not accessible` }], isError: true }
+        }
+        const jobId = (args.job_id as string) ?? ''
+        if (!jobId) return { content: [{ type: 'text' as const, text: 'dc_schedule_delete: job_id is required' }], isError: true }
+        const existed = scheduler.remove(chatId, jobId)
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ deleted: existed }) }] }
+      }
+
       default:
         return null
   }
@@ -1087,6 +1328,15 @@ async function main(): Promise<void> {
     }
     // Clear any in-flight tutorial state.
     tutorial.clearTutorial(chatId)
+    // Drop any scheduled jobs for this chat and rearm the scheduler in
+    // case the deleted chat held the nearest upcoming fire.
+    try {
+      const n = scheduleStore.deleteForChat(chatId)
+      if (n > 0) logf('dc channel: cleanup deleted %d schedules for chat %d', n, chatId)
+      scheduler.refresh()
+    } catch (err) {
+      logf('dc channel: cleanup schedules error: %v', err)
+    }
     // Evict the subagent process if one is running for this chat.
     await subagentCache.evictChat(chatId).catch(err =>
       logf('dc channel: cleanup evict failed chat=%d: %v', chatId, err),
@@ -1178,9 +1428,12 @@ async function main(): Promise<void> {
 
   const runSubagentTurn = async (msg: Message): Promise<void> => {
     const chatId = msg.chatId
+    activityReactor.setTurnTarget(chatId, msg.id)
     // If no live subagent is cached for this chat, the next dispatch will
     // cold-spawn (~6s). React to the user's message with a spinner so they
     // know we're working on it. Fire-and-forget; failures shouldn't block.
+    // The spinner is independent of the activity reactor — the first tool
+    // call will overwrite it with a class emoji.
     const coldStart = !subagentCache.hasLive(chatId)
     if (coldStart) {
       client.sendReaction(msg.id, '\u{1F504}').catch((err) =>
@@ -1202,6 +1455,8 @@ async function main(): Promise<void> {
     } catch (err) {
       logf('dispatch error chat=%d: %v', chatId, err)
       await client.send(chatId, `\u26a0\ufe0f Internal error: ${err}`).catch(() => {})
+    } finally {
+      activityReactor.clearTurnTarget(chatId)
     }
   }
 
@@ -1462,6 +1717,45 @@ async function main(): Promise<void> {
   await socketServer.start()
   logf('dispatcher socket listening at %s (max_active=%d idle_min=%d turn_timeout_min=%d queue_max=%d)', DISPATCHER_SOCKET, MAX_ACTIVE, IDLE_MIN, TURN_TIMEOUT_MIN, QUEUE_MAX)
 
+  // Construct and start the scheduler. Must happen after subagentCache
+  // exists (referenced in dispatch) and before IO so any jobs whose
+  // scheduled time has already passed are reaped before events flow.
+  {
+    const { mkdirSync } = await import('node:fs')
+    mkdirSync(SCHEDULES_DIR, { recursive: true })
+  }
+  scheduleStore = new ScheduleStore(SCHEDULES_DIR)
+  scheduler = new Scheduler({
+    store: scheduleStore,
+    dispatch: async (chatId, text) => {
+      try {
+        const result = await subagentCache.dispatch(chatId, text)
+        logf(
+          'scheduler dispatch: chat=%d result.text=%s denials=%d',
+          chatId,
+          (result.text ?? '').slice(0, 500).replace(/\n/g, ' '),
+          result.denials.length,
+        )
+        if (result.text) {
+          await client.send(chatId, result.text)
+        }
+        if (result.denials.length > 0) {
+          const summary = result.denials
+            .map((d) => `• ${d.tool_name}${d.command ? ': ' + d.command.slice(0, 80) : ''}`)
+            .join('\n')
+          await client.send(chatId, `\u26a0\ufe0f Some actions were blocked by policy:\n${summary}`)
+        }
+      } catch (err) {
+        logf('scheduler dispatch error chat=%d: %v', chatId, err)
+        await client.send(chatId, `\u26a0\ufe0f Scheduled job error: ${err}`).catch(() => {})
+      }
+    },
+    isAllowed: (chatId) => access.isAllowed(chatId),
+    logf,
+  })
+  scheduler.start()
+  logf('scheduler: started, dir=%s', SCHEDULES_DIR)
+
   // NOW start IO — events begin flowing after handlers are ready.
   if (dcAddress) {
     await client.startIO()
@@ -1484,6 +1778,7 @@ function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
   process.stderr.write('deltachat channel: shutting down\n')
+  try { scheduler?.stop() } catch {}
   for (const app of apps) {
     app.stop?.()
   }

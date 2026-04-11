@@ -199,6 +199,10 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       </select>
       <label class="field" for="system">System prompt</label>
       <textarea id="system" class="text" maxlength="100000" style="min-height:60px;font-family:inherit;"></textarea>
+      <label class="field" style="display:flex;align-items:flex-start;gap:8px;margin-top:12px;">
+        <input id="skip-permissions" type="checkbox" style="margin-top:3px;flex-shrink:0;">
+        <span style="font-weight:400;font-size:12px;line-height:1.4;">Skip permission prompts (trusted agent). Tool calls auto-approve and are recorded in an audit log you can pull up later by asking the agent to show it.</span>
+      </label>
     </div>
     <div class="actions">
       <button class="btn btn-back" onclick="backFromCreate()">Back</button>
@@ -218,6 +222,19 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       </select>
       <label class="field" for="edit-system">System prompt</label>
       <textarea id="edit-system" class="text" maxlength="100000" style="min-height:60px;font-family:inherit;"></textarea>
+      <label class="field" style="display:flex;align-items:flex-start;gap:8px;margin-top:12px;">
+        <input id="edit-skip-permissions" type="checkbox" style="margin-top:3px;flex-shrink:0;">
+        <span style="font-weight:400;font-size:12px;line-height:1.4;">Skip permission prompts (trusted agent). Tool calls auto-approve and are recorded in an audit log you can pull up later by asking the agent to show it.</span>
+      </label>
+      <label class="field" style="margin-top:12px;">Icon orientation</label>
+      <div style="display:flex;gap:16px;font-size:13px;">
+        <label style="display:flex;align-items:center;gap:6px;font-weight:400;">
+          <input type="radio" name="edit-icon-mirror" value="false"> Facing right
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-weight:400;">
+          <input type="radio" name="edit-icon-mirror" value="true"> Facing left
+        </label>
+      </div>
     </div>
     <div class="actions">
       <button class="btn btn-back" onclick="backFromStep3()">Cancel</button>
@@ -246,7 +263,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.24;
+var APP_VERSION = 1.27;
 var draft = null;
 var existingAgents = [];
 var creating = false;
@@ -357,6 +374,7 @@ function populateForm() {
   document.getElementById('name').value = draft.name || '';
   document.getElementById('model').value = draft.model || 'claude-sonnet-4-6';
   document.getElementById('system').value = draft.system || '';
+  document.getElementById('skip-permissions').checked = !!draft.skipPermissions;
 }
 
 function backFromCreate() {
@@ -368,6 +386,12 @@ function populateEditForm() {
   document.getElementById('edit-name').value = draft.name || '';
   document.getElementById('edit-model').value = draft.model || 'claude-sonnet-4-6';
   document.getElementById('edit-system').value = draft.system || '';
+  document.getElementById('edit-skip-permissions').checked = !!draft.skipPermissions;
+  var mirrorValue = draft.iconMirror ? 'true' : 'false';
+  var radios = document.getElementsByName('edit-icon-mirror');
+  for (var i = 0; i < radios.length; i++) {
+    radios[i].checked = (radios[i].value === mirrorValue);
+  }
 }
 
 function backFromStep3() {
@@ -387,11 +411,19 @@ function saveEdit() {
     system: document.getElementById('edit-system').value,
     tools: [],
   };
+  var skipPermissions = document.getElementById('edit-skip-permissions').checked;
+  var iconMirror = false;
+  var radios = document.getElementsByName('edit-icon-mirror');
+  for (var i = 0; i < radios.length; i++) {
+    if (radios[i].checked) { iconMirror = (radios[i].value === 'true'); break; }
+  }
   window.webxdc.sendUpdate({
     payload: {
       type: 'saveEdit',
       agentId: editingAgentId,
       config: cfg,
+      skipPermissions: skipPermissions,
+      iconMirror: iconMirror,
       senderAddr: window.webxdc.selfAddr
     },
     summary: 'Edit agent: ' + editingAgentId
@@ -417,10 +449,12 @@ function create() {
     system: document.getElementById('system').value,
     tools: [],
   };
+  var skipPermissions = document.getElementById('skip-permissions').checked;
   window.webxdc.sendUpdate({
     payload: {
       type: 'create',
       config: cfg,
+      skipPermissions: skipPermissions,
       senderAddr: window.webxdc.selfAddr
     },
     summary: 'Create agent: ' + cfg.name

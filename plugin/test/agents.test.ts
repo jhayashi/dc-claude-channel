@@ -228,3 +228,86 @@ describe('draftAgentFromDescription', () => {
     expect(loaded!.system).toBe(agent.system)
   })
 })
+
+describe('skipPermissions helpers', () => {
+  test('getSkipPermissions defaults to false when metadata is absent', () => {
+    expect(agents.getSkipPermissions(makeDef())).toBe(false)
+  })
+
+  test('getSkipPermissions defaults to false when metadata exists but key absent', () => {
+    const def = makeDef({
+      metadata: { 'x-dc-createdAt': '2026-04-10T00:00:00.000Z' },
+    })
+    expect(agents.getSkipPermissions(def)).toBe(false)
+  })
+
+  test('getSkipPermissions returns true when metadata flag is true', () => {
+    const def = makeDef({
+      metadata: { 'x-dc-skipPermissions': true },
+    })
+    expect(agents.getSkipPermissions(def)).toBe(true)
+  })
+
+  test('setSkipPermissions(true) writes flag into metadata', () => {
+    const def = makeDef()
+    agents.setSkipPermissions(def, true)
+    expect(def.metadata).toBeDefined()
+    expect(def.metadata!['x-dc-skipPermissions']).toBe(true)
+    expect(agents.getSkipPermissions(def)).toBe(true)
+  })
+
+  test('setSkipPermissions(false) removes the flag but preserves other metadata', () => {
+    const def = makeDef({
+      metadata: {
+        'x-dc-skipPermissions': true,
+        'x-dc-createdAt': '2026-04-10T00:00:00.000Z',
+      },
+    })
+    agents.setSkipPermissions(def, false)
+    expect(def.metadata!['x-dc-skipPermissions']).toBeUndefined()
+    expect(def.metadata!['x-dc-createdAt']).toBe('2026-04-10T00:00:00.000Z')
+    expect(agents.getSkipPermissions(def)).toBe(false)
+  })
+
+  test('round-trips through YAML via saveAgent + getAgent', () => {
+    const def = makeDef({ id: 'sp-yaml' })
+    agents.setSkipPermissions(def, true)
+    agents.saveAgent(def)
+    const loaded = agents.getAgent('sp-yaml')
+    expect(loaded).not.toBeNull()
+    expect(agents.getSkipPermissions(loaded!)).toBe(true)
+  })
+})
+
+describe('iconMirror helpers', () => {
+  test('getIconMirror defaults to false when metadata absent', () => {
+    expect(agents.getIconMirror(makeDef())).toBe(false)
+  })
+
+  test('setIconMirror(true) writes flag and getter reads it', () => {
+    const def = makeDef()
+    agents.setIconMirror(def, true)
+    expect(def.metadata!['x-dc-iconMirror']).toBe(true)
+    expect(agents.getIconMirror(def)).toBe(true)
+  })
+
+  test('setIconMirror(false) removes flag but preserves sibling metadata', () => {
+    const def = makeDef({
+      metadata: {
+        'x-dc-iconMirror': true,
+        'x-dc-skipPermissions': true,
+      },
+    })
+    agents.setIconMirror(def, false)
+    expect(def.metadata!['x-dc-iconMirror']).toBeUndefined()
+    expect(def.metadata!['x-dc-skipPermissions']).toBe(true)
+  })
+
+  test('round-trips through YAML', () => {
+    const def = makeDef({ id: 'mirror-yaml' })
+    agents.setIconMirror(def, true)
+    agents.saveAgent(def)
+    const loaded = agents.getAgent('mirror-yaml')
+    expect(agents.getIconMirror(loaded!)).toBe(true)
+  })
+})
