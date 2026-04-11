@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
-## [0.9.1] — unreleased
+## [0.9.1] — 2026-04-11
 
 Quality-of-life release: adds scheduled jobs, activity reactions, and several file-reviewer and agent-setup polish items on top of the 0.9 subagent architecture.
 
@@ -11,6 +11,9 @@ Quality-of-life release: adds scheduled jobs, activity reactions, and several fi
 - **Activity reactions** — while a skip-permissions subagent runs, the dispatcher emits DC emoji reactions on the triggering user message to show what Claude is doing (🔍 reading, 👨‍💻 editing, ⚙️ running commands, 🌐 web, 🤝 subtask, ✍️ planning). `TodoWrite` progresses through 1️⃣–9️⃣ then 🇦–🇿 by in-progress step index. Reactions debounce per emoji class and reset per turn.
 - **File reviewer: `yaml` / `json` support and language auto-detection** — `dc_send_file` now detects the language from `file_path` extension when not explicitly set; markdown extensions are intentionally left undetected so the viewer renders them.
 - **Agent setup: mirror-orientation icon variants** (#22) — adds randomized mirror variants for the default icon set.
+
+### Fixed
+- **Scheduler dispatch surfaces results back to the chat** — scheduled jobs now deliver the subagent's final text plus any policy-denial summary to the chat on each fire, and dispatch errors are reported instead of lost. Without this, jobs fired silently.
 
 ### Changed
 - **`dc_send_file` is now the default for structured markdown** (#24) — strengthened the file-reviewer channel instructions so Claude defaults to sending plans, proposals, specs, designs, reviews, reports, and any long structured markdown through the file reviewer. Short conversational replies still go inline.
