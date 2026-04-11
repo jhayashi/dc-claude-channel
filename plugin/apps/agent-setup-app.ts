@@ -94,11 +94,16 @@ async function sendInit(
   return session
 }
 
-/** Icon filename per model. */
-const MODEL_ICON: Record<string, string> = {
-  'claude-opus-4-6': 'agent-opus.png',
-  'claude-sonnet-4-6': 'agent-sonnet.png',
-  'claude-haiku-4-5': 'agent-haiku.png',
+/** Icon filename per model, with a "-skip" variant for permissive agents. */
+const MODEL_ICON_BASE: Record<string, string> = {
+  'claude-opus-4-6': 'agent-opus',
+  'claude-sonnet-4-6': 'agent-sonnet',
+  'claude-haiku-4-5': 'agent-haiku',
+}
+
+export function iconFilenameFor(model: string, skipPermissions: boolean): string {
+  const base = MODEL_ICON_BASE[model] || 'agent-sonnet'
+  return skipPermissions ? `${base}-skip.png` : `${base}.png`
 }
 
 /** Minimal context for decorating agent chats (icon + welcome). */
@@ -107,13 +112,14 @@ export interface DecorateContext {
   logf: (format: string, ...args: unknown[]) => void
 }
 
-/** Set the chat profile image to the model-appropriate icon. */
+/** Set the chat profile image to the model + permission-appropriate icon. */
 export async function setAgentIcon(
   ctx: DecorateContext,
   chatId: number,
   model: string,
+  skipPermissions: boolean,
 ): Promise<void> {
-  const iconName = MODEL_ICON[model] || 'agent-sonnet.png'
+  const iconName = iconFilenameFor(model, skipPermissions)
   const iconPath = new URL(`../assets/agent-icons/${iconName}`, import.meta.url).pathname
   await ctx.client.setChatProfileImage(chatId, iconPath)
   ctx.logf('agent-setup: set agent icon to %s for chat %d', iconName, chatId)
@@ -126,7 +132,7 @@ export async function decorateAgentChat(
   agent: agents.AgentDef,
 ): Promise<void> {
   try {
-    await setAgentIcon(ctx, chatId, agent.model)
+    await setAgentIcon(ctx, chatId, agent.model, agents.getSkipPermissions(agent))
   } catch (err) {
     ctx.logf('agent-setup: set icon failed: %v', err)
   }
@@ -410,6 +416,7 @@ export const agentSetupApp: WebXDCApp = {
           // There's no way to override it, so a model change requires a
           // fresh session.
           const modelChanged = agent.model !== draft.model
+          const skipPermsChanged = agents.getSkipPermissions(agent) !== skipPerms
           const affected = bindings.listBindings().filter(b => b.agentId === agentId)
           const newInherit = agents.inheritClaudeMdForModel(draft.model)
 
@@ -431,7 +438,9 @@ export const agentSetupApp: WebXDCApp = {
               }
               if (modelChanged) {
                 bindings.clearSessionId(b.chatId)
-                await setAgentIcon(ctx, b.chatId, draft.model).catch(err =>
+              }
+              if (modelChanged || skipPermsChanged) {
+                await setAgentIcon(ctx, b.chatId, draft.model, skipPerms).catch(err =>
                   ctx.logf('agent-setup: icon update failed chat=%d: %v', b.chatId, err),
                 )
               }
