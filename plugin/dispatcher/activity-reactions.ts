@@ -76,7 +76,6 @@ export interface ActivityReactor {
 
 export interface ActivityReactorDeps {
   sendReaction: (msgId: number, emoji: string) => Promise<void>
-  logf?: (fmt: string, ...args: unknown[]) => void
 }
 
 interface TurnState {
@@ -86,7 +85,6 @@ interface TurnState {
 
 export function createActivityReactor(deps: ActivityReactorDeps): ActivityReactor {
   const state = new Map<number, TurnState>()
-  const log = deps.logf ?? (() => {})
 
   return {
     setTurnTarget(chatId, msgId) {
@@ -103,9 +101,7 @@ export function createActivityReactor(deps: ActivityReactorDeps): ActivityReacto
       if (emoji === entry.lastEmoji) return
       entry.lastEmoji = emoji
       const { msgId } = entry
-      deps.sendReaction(msgId, emoji).catch((err) => {
-        log('activity-reactions: sendReaction failed chat=%d msg=%d: %v', chatId, msgId, err)
-      })
+      deps.sendReaction(msgId, emoji).catch(() => {})
     },
   }
 }

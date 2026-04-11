@@ -220,16 +220,12 @@ describe('createActivityReactor', () => {
     ])
   })
 
-  test('swallows sendReaction failures via logf', async () => {
-    const logs: string[] = []
+  test('swallows sendReaction failures silently', async () => {
     const reactor = createActivityReactor({
       sendReaction: async () => { throw new Error('boom') },
-      logf: (fmt, ...args) => { logs.push(`${fmt} ${JSON.stringify(args)}`) },
     })
     reactor.setTurnTarget(1, 100)
-    reactor.reactForTool(1, 'Bash', {})
+    expect(() => reactor.reactForTool(1, 'Bash', {})).not.toThrow()
     await new Promise((r) => setTimeout(r, 0))
-    expect(logs.length).toBe(1)
-    expect(logs[0]).toContain('sendReaction failed')
   })
 })

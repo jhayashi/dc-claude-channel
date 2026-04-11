@@ -406,7 +406,6 @@ rebuildAppToolMap()
 // Wired to client.sendReaction so reactor tests can stay pure.
 const activityReactor: ActivityReactor = createActivityReactor({
   sendReaction: (msgId, emoji) => client.sendReaction(msgId, emoji),
-  logf,
 })
 
 // ── Dispatcher socket server ────────────────────────────────────────────
