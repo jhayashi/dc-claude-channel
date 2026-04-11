@@ -44,6 +44,7 @@ export class Scheduler {
   private readonly setTimer: (cb: () => void, ms: number) => unknown
   private readonly clearTimer: (handle: unknown) => void
   private currentTimer: unknown = null
+  private armedFor: number | null = null
   private started = false
   private firing = false
 
@@ -88,6 +89,7 @@ export class Scheduler {
       this.clearTimer(this.currentTimer)
       this.currentTimer = null
     }
+    this.armedFor = null
     const now = this.now()
     let nearest: number | null = null
     for (const job of this.store.loadAll()) {
@@ -99,19 +101,92 @@ export class Scheduler {
     if (nearest === null) return
     const delay = Math.max(0, nearest - now)
     const armMs = Math.min(delay, MAX_TIMER_MS)
+    const armedFor = nearest
+    this.armedFor = armedFor
     this.currentTimer = this.setTimer(() => {
       this.currentTimer = null
       if (delay > MAX_TIMER_MS) {
         // Timer overflow: re-arm without firing.
+        this.armedFor = null
         this.rearm()
         return
       }
-      void this.onFire()
+      void this.onFire(armedFor)
     }, armMs)
   }
 
-  private async onFire(): Promise<void> {
-    // Replaced in Task 5.
-    this.rearm()
+  private async onFire(armedFor: number): Promise<void> {
+    if (this.firing) {
+      this.rearm()
+      return
+    }
+    this.firing = true
+    try {
+      const now = this.now()
+      // Use (armedFor - 1) as the lookup cursor so cron expressions that
+      // resolve to exactly `armedFor` are included. For one-shot jobs the
+      // targetMs-based nextFireAt also returns the target as long as it's
+      // strictly > cursor.
+      const cursor = armedFor - 1
+      const jobs = this.store.loadAll()
+      const due: Array<{ job: ScheduledJob; fireAt: number }> = []
+      for (const job of jobs) {
+        if (isExpired(job, now)) {
+          this.store.delete(job.chatId, job.jobId)
+          continue
+        }
+        const nf = nextFireAt(job, cursor)
+        if (nf === null) continue
+        if (nf <= armedFor) due.push({ job, fireAt: nf })
+      }
+      due.sort((a, b) => a.fireAt - b.fireAt)
+
+      for (const { job } of due) {
+        // Re-check existence in case a delete landed mid-sweep.
+        const stillThere = this.store
+          .loadForChat(job.chatId)
+          .find(j => j.jobId === job.jobId)
+        if (!stillThere) continue
+
+        if (!this.isAllowed(job.chatId)) {
+          this.logf(
+            'scheduler: dropping job %s for unauthorized chat %d',
+            job.jobId, job.chatId,
+          )
+          this.store.delete(job.chatId, job.jobId)
+          continue
+        }
+
+        const text =
+          `[dc chat_id=${job.chatId} event=scheduled job=${job.jobId}]\n${job.prompt}`
+        try {
+          await this.dispatch(job.chatId, text)
+        } catch (err) {
+          this.logf(
+            'scheduler: dispatch failed for job %s chat %d: %v',
+            job.jobId, job.chatId, err,
+          )
+          // Fall through — still update lastFiredAt / delete one-shot so
+          // we don't hot-loop on a broken job.
+        }
+
+        if (job.recurring) {
+          const updated: ScheduledJob = {
+            ...job,
+            lastFiredAt: new Date(now).toISOString(),
+          }
+          if (isExpired(updated, now)) {
+            this.store.delete(job.chatId, job.jobId)
+          } else {
+            this.store.save(updated)
+          }
+        } else {
+          this.store.delete(job.chatId, job.jobId)
+        }
+      }
+    } finally {
+      this.firing = false
+      this.rearm()
+    }
   }
 }

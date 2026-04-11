@@ -153,3 +153,76 @@ describe('Scheduler arm/rearm', () => {
     expect(() => h.scheduler.add(fixture({ cron: 'not a cron' }))).toThrow()
   })
 })
+
+describe('Scheduler fire handler', () => {
+  test('recurring job fires, re-saves with lastFiredAt, and rearms', async () => {
+    const h = makeHarness()
+    h.setClock('2026-04-13T08:59:59Z')
+    h.store.save(fixture({ jobId: 'tick11', cron: '* * * * *' }))
+    h.scheduler.start()
+    h.setClock('2026-04-13T09:00:00.500Z')
+    await h.fireLatest()
+    expect(h.dispatched.length).toBe(1)
+    expect(h.dispatched[0].chatId).toBe(22)
+    expect(h.dispatched[0].text).toContain('event=scheduled')
+    expect(h.dispatched[0].text).toContain('job=tick11')
+    expect(h.dispatched[0].text).toContain('morning standup')
+    const stored = h.store.loadForChat(22)
+    expect(stored.length).toBe(1)
+    expect(stored[0].lastFiredAt).toBeTruthy()
+  })
+
+  test('one-shot job is deleted after fire', async () => {
+    const h = makeHarness()
+    h.setClock('2026-04-13T08:59:59Z')
+    h.store.save(fixture({
+      jobId: 'once11',
+      cron: '* * * * *',
+      recurring: false,
+      targetMs: Date.parse('2026-04-13T09:00:00Z'),
+    }))
+    h.scheduler.start()
+    h.setClock('2026-04-13T09:00:00.500Z')
+    await h.fireLatest()
+    expect(h.dispatched.length).toBe(1)
+    expect(h.store.countForChat(22)).toBe(0)
+  })
+
+  test('unauthorized chat: job GC and no dispatch', async () => {
+    const h = makeHarness()
+    h.setClock('2026-04-13T08:59:59Z')
+    h.allowed.delete(22)
+    h.store.save(fixture({ jobId: 'gc1111', cron: '* * * * *' }))
+    h.scheduler.start()
+    h.setClock('2026-04-13T09:00:00.500Z')
+    await h.fireLatest()
+    expect(h.dispatched.length).toBe(0)
+    expect(h.store.countForChat(22)).toBe(0)
+  })
+
+  test('expired recurring job: deleted at fire, no dispatch', async () => {
+    const h = makeHarness()
+    h.setClock('2026-04-13T08:59:59Z')
+    h.store.save(fixture({
+      jobId: 'exp111',
+      cron: '* * * * *',
+      expiresAt: '2026-04-13T08:59:00Z',
+    }))
+    h.scheduler.start()
+    // rearm() skips expired jobs, so no timer is armed.
+    const live = h.timers.filter(t => !t.cancelled)
+    expect(live.length).toBe(0)
+    expect(h.dispatched.length).toBe(0)
+  })
+
+  test('two jobs due at the same tick fire sequentially', async () => {
+    const h = makeHarness()
+    h.setClock('2026-04-13T08:59:59Z')
+    h.store.save(fixture({ jobId: 'aaa111', cron: '* * * * *' }))
+    h.store.save(fixture({ jobId: 'bbb222', cron: '* * * * *' }))
+    h.scheduler.start()
+    h.setClock('2026-04-13T09:00:00.500Z')
+    await h.fireLatest()
+    expect(h.dispatched.length).toBe(2)
+  })
+})
