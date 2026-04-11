@@ -38,6 +38,8 @@ import { SubagentProcess } from './dispatcher/subagent-process.js'
 import { generateHookConfig } from './dispatcher/hook-config.js'
 import { createMessageRouter } from './dispatcher/message-router.js'
 import { ReactionRouter } from './dispatcher/reaction-router.js'
+import { tryAutoApprove } from './dispatcher/skip-permissions.js'
+import * as audit from './audit.js'
 import type { ServerMessage } from './shared/protocol.js'
 import type { Message } from './dc-client.js'
 
@@ -399,6 +401,22 @@ const socketServer = new SocketServer({
   getSubagentChat: (id) => subagentRegistry.get(id)?.chatId ?? null,
   onRequest: async (req: SocketRequest): Promise<ServerMessage> => {
     if (req.frame.kind === 'permissionRequest') {
+      // Short-circuit: if the bound agent has x-dc-skipPermissions set,
+      // auto-approve and append an audit entry without touching the
+      // WebXDC permission card. Falls through to the normal prompt path
+      // otherwise.
+      try {
+        const auto = tryAutoApprove(req.chatId, req.frame as { id: string; tool?: string; input?: unknown })
+        if (auto) {
+          logf('skip-permissions: auto-allowed %s for chat %d (req %s)',
+            (req.frame as { tool?: string }).tool ?? 'unknown',
+            req.chatId,
+            req.frame.id)
+          return auto
+        }
+      } catch (err) {
+        logf('skip-permissions: tryAutoApprove crashed, falling through: %v', err)
+      }
       return await new Promise<ServerMessage>((resolve) => {
         pendingPermissions.set(req.frame.id, {
           connectionId: req.connectionId,
@@ -621,6 +639,17 @@ const coreTools = [
         message_id: { type: 'string', description: 'Message ID containing the attachment' },
       },
       required: ['message_id'],
+    },
+  },
+  {
+    name: 'dc_show_audit',
+    description: 'Send the auto-approved tool-call audit log for this chat back to the user as a rendered markdown file. Use when the user asks to review what the agent has done (e.g. "what did you run?", "show me the audit log"). Only meaningful when the bound agent is in skip-permissions mode — otherwise the audit file will not exist and this tool returns an error.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        chat_id: { type: 'string', description: 'Chat ID (must match the calling subagent\'s bound chat)' },
+      },
+      required: ['chat_id'],
     },
   },
 ]
@@ -995,6 +1024,42 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           return { content: [{ type: 'text' as const, text: 'dc_download_attachment: no file found or download failed' }], isError: true }
         }
         return { content: [{ type: 'text' as const, text: msg.file }] }
+      }
+
+      case 'dc_show_audit': {
+        const chatIdRaw = args.chat_id as string
+        const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
+        if (!Number.isFinite(chatId)) {
+          return { content: [{ type: 'text' as const, text: 'dc_show_audit: chat_id is required' }], isError: true }
+        }
+        if (!access.isAllowed(chatId)) {
+          return { content: [{ type: 'text' as const, text: `dc_show_audit: chat ${chatId} is not accessible` }], isError: true }
+        }
+        // chat_id authorization is enforced upstream at the socket boundary
+        // (see toolCall chat_mismatch check) so a subagent can only pass its
+        // own chat id here.
+        const path = audit.auditFilePathIfExists(chatId)
+        if (!path) {
+          return {
+            content: [
+              { type: 'text' as const, text: `dc_show_audit: no audit log found for chat ${chatId}. This chat's agent may not be in skip-permissions mode.` },
+            ],
+            isError: true,
+          }
+        }
+        const fileApp = appToolMap.get('dc_send_file')
+        if (!fileApp) {
+          return { content: [{ type: 'text' as const, text: 'dc_show_audit: file reviewer is not available' }], isError: true }
+        }
+        const result = await fileApp.callTool('dc_send_file', {
+          chat_id: String(chatId),
+          title: `Audit log — chat ${chatId}`,
+          file_path: path,
+        }, ctx)
+        if (!result || result.isError) {
+          return { content: [{ type: 'text' as const, text: 'dc_show_audit: file reviewer failed to send audit log' }], isError: true }
+        }
+        return { content: [{ type: 'text' as const, text: `audit log sent for chat ${chatId}` }] }
       }
 
       default:
