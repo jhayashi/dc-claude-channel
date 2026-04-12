@@ -392,7 +392,7 @@ function rebuildAppToolMap(): void {
 }
 rebuildAppToolMap()
 
-// ── Activity reactions (skip-permissions agents only) ──────────────────
+// ── Activity reactions (all agents) ────────────────────────────────────
 // Wired to client.sendReaction so reactor tests can stay pure.
 const activityReactor: ActivityReactor = createActivityReactor({
   sendReaction: (msgId, emoji) => client.sendReaction(msgId, emoji),
@@ -426,6 +426,13 @@ const socketServer = new SocketServer({
         }
       } catch (err) {
         logf('skip-permissions: tryAutoApprove crashed, falling through: %v', err)
+      }
+      // Emit activity reaction even for permission-card agents so the
+      // user sees what Claude is doing while the prompt is pending.
+      {
+        const toolName = (req.frame as { tool?: string }).tool ?? 'unknown'
+        const input = (req.frame as { input?: unknown }).input
+        activityReactor.reactForTool(req.chatId, toolName, input)
       }
       return await new Promise<ServerMessage>((resolve) => {
         pendingPermissions.set(req.frame.id, {

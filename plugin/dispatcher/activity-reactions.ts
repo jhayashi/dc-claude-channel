@@ -1,11 +1,12 @@
 /**
- * Activity reactions for skip-permissions subagents.
+ * Activity reactions — live emoji indicators for subagent tool use.
  *
  * Holds per-chat "current turn target message" state and emits a
  * single DC reaction per tool class, debounced so that e.g. five Read
- * calls in a row only produce one 🔍. Only reachable from the
- * tryAutoApprove success path, so permission-card agents are
- * automatically excluded — the permission prompt itself is the preview.
+ * calls in a row only produce one 🔍. Reactions fire for ALL agents
+ * (skip-permissions and permission-card) so the user always sees what
+ * Claude is doing. A thinking indicator (🤔) is emitted at turn start
+ * before any tool fires.
  */
 
 const EMOJI_CODING = '\u{1F468}\u{200D}\u{1F4BB}'   // 👨‍💻
@@ -14,9 +15,10 @@ const EMOJI_RUNNING = '\u2699\uFE0F'                 // ⚙️
 const EMOJI_WEB = '\u{1F310}'                        // 🌐
 const EMOJI_PLANNING = '\u270D\uFE0F'                // ✍️
 const EMOJI_DELEGATING = '\u{1F91D}'                 // 🤝
+const EMOJI_THINKING = '\u{1F914}'                   // 🤔
 
 const CODING_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
-const READING_TOOLS = new Set(['Read', 'Grep', 'Glob'])
+const READING_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS'])
 const WEB_TOOLS = new Set(['WebFetch', 'WebSearch'])
 
 /**
@@ -30,8 +32,8 @@ export function computeEmoji(toolName: string, toolInput: unknown): string | nul
   if (READING_TOOLS.has(toolName)) return EMOJI_READING
   if (toolName === 'Bash') return EMOJI_RUNNING
   if (WEB_TOOLS.has(toolName)) return EMOJI_WEB
-  if (toolName === 'ExitPlanMode') return EMOJI_PLANNING
-  if (toolName === 'Task') return EMOJI_DELEGATING
+  if (toolName === 'EnterPlanMode' || toolName === 'ExitPlanMode') return EMOJI_PLANNING
+  if (toolName === 'Agent' || toolName === 'Task') return EMOJI_DELEGATING
   if (toolName === 'TodoWrite') return todoStepEmoji(toolInput)
   return null
 }
@@ -61,12 +63,17 @@ export function todoStepEmoji(input: unknown): string | null {
 }
 
 export interface ActivityReactor {
-  /** Call at the start of a turn with the user's message id. */
+  /**
+   * Call at the start of a turn with the user's message id.
+   * Emits an immediate 🤔 thinking reaction so the user gets feedback
+   * before the first tool fires (which may take several seconds on
+   * slow turns with planning or web fetches).
+   */
   setTurnTarget(chatId: number, msgId: number): void
   /** Call in the turn's finally block to drop state (leaves last emoji visible). */
   clearTurnTarget(chatId: number): void
   /**
-   * Call from the auto-approve path with the about-to-run tool name.
+   * Call from the tool-use path with the about-to-run tool name.
    * No-op when the chat has no turn target or the tool maps to no emoji.
    * Fire-and-forget — the DC reaction RPC is dispatched asynchronously so
    * the caller never blocks.
@@ -88,7 +95,9 @@ export function createActivityReactor(deps: ActivityReactorDeps): ActivityReacto
 
   return {
     setTurnTarget(chatId, msgId) {
-      state.set(chatId, { msgId, lastEmoji: null })
+      state.set(chatId, { msgId, lastEmoji: EMOJI_THINKING })
+      // Fire-and-forget thinking indicator before any tool fires.
+      deps.sendReaction(msgId, EMOJI_THINKING).catch(() => {})
     },
     clearTurnTarget(chatId) {
       state.delete(chatId)

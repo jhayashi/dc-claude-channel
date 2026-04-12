@@ -13,7 +13,7 @@ describe('computeEmoji tool classes', () => {
   })
 
   test('reading tools → 🔍', () => {
-    for (const tool of ['Read', 'Grep', 'Glob']) {
+    for (const tool of ['Read', 'Grep', 'Glob', 'LS']) {
       expect(computeEmoji(tool, {})).toBe('\u{1F50D}')
     }
   })
@@ -27,11 +27,13 @@ describe('computeEmoji tool classes', () => {
     expect(computeEmoji('WebSearch', {})).toBe('\u{1F310}')
   })
 
-  test('ExitPlanMode → ✍️', () => {
+  test('EnterPlanMode / ExitPlanMode → ✍️', () => {
+    expect(computeEmoji('EnterPlanMode', {})).toBe('\u270D\uFE0F')
     expect(computeEmoji('ExitPlanMode', {})).toBe('\u270D\uFE0F')
   })
 
-  test('Task → 🤝', () => {
+  test('Agent / Task → 🤝', () => {
+    expect(computeEmoji('Agent', {})).toBe('\u{1F91D}')
     expect(computeEmoji('Task', {})).toBe('\u{1F91D}')
   })
 
@@ -141,12 +143,24 @@ describe('createActivityReactor', () => {
     expect(calls).toEqual([])
   })
 
+  const THINKING = '\u{1F914}'  // 🤔
+
+  test('setTurnTarget emits immediate thinking indicator', async () => {
+    const { reactor, calls } = makeReactor()
+    reactor.setTurnTarget(1, 100)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toEqual([{ msgId: 100, emoji: THINKING }])
+  })
+
   test('fires reaction for a set turn target', async () => {
     const { reactor, calls } = makeReactor()
     reactor.setTurnTarget(1, 100)
     reactor.reactForTool(1, 'Bash', {})
     await new Promise((r) => setTimeout(r, 0))
-    expect(calls).toEqual([{ msgId: 100, emoji: '\u2699\uFE0F' }])
+    expect(calls).toEqual([
+      { msgId: 100, emoji: THINKING },
+      { msgId: 100, emoji: '\u2699\uFE0F' },
+    ])
   })
 
   test('debounces repeated same emoji', async () => {
@@ -156,7 +170,10 @@ describe('createActivityReactor', () => {
     reactor.reactForTool(1, 'Grep', {})
     reactor.reactForTool(1, 'Glob', {})
     await new Promise((r) => setTimeout(r, 0))
-    expect(calls).toEqual([{ msgId: 100, emoji: '\u{1F50D}' }])
+    expect(calls).toEqual([
+      { msgId: 100, emoji: THINKING },
+      { msgId: 100, emoji: '\u{1F50D}' },
+    ])
   })
 
   test('fires again when emoji class changes', async () => {
@@ -167,6 +184,7 @@ describe('createActivityReactor', () => {
     reactor.reactForTool(1, 'Edit', {})
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toEqual([
+      { msgId: 100, emoji: THINKING },
       { msgId: 100, emoji: '\u{1F50D}' },
       { msgId: 100, emoji: '\u2699\uFE0F' },
       { msgId: 100, emoji: '\u{1F468}\u{200D}\u{1F4BB}' },
@@ -181,7 +199,10 @@ describe('createActivityReactor', () => {
     reactor.reactForTool(1, 'Unknown', {})   // skipped
     reactor.reactForTool(1, 'Grep', {})      // debounced (still 🔍)
     await new Promise((r) => setTimeout(r, 0))
-    expect(calls).toEqual([{ msgId: 100, emoji: '\u{1F50D}' }])
+    expect(calls).toEqual([
+      { msgId: 100, emoji: THINKING },
+      { msgId: 100, emoji: '\u{1F50D}' },
+    ])
   })
 
   test('clearTurnTarget drops state so subsequent calls no-op', async () => {
@@ -191,7 +212,10 @@ describe('createActivityReactor', () => {
     reactor.clearTurnTarget(1)
     reactor.reactForTool(1, 'Edit', {})
     await new Promise((r) => setTimeout(r, 0))
-    expect(calls).toEqual([{ msgId: 100, emoji: '\u2699\uFE0F' }])
+    expect(calls).toEqual([
+      { msgId: 100, emoji: THINKING },
+      { msgId: 100, emoji: '\u2699\uFE0F' },
+    ])
   })
 
   test('setTurnTarget on the same chat resets debounce and target', async () => {
@@ -202,7 +226,9 @@ describe('createActivityReactor', () => {
     reactor.reactForTool(1, 'Bash', {})  // new turn → fires again
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toEqual([
+      { msgId: 100, emoji: THINKING },
       { msgId: 100, emoji: '\u2699\uFE0F' },
+      { msgId: 200, emoji: THINKING },
       { msgId: 200, emoji: '\u2699\uFE0F' },
     ])
   })
@@ -215,6 +241,8 @@ describe('createActivityReactor', () => {
     reactor.reactForTool(2, 'Bash', {})
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toEqual([
+      { msgId: 100, emoji: THINKING },
+      { msgId: 200, emoji: THINKING },
       { msgId: 100, emoji: '\u{1F50D}' },
       { msgId: 200, emoji: '\u2699\uFE0F' },
     ])
@@ -224,7 +252,8 @@ describe('createActivityReactor', () => {
     const reactor = createActivityReactor({
       sendReaction: async () => { throw new Error('boom') },
     })
-    reactor.setTurnTarget(1, 100)
+    // setTurnTarget emits thinking reaction — should not throw
+    expect(() => reactor.setTurnTarget(1, 100)).not.toThrow()
     expect(() => reactor.reactForTool(1, 'Bash', {})).not.toThrow()
     await new Promise((r) => setTimeout(r, 0))
   })
