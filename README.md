@@ -8,8 +8,6 @@ Talk to and code securely with Claude from your phone. A Claude Code channel plu
 - [Bun](https://bun.sh/) (v1.1+) on your `$PATH`
 - [Delta Chat](https://delta.chat/) on your phone (Android, iOS, or desktop) with a [chatmail](https://chatmail.at/) account
 
-No Rust toolchain needed — the `deltachat-rpc-server` binary is installed automatically via npm optional dependencies when `bun install` runs.
-
 ## Installation
 
 ### Install via marketplace (recommended)
@@ -57,7 +55,7 @@ This prints a QR code link.
 
 ### 2. Add the bot in Delta Chat
 
-Open the invite link in a browser on the same machine running the terminal. On the web page that loads, tap the **triangle icon** to reveal the QR code. Scan the QR code from your Delta Chat app to add Claude as a verified contact.
+Open the link in a browser on the same machine running the terminal. On the web page that loads, tap the **triangle icon** to reveal the QR code. Scan the QR code from your Delta Chat app to add Claude as a verified contact.
 
 ### 3. Pair your chat
 
@@ -117,7 +115,7 @@ Reply "yes" to start, or "no" to skip. You can start using Claude immediately ei
   <em>Review and comment on code from your phone</em>
 </p>
 
-## How It Compares
+## How the Delta Chat Channel Stacks Up
 
 |  | Delta Chat | Telegram | Discord |
 |--|-----------|----------|---------|
@@ -130,10 +128,6 @@ Reply "yes" to start, or "no" to skip. You can start using Claude immediately ei
 | **Bot setup** | Two slash commands + QR scan + guided tutorial | BotFather token + config | Bot portal + config |
 | **Self-hosted** | Fully (client + server + plugin) | No (Telegram servers) | No (Discord servers) |
 | **Open source** | Client + server + plugin | Client only | No |
-
-## Note
-
-Only one Claude Code session can use the Delta Chat channel at a time — the underlying database uses file locking.
 
 ## Development
 
