@@ -268,17 +268,23 @@ export function setIconMirror(def: AgentDef, value: boolean): void {
   delete def.metadata[ICON_MIRROR_META_KEY]
 }
 
-/**
- * Synthesize a slug-based agent id from a name, resolving collisions by
- * suffixing -2, -3, etc. The result always matches AgentDefSchema.id.
- */
-export function synthesizeAgentId(name: string): string {
-  const base =
+/** Pure name → slug conversion — no collision check. */
+export function slugifyName(name: string): string {
+  return (
     name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, 48) || 'agent'
+  )
+}
+
+/**
+ * Synthesize a slug-based agent id from a name, resolving collisions by
+ * suffixing -2, -3, etc. The result always matches AgentDefSchema.id.
+ */
+export function synthesizeAgentId(name: string): string {
+  const base = slugifyName(name)
   if (!existsSync(AGENTS_DIR)) return base
   const existing = new Set(
     readdirSync(AGENTS_DIR)
@@ -289,6 +295,61 @@ export function synthesizeAgentId(name: string): string {
   let n = 2
   while (existing.has(`${base}-${n}`)) n++
   return `${base}-${n}`
+}
+
+/**
+ * Result of importing an agent from YAML.
+ */
+export interface ImportResult {
+  agent: AgentDef
+  idChanged: boolean
+}
+
+/**
+ * Parse a YAML string as an agent definition, resolve ID collisions,
+ * and persist. Throws on parse/validation failure.
+ *
+ * If the YAML has no `id` field, one is synthesized from `name`.
+ * If the id (provided or synthesized) collides with an existing agent,
+ * a `-2`, `-3`, etc. suffix is appended and `idChanged` is set.
+ */
+export function importAgentFromYaml(yamlStr: string): ImportResult {
+  const raw = YAML.parse(yamlStr)
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('YAML did not produce an object')
+  }
+
+  const hasExplicitId = typeof raw.id === 'string' && raw.id.length > 0
+
+  if (!hasExplicitId) {
+    // Validate without id to catch missing name early, then synthesize.
+    AgentDefSchema.omit({ id: true }).parse(raw)
+    raw.id = synthesizeAgentId(raw.name)
+  }
+
+  // Validate the full schema now that id is present.
+  const validated = AgentDefSchema.parse(raw)
+
+  let finalId = validated.id
+  let idChanged = false
+
+  if (hasExplicitId && getAgent(finalId)) {
+    // Explicit id collides — suffix it directly.
+    const base = finalId
+    let n = 2
+    while (getAgent(`${base}-${n}`)) n++
+    finalId = `${base}-${n}`
+    idChanged = true
+  } else if (!hasExplicitId) {
+    // synthesizeAgentId already resolved collisions — detect whether
+    // it suffixed by comparing with the bare slug.
+    const bareSlug = slugifyName(validated.name)
+    if (finalId !== bareSlug) idChanged = true
+  }
+
+  const agent: AgentDef = { ...validated, id: finalId }
+  saveAgent(agent)
+  return { agent, idChanged }
 }
 
 /** System prompt templates per model tier. */

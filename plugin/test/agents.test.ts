@@ -391,3 +391,106 @@ describe('default agent (undeletable)', () => {
     expect(reloaded.system).toBe('new system')
   })
 })
+
+describe('importAgentFromYaml', () => {
+  test('imports a valid YAML string and saves the agent', () => {
+    const yaml = [
+      'id: imported-agent',
+      'name: Imported Agent',
+      'model: claude-sonnet-4-6',
+      'system: you are helpful',
+      'tools: []',
+    ].join('\n')
+    const result = agents.importAgentFromYaml(yaml)
+    expect(result.agent.id).toBe('imported-agent')
+    expect(result.agent.name).toBe('Imported Agent')
+    expect(result.idChanged).toBe(false)
+    expect(agents.getAgent('imported-agent')).toBeTruthy()
+  })
+
+  test('synthesizes id from name when id is missing', () => {
+    const yaml = [
+      'name: My Cool Agent',
+      'model: claude-sonnet-4-6',
+      'system: be cool',
+      'tools: []',
+    ].join('\n')
+    const result = agents.importAgentFromYaml(yaml)
+    expect(result.agent.id).toBe('my-cool-agent')
+    expect(result.idChanged).toBe(false)
+    expect(agents.getAgent('my-cool-agent')).toBeTruthy()
+  })
+
+  test('auto-suffixes when id collides with existing agent', () => {
+    agents.saveAgent(makeDef({ id: 'collider', name: 'Collider' }))
+    const yaml = [
+      'id: collider',
+      'name: Collider Clone',
+      'model: claude-sonnet-4-6',
+      'system: clone',
+      'tools: []',
+    ].join('\n')
+    const result = agents.importAgentFromYaml(yaml)
+    expect(result.agent.id).toBe('collider-2')
+    expect(result.idChanged).toBe(true)
+    expect(agents.getAgent('collider-2')).toBeTruthy()
+  })
+
+  test('auto-suffixes when synthesized id collides', () => {
+    agents.saveAgent(makeDef({ id: 'dupe-name', name: 'Dupe Name' }))
+    const yaml = [
+      'name: Dupe Name',
+      'model: claude-sonnet-4-6',
+      'system: dupe',
+      'tools: []',
+    ].join('\n')
+    const result = agents.importAgentFromYaml(yaml)
+    expect(result.agent.id).toBe('dupe-name-2')
+    expect(result.idChanged).toBe(true)
+  })
+
+  test('preserves metadata including x-dc-* extensions', () => {
+    const yaml = [
+      'id: meta-agent',
+      'name: Meta Agent',
+      'model: claude-sonnet-4-6',
+      'system: meta',
+      'tools: []',
+      'metadata:',
+      '  x-dc-skipPermissions: true',
+      '  x-dc-iconMirror: true',
+      '  custom-key: custom-value',
+    ].join('\n')
+    const result = agents.importAgentFromYaml(yaml)
+    expect(result.agent.metadata).toEqual({
+      'x-dc-skipPermissions': true,
+      'x-dc-iconMirror': true,
+      'custom-key': 'custom-value',
+    })
+  })
+
+  test('throws on invalid YAML', () => {
+    expect(() => agents.importAgentFromYaml('{not: [valid yaml')).toThrow()
+  })
+
+  test('throws on valid YAML that fails schema validation', () => {
+    const yaml = [
+      'id: bad-model',
+      'name: Bad Model',
+      'model: gpt-4',
+      'system: nope',
+      'tools: []',
+    ].join('\n')
+    expect(() => agents.importAgentFromYaml(yaml)).toThrow()
+  })
+
+  test('throws when name is missing', () => {
+    const yaml = [
+      'id: no-name',
+      'model: claude-sonnet-4-6',
+      'system: nope',
+      'tools: []',
+    ].join('\n')
+    expect(() => agents.importAgentFromYaml(yaml)).toThrow()
+  })
+})
