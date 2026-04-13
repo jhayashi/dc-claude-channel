@@ -395,6 +395,7 @@ ctx = {
       logf('ctx.evictSubagent: evict failed chat=%d: %v', chatId, err),
     )
   },
+  getAvailableMcpTools,
 }
 
 // App tool dispatch map — O(1) lookup, rebuilds on cache miss.

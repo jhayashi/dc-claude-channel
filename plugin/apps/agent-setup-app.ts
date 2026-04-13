@@ -11,6 +11,17 @@ import * as agentSetup from '../agent-setup.js'
 import * as agents from '../agents.js'
 import * as bindings from '../bindings.js'
 import * as access from '../access.js'
+import { ALL_BUILTIN_TOOLS, BUILTIN_TOOL_DESCRIPTIONS } from '../dispatcher/subagent-process.js'
+
+function availableToolsPayload(ctx: AppContext) {
+  return {
+    availableBuiltinTools: ALL_BUILTIN_TOOLS.map(name => ({
+      name,
+      description: BUILTIN_TOOL_DESCRIPTIONS[name] ?? '',
+    })),
+    availableMcpTools: ctx.getAvailableMcpTools(),
+  }
+}
 
 interface Session {
   msgId: number
@@ -68,6 +79,7 @@ async function sendInit(
     existingAgents: listExistingForPicker(sourceChatId),
     startScreen,
     senderAddr: 'server',
+    ...availableToolsPayload(ctx),
   }
   // Info text MUST be unique per call — DC dedupes consecutive identical
   // info text and the user gets no notification. Include the draft name
@@ -339,6 +351,8 @@ export const agentSetupApp: WebXDCApp = {
           tools: agent.tools ?? [],
           skipPermissions: agents.getSkipPermissions(agent),
           iconMirror: agents.getIconMirror(agent),
+          allowedBuiltinTools: agent.allowedBuiltinTools ?? null,
+          allowedMcpTools: agent.allowedMcpTools ?? null,
         }
         try {
           const update = JSON.stringify({
@@ -347,6 +361,7 @@ export const agentSetupApp: WebXDCApp = {
               draft: editDraft,
               version: agentSetup.getAgentSetupVersion(),
               senderAddr: 'server',
+              ...availableToolsPayload(ctx),
             },
             summary: 'Editing agent',
           })
@@ -499,6 +514,8 @@ export const agentSetupApp: WebXDCApp = {
         const draft = parsed.data
         const skipPerms = (payload as { skipPermissions?: boolean }).skipPermissions === true
         const iconMirror = (payload as { iconMirror?: boolean }).iconMirror === true
+        const allowedBuiltinTools = (payload as { allowedBuiltinTools?: string[] | null }).allowedBuiltinTools ?? undefined
+        const allowedMcpTools = (payload as { allowedMcpTools?: string[] | null }).allowedMcpTools ?? undefined
         // Snapshot the pre-edit state BEFORE mutating metadata below. We
         // must clone metadata because `updated` shares the object otherwise,
         // and the setters mutate in place — which would make the "changed"
@@ -515,6 +532,8 @@ export const agentSetupApp: WebXDCApp = {
             ...draft,
             id: agentId,
             metadata: agent.metadata ? { ...agent.metadata } : undefined,
+            allowedBuiltinTools,
+            allowedMcpTools,
           }
           agents.setSkipPermissions(updated, skipPerms)
           agents.setIconMirror(updated, iconMirror)
@@ -538,12 +557,17 @@ export const agentSetupApp: WebXDCApp = {
           const systemChanged = prevSystem !== draft.system
           const skipPermsChanged = prevSkip !== skipPerms
           const mirrorChanged = prevMirror !== iconMirror
+          const prevBuiltinTools = JSON.stringify(agent.allowedBuiltinTools ?? null)
+          const newBuiltinTools = JSON.stringify(allowedBuiltinTools ?? null)
+          const prevMcpToolsList = JSON.stringify(agent.allowedMcpTools ?? null)
+          const newMcpToolsList = JSON.stringify(allowedMcpTools ?? null)
+          const toolsChanged = prevBuiltinTools !== newBuiltinTools || prevMcpToolsList !== newMcpToolsList
           // Restart only for changes that are baked in at subagent spawn
           // time: the model (passed as --model and cached in the session
           // store) and the system prompt (read from disk at spawn). Cosmetic
           // changes (name, icon orientation) and skipPermissions — which the
           // dispatcher re-reads on every hook call — don't need a restart.
-          const needsRestart = modelChanged || systemChanged
+          const needsRestart = modelChanged || systemChanged || toolsChanged
           const iconChanged = modelChanged || skipPermsChanged || mirrorChanged
           const affected = bindings.listBindings().filter(b => b.agentId === agentId)
           const newInherit = agents.inheritClaudeMdForModel(draft.model)
@@ -553,7 +577,9 @@ export const agentSetupApp: WebXDCApp = {
           if (needsRestart && affected.length > 0) {
             const restartMsg = modelChanged
               ? `Agent updated. Restarting with new model (${draft.model.replace('claude-', '')})...`
-              : 'Agent updated. Restarting...'
+              : toolsChanged
+                ? 'Agent updated. Restarting with new tool configuration...'
+                : 'Agent updated. Restarting...'
             await Promise.all(
               affected.map(b => ctx.client.send(b.chatId, restartMsg).catch(() => {})),
             )
@@ -649,6 +675,8 @@ export const agentSetupApp: WebXDCApp = {
         }
         const draft = parsed.data
         const skipPerms = (payload as { skipPermissions?: boolean }).skipPermissions === true
+        const allowedBuiltinTools = (payload as { allowedBuiltinTools?: string[] | null }).allowedBuiltinTools ?? undefined
+        const allowedMcpTools = (payload as { allowedMcpTools?: string[] | null }).allowedMcpTools ?? undefined
         const inheritClaudeMd = agents.inheritClaudeMdForModel(draft.model)
         const ownerContactId = await resolveOwner()
         if (!ownerContactId) continue
@@ -658,7 +686,7 @@ export const agentSetupApp: WebXDCApp = {
           const newChatId = await ctx.client.createGroup(draft.name)
           await ctx.client.addContactToChat(newChatId, ownerContactId)
           access.addChat(newChatId, ownerContactId)
-          const newAgent: agents.AgentDef = { ...draft, id: agentId }
+          const newAgent: agents.AgentDef = { ...draft, id: agentId, allowedBuiltinTools, allowedMcpTools }
           agents.setSkipPermissions(newAgent, skipPerms)
           // Roll a random orientation once at creation so same-model agents
           // are visually differentiable. Edits can override via the setup card.
