@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
+## [0.9.5] — 2026-04-12
+
+Feature release: adds **per-agent tool access**, **agent import/export**, **MCP server toggles**, and the **Marp slide viewer**.
+
+### Added
+- **Per-agent tool access** (#16) — each agent can restrict which built-in tools and MCP servers its subagent may use. Built-in tools have fine-grained per-tool control; MCP servers are all-or-nothing toggles. `allowedBuiltinTools` and `allowedMcpServers` fields on the agent definition; enforced at spawn time via `--allowedTools`. The agent-setup WebXDC card includes a collapsible tool picker with per-tool checkboxes for built-in tools and per-server toggles for MCP servers.
+- **MCP server toggles** — global MCP servers are now exposed in the tool picker as all-or-nothing toggles alongside DC Tools. Agents can selectively enable/disable access to each server. Known servers are registered in `KNOWN_MCP_SERVERS`; Claude Code silently ignores prefixes for absent servers.
+- **Agent import/export** (#15) — export agent definitions as `.yaml` files via the agent-setup card ("Export" button); import by sending a `.yaml` attachment into any paired chat. Auto-resolves ID collisions with `-2`, `-3` suffixes. Round-trip compatible with Claude Managed Agents API format.
+- **Marp slide viewer WebXDC app** (#34) — `dc_send_slides` tool renders Marp-format slide decks (YAML frontmatter + `---` separators) as interactive presentations in Delta Chat.
+- **Onboarding: agent creation step** (#13) — the tutorial flow now prompts users to create their first agent.
+- **Built-in default agent** (#29) — `claude-code` agent is auto-seeded and cannot be deleted, ensuring the agent list is never empty.
+- **File reviewer: markdown web links** (#33) — clickable links in rendered markdown.
+
+### Changed
+- **Activity reactions: randomized emoji pools** — thinking, reading, coding, and planning reactions now draw from randomized pools instead of fixed emojis. Thinking uses a pool of 9 emojis; reading, coding, and planning each have 3–4 variants.
+- **Permissions app: handle new prompts while open** (#19) — the permission card now picks up new tool-approval requests that arrive while the card is already displayed.
+
+### Fixed
+- **Agent-setup modal no longer persists on card re-open** (#23) — stale confirmation dialogs are suppressed when the card is reopened.
+- **Agent-setup: open directly on create form** (#31) — `mode="create"` now correctly opens the create screen instead of the agent list.
+
+### Docs
+- `CLAUDE.md` documents per-agent tool access, MCP server toggles, and agent import/export.
+
+---
+
 ## [0.9.1] — 2026-04-11
 
 Quality-of-life release: adds scheduled jobs, activity reactions, and several file-reviewer and agent-setup polish items on top of the 0.9 subagent architecture.
@@ -108,7 +134,8 @@ First public release of the Delta Chat channel for Claude Code.
 - File-based allowlist + pairing codes.
 - `deltachat-rpc-server` integration.
 
-[0.9.1]: https://github.com/jhayashi/dc-claude-channel/compare/v0.9...HEAD
+[0.9.5]: https://github.com/jhayashi/dc-claude-channel/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/jhayashi/dc-claude-channel/compare/v0.9...v0.9.1
 [0.9]: https://github.com/jhayashi/dc-claude-channel/compare/v0.8.3...v0.9
 [0.8.3]: https://github.com/jhayashi/dc-claude-channel/compare/v0.8.1...v0.8.3
 [0.8.1]: https://github.com/jhayashi/dc-claude-channel/compare/v0.8.0...v0.8.1
