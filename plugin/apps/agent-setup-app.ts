@@ -417,6 +417,69 @@ export const agentSetupApp: WebXDCApp = {
         continue
       }
 
+      if (payload.type === 'export') {
+        const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
+        if (!agentId) {
+          ctx.logf('agent-setup: export payload missing agentId')
+          continue
+        }
+        const agent = agents.getAgent(agentId)
+        if (!agent) {
+          ctx.logf('agent-setup: export requested agent %s not found', agentId)
+          try {
+            const update = JSON.stringify({
+              payload: {
+                type: 'exportError',
+                message: 'Agent no longer exists.',
+                version: agentSetup.getAgentSetupVersion(),
+                senderAddr: 'server',
+              },
+              summary: 'Export failed',
+            })
+            await ctx.client.sendWebXDCUpdate(session.msgId, update)
+          } catch (err) {
+            ctx.logf('agent-setup: export error update failed: %v', err)
+          }
+          continue
+        }
+        try {
+          const { writeFileSync, unlinkSync, mkdtempSync } = await import('node:fs')
+          const { join } = await import('node:path')
+          const { tmpdir } = await import('node:os')
+          const YAML = (await import('yaml')).default
+
+          const yamlStr = YAML.stringify(agent)
+          const dir = mkdtempSync(join(tmpdir(), 'dc-agent-export-'))
+          const filePath = join(dir, `${agentId}.yaml`)
+          writeFileSync(filePath, yamlStr)
+
+          await ctx.client.sendAttachment(
+            session.sourceChatId,
+            filePath,
+            `Exported agent "${agent.name}"`,
+          )
+          ctx.logf('agent-setup: exported agent %s to chat %d', agentId, session.sourceChatId)
+
+          // Notify the card so it can reset the button state.
+          const update = JSON.stringify({
+            payload: {
+              type: 'exported',
+              agentId,
+              version: agentSetup.getAgentSetupVersion(),
+              senderAddr: 'server',
+            },
+            summary: 'Agent exported',
+          })
+          await ctx.client.sendWebXDCUpdate(session.msgId, update)
+
+          // Clean up temp file.
+          try { unlinkSync(filePath) } catch {}
+        } catch (err) {
+          ctx.logf('agent-setup: export failed for agent %s: %v', agentId, err)
+        }
+        continue
+      }
+
       if (payload.type === 'saveEdit') {
         const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
         if (!agentId) {
