@@ -1526,7 +1526,7 @@ async function main(): Promise<void> {
       const short = message.length > 200 ? message.slice(0, 200) + '...' : message
       await client.send(chatId, `\u26a0\ufe0f Couldn't import Familiar app from "${msg.fileName}": ${short}`)
       logf('familiar-import: failed for chat %d file=%s: %v', chatId, msg.fileName, err)
-      return false
+      return true
     }
   }
 

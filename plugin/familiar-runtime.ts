@@ -106,6 +106,12 @@ const SHADOWED_GLOBALS = [
 export function createSandbox(
   handlerSource: string,
 ): (update: unknown, ctx: SandboxContext) => Promise<{ error?: string }> {
+  // Reject dynamic import() — it's a keyword and can't be shadowed via
+  // function parameters. This is a string-level check (defence-in-depth).
+  if (/\bimport\s*\(/.test(handlerSource)) {
+    throw new Error('handler must not use dynamic import()')
+  }
+
   // Build parameter list: update, ctx, then all shadowed globals (= undefined)
   const params = ['update', 'ctx', ...SHADOWED_GLOBALS]
 

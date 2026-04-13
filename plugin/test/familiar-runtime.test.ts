@@ -105,6 +105,17 @@ describe('createSandbox', () => {
     expect(results.globalThis).toBe('undefined')
   })
 
+  test('handler with dynamic import() is rejected at compile time', () => {
+    expect(() => createSandbox('const m = await import("node:fs")')).toThrow(
+      'handler must not use dynamic import()',
+    )
+    expect(() => createSandbox('import ("node:os")')).toThrow(
+      'handler must not use dynamic import()',
+    )
+    // Regular use of the word "import" in a string literal should be fine
+    expect(() => createSandbox('ctx.sendUpdate({ msg: "import data" })')).not.toThrow()
+  })
+
   test('handler can use standard builtins (Math, JSON, Date, Array)', async () => {
     const fn = createSandbox(`
       const arr = [3, 1, 2];
