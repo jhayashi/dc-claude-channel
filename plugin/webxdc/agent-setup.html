@@ -335,7 +335,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.31;
+var APP_VERSION = 1.34;
 var draft = null;
 var existingAgents = [];
 var creating = false;
@@ -450,99 +450,181 @@ function renderExistingList() {
 }
 
 var availableBuiltinTools = [];
-var availableMcpTools = [];
+var availableMcpServers = [];
 
-function renderToolPicker(containerId, allowedBuiltinTools, allowedMcpTools) {
+function renderToolPicker(containerId, allowedBuiltinTools, allowedMcpServers) {
   var container = document.getElementById(containerId);
   if (!container) return;
   container.textContent = '';
 
-  var groups = [];
+  // Built-in tools: per-tool checkboxes in a collapsible section
   if (availableBuiltinTools.length > 0) {
-    groups.push({ label: 'Built-in Tools', tools: availableBuiltinTools, allowed: allowedBuiltinTools, field: 'builtin' });
-  }
-  if (availableMcpTools.length > 0) {
-    groups.push({ label: 'DC Tools', tools: availableMcpTools, allowed: allowedMcpTools, field: 'mcp' });
+    renderBuiltinToolsSection(container, allowedBuiltinTools);
   }
 
-  groups.forEach(function(group) {
-    var section = document.createElement('div');
-    section.className = 'tool-section';
+  // MCP servers: one toggle per server in a collapsible section
+  if (availableMcpServers.length > 0) {
+    renderMcpServersSection(container, allowedMcpServers);
+  }
+}
 
-    var header = document.createElement('div');
-    header.className = 'tool-header';
-    var allOn = group.allowed === null;
-    var enabledCount = allOn ? group.tools.length : group.allowed.length;
+function renderBuiltinToolsSection(container, allowedBuiltinTools) {
+  var section = document.createElement('div');
+  section.className = 'tool-section';
 
-    var headerLeft = document.createElement('div');
-    headerLeft.className = 'tool-header-left';
-    headerLeft.textContent = group.label;
-    var countSpan = document.createElement('span');
-    countSpan.className = 'tool-count' + (enabledCount === group.tools.length ? ' all-on' : '');
-    countSpan.textContent = enabledCount + ' / ' + group.tools.length + (enabledCount === group.tools.length ? ' \u2713' : '');
-    headerLeft.appendChild(countSpan);
-    var arrow = document.createElement('span');
-    arrow.className = 'tool-arrow';
-    arrow.textContent = '\u25B6';
-    header.appendChild(headerLeft);
-    header.appendChild(arrow);
+  var header = document.createElement('div');
+  header.className = 'tool-header';
+  var allOn = allowedBuiltinTools === null;
+  var enabledCount = allOn ? availableBuiltinTools.length : allowedBuiltinTools.length;
 
-    var body = document.createElement('div');
-    body.className = 'tool-body';
-    var selectAllDiv = document.createElement('div');
-    selectAllDiv.className = 'tool-select-all';
-    var selectAllSpan = document.createElement('span');
-    selectAllSpan.textContent = enabledCount === group.tools.length ? 'Deselect all' : 'Select all';
-    selectAllDiv.appendChild(selectAllSpan);
-    body.appendChild(selectAllDiv);
+  var headerLeft = document.createElement('div');
+  headerLeft.className = 'tool-header-left';
+  headerLeft.textContent = 'Built-in Tools';
+  var countSpan = document.createElement('span');
+  countSpan.className = 'tool-count' + (enabledCount === availableBuiltinTools.length ? ' all-on' : '');
+  countSpan.textContent = enabledCount + ' / ' + availableBuiltinTools.length + (enabledCount === availableBuiltinTools.length ? ' \u2713' : '');
+  headerLeft.appendChild(countSpan);
+  var arrow = document.createElement('span');
+  arrow.className = 'tool-arrow';
+  arrow.textContent = '\u25B6';
+  header.appendChild(headerLeft);
+  header.appendChild(arrow);
 
-    var checkboxes = [];
-    group.tools.forEach(function(tool) {
-      var row = document.createElement('div');
-      row.className = 'tool-row';
-      var cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.checked = allOn || group.allowed.indexOf(tool.name) >= 0;
-      cb.dataset.toolName = tool.name;
-      cb.dataset.toolField = group.field;
-      checkboxes.push(cb);
-      var nameSpan = document.createElement('span');
+  var body = document.createElement('div');
+  body.className = 'tool-body';
+  var selectAllDiv = document.createElement('div');
+  selectAllDiv.className = 'tool-select-all';
+  var selectAllSpan = document.createElement('span');
+  selectAllSpan.textContent = enabledCount === availableBuiltinTools.length ? 'Deselect all' : 'Select all';
+  selectAllDiv.appendChild(selectAllSpan);
+  body.appendChild(selectAllDiv);
+
+  var checkboxes = [];
+  availableBuiltinTools.forEach(function(tool) {
+    var row = document.createElement('div');
+    row.className = 'tool-row';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = allOn || allowedBuiltinTools.indexOf(tool.name) >= 0;
+    cb.dataset.toolName = tool.name;
+    cb.dataset.toolField = 'builtin';
+    checkboxes.push(cb);
+    var nameSpan = document.createElement('span');
+    nameSpan.className = 'tool-name' + (cb.checked ? '' : ' disabled');
+    nameSpan.textContent = tool.name;
+    var descSpan = document.createElement('span');
+    descSpan.className = 'tool-desc';
+    descSpan.textContent = tool.description || '';
+    row.appendChild(cb);
+    row.appendChild(nameSpan);
+    row.appendChild(descSpan);
+    cb.addEventListener('change', function() {
       nameSpan.className = 'tool-name' + (cb.checked ? '' : ' disabled');
-      nameSpan.textContent = tool.name;
-      var descSpan = document.createElement('span');
-      descSpan.className = 'tool-desc';
-      descSpan.textContent = tool.description || '';
-      row.appendChild(cb);
-      row.appendChild(nameSpan);
-      row.appendChild(descSpan);
-      cb.addEventListener('change', function() {
-        nameSpan.className = 'tool-name' + (cb.checked ? '' : ' disabled');
-        updateToolCount(countSpan, checkboxes, group.tools.length);
-        updateSelectAllText(selectAllSpan, checkboxes);
-      });
-      body.appendChild(row);
-    });
-
-    selectAllSpan.addEventListener('click', function() {
-      var allChecked = checkboxes.every(function(c) { return c.checked; });
-      checkboxes.forEach(function(c) {
-        c.checked = !allChecked;
-        var nameEl = c.parentElement.querySelector('.tool-name');
-        if (nameEl) nameEl.className = 'tool-name' + (c.checked ? '' : ' disabled');
-      });
-      updateToolCount(countSpan, checkboxes, group.tools.length);
+      updateToolCount(countSpan, checkboxes, availableBuiltinTools.length);
       updateSelectAllText(selectAllSpan, checkboxes);
     });
-
-    header.addEventListener('click', function() {
-      var expanded = body.classList.toggle('expanded');
-      arrow.textContent = expanded ? '\u25BC' : '\u25B6';
-    });
-
-    section.appendChild(header);
-    section.appendChild(body);
-    container.appendChild(section);
+    body.appendChild(row);
   });
+
+  selectAllSpan.addEventListener('click', function() {
+    var allChecked = checkboxes.every(function(c) { return c.checked; });
+    checkboxes.forEach(function(c) {
+      c.checked = !allChecked;
+      var nameEl = c.parentElement.querySelector('.tool-name');
+      if (nameEl) nameEl.className = 'tool-name' + (c.checked ? '' : ' disabled');
+    });
+    updateToolCount(countSpan, checkboxes, availableBuiltinTools.length);
+    updateSelectAllText(selectAllSpan, checkboxes);
+  });
+
+  header.addEventListener('click', function() {
+    var expanded = body.classList.toggle('expanded');
+    arrow.textContent = expanded ? '\u25BC' : '\u25B6';
+  });
+
+  section.appendChild(header);
+  section.appendChild(body);
+  container.appendChild(section);
+}
+
+function renderMcpServersSection(container, allowedMcpServers) {
+  var allOn = allowedMcpServers === null;
+
+  var section = document.createElement('div');
+  section.className = 'tool-section';
+
+  var header = document.createElement('div');
+  header.className = 'tool-header';
+  var enabledCount = allOn ? availableMcpServers.length : allowedMcpServers.length;
+
+  var headerLeft = document.createElement('div');
+  headerLeft.className = 'tool-header-left';
+  headerLeft.textContent = 'MCP Servers';
+  var countSpan = document.createElement('span');
+  countSpan.className = 'tool-count' + (enabledCount === availableMcpServers.length ? ' all-on' : '');
+  countSpan.textContent = enabledCount + ' / ' + availableMcpServers.length + (enabledCount === availableMcpServers.length ? ' \u2713' : '');
+  headerLeft.appendChild(countSpan);
+  var arrow = document.createElement('span');
+  arrow.className = 'tool-arrow';
+  arrow.textContent = '\u25B6';
+  header.appendChild(headerLeft);
+  header.appendChild(arrow);
+
+  var body = document.createElement('div');
+  body.className = 'tool-body';
+  var selectAllDiv = document.createElement('div');
+  selectAllDiv.className = 'tool-select-all';
+  var selectAllSpan = document.createElement('span');
+  selectAllSpan.textContent = enabledCount === availableMcpServers.length ? 'Deselect all' : 'Select all';
+  selectAllDiv.appendChild(selectAllSpan);
+  body.appendChild(selectAllDiv);
+
+  var checkboxes = [];
+  availableMcpServers.forEach(function(srv) {
+    var row = document.createElement('div');
+    row.className = 'tool-row';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = allOn || allowedMcpServers.indexOf(srv.prefix) >= 0;
+    cb.dataset.toolName = srv.prefix;
+    cb.dataset.toolField = 'mcp';
+    checkboxes.push(cb);
+    var nameSpan = document.createElement('span');
+    nameSpan.className = 'tool-name' + (cb.checked ? '' : ' disabled');
+    nameSpan.textContent = srv.label;
+    var descSpan = document.createElement('span');
+    descSpan.className = 'tool-desc';
+    descSpan.textContent = srv.toolCount > 0 ? srv.toolCount + ' tools' : '';
+    row.appendChild(cb);
+    row.appendChild(nameSpan);
+    row.appendChild(descSpan);
+    cb.addEventListener('change', function() {
+      nameSpan.className = 'tool-name' + (cb.checked ? '' : ' disabled');
+      updateToolCount(countSpan, checkboxes, availableMcpServers.length);
+      updateSelectAllText(selectAllSpan, checkboxes);
+    });
+    body.appendChild(row);
+  });
+
+  selectAllSpan.addEventListener('click', function() {
+    var allChecked = checkboxes.every(function(c) { return c.checked; });
+    checkboxes.forEach(function(c) {
+      c.checked = !allChecked;
+      var nameEl = c.parentElement.querySelector('.tool-name');
+      if (nameEl) nameEl.className = 'tool-name' + (c.checked ? '' : ' disabled');
+    });
+    updateToolCount(countSpan, checkboxes, availableMcpServers.length);
+    updateSelectAllText(selectAllSpan, checkboxes);
+  });
+
+  header.addEventListener('click', function() {
+    var expanded = body.classList.toggle('expanded');
+    arrow.textContent = expanded ? '\u25BC' : '\u25B6';
+  });
+
+  section.appendChild(header);
+  section.appendChild(body);
+  container.appendChild(section);
 }
 
 function updateToolCount(countSpan, checkboxes, total) {
@@ -558,7 +640,7 @@ function updateSelectAllText(span, checkboxes) {
 
 function collectToolPickerState(containerId) {
   var container = document.getElementById(containerId);
-  if (!container) return { allowedBuiltinTools: null, allowedMcpTools: null };
+  if (!container) return { allowedBuiltinTools: null, allowedMcpServers: null };
   var checkboxes = container.querySelectorAll('input[type="checkbox"]');
   var builtinAll = true, mcpAll = true;
   var builtinList = [], mcpList = [];
@@ -573,7 +655,7 @@ function collectToolPickerState(containerId) {
   });
   return {
     allowedBuiltinTools: builtinAll ? null : builtinList,
-    allowedMcpTools: mcpAll ? null : mcpList,
+    allowedMcpServers: mcpAll ? null : mcpList,
   };
 }
 
@@ -649,7 +731,7 @@ function saveEdit() {
       skipPermissions: skipPermissions,
       iconMirror: iconMirror,
       allowedBuiltinTools: toolState.allowedBuiltinTools,
-      allowedMcpTools: toolState.allowedMcpTools,
+      allowedMcpServers: toolState.allowedMcpServers,
       senderAddr: window.webxdc.selfAddr
     },
     summary: 'Edit agent: ' + editingAgentId
@@ -684,7 +766,7 @@ function create() {
       config: cfg,
       skipPermissions: skipPermissions,
       allowedBuiltinTools: toolState.allowedBuiltinTools,
-      allowedMcpTools: toolState.allowedMcpTools,
+      allowedMcpServers: toolState.allowedMcpServers,
       senderAddr: window.webxdc.selfAddr
     },
     summary: 'Create agent: ' + cfg.name
@@ -764,7 +846,7 @@ window.webxdc.setUpdateListener(function(update) {
     dismissModal();
     if (draft) populateForm();
     availableBuiltinTools = d.availableBuiltinTools || [];
-    availableMcpTools = d.availableMcpTools || [];
+    availableMcpServers = d.availableMcpServers || [];
     renderToolPicker('create-tool-picker', null, null);
     renderExistingList();
     if (d.startScreen === 'create') {
@@ -781,10 +863,10 @@ window.webxdc.setUpdateListener(function(update) {
     draft = d.draft || null;
     if (draft) populateEditForm();
     availableBuiltinTools = d.availableBuiltinTools || [];
-    availableMcpTools = d.availableMcpTools || [];
+    availableMcpServers = d.availableMcpServers || [];
     renderToolPicker('edit-tool-picker',
       d.draft.allowedBuiltinTools !== undefined ? d.draft.allowedBuiltinTools : null,
-      d.draft.allowedMcpTools !== undefined ? d.draft.allowedMcpTools : null,
+      d.draft.allowedMcpServers !== undefined ? d.draft.allowedMcpServers : null,
     );
     creating = false;
     show('step3');
