@@ -79,27 +79,153 @@ export function parseSTTConfig(env: Record<string, string | undefined>): STTConf
 
 // ── System dependency checks ─────────────────────────────────────────
 
-/** Whisper binary names to search for, in priority order. */
+/** Whisper binary names to search for on $PATH, in priority order. */
 const WHISPER_BINARIES = ['whisper-cli', 'whisper.cpp', 'whisper', 'main']
+
+/**
+ * Path to the whisper-cli binary bundled by the nodejs-whisper npm package.
+ * nodejs-whisper ships the whisper.cpp source in node_modules and builds
+ * it with cmake; the resulting binary lives at this path.
+ */
+function nodejsWhisperBinaryPath(): string {
+  try {
+    const resolved = require.resolve('nodejs-whisper/cpp/whisper.cpp/build/bin/whisper-cli')
+    return resolved
+  } catch {
+    // Fallback: compute from import.meta.dir (works even if not yet built).
+    return join(import.meta.dir, 'node_modules', 'nodejs-whisper', 'cpp', 'whisper.cpp', 'build', 'bin', 'whisper-cli')
+  }
+}
+
+/** Path to the nodejs-whisper source directory for building. */
+function nodejsWhisperSourceDir(): string {
+  try {
+    const constants = require('nodejs-whisper/dist/constants')
+    return constants.WHISPER_CPP_PATH
+  } catch {
+    return join(import.meta.dir, 'node_modules', 'nodejs-whisper', 'cpp', 'whisper.cpp')
+  }
+}
 
 let cachedWhisperPath: string | null = null
 let whisperChecked = false
 
 /**
- * Find the whisper.cpp binary on the system.
+ * Find the whisper.cpp binary. Checks $PATH first, then falls back to the
+ * nodejs-whisper bundled binary (building from source if needed).
  * Returns the path if found, null otherwise. Result is cached.
  */
-export async function findWhisperBinary(): Promise<string | null> {
+export async function findWhisperBinary(logf?: LogFn): Promise<string | null> {
   if (whisperChecked) return cachedWhisperPath
+
+  // 1. Check $PATH for a system-installed binary.
   for (const name of WHISPER_BINARIES) {
     const result = Bun.spawnSync(['which', name])
     if (result.exitCode === 0) {
       cachedWhisperPath = result.stdout.toString().trim()
-      break
+      whisperChecked = true
+      return cachedWhisperPath
     }
   }
+
+  // 2. Check for the nodejs-whisper bundled binary.
+  const bundledPath = nodejsWhisperBinaryPath()
+  if (existsSync(bundledPath)) {
+    cachedWhisperPath = bundledPath
+    whisperChecked = true
+    return cachedWhisperPath
+  }
+
+  // 3. Attempt to build whisper.cpp from the nodejs-whisper source.
+  const srcDir = nodejsWhisperSourceDir()
+  if (existsSync(join(srcDir, 'CMakeLists.txt'))) {
+    const built = await buildWhisperCpp(srcDir, logf)
+    if (built) {
+      cachedWhisperPath = bundledPath
+      whisperChecked = true
+      return cachedWhisperPath
+    }
+  }
+
   whisperChecked = true
   return cachedWhisperPath
+}
+
+/**
+ * Find a C++ compiler on the system. Checks standard names first,
+ * then versioned Homebrew names (g++-15, g++-14, etc.).
+ */
+function findCxxCompiler(): string | null {
+  for (const name of ['g++', 'c++', 'clang++']) {
+    if (Bun.spawnSync(['which', name]).exitCode === 0) return name
+  }
+  // Homebrew on Linux installs versioned binaries (g++-15, g++-14, etc.)
+  for (let v = 15; v >= 11; v--) {
+    const name = `g++-${v}`
+    if (Bun.spawnSync(['which', name]).exitCode === 0) {
+      return Bun.spawnSync(['which', name]).stdout.toString().trim()
+    }
+  }
+  return null
+}
+
+/**
+ * Build whisper.cpp from source using cmake. Returns true on success.
+ * Requires cmake and a C/C++ compiler on $PATH.
+ */
+async function buildWhisperCpp(srcDir: string, logf?: LogFn): Promise<boolean> {
+  const log = logf ?? (() => {})
+
+  // Check for cmake.
+  const cmakeCheck = Bun.spawnSync(['which', 'cmake'])
+  if (cmakeCheck.exitCode !== 0) {
+    log('stt: cannot build whisper.cpp — cmake not found')
+    return false
+  }
+
+  // Find a C++ compiler.
+  const cxx = findCxxCompiler()
+  if (!cxx) {
+    log('stt: cannot build whisper.cpp — no C++ compiler found (install g++ or clang++)')
+    return false
+  }
+
+  log('stt: building whisper.cpp from nodejs-whisper source (first use, may take a few minutes)...')
+
+  // cmake -B build (with explicit CXX for Homebrew versioned compilers)
+  const env = cxx.includes('/') || cxx.match(/g\+\+-\d+/)
+    ? { ...process.env, CXX: cxx }
+    : process.env
+  const configure = Bun.spawnSync(['cmake', '-B', 'build'], {
+    cwd: srcDir,
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env,
+  })
+  if (configure.exitCode !== 0) {
+    log('stt: cmake configure failed: %s', configure.stderr.toString().slice(0, 300))
+    return false
+  }
+
+  // cmake --build build --config Release -j
+  const build = Bun.spawnSync(['cmake', '--build', 'build', '--config', 'Release', '-j'], {
+    cwd: srcDir,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  if (build.exitCode !== 0) {
+    log('stt: cmake build failed: %s', build.stderr.toString().slice(0, 300))
+    return false
+  }
+
+  const binaryPath = join(srcDir, 'build', 'bin', 'whisper-cli')
+  if (!existsSync(binaryPath)) {
+    log('stt: build completed but binary not found at %s', binaryPath)
+    return false
+  }
+
+  log('stt: whisper.cpp built successfully at %s', binaryPath)
+  return true
 }
 
 let ffmpegChecked = false

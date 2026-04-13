@@ -1588,7 +1588,7 @@ async function main(): Promise<void> {
   const tryTranscribeVoice = async (msg: Message): Promise<Message | null> => {
     if (!sttConfig.enabled || !isVoiceMessage(msg)) return null
 
-    const whisperBin = await findWhisperBinary()
+    const whisperBin = await findWhisperBinary(logf)
     if (!whisperBin || !(await checkFfmpeg())) {
       logf('stt: skipping voice msg %d — missing dependencies', msg.id)
       return null
@@ -2008,7 +2008,7 @@ async function main(): Promise<void> {
   // Log STT capability at startup (non-blocking).
   if (sttConfig.enabled) {
     const [whisperBin, hasFfmpeg, hasFfprobe] = await Promise.all([
-      findWhisperBinary(),
+      findWhisperBinary(logf),
       checkFfmpeg(),
       checkFfprobe(),
     ])
