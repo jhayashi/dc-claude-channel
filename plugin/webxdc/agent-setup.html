@@ -365,6 +365,11 @@ function renderExistingList() {
       deleteBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); deleteAgent(id); }; })(a.id);
     }
     actions.appendChild(deleteBtn);
+    var exportBtn = document.createElement('button');
+    exportBtn.className = 'card-action-btn';
+    exportBtn.textContent = '\u2B07 Export';
+    exportBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); exportAgent(id); }; })(a.id);
+    actions.appendChild(exportBtn);
     btn.appendChild(actions);
     if (a.isUndeletable) {
       var hint = document.createElement('div');
@@ -517,6 +522,13 @@ function deleteAgent(agentId) {
   }, 'Delete agent');
 }
 
+function exportAgent(agentId) {
+  window.webxdc.sendUpdate({
+    payload: { type: 'export', agentId: agentId, senderAddr: window.webxdc.selfAddr },
+    summary: 'Export agent: ' + agentId
+  }, 'Export agent');
+}
+
 function refreshList() {
   // Request a fresh init from the server by re-triggering the flow.
   // For now, just re-render with whatever we have — the server will
@@ -598,6 +610,17 @@ window.webxdc.setUpdateListener(function(update) {
       pendingAction = null;
       showModal('Agent updated', 'Changes to "' + (d.name || 'Agent') + '" take effect on the next message.');
     }
+  }
+
+  if (d.type === 'exported') {
+    // Export succeeded — no navigation needed. Optionally show brief feedback.
+    creating = false;
+    return;
+  }
+  if (d.type === 'exportError') {
+    creating = false;
+    alert(d.message || 'Export failed.');
+    return;
   }
 }, 0);
 </script>
