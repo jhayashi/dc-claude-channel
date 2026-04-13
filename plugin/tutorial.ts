@@ -195,6 +195,7 @@ export function handleMessage(chatId: number, text: string): TutorialAction {
             "That's the end of the tour! Quick recap:\n\n" +
             "\u2022 **Permission Prompt** — tap to Allow or Deny sensitive actions\n" +
             "\u2022 **File Reviewer** — interactive code/doc reviewer with inline commenting to iterate with Claude\n" +
+            "\u2022 **Voice Messages** — send a voice message and I'll transcribe it locally and respond to it\n" +
             "\u2022 **WebXDC apps** — I can build single and multiplayer chat games and tools you can share\n" +
             "\u2022 **Screenshots** — snap screenshots for incredibly simple visual bug fixing\n\n" +
             "Open source, end-to-end encryption, web tech, and frontier AI FTW!\n\n" +

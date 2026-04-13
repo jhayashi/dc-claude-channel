@@ -1585,12 +1585,26 @@ async function main(): Promise<void> {
    * is unavailable, the message isn't a voice message, or transcription
    * fails. In echo=quoted mode, sends the transcript back to the chat.
    */
+  let sttDepWarningShown = false
+
   const tryTranscribeVoice = async (msg: Message): Promise<Message | null> => {
     if (!sttConfig.enabled || !isVoiceMessage(msg)) return null
 
     const whisperBin = await findWhisperBinary(logf)
-    if (!whisperBin || !(await checkFfmpeg())) {
+    const hasFfmpeg = await checkFfmpeg()
+    if (!whisperBin || !hasFfmpeg) {
       logf('stt: skipping voice msg %d — missing dependencies', msg.id)
+      // Show install guidance once per session so the user knows what to do.
+      if (!sttDepWarningShown) {
+        sttDepWarningShown = true
+        const missing: string[] = []
+        if (!hasFfmpeg) missing.push('`ffmpeg`')
+        if (!whisperBin) missing.push('`whisper.cpp` (install cmake + g++ and restart — it auto-builds from npm)')
+        await client.send(msg.chatId,
+          `\u{1F399}\uFE0F Voice transcription needs: ${missing.join(', ')}.\n\n` +
+          `Install them and restart the dispatcher to enable voice messages.`,
+        )
+      }
       return null
     }
 
