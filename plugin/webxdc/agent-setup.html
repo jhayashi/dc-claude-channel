@@ -175,6 +175,66 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 }
 .modal-dismiss:hover { background: #3d444d; }
 .modal-dismiss:active { transform: scale(0.97); }
+.tool-section {
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.tool-header {
+  background: #161b22;
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+.tool-header-left {
+  font-size: 13px;
+  font-weight: 600;
+}
+.tool-count {
+  font-size: 11px;
+  color: #8b949e;
+  margin-left: 8px;
+}
+.tool-count.all-on { color: #3fb950; }
+.tool-arrow { color: #8b949e; font-size: 12px; }
+.tool-body {
+  padding: 8px 14px;
+  background: #0d1117;
+  display: none;
+}
+.tool-body.expanded { display: block; }
+.tool-select-all {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+.tool-select-all span {
+  font-size: 11px;
+  color: #58a6ff;
+  cursor: pointer;
+}
+.tool-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 13px;
+  border-bottom: 1px solid #21262d;
+}
+.tool-row:last-child { border-bottom: none; }
+.tool-row input[type="checkbox"] { flex-shrink: 0; }
+.tool-name { white-space: nowrap; }
+.tool-desc {
+  color: #6e7681;
+  font-size: 11px;
+  margin-left: auto;
+  text-align: right;
+}
+.tool-name.disabled { color: #6e7681; }
 </style>
 </head>
 <body>
@@ -207,6 +267,10 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         <input id="skip-permissions" type="checkbox" style="margin-top:3px;flex-shrink:0;">
         <span style="font-weight:400;font-size:12px;line-height:1.4;">Skip permission prompts (trusted agent). Tool calls auto-approve and are recorded in an audit log you can pull up later by asking the agent to show it.</span>
       </label>
+      <div style="margin-top:16px;">
+        <div class="section-label">Allowed Tools</div>
+        <div id="create-tool-picker"></div>
+      </div>
     </div>
     <div class="actions">
       <button class="btn btn-back" onclick="backFromCreate()">Back</button>
@@ -238,6 +302,10 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         <label style="display:flex;align-items:center;gap:6px;font-weight:400;">
           <input type="radio" name="edit-icon-mirror" value="true"> Facing left
         </label>
+      </div>
+      <div style="margin-top:16px;">
+        <div class="section-label">Allowed Tools</div>
+        <div id="edit-tool-picker"></div>
       </div>
     </div>
     <div class="actions">
@@ -381,6 +449,134 @@ function renderExistingList() {
   }
 }
 
+var availableBuiltinTools = [];
+var availableMcpTools = [];
+
+function renderToolPicker(containerId, allowedBuiltinTools, allowedMcpTools) {
+  var container = document.getElementById(containerId);
+  if (!container) return;
+  container.textContent = '';
+
+  var groups = [];
+  if (availableBuiltinTools.length > 0) {
+    groups.push({ label: 'Built-in Tools', tools: availableBuiltinTools, allowed: allowedBuiltinTools, field: 'builtin' });
+  }
+  if (availableMcpTools.length > 0) {
+    groups.push({ label: 'DC Tools', tools: availableMcpTools, allowed: allowedMcpTools, field: 'mcp' });
+  }
+
+  groups.forEach(function(group) {
+    var section = document.createElement('div');
+    section.className = 'tool-section';
+
+    var header = document.createElement('div');
+    header.className = 'tool-header';
+    var allOn = group.allowed === null;
+    var enabledCount = allOn ? group.tools.length : group.allowed.length;
+
+    var headerLeft = document.createElement('div');
+    headerLeft.className = 'tool-header-left';
+    headerLeft.textContent = group.label;
+    var countSpan = document.createElement('span');
+    countSpan.className = 'tool-count' + (enabledCount === group.tools.length ? ' all-on' : '');
+    countSpan.textContent = enabledCount + ' / ' + group.tools.length + (enabledCount === group.tools.length ? ' \u2713' : '');
+    headerLeft.appendChild(countSpan);
+    var arrow = document.createElement('span');
+    arrow.className = 'tool-arrow';
+    arrow.textContent = '\u25B6';
+    header.appendChild(headerLeft);
+    header.appendChild(arrow);
+
+    var body = document.createElement('div');
+    body.className = 'tool-body';
+    var selectAllDiv = document.createElement('div');
+    selectAllDiv.className = 'tool-select-all';
+    var selectAllSpan = document.createElement('span');
+    selectAllSpan.textContent = enabledCount === group.tools.length ? 'Deselect all' : 'Select all';
+    selectAllDiv.appendChild(selectAllSpan);
+    body.appendChild(selectAllDiv);
+
+    var checkboxes = [];
+    group.tools.forEach(function(tool) {
+      var row = document.createElement('div');
+      row.className = 'tool-row';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = allOn || group.allowed.indexOf(tool.name) >= 0;
+      cb.dataset.toolName = tool.name;
+      cb.dataset.toolField = group.field;
+      checkboxes.push(cb);
+      var nameSpan = document.createElement('span');
+      nameSpan.className = 'tool-name' + (cb.checked ? '' : ' disabled');
+      nameSpan.textContent = tool.name;
+      var descSpan = document.createElement('span');
+      descSpan.className = 'tool-desc';
+      descSpan.textContent = tool.description || '';
+      row.appendChild(cb);
+      row.appendChild(nameSpan);
+      row.appendChild(descSpan);
+      cb.addEventListener('change', function() {
+        nameSpan.className = 'tool-name' + (cb.checked ? '' : ' disabled');
+        updateToolCount(countSpan, checkboxes, group.tools.length);
+        updateSelectAllText(selectAllSpan, checkboxes);
+      });
+      body.appendChild(row);
+    });
+
+    selectAllSpan.addEventListener('click', function() {
+      var allChecked = checkboxes.every(function(c) { return c.checked; });
+      checkboxes.forEach(function(c) {
+        c.checked = !allChecked;
+        var nameEl = c.parentElement.querySelector('.tool-name');
+        if (nameEl) nameEl.className = 'tool-name' + (c.checked ? '' : ' disabled');
+      });
+      updateToolCount(countSpan, checkboxes, group.tools.length);
+      updateSelectAllText(selectAllSpan, checkboxes);
+    });
+
+    header.addEventListener('click', function() {
+      var expanded = body.classList.toggle('expanded');
+      arrow.textContent = expanded ? '\u25BC' : '\u25B6';
+    });
+
+    section.appendChild(header);
+    section.appendChild(body);
+    container.appendChild(section);
+  });
+}
+
+function updateToolCount(countSpan, checkboxes, total) {
+  var enabled = checkboxes.filter(function(c) { return c.checked; }).length;
+  countSpan.textContent = enabled + ' / ' + total + (enabled === total ? ' \u2713' : '');
+  countSpan.className = 'tool-count' + (enabled === total ? ' all-on' : '');
+}
+
+function updateSelectAllText(span, checkboxes) {
+  var allChecked = checkboxes.every(function(c) { return c.checked; });
+  span.textContent = allChecked ? 'Deselect all' : 'Select all';
+}
+
+function collectToolPickerState(containerId) {
+  var container = document.getElementById(containerId);
+  if (!container) return { allowedBuiltinTools: null, allowedMcpTools: null };
+  var checkboxes = container.querySelectorAll('input[type="checkbox"]');
+  var builtinAll = true, mcpAll = true;
+  var builtinList = [], mcpList = [];
+  checkboxes.forEach(function(cb) {
+    if (cb.dataset.toolField === 'builtin') {
+      if (cb.checked) builtinList.push(cb.dataset.toolName);
+      else builtinAll = false;
+    } else if (cb.dataset.toolField === 'mcp') {
+      if (cb.checked) mcpList.push(cb.dataset.toolName);
+      else mcpAll = false;
+    }
+  });
+  return {
+    allowedBuiltinTools: builtinAll ? null : builtinList,
+    allowedMcpTools: mcpAll ? null : mcpList,
+  };
+}
+
 function gotoCreate() {
   populateForm();
   show('step2');
@@ -444,6 +640,7 @@ function saveEdit() {
   for (var i = 0; i < radios.length; i++) {
     if (radios[i].checked) { iconMirror = (radios[i].value === 'true'); break; }
   }
+  var toolState = collectToolPickerState('edit-tool-picker');
   window.webxdc.sendUpdate({
     payload: {
       type: 'saveEdit',
@@ -451,6 +648,8 @@ function saveEdit() {
       config: cfg,
       skipPermissions: skipPermissions,
       iconMirror: iconMirror,
+      allowedBuiltinTools: toolState.allowedBuiltinTools,
+      allowedMcpTools: toolState.allowedMcpTools,
       senderAddr: window.webxdc.selfAddr
     },
     summary: 'Edit agent: ' + editingAgentId
@@ -478,11 +677,14 @@ function create() {
     tools: [],
   };
   var skipPermissions = document.getElementById('skip-permissions').checked;
+  var toolState = collectToolPickerState('create-tool-picker');
   window.webxdc.sendUpdate({
     payload: {
       type: 'create',
       config: cfg,
       skipPermissions: skipPermissions,
+      allowedBuiltinTools: toolState.allowedBuiltinTools,
+      allowedMcpTools: toolState.allowedMcpTools,
       senderAddr: window.webxdc.selfAddr
     },
     summary: 'Create agent: ' + cfg.name
@@ -561,6 +763,9 @@ window.webxdc.setUpdateListener(function(update) {
     editingAgentId = null;
     dismissModal();
     if (draft) populateForm();
+    availableBuiltinTools = d.availableBuiltinTools || [];
+    availableMcpTools = d.availableMcpTools || [];
+    renderToolPicker('create-tool-picker', null, null);
     renderExistingList();
     if (d.startScreen === 'create') {
       gotoCreate();
@@ -575,6 +780,12 @@ window.webxdc.setUpdateListener(function(update) {
     editingAgentId = d.draft.id || null;
     draft = d.draft || null;
     if (draft) populateEditForm();
+    availableBuiltinTools = d.availableBuiltinTools || [];
+    availableMcpTools = d.availableMcpTools || [];
+    renderToolPicker('edit-tool-picker',
+      d.draft.allowedBuiltinTools !== undefined ? d.draft.allowedBuiltinTools : null,
+      d.draft.allowedMcpTools !== undefined ? d.draft.allowedMcpTools : null,
+    );
     creating = false;
     show('step3');
   }
