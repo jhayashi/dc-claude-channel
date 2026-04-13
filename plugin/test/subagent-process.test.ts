@@ -89,4 +89,62 @@ describe('buildSubagentArgs', () => {
     expect(args).not.toContain('--no-user-claude-md')
     expect(args).not.toContain('CLAUDE_DISABLE_USER_CLAUDE_MD')
   })
+
+  test('allowedBuiltinTools filters the tool list (Read/Glob/Grep only)', () => {
+    const { args } = buildSubagentArgs(baseOpts({
+      mcpConfigPath: '/tmp/mcp.json',
+      allowedBuiltinTools: ['Read', 'Glob', 'Grep'],
+    }))
+    const i = args.indexOf('--allowedTools')
+    expect(i).toBeGreaterThanOrEqual(0)
+    const list = args[i + 1]
+    expect(list).toContain('mcp__dc')
+    expect(list).toContain('Read')
+    expect(list).toContain('Glob')
+    expect(list).toContain('Grep')
+    expect(list).not.toContain('Bash')
+    expect(list).not.toContain('Edit')
+    expect(list).not.toContain('Write')
+  })
+
+  test('allowedBuiltinTools: null means all tools', () => {
+    const { args } = buildSubagentArgs(baseOpts({
+      mcpConfigPath: '/tmp/mcp.json',
+      allowedBuiltinTools: null,
+    }))
+    const i = args.indexOf('--allowedTools')
+    expect(i).toBeGreaterThanOrEqual(0)
+    const list = args[i + 1]
+    expect(list).toContain('mcp__dc')
+    expect(list).toContain('Bash')
+    expect(list).toContain('Edit')
+    expect(list).toContain('Write')
+    expect(list).toContain('WebSearch')
+  })
+
+  test('allowedBuiltinTools: undefined (not set) means all tools', () => {
+    const { args } = buildSubagentArgs(baseOpts({
+      mcpConfigPath: '/tmp/mcp.json',
+      // allowedBuiltinTools not set
+    }))
+    const i = args.indexOf('--allowedTools')
+    expect(i).toBeGreaterThanOrEqual(0)
+    const list = args[i + 1]
+    expect(list).toContain('mcp__dc')
+    expect(list).toContain('Bash')
+    expect(list).toContain('Edit')
+    expect(list).toContain('Write')
+    expect(list).toContain('WebSearch')
+  })
+
+  test('allowedBuiltinTools: [] means only mcp__dc', () => {
+    const { args } = buildSubagentArgs(baseOpts({
+      mcpConfigPath: '/tmp/mcp.json',
+      allowedBuiltinTools: [],
+    }))
+    const i = args.indexOf('--allowedTools')
+    expect(i).toBeGreaterThanOrEqual(0)
+    const list = args[i + 1]
+    expect(list).toBe('mcp__dc')
+  })
 })

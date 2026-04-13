@@ -65,6 +65,48 @@ export interface SubagentSpawnOptions {
    */
   suppressUserClaudeMd?: boolean
   logf?: (fmt: string, ...args: unknown[]) => void
+  /**
+   * Restrict which built-in tools the subagent can use.
+   * null or undefined → all built-in tools allowed (default).
+   * [] → no built-in tools (only mcp__dc).
+   * ['Read', 'Grep'] → only those built-ins.
+   */
+  allowedBuiltinTools?: string[] | null
+}
+
+/** Full list of built-in Claude Code tools passed via --allowedTools by default. */
+export const ALL_BUILTIN_TOOLS: string[] = [
+  'Bash', 'Read', 'Edit', 'Write', 'Grep', 'Glob',
+  'WebFetch', 'WebSearch', 'NotebookEdit',
+  'Task', 'TaskOutput', 'TaskStop', 'TodoWrite',
+  'Skill', 'ToolSearch',
+  'AskUserQuestion', 'LSP',
+  'EnterPlanMode', 'ExitPlanMode', 'EnterWorktree', 'ExitWorktree',
+]
+
+/** Short descriptions for each built-in tool (used by the agent-setup UI). */
+export const BUILTIN_TOOL_DESCRIPTIONS: Record<string, string> = {
+  Bash: 'Run shell commands',
+  Read: 'Read file contents',
+  Edit: 'Modify existing files',
+  Write: 'Create new files',
+  Grep: 'Search file contents',
+  Glob: 'Find files by pattern',
+  WebFetch: 'Fetch web pages',
+  WebSearch: 'Search the web',
+  NotebookEdit: 'Edit Jupyter notebooks',
+  Task: 'Spawn sub-tasks',
+  TaskOutput: 'Read sub-task output',
+  TaskStop: 'Stop sub-tasks',
+  TodoWrite: 'Track progress with todos',
+  Skill: 'Use installed skills',
+  ToolSearch: 'Load deferred tools',
+  AskUserQuestion: 'Ask clarifying questions',
+  LSP: 'Language server queries',
+  EnterPlanMode: 'Enter plan mode',
+  ExitPlanMode: 'Exit plan mode',
+  EnterWorktree: 'Work in isolated branch',
+  ExitWorktree: 'Leave isolated branch',
 }
 
 /**
@@ -115,31 +157,10 @@ export function buildSubagentArgs(
     // global MCP config (Gmail, Calendar, Telegram, etc.) so subagents
     // inherit the same MCP tools the terminal session has.
     args.push('--mcp-config', opts.mcpConfigPath)
+    const builtinTools = opts.allowedBuiltinTools ?? ALL_BUILTIN_TOOLS
     args.push(
       '--allowedTools',
-      [
-        // Our DC MCP server — whole server allowed, dispatcher-side
-        // authorization gates chat_id.
-        'mcp__dc',
-        // Core built-ins. Gated ones (Bash/Edit/Write/NotebookEdit/
-        // WebFetch/WebSearch) still fire the PreToolUse hook.
-        'Bash', 'Read', 'Edit', 'Write', 'Grep', 'Glob',
-        'WebFetch', 'WebSearch', 'NotebookEdit',
-        // Task tooling (spawn/monitor/stop sub-subagents).
-        'Task', 'TaskOutput', 'TaskStop', 'TodoWrite',
-        // User skills and deferred-tool loading — required now that
-        // user-level settings are inherited.
-        'Skill', 'ToolSearch',
-        // Structured prompting + language-server queries.
-        'AskUserQuestion', 'LSP',
-        // Plan mode + worktree management — useful for coding agents.
-        'EnterPlanMode', 'ExitPlanMode', 'EnterWorktree', 'ExitWorktree',
-        // Intentionally excluded: CronCreate/Delete/List and
-        // RemoteTrigger. These have persistence side effects (jobs
-        // that outlive the turn / out-of-band invocation) that
-        // shouldn't be triggered from a DC chat without further
-        // thought.
-      ].join(' '),
+      ['mcp__dc', ...builtinTools].join(' '),
     )
   }
   for (const dir of opts.addDirs ?? []) {
