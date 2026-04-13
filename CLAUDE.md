@@ -49,19 +49,22 @@ agent-setup card after importing. Round-trip compatible with Claude
 Managed Agents API YAML format.
 
 **Per-agent tool access (v0.10+):** Each agent definition can restrict
-which built-in tools and MCP tools its subagent is allowed to use via
+which built-in tools and MCP servers its subagent is allowed to use via
 two optional fields: `allowedBuiltinTools` (string array or null) and
-`allowedMcpTools` (string array or null). `null` or absent means "all
-tools allowed" (the default for new agents); `[]` means "no tools."
-Restrictions are enforced at spawn time: built-in tools via
-`--allowedTools` CLI flag, MCP tools via manifest filtering.
-The agent-setup WebXDC card includes a collapsible tool picker grouped
-by source (Built-in Tools, DC Tools) for visual configuration.
+`allowedMcpServers` (string array or null). `null` or absent means "all
+tools/servers allowed" (the default for new agents); `[]` means "none."
+Each `allowedMcpServers` entry is a server prefix (e.g., `dc`,
+`claude_ai_Gmail`, `plugin_telegram_telegram`). Built-in tools have
+fine-grained per-tool control; MCP servers are all-or-nothing toggles.
+Restrictions are enforced at spawn time via `--allowedTools` CLI flag
+with `mcp__<prefix>` entries for each enabled server.
+The agent-setup WebXDC card includes a collapsible tool picker: per-tool
+checkboxes for built-in tools, per-server toggles for MCP servers.
 Changes take effect on next subagent spawn (idle timeout or restart).
 
 **Forward compat:** the `tools: []` field is written on every agent as
 a no-op hook. Per-agent tool capability restrictions use the separate
-`allowedBuiltinTools` and `allowedMcpTools` fields instead.
+`allowedBuiltinTools` and `allowedMcpServers` fields instead.
 
 ## Subagent session resume
 
