@@ -297,10 +297,10 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       <label class="field" style="margin-top:12px;">Icon orientation</label>
       <div style="display:flex;gap:16px;font-size:13px;">
         <label style="display:flex;align-items:center;gap:6px;font-weight:400;">
-          <input type="radio" name="edit-icon-mirror" value="false"> Facing right
+          <input type="radio" name="edit-icon-mirror" value="true"> Facing left
         </label>
         <label style="display:flex;align-items:center;gap:6px;font-weight:400;">
-          <input type="radio" name="edit-icon-mirror" value="true"> Facing left
+          <input type="radio" name="edit-icon-mirror" value="false"> Facing right
         </label>
       </div>
       <div style="margin-top:16px;">
@@ -335,7 +335,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.34;
+var APP_VERSION = 1.35;
 var draft = null;
 var existingAgents = [];
 var creating = false;
