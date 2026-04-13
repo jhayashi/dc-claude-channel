@@ -173,7 +173,11 @@ export const familiarApp: WebXDCApp = {
             ctx.logf('familiar: sendUpdate error for app %s: %s', inst.appId, err)
           })
         },
-        requestLLM: async (_prompt: string) => '[requestLLM not yet wired]',
+        requestLLM: async (prompt: string) => {
+          if (!ctx.dispatchAndCollect) return '[requestLLM not available]'
+          const text = `[familiar app="${inst.title}" id=${inst.appId}]\nThe Familiar app handler is requesting an LLM response. Respond with just the answer text, no tool calls.\n\n${prompt}`
+          return ctx.dispatchAndCollect(inst.chatId, text)
+        },
         appId: inst.appId,
         chatId: inst.chatId,
       }

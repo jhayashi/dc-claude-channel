@@ -432,6 +432,10 @@ ctx = {
     )
   },
   getAvailableMcpServers,
+  async dispatchAndCollect(chatId: number, text: string): Promise<string> {
+    const result = await subagentCache.dispatch(chatId, text)
+    return result.text ?? ''
+  },
 }
 
 // App tool dispatch map — O(1) lookup, rebuilds on cache miss.

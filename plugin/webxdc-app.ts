@@ -38,6 +38,8 @@ export interface AppContext {
   evictSubagent: (chatId: number) => Promise<void>
   /** Returns available MCP servers for the agent-setup tool picker. */
   getAvailableMcpServers: () => Array<{ prefix: string; label: string; toolCount: number }>
+  /** Dispatch a synthetic user message to a chat's subagent and return the response text. */
+  dispatchAndCollect?: (chatId: number, text: string) => Promise<string>
 }
 
 export interface WebXDCApp {
