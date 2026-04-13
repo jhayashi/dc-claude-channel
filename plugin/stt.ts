@@ -14,7 +14,39 @@
  */
 
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
+
+// ── Bun + native binding compat ─────────────────────────────────────
+
+/**
+ * Bun doesn't link libstdc++ into its process (unlike Node), so native
+ * .node binaries that depend on C++ symbols fail with "undefined symbol:
+ * __gxx_personality_v0". Fix: use libc's dlopen with RTLD_GLOBAL to make
+ * libstdc++ symbols available process-wide before loading @napi-rs/whisper.
+ *
+ * This is a no-op on macOS (no libstdc++ needed) and when running under Node.
+ */
+let _stdcppLoaded = false
+function ensureLibStdCpp(): void {
+  if (_stdcppLoaded || process.platform !== 'linux') return
+  _stdcppLoaded = true
+  try {
+    const ffi = require('bun:ffi')
+    const libc = ffi.dlopen('libc.so.6', {
+      dlopen: { args: ['ptr', 'i32'], returns: 'ptr' },
+    })
+    // Find libstdc++ path via ldconfig
+    const ldOutput = execFileSync('ldconfig', ['-p'], { encoding: 'utf8' })
+    const match = ldOutput.match(/=>\s*(\/\S+libstdc\+\+\.so\.\d+)/)
+    if (!match) return
+    const pathBuf = Buffer.from(match[1] + '\0')
+    const RTLD_LAZY_GLOBAL = 0x101 // RTLD_LAZY | RTLD_GLOBAL
+    libc.symbols.dlopen(ffi.ptr(pathBuf), RTLD_LAZY_GLOBAL)
+  } catch {
+    // Not running under Bun, or libstdc++ not found — let the import fail naturally
+  }
+}
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -127,6 +159,7 @@ export async function transcribe(
   modelPath: string,
   logf: LogFn,
 ): Promise<TranscriptionResult> {
+  ensureLibStdCpp()
   const {
     Whisper,
     WhisperFullParams,
