@@ -280,11 +280,71 @@ When a user asks you to build an app, game, tool, dashboard, or interactive expe
 
 ---
 
+## Distribution — `.familiar.yaml`
+
+Familiar apps are portable. A complete app definition fits in a single YAML file:
+
+```yaml
+# email-triage.familiar.yaml
+name: Email Triage
+description: Prioritize and summarize your inbox
+persistent: true
+initialState:
+  categories: [urgent, interesting, low-priority]
+  dismissed: []
+html: |
+  <!DOCTYPE html>
+  <html>
+  <head><script src="webxdc.js"></script></head>
+  <body><!-- app UI --></body>
+  </html>
+handler: |
+  function handler(update, ctx) {
+    if (update.type === 'dismiss') {
+      ctx.state.dismissed.push(update.emailId);
+      ctx.sendUpdate({ type: 'state', dismissed: ctx.state.dismissed });
+    }
+    if (update.type === 'summarize') {
+      var summary = ctx.requestLLM('Summarize this email: ' + update.body);
+      ctx.sendUpdate({ type: 'summary', emailId: update.emailId, text: summary });
+    }
+  }
+```
+
+### Import flow
+
+The dispatcher intercepts `.familiar.yaml` attachments in paired chats (same pattern as agent YAML import):
+
+1. User sends a `.familiar.yaml` file in a paired chat
+2. Dispatcher validates the YAML (required fields: `name`, `html`, `handler`)
+3. On success: creates the Familiar app in the chat (calls `dc_familiar_create` internally)
+4. On failure: rejects with an error message and forwards the attachment to the subagent
+
+### Community repo
+
+Familiar app recipes can be collected in a GitHub repository organized by category:
+
+```
+familiar-apps/
+  games/
+    trivia.familiar.yaml
+    rock-paper-scissors.familiar.yaml
+  productivity/
+    email-triage.familiar.yaml
+    blazemarks.familiar.yaml
+  social/
+    poll.familiar.yaml
+    icebreaker.familiar.yaml
+```
+
+Users import by sending the YAML file as an attachment, or Claude can fetch from a URL and create the app directly.
+
+---
+
 ## What's NOT in v1
 
 - **No Worker isolation** — handlers eval in-process. The threat model (Claude-authored code in a controlled context) doesn't warrant the complexity. Can migrate to Bun Workers later if untrusted handlers become a requirement.
 - **No hot-reload** — to update a Familiar app's handler or HTML, delete and recreate. The WebXDC content is frozen once sent to the chat.
-- **No app marketplace or sharing** — Familiar apps are per-chat. No export/import mechanism (unlike agent definitions).
 - **No bundled app migration** — existing apps (file reviewer, permissions, agent setup, slides) remain as native `WebXDCApp` implementations. They need deep AppContext access that the sandbox intentionally doesn't provide.
 - **No untrusted handler execution** — only Claude-authored handlers run. No mechanism for users to paste arbitrary JS.
 
@@ -294,11 +354,13 @@ When a user asks you to build an app, game, tool, dashboard, or interactive expe
 
 These apps validate that the design covers real use cases. They are not part of the v1 implementation but inform the design:
 
-1. **Email triage** — single-user, LLM-heavy, schedule-driven. Claude reads email via Gmail MCP, classifies importance, generates summaries. The WebXDC shows a prioritized digest with dismiss/respond/snooze actions. Validates: `requestLLM()`, persistent state, `dc_schedule` integration, server-initiated updates.
+1. **Email triage** (#4) — single-user, LLM-heavy, schedule-driven. Claude reads email via Gmail MCP, classifies importance, generates summaries. The WebXDC shows a prioritized digest with dismiss/respond/snooze actions. Validates: `requestLLM()`, persistent state, `dc_schedule` integration, server-initiated updates.
 
-2. **Fantasy sports** — multi-user, hybrid handlers, long-lived persistent. Players draft, trade, set lineups. Claude pulls real game stats from the web, scores rosters, generates analysis. Validates: multi-user via senderAddr, deterministic scoring + LLM analysis, months-long persistence, scheduled score updates.
+2. **Blazemarks reader** (#26) — single-user, hybrid, schedule-driven. Claude pulls the user's reading list, summarizes articles, presents them in a Familiar app with actions (mark read, save, get audio summary). Validates: external API integration, `requestLLM()` for summarization, persistent state, `.familiar.yaml` distribution.
 
-3. **D&D / text adventure** — multi-user, LLM gamemaster, async-friendly. Claude is the DM. The WebXDC shows a map, character sheets, inventory. Players submit actions via the app, Claude narrates outcomes. Validates: complex state management, LLM-heavy handler, multi-user turn management, chat + app interaction split.
+4. **D&D / text adventure** — multi-user, LLM gamemaster, async-friendly. Claude is the DM. The WebXDC shows a map, character sheets, inventory. Players submit actions via the app, Claude narrates outcomes. Validates: complex state management, LLM-heavy handler, multi-user turn management, chat + app interaction split.
+
+5. **Fantasy sports** — multi-user, hybrid handlers, long-lived persistent. Players draft, trade, set lineups. Claude pulls real game stats from the web, scores rosters, generates analysis. Validates: multi-user via senderAddr, deterministic scoring + LLM analysis, months-long persistence, scheduled score updates.
 
 ---
 
