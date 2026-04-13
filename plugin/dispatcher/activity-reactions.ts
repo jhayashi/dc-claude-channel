@@ -5,7 +5,7 @@
  * single DC reaction per tool class, debounced so that e.g. five Read
  * calls in a row only produce one 🔍. Reactions fire for ALL agents
  * (skip-permissions and permission-card) so the user always sees what
- * Claude is doing. A thinking indicator (🤔) is emitted at turn start
+ * Claude is doing. A random thinking emoji is emitted at turn start
  * before any tool fires.
  */
 
@@ -15,7 +15,17 @@ const EMOJI_RUNNING = '\u2699\uFE0F'                 // ⚙️
 const EMOJI_WEB = '\u{1F310}'                        // 🌐
 const EMOJI_PLANNING = '\u270D\uFE0F'                // ✍️
 const EMOJI_DELEGATING = '\u{1F91D}'                 // 🤝
-const EMOJI_THINKING = '\u{1F914}'                   // 🤔
+export const THINKING_EMOJIS = [
+  '\u{1F914}',   // 🤔
+  '\u{1F4AD}',   // 💭
+  '\u{1F9E0}',   // 🧠
+  '\u2753',      // ❓
+  '\u{1F4A1}',   // 💡
+  '\u{1F937}',   // 🤷
+  '\u2728',      // ✨
+  '\u26A1',      // ⚡
+  '\u{1F3AF}',   // 🎯
+]
 
 const CODING_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 const READING_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS'])
@@ -65,7 +75,7 @@ export function todoStepEmoji(input: unknown): string | null {
 export interface ActivityReactor {
   /**
    * Call at the start of a turn with the user's message id.
-   * Emits an immediate 🤔 thinking reaction so the user gets feedback
+   * Emits a random thinking emoji so the user gets feedback
    * before the first tool fires (which may take several seconds on
    * slow turns with planning or web fetches).
    */
@@ -95,9 +105,10 @@ export function createActivityReactor(deps: ActivityReactorDeps): ActivityReacto
 
   return {
     setTurnTarget(chatId, msgId) {
-      state.set(chatId, { msgId, lastEmoji: EMOJI_THINKING })
+      const emoji = THINKING_EMOJIS[Math.floor(Math.random() * THINKING_EMOJIS.length)]
+      state.set(chatId, { msgId, lastEmoji: emoji })
       // Fire-and-forget thinking indicator before any tool fires.
-      deps.sendReaction(msgId, EMOJI_THINKING).catch(() => {})
+      deps.sendReaction(msgId, emoji).catch(() => {})
     },
     clearTurnTarget(chatId) {
       state.delete(chatId)
