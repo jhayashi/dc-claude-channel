@@ -1552,6 +1552,11 @@ async function main(): Promise<void> {
         const app = appToolMap.get('dc_send_file')
         if (app) await app.callTool('dc_send_file', fileArgs, ctx)
       }
+      if (tutorialAction.sendAgentSetup) {
+        const proposeArgs = { source_chat_id: String(msg.chatId), description: 'tutorial agent creation', mode: 'create' }
+        const app = appToolMap.get('dc_propose_agent')
+        if (app) await app.callTool('dc_propose_agent', proposeArgs, ctx)
+      }
       if (tutorialAction.handoffToClaud) {
         const handoffText = `I just finished the onboarding tutorial and chose to build a game! I'd like a "${tutorialAction.gameChoice}" game as a WebXDC app. Build it and send it to this chat (chat_id ${msg.chatId}). Make the game post high scores to the chat using window.webxdc.sendUpdate with an info field (e.g. info: "New high score: 1234!") so scores appear as centered messages in the chat. Include senderAddr: window.webxdc.selfAddr in every sendUpdate payload. Remind me that I can take a screenshot and send it back if something looks wrong, and that I can share the app with friends by forwarding it.`
         mcp.notification({

@@ -8,7 +8,10 @@
  *   startTutorial → send both apps + explanation → offered
  *   offered + yes → permissions_explain (guide them to tap the message)
  *   permissions_explain + any → file_explain (guide them to the file reviewer)
- *   file_explain + any → phase2_offered (offer game building)
+ *   file_explain + any → agent_offered (offer agent creation)
+ *   agent_offered + yes → agent_wait (send setup card, wait for interaction)
+ *   agent_offered + no → phase2_offered (skip to game building)
+ *   agent_wait + any → phase2_offered
  *   phase2_offered + yes → game_choice → done (handoff to Claude)
  */
 
@@ -16,6 +19,8 @@ export type TutorialState =
   | "offered"
   | "permissions_explain"
   | "file_explain"
+  | "agent_offered"
+  | "agent_wait"
   | "phase2_offered"
   | "game_choice"
   | "done";
@@ -28,6 +33,8 @@ export interface TutorialAction {
   sendTestPermission?: boolean;
   /** Send a sample file to the file reviewer (triggers the centered info message). */
   sendSampleFile?: boolean;
+  /** Send the agent setup card in create mode. */
+  sendAgentSetup?: boolean;
   passThrough?: boolean;
   handoffToClaud?: boolean;
   gameChoice?: string;
@@ -117,12 +124,53 @@ export function handleMessage(chatId: number, text: string): TutorialAction {
     }
 
     case "file_explain": {
-      states.set(chatId, "phase2_offered");
+      states.set(chatId, "agent_offered");
       return {
         messages: [
           "That's the File Reviewer! When I send you code or documents to review, " +
           "you can read them with syntax highlighting and leave comments right on specific lines. " +
           "I'll apply your feedback and send back the updated file.\n\n" +
+          "Next up: **Custom Agents**. You can create specialized agents — each with its own " +
+          "model (Opus for deep coding, Sonnet for general work, Haiku for quick Q&A), system prompt, " +
+          "and isolated conversation. Want to create your first custom agent? (yes/no)",
+        ],
+      };
+    }
+
+    case "agent_offered": {
+      if (isYes(text)) {
+        states.set(chatId, "agent_wait");
+        return {
+          messages: [
+            "I'm sending you the **Agent Setup** card now. Tap the centered message " +
+            "to open it and fill in a name, pick a model, and optionally write a system prompt.\n\n" +
+            "When you're done, tap Create — a new chat will appear in your chat list " +
+            "for that agent. Reply here when you're ready to continue!",
+          ],
+          sendAgentSetup: true,
+        };
+      }
+      if (isNo(text)) {
+        states.set(chatId, "phase2_offered");
+        return {
+          messages: [
+            "No worries! You can always create agents later by asking me to " +
+            "\"create a new agent\" or \"manage agents\" in any chat.\n\n" +
+            "One more thing — I can also **build interactive apps and games** as WebXDC apps " +
+            "that you can share with friends. Want to try building a simple game together? (yes/no)",
+          ],
+        };
+      }
+      return { messages: [], passThrough: true };
+    }
+
+    case "agent_wait": {
+      states.set(chatId, "phase2_offered");
+      return {
+        messages: [
+          "You can find your new agent chat in the chat list — each agent has its own " +
+          "isolated conversation and model. Edit or delete agents anytime by asking me to " +
+          "\"manage agents\".\n\n" +
           "One more thing — I can also **build interactive apps and games** as WebXDC apps " +
           "that you can share with friends. Want to try building a simple game together? (yes/no)",
         ],
@@ -178,7 +226,7 @@ export function handleMessage(chatId: number, text: string): TutorialAction {
  */
 export function handleAppResponse(chatId: number): TutorialAction {
   const state = states.get(chatId);
-  if (state === "permissions_explain" || state === "file_explain") {
+  if (state === "permissions_explain" || state === "file_explain" || state === "agent_wait") {
     return handleMessage(chatId, "ok");
   }
   return { messages: [], passThrough: true };
