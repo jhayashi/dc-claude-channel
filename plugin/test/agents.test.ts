@@ -493,4 +493,44 @@ describe('importAgentFromYaml', () => {
     ].join('\n')
     expect(() => agents.importAgentFromYaml(yaml)).toThrow()
   })
+
+  test('round-trip: export then import produces identical agent', () => {
+    const original = makeDef({
+      id: 'roundtrip-export',
+      name: 'Roundtrip Export',
+      description: 'A test agent for round-trip',
+      system: 'be helpful and precise',
+      metadata: { 'x-dc-skipPermissions': true, 'custom': 'value' },
+    })
+    agents.saveAgent(original)
+
+    // Export: read the saved YAML (simulates what the export handler does).
+    const exported = agents.getAgent('roundtrip-export')!
+    const yamlStr = YAML.stringify(exported)
+
+    // Delete the original so the import doesn't collide.
+    agents.deleteAgent('roundtrip-export')
+
+    // Import the exported YAML.
+    const result = agents.importAgentFromYaml(yamlStr)
+    expect(result.idChanged).toBe(false)
+    expect(result.agent).toEqual(original)
+  })
+
+  test('round-trip with collision: import gets suffixed id', () => {
+    const original = makeDef({
+      id: 'rt-collide',
+      name: 'RT Collide',
+      system: 'original',
+    })
+    agents.saveAgent(original)
+
+    const yamlStr = YAML.stringify(original)
+
+    // Import without deleting — should get -2 suffix.
+    const result = agents.importAgentFromYaml(yamlStr)
+    expect(result.idChanged).toBe(true)
+    expect(result.agent.id).toBe('rt-collide-2')
+    expect(result.agent.name).toBe('RT Collide')
+  })
 })
