@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { buildSubagentArgs, type SubagentSpawnOptions } from '../dispatcher/subagent-process'
+import { buildSubagentArgs, ALL_MCP_SERVER_PREFIXES, type SubagentSpawnOptions } from '../dispatcher/subagent-process'
 
 function baseOpts(extra: Partial<SubagentSpawnOptions> = {}): SubagentSpawnOptions {
   return {
@@ -137,7 +137,7 @@ describe('buildSubagentArgs', () => {
     expect(list).toContain('WebSearch')
   })
 
-  test('allowedBuiltinTools: [] means only mcp__dc', () => {
+  test('allowedBuiltinTools: [] means only MCP server prefixes', () => {
     const { args } = buildSubagentArgs(baseOpts({
       mcpConfigPath: '/tmp/mcp.json',
       allowedBuiltinTools: [],
@@ -145,6 +145,55 @@ describe('buildSubagentArgs', () => {
     const i = args.indexOf('--allowedTools')
     expect(i).toBeGreaterThanOrEqual(0)
     const list = args[i + 1]
-    expect(list).toBe('mcp__dc')
+    expect(list).toContain('mcp__dc')
+    expect(list).toContain('mcp__claude_ai_Gmail')
+    expect(list).not.toContain('Bash')
+  })
+
+  test('allowedMcpServers: null includes all known server prefixes', () => {
+    const { args } = buildSubagentArgs(baseOpts({
+      mcpConfigPath: '/tmp/mcp.json',
+      allowedMcpServers: null,
+    }))
+    const i = args.indexOf('--allowedTools')
+    const list = args[i + 1]
+    expect(list).toContain('mcp__dc')
+    expect(list).toContain('mcp__claude_ai_Gmail')
+    expect(list).toContain('mcp__claude_ai_Google_Calendar')
+    expect(list).toContain('mcp__plugin_telegram_telegram')
+  })
+
+  test('allowedMcpServers: explicit list includes only those prefixes', () => {
+    const { args } = buildSubagentArgs(baseOpts({
+      mcpConfigPath: '/tmp/mcp.json',
+      allowedMcpServers: ['dc', 'claude_ai_Gmail'],
+    }))
+    const i = args.indexOf('--allowedTools')
+    const list = args[i + 1]
+    expect(list).toContain('mcp__dc')
+    expect(list).toContain('mcp__claude_ai_Gmail')
+    expect(list).not.toContain('mcp__claude_ai_Google_Calendar')
+    expect(list).not.toContain('mcp__plugin_telegram_telegram')
+  })
+
+  test('allowedMcpServers: [] means no MCP prefixes', () => {
+    const { args } = buildSubagentArgs(baseOpts({
+      mcpConfigPath: '/tmp/mcp.json',
+      allowedMcpServers: [],
+    }))
+    const i = args.indexOf('--allowedTools')
+    const list = args[i + 1]
+    expect(list).not.toContain('mcp__')
+  })
+
+  test('allowedBuiltinTools + allowedMcpServers combine correctly', () => {
+    const { args } = buildSubagentArgs(baseOpts({
+      mcpConfigPath: '/tmp/mcp.json',
+      allowedBuiltinTools: ['Bash', 'Read'],
+      allowedMcpServers: ['dc'],
+    }))
+    const i = args.indexOf('--allowedTools')
+    const list = args[i + 1]
+    expect(list).toBe('mcp__dc Bash Read')
   })
 })

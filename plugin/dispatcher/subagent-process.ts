@@ -68,11 +68,32 @@ export interface SubagentSpawnOptions {
   /**
    * Restrict which built-in tools the subagent can use.
    * null or undefined → all built-in tools allowed (default).
-   * [] → no built-in tools (only mcp__dc).
+   * [] → no built-in tools (only MCP prefixes).
    * ['Read', 'Grep'] → only those built-ins.
    */
   allowedBuiltinTools?: string[] | null
+  /**
+   * Restrict which MCP servers the subagent can use.
+   * null or undefined → all known servers allowed (default).
+   * [] → no MCP servers at all.
+   * ['dc', 'claude_ai_Gmail'] → only those server prefixes.
+   */
+  allowedMcpServers?: string[] | null
 }
+
+/** Known MCP server prefixes and their display names for the tool picker. */
+export const KNOWN_MCP_SERVERS: Record<string, string> = {
+  dc: 'DC Tools',
+  claude_ai_Gmail: 'Gmail',
+  claude_ai_Google_Calendar: 'Google Calendar',
+  claude_ai_Slack: 'Slack',
+  claude_ai_Notion: 'Notion',
+  claude_ai_Asana: 'Asana',
+  plugin_telegram_telegram: 'Telegram',
+}
+
+/** All known MCP server prefixes. */
+export const ALL_MCP_SERVER_PREFIXES = Object.keys(KNOWN_MCP_SERVERS)
 
 /** Full list of built-in Claude Code tools passed via --allowedTools by default. */
 export const ALL_BUILTIN_TOOLS: string[] = [
@@ -158,9 +179,11 @@ export function buildSubagentArgs(
     // inherit the same MCP tools the terminal session has.
     args.push('--mcp-config', opts.mcpConfigPath)
     const builtinTools = opts.allowedBuiltinTools ?? ALL_BUILTIN_TOOLS
+    const serverPrefixes = opts.allowedMcpServers ?? ALL_MCP_SERVER_PREFIXES
+    const mcpPrefixes = serverPrefixes.map(s => `mcp__${s}`)
     args.push(
       '--allowedTools',
-      ['mcp__dc', ...builtinTools].join(' '),
+      [...mcpPrefixes, ...builtinTools].join(' '),
     )
   }
   for (const dir of opts.addDirs ?? []) {
