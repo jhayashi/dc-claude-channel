@@ -40,7 +40,7 @@ import { generateHookConfig } from './dispatcher/hook-config.js'
 import { createMessageRouter } from './dispatcher/message-router.js'
 import { ReactionRouter } from './dispatcher/reaction-router.js'
 import { tryAutoApprove } from './dispatcher/skip-permissions.js'
-import { createActivityReactor, type ActivityReactor } from './dispatcher/activity-reactions.js'
+import { createActivityReactor, THINKING_EMOJIS, type ActivityReactor } from './dispatcher/activity-reactions.js'
 import * as audit from './audit.js'
 import { ScheduleStore, type ScheduledJob } from './dispatcher/schedule-store.js'
 import { Scheduler, countFiresIn7Days } from './dispatcher/scheduler.js'
@@ -1633,9 +1633,12 @@ async function main(): Promise<void> {
         return null
       }
 
-      // Echo transcript back to chat in quoted mode.
+      // Echo transcript back to chat in quoted mode, then react with
+      // a thinking emoji so the user knows the subagent is processing.
       if (sttConfig.echo === 'quoted') {
-        await client.send(msg.chatId, `\u{1F399}\uFE0F ${result.text}`)
+        const echoMsgId = await client.send(msg.chatId, `\u{1F399}\uFE0F ${result.text}`)
+        const emoji = THINKING_EMOJIS[Math.floor(Math.random() * THINKING_EMOJIS.length)]
+        client.sendReaction(echoMsgId, emoji).catch(() => {})
       }
 
       // Return enriched message with transcript prepended.
