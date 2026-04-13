@@ -141,6 +141,34 @@ Prerequisites for the dev path:
 - `/mcp` should show `plugin:deltachat:deltachat` not plain `deltachat` under Project MCPs
 - Never run Claude Code from inside this repo — the project-level `plugin/.mcp.json` conflicts with the plugin-installed server
 
+## Voice transcription (v1.0+)
+
+Voice messages (.m4a) are transcribed locally via whisper.cpp before
+reaching the subagent. The dispatcher intercepts voice messages in
+`runSubagentTurn`, runs ffmpeg → whisper.cpp → JSON parse, and prepends
+`[Voice transcript]: <text>` to the message text. The subagent sees a
+normal text message with `source=voice` metadata.
+
+System requirements: `whisper.cpp` (or `whisper-cli`), `ffmpeg`, `ffprobe`
+must be on `$PATH`. Missing dependencies are logged at startup and voice
+messages fall through to the subagent as-is (with the audio file attached).
+
+Config (environment variables):
+- `DC_STT_ENABLED` — `true` (default) or `false`
+- `DC_STT_MODEL` — whisper.cpp model name (default `base.en`). Models are
+  auto-downloaded from Hugging Face on first use to `$DC_STATE_DIR/whisper-models/`.
+- `DC_STT_ECHO` — `quoted` (default, echoes transcript back to chat) or `silent`
+- `DC_STT_CONFIDENCE` — avg_logprob threshold (default `-1.0`). Transcripts
+  below this are discarded. Values closer to 0 = higher confidence.
+- `DC_STT_TIMEOUT_SEC` — max whisper.cpp runtime (default `120`)
+- `DC_STT_MAX_DURATION_SEC` — max audio length to attempt (default `300`)
+
+Files:
+- `plugin/stt.ts` — Core transcription module (config, dependency checks,
+  audio conversion, model download, confidence scoring, transcription)
+- `plugin/test/stt.test.ts` — Unit tests for config parsing, confidence,
+  voice detection
+
 ## Key Gotchas
 
 - `deltachat-rpc-server` uses file locking — only one process per account database. Multiple sessions = lock contention.

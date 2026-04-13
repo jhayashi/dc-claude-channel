@@ -46,6 +46,18 @@ import { Scheduler, countFiresIn7Days } from './dispatcher/scheduler.js'
 import { CronExpressionParser } from 'cron-parser'
 import type { ServerMessage } from './shared/protocol.js'
 import type { Message } from './dc-client.js'
+import {
+  parseSTTConfig,
+  findWhisperBinary,
+  checkFfmpeg,
+  checkFfprobe,
+  getAudioDuration,
+  ensureModel,
+  transcribe,
+  isVoiceMessage,
+  MIN_AUDIO_DURATION_SEC,
+  type STTConfig,
+} from './stt.js'
 
 // ── Logging ─────────────────────────────────────────────────────────────
 
@@ -110,6 +122,13 @@ const TURN_TIMEOUT_MIN = Math.max(1, Number(process.env.DC_SUBAGENT_TURN_TIMEOUT
 const QUEUE_MAX = Math.max(1, Math.min(1000, Number(process.env.DC_SUBAGENT_QUEUE_MAX ?? '10')))
 const RATE_LIMIT = Math.max(1, Math.min(10000, Number(process.env.DC_SUBAGENT_RATE_LIMIT ?? '100')))
 const RATE_WINDOW_MS = 60_000
+
+// ── Speech-to-text ─────────────────────────────────────────────────────
+
+const sttConfig: STTConfig = parseSTTConfig({
+  ...process.env,
+  DC_STATE_DIR: STATE_DIR,
+})
 
 // Per-chat token bucket for tool-proxy calls. Survives subagent respawn so
 // a crash loop can't refill the budget.
@@ -1430,6 +1449,9 @@ async function main(): Promise<void> {
     const parts: string[] = []
     const meta: string[] = [`chat_id=${msg.chatId}`, `message_id=${msg.id}`]
     if (msg.senderName) meta.push(`from=${safeName(msg.senderName)}`)
+    if (msg.viewType === 'Voice' && msg.text?.startsWith('[Voice transcript]:')) {
+      meta.push('source=voice')
+    }
     if (msg.file) {
       if (msg.viewType === 'Image' || msg.viewType === 'Gif') {
         meta.push(`image_path=${msg.file}`)
@@ -1495,9 +1517,82 @@ async function main(): Promise<void> {
     }
   }
 
+  /**
+   * Attempt to transcribe a voice message. Returns an enriched copy of
+   * the message with the transcript prepended to text, or null if STT
+   * is unavailable, the message isn't a voice message, or transcription
+   * fails. In echo=quoted mode, sends the transcript back to the chat.
+   */
+  const tryTranscribeVoice = async (msg: Message): Promise<Message | null> => {
+    if (!sttConfig.enabled || !isVoiceMessage(msg)) return null
+
+    const whisperBin = await findWhisperBinary()
+    if (!whisperBin || !(await checkFfmpeg())) {
+      logf('stt: skipping voice msg %d — missing dependencies', msg.id)
+      return null
+    }
+
+    // Check duration if ffprobe is available.
+    if (await checkFfprobe()) {
+      const dur = await getAudioDuration(msg.file!)
+      if (dur !== null) {
+        if (dur < MIN_AUDIO_DURATION_SEC) {
+          logf('stt: skipping voice msg %d — too short (%.1fs)', msg.id, dur)
+          return null
+        }
+        if (dur > sttConfig.maxDurationSec) {
+          logf('stt: skipping voice msg %d — too long (%.0fs > %ds)', msg.id, dur, sttConfig.maxDurationSec)
+          return null
+        }
+      }
+    }
+
+    try {
+      // React with 🎙️ so the user knows transcription is happening.
+      client.sendReaction(msg.id, '\u{1F399}\uFE0F').catch(() => {})
+
+      const modelPath = await ensureModel(sttConfig, logf, () => {
+        client.send(msg.chatId, '\u{1F4E5} Downloading speech model (first use only)...').catch(() => {})
+      })
+
+      const result = await transcribe(msg.file!, sttConfig, whisperBin, modelPath, logf)
+      logf('stt: chat=%d msg=%d text="%s" confidence=%.2f duration=%.1fs',
+        msg.chatId, msg.id, result.text.slice(0, 100), result.confidence, result.durationSec)
+
+      if (!result.text.trim()) {
+        logf('stt: empty transcript for msg %d', msg.id)
+        return null
+      }
+
+      // Confidence gate: if below threshold, skip.
+      if (result.confidence < sttConfig.confidenceThreshold) {
+        logf('stt: low confidence %.2f < %.2f for msg %d, skipping',
+          result.confidence, sttConfig.confidenceThreshold, msg.id)
+        return null
+      }
+
+      // Echo transcript back to chat in quoted mode.
+      if (sttConfig.echo === 'quoted') {
+        await client.send(msg.chatId, `\u{1F399}\uFE0F ${result.text}`)
+      }
+
+      // Return enriched message with transcript prepended.
+      return {
+        ...msg,
+        text: `[Voice transcript]: ${result.text}${msg.text ? '\n' + msg.text : ''}`,
+      }
+    } catch (err) {
+      logf('stt: transcription failed for msg %d: %v', msg.id, err)
+      return null
+    }
+  }
+
   const runSubagentTurn = async (msg: Message): Promise<void> => {
     // Intercept .yaml/.yml attachments as agent imports.
     if (await tryImportAgentAttachment(msg)) return
+
+    // Transcribe voice messages before forwarding to the subagent.
+    const enrichedMsg = await tryTranscribeVoice(msg) ?? msg
 
     const chatId = msg.chatId
     activityReactor.setTurnTarget(chatId, msg.id)
@@ -1513,7 +1608,7 @@ async function main(): Promise<void> {
       )
     }
     try {
-      const result = await subagentCache.dispatch(chatId, formatSubagentInput(msg))
+      const result = await subagentCache.dispatch(chatId, formatSubagentInput(enrichedMsg))
       logf('subagent: chat=%d result.text=%s denials=%d', chatId, (result.text ?? '').slice(0, 500).replace(/\n/g, ' '), result.denials.length)
       if (result.text) {
         await client.send(chatId, result.text)
@@ -1845,6 +1940,26 @@ async function main(): Promise<void> {
   }
 
   logf('dc channel: server started, address=%s', dcAddress)
+
+  // Log STT capability at startup (non-blocking).
+  if (sttConfig.enabled) {
+    const [whisperBin, hasFfmpeg, hasFfprobe] = await Promise.all([
+      findWhisperBinary(),
+      checkFfmpeg(),
+      checkFfprobe(),
+    ])
+    if (whisperBin && hasFfmpeg && hasFfprobe) {
+      logf('stt: ready — whisper=%s model=%s echo=%s', whisperBin, sttConfig.model, sttConfig.echo)
+    } else {
+      const missing: string[] = []
+      if (!whisperBin) missing.push('whisper.cpp')
+      if (!hasFfmpeg) missing.push('ffmpeg')
+      if (!hasFfprobe) missing.push('ffprobe')
+      logf('stt: disabled — missing: %s', missing.join(', '))
+    }
+  } else {
+    logf('stt: disabled via DC_STT_ENABLED=false')
+  }
 }
 
 // ── Shutdown ────────────────────────────────────────────────────────────
