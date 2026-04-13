@@ -164,14 +164,14 @@ export const familiarApp: WebXDCApp = {
       const payload = u.payload as Record<string, unknown> | null
       if (!payload) continue
 
-      // Build sandbox context
+      // Collect sendUpdate payloads during handler execution, then flush
+      // them sequentially afterward to guarantee delivery order.
+      const pendingUpdates: unknown[] = []
+
       const sandboxCtx: SandboxContext = {
         state: inst.state,
         sendUpdate: (outPayload: unknown) => {
-          const update = JSON.stringify({ payload: outPayload })
-          ctx.client.sendWebXDCUpdate(inst.msgId, update).catch((err: unknown) => {
-            ctx.logf('familiar: sendUpdate error for app %s: %s', inst.appId, err)
-          })
+          pendingUpdates.push(outPayload)
         },
         requestLLM: async (prompt: string) => {
           if (!ctx.dispatchAndCollect) return '[requestLLM not available]'
@@ -185,6 +185,15 @@ export const familiarApp: WebXDCApp = {
       const result = await handler(payload, sandboxCtx)
       if (result.error) {
         ctx.logf('familiar: handler error for app %s: %s', inst.appId, result.error)
+      }
+
+      // Flush collected updates sequentially to preserve ordering
+      for (const outPayload of pendingUpdates) {
+        try {
+          await ctx.client.sendWebXDCUpdate(inst.msgId, JSON.stringify({ payload: outPayload }))
+        } catch (err: unknown) {
+          ctx.logf('familiar: sendUpdate error for app %s: %s', inst.appId, err)
+        }
       }
 
       // Persist state after each handler invocation for persistent apps
