@@ -16,7 +16,13 @@ export const CODING_EMOJIS = [
   '\u{1F58A}\uFE0F', // 🖊️ Pen
   '\u{1F3A8}',   // 🎨 Artist palette
 ]
-const EMOJI_READING = '\u{1F50D}'                    // 🔍
+export const READING_EMOJIS = [
+  '\u{1F50D}',   // 🔍 Magnifying glass left
+  '\u{1F50E}',   // 🔎 Magnifying glass right
+  '\u{1F440}',   // 👀 Eyes
+  '\u{1F9D0}',   // 🧐 Monocle face
+  '\u{1F441}\uFE0F', // 👁️ Single eye
+]
 export const RUNNING_EMOJIS = [
   '\u2699\uFE0F', // ⚙️ Gear
   '\u{1F4A5}',   // 💥 Collision
@@ -25,7 +31,13 @@ export const RUNNING_EMOJIS = [
   '\u26CF\uFE0F', // ⛏️ Pick
 ]
 const EMOJI_WEB = '\u{1F310}'                        // 🌐
-const EMOJI_PLANNING = '\u270D\uFE0F'                // ✍️
+export const PLANNING_EMOJIS = [
+  '\u270D\uFE0F', // ✍️ Writing hand
+  '\u{1F5FA}\uFE0F', // 🗺️ World map
+  '\u{1F9ED}',   // 🧭 Compass
+  '\u{1F52C}',   // 🔬 Microscope
+  '\u{1F575}\uFE0F', // 🕵️ Detective
+]
 const EMOJI_DELEGATING = '\u{1F91D}'                 // 🤝
 export const THINKING_EMOJIS = [
   '\u{1F914}',                    // 🤔
@@ -45,23 +57,24 @@ const READING_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS'])
 const WEB_TOOLS = new Set(['WebFetch', 'WebSearch'])
 
 /**
- * Compute the emoji to react with for a given tool invocation.
+ * Compute the emoji class and a random emoji for a tool invocation.
  * Returns null for dc_* tools (noise), dc_react (would loop), and
- * unknown tools. TodoWrite is handled separately via todoStepEmoji.
+ * unknown tools. The class string is used for debouncing (same class
+ * = same visual category), while the emoji is what gets displayed.
  */
 function pick(pool: string[]): string {
   return pool[Math.floor(Math.random() * pool.length)]
 }
 
-export function computeEmoji(toolName: string, toolInput: unknown): string | null {
+export function computeEmoji(toolName: string, toolInput: unknown): { cls: string; emoji: string } | null {
   if (toolName.startsWith('dc_')) return null
-  if (CODING_TOOLS.has(toolName)) return pick(CODING_EMOJIS)
-  if (READING_TOOLS.has(toolName)) return EMOJI_READING
-  if (toolName === 'Bash') return pick(RUNNING_EMOJIS)
-  if (WEB_TOOLS.has(toolName)) return EMOJI_WEB
-  if (toolName === 'EnterPlanMode' || toolName === 'ExitPlanMode') return EMOJI_PLANNING
-  if (toolName === 'Agent' || toolName === 'Task') return EMOJI_DELEGATING
-  if (toolName === 'TodoWrite') return todoStepEmoji(toolInput)
+  if (CODING_TOOLS.has(toolName)) return { cls: 'coding', emoji: pick(CODING_EMOJIS) }
+  if (READING_TOOLS.has(toolName)) return { cls: 'reading', emoji: pick(READING_EMOJIS) }
+  if (toolName === 'Bash') return { cls: 'running', emoji: pick(RUNNING_EMOJIS) }
+  if (WEB_TOOLS.has(toolName)) return { cls: 'web', emoji: EMOJI_WEB }
+  if (toolName === 'EnterPlanMode' || toolName === 'ExitPlanMode') return { cls: 'planning', emoji: pick(PLANNING_EMOJIS) }
+  if (toolName === 'Agent' || toolName === 'Task') return { cls: 'delegating', emoji: EMOJI_DELEGATING }
+  if (toolName === 'TodoWrite') { const e = todoStepEmoji(toolInput); return e ? { cls: `todo-${e}`, emoji: e } : null }
   return null
 }
 
@@ -114,7 +127,7 @@ export interface ActivityReactorDeps {
 
 interface TurnState {
   msgId: number
-  lastEmoji: string | null
+  lastClass: string | null
 }
 
 export function createActivityReactor(deps: ActivityReactorDeps): ActivityReactor {
@@ -123,7 +136,7 @@ export function createActivityReactor(deps: ActivityReactorDeps): ActivityReacto
   return {
     setTurnTarget(chatId, msgId) {
       const emoji = THINKING_EMOJIS[Math.floor(Math.random() * THINKING_EMOJIS.length)]
-      state.set(chatId, { msgId, lastEmoji: emoji })
+      state.set(chatId, { msgId, lastClass: 'thinking' })
       // Fire-and-forget thinking indicator before any tool fires.
       deps.sendReaction(msgId, emoji).catch(() => {})
     },
@@ -133,12 +146,12 @@ export function createActivityReactor(deps: ActivityReactorDeps): ActivityReacto
     reactForTool(chatId, toolName, toolInput) {
       const entry = state.get(chatId)
       if (!entry) return
-      const emoji = computeEmoji(toolName, toolInput)
-      if (!emoji) return
-      if (emoji === entry.lastEmoji) return
-      entry.lastEmoji = emoji
+      const result = computeEmoji(toolName, toolInput)
+      if (!result) return
+      if (result.cls === entry.lastClass) return
+      entry.lastClass = result.cls
       const { msgId } = entry
-      deps.sendReaction(msgId, emoji).catch(() => {})
+      deps.sendReaction(msgId, result.emoji).catch(() => {})
     },
   }
 }

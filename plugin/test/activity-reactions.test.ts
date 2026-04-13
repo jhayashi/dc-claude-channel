@@ -6,41 +6,55 @@ import {
   THINKING_EMOJIS,
   CODING_EMOJIS,
   RUNNING_EMOJIS,
+  READING_EMOJIS,
+  PLANNING_EMOJIS,
 } from '../dispatcher/activity-reactions'
 
 const codingSet = new Set(CODING_EMOJIS)
 const runningSet = new Set(RUNNING_EMOJIS)
+const readingSet = new Set(READING_EMOJIS)
+const planningSet = new Set(PLANNING_EMOJIS)
 
 describe('computeEmoji tool classes', () => {
-  test('coding tools → random from coding pool', () => {
+  test('coding tools → coding class, random from coding pool', () => {
     for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
-      expect(codingSet.has(computeEmoji(tool, {})!)).toBe(true)
+      const r = computeEmoji(tool, {})!
+      expect(r.cls).toBe('coding')
+      expect(codingSet.has(r.emoji)).toBe(true)
     }
   })
 
-  test('reading tools → 🔍', () => {
+  test('reading tools → reading class, random from reading pool', () => {
     for (const tool of ['Read', 'Grep', 'Glob', 'LS']) {
-      expect(computeEmoji(tool, {})).toBe('\u{1F50D}')
+      const r = computeEmoji(tool, {})!
+      expect(r.cls).toBe('reading')
+      expect(readingSet.has(r.emoji)).toBe(true)
     }
   })
 
-  test('Bash → random from running pool', () => {
-    expect(runningSet.has(computeEmoji('Bash', { command: 'ls' })!)).toBe(true)
+  test('Bash → running class, random from running pool', () => {
+    const r = computeEmoji('Bash', { command: 'ls' })!
+    expect(r.cls).toBe('running')
+    expect(runningSet.has(r.emoji)).toBe(true)
   })
 
   test('web tools → 🌐', () => {
-    expect(computeEmoji('WebFetch', {})).toBe('\u{1F310}')
-    expect(computeEmoji('WebSearch', {})).toBe('\u{1F310}')
+    expect(computeEmoji('WebFetch', {})).toEqual({ cls: 'web', emoji: '\u{1F310}' })
+    expect(computeEmoji('WebSearch', {})).toEqual({ cls: 'web', emoji: '\u{1F310}' })
   })
 
-  test('EnterPlanMode / ExitPlanMode → ✍️', () => {
-    expect(computeEmoji('EnterPlanMode', {})).toBe('\u270D\uFE0F')
-    expect(computeEmoji('ExitPlanMode', {})).toBe('\u270D\uFE0F')
+  test('EnterPlanMode / ExitPlanMode → planning class, random from planning pool', () => {
+    const r1 = computeEmoji('EnterPlanMode', {})!
+    const r2 = computeEmoji('ExitPlanMode', {})!
+    expect(r1.cls).toBe('planning')
+    expect(planningSet.has(r1.emoji)).toBe(true)
+    expect(r2.cls).toBe('planning')
+    expect(planningSet.has(r2.emoji)).toBe(true)
   })
 
   test('Agent / Task → 🤝', () => {
-    expect(computeEmoji('Agent', {})).toBe('\u{1F91D}')
-    expect(computeEmoji('Task', {})).toBe('\u{1F91D}')
+    expect(computeEmoji('Agent', {})).toEqual({ cls: 'delegating', emoji: '\u{1F91D}' })
+    expect(computeEmoji('Task', {})).toEqual({ cls: 'delegating', emoji: '\u{1F91D}' })
   })
 
   test('dc_* tools are skipped (noise)', () => {
@@ -181,7 +195,7 @@ describe('createActivityReactor', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toHaveLength(2)
     expect(isThinking(calls[0].emoji)).toBe(true)
-    expect(calls[1]).toEqual({ msgId: 100, emoji: '\u{1F50D}' })
+    expect(calls[1].msgId).toBe(100); expect(readingSet.has(calls[1].emoji)).toBe(true)
   })
 
   test('fires again when emoji class changes', async () => {
@@ -193,7 +207,7 @@ describe('createActivityReactor', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toHaveLength(4)
     expect(isThinking(calls[0].emoji)).toBe(true)
-    expect(calls[1]).toEqual({ msgId: 100, emoji: '\u{1F50D}' })
+    expect(calls[1].msgId).toBe(100); expect(readingSet.has(calls[1].emoji)).toBe(true)
     expect(calls[2].msgId).toBe(100)
     expect(runningSet.has(calls[2].emoji)).toBe(true)
     expect(calls[3].msgId).toBe(100)
@@ -210,7 +224,7 @@ describe('createActivityReactor', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toHaveLength(2)
     expect(isThinking(calls[0].emoji)).toBe(true)
-    expect(calls[1]).toEqual({ msgId: 100, emoji: '\u{1F50D}' })
+    expect(calls[1].msgId).toBe(100); expect(readingSet.has(calls[1].emoji)).toBe(true)
   })
 
   test('clearTurnTarget drops state so subsequent calls no-op', async () => {
@@ -256,7 +270,7 @@ describe('createActivityReactor', () => {
     expect(calls[0].msgId).toBe(100)
     expect(isThinking(calls[1].emoji)).toBe(true)
     expect(calls[1].msgId).toBe(200)
-    expect(calls[2]).toEqual({ msgId: 100, emoji: '\u{1F50D}' })
+    expect(calls[2].msgId).toBe(100); expect(readingSet.has(calls[2].emoji)).toBe(true)
     expect(calls[3].msgId).toBe(200)
     expect(runningSet.has(calls[3].emoji)).toBe(true)
   })
