@@ -36,8 +36,8 @@ export interface AppContext {
   unregisterWebXDCMsg: (msgId: number) => void
   /** Evict a cached subagent for a chat so the next message triggers a respawn (e.g. after model change). */
   evictSubagent: (chatId: number) => Promise<void>
-  /** Returns the list of MCP tools available to subagents (for populating agent-setup UI). */
-  getAvailableMcpTools: () => Array<{ name: string; description: string }>
+  /** Returns available MCP servers for the agent-setup tool picker. */
+  getAvailableMcpServers: () => Array<{ prefix: string; label: string; toolCount: number }>
 }
 
 export interface WebXDCApp {

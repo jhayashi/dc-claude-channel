@@ -19,7 +19,7 @@ function availableToolsPayload(ctx: AppContext) {
       name,
       description: BUILTIN_TOOL_DESCRIPTIONS[name] ?? '',
     })),
-    availableMcpTools: ctx.getAvailableMcpTools(),
+    availableMcpServers: ctx.getAvailableMcpServers(),
   }
 }
 
@@ -352,7 +352,7 @@ export const agentSetupApp: WebXDCApp = {
           skipPermissions: agents.getSkipPermissions(agent),
           iconMirror: agents.getIconMirror(agent),
           allowedBuiltinTools: agent.allowedBuiltinTools ?? null,
-          allowedMcpTools: agent.allowedMcpTools ?? null,
+          allowedMcpServers: agent.allowedMcpServers ?? null,
         }
         try {
           const update = JSON.stringify({
@@ -515,7 +515,7 @@ export const agentSetupApp: WebXDCApp = {
         const skipPerms = (payload as { skipPermissions?: boolean }).skipPermissions === true
         const iconMirror = (payload as { iconMirror?: boolean }).iconMirror === true
         const allowedBuiltinTools = (payload as { allowedBuiltinTools?: string[] | null }).allowedBuiltinTools ?? undefined
-        const allowedMcpTools = (payload as { allowedMcpTools?: string[] | null }).allowedMcpTools ?? undefined
+        const allowedMcpServers = (payload as { allowedMcpServers?: string[] | null }).allowedMcpServers ?? undefined
         // Snapshot the pre-edit state BEFORE mutating metadata below. We
         // must clone metadata because `updated` shares the object otherwise,
         // and the setters mutate in place — which would make the "changed"
@@ -533,7 +533,7 @@ export const agentSetupApp: WebXDCApp = {
             id: agentId,
             metadata: agent.metadata ? { ...agent.metadata } : undefined,
             allowedBuiltinTools,
-            allowedMcpTools,
+            allowedMcpServers,
           }
           agents.setSkipPermissions(updated, skipPerms)
           agents.setIconMirror(updated, iconMirror)
@@ -559,9 +559,9 @@ export const agentSetupApp: WebXDCApp = {
           const mirrorChanged = prevMirror !== iconMirror
           const prevBuiltinTools = JSON.stringify(agent.allowedBuiltinTools ?? null)
           const newBuiltinTools = JSON.stringify(allowedBuiltinTools ?? null)
-          const prevMcpToolsList = JSON.stringify(agent.allowedMcpTools ?? null)
-          const newMcpToolsList = JSON.stringify(allowedMcpTools ?? null)
-          const toolsChanged = prevBuiltinTools !== newBuiltinTools || prevMcpToolsList !== newMcpToolsList
+          const prevMcpServersList = JSON.stringify(agent.allowedMcpServers ?? null)
+          const newMcpServersList = JSON.stringify(allowedMcpServers ?? null)
+          const toolsChanged = prevBuiltinTools !== newBuiltinTools || prevMcpServersList !== newMcpServersList
           // Restart only for changes that are baked in at subagent spawn
           // time: the model (passed as --model and cached in the session
           // store) and the system prompt (read from disk at spawn). Cosmetic
@@ -676,7 +676,7 @@ export const agentSetupApp: WebXDCApp = {
         const draft = parsed.data
         const skipPerms = (payload as { skipPermissions?: boolean }).skipPermissions === true
         const allowedBuiltinTools = (payload as { allowedBuiltinTools?: string[] | null }).allowedBuiltinTools ?? undefined
-        const allowedMcpTools = (payload as { allowedMcpTools?: string[] | null }).allowedMcpTools ?? undefined
+        const allowedMcpServers = (payload as { allowedMcpServers?: string[] | null }).allowedMcpServers ?? undefined
         const inheritClaudeMd = agents.inheritClaudeMdForModel(draft.model)
         const ownerContactId = await resolveOwner()
         if (!ownerContactId) continue
@@ -686,7 +686,7 @@ export const agentSetupApp: WebXDCApp = {
           const newChatId = await ctx.client.createGroup(draft.name)
           await ctx.client.addContactToChat(newChatId, ownerContactId)
           access.addChat(newChatId, ownerContactId)
-          const newAgent: agents.AgentDef = { ...draft, id: agentId, allowedBuiltinTools, allowedMcpTools }
+          const newAgent: agents.AgentDef = { ...draft, id: agentId, allowedBuiltinTools, allowedMcpServers }
           agents.setSkipPermissions(newAgent, skipPerms)
           // Roll a random orientation once at creation so same-model agents
           // are visually differentiable. Edits can override via the setup card.

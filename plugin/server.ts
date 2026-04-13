@@ -34,7 +34,7 @@ import { SocketServer, type SocketRequest } from './dispatcher/socket-server.js'
 import { SubagentCache } from './dispatcher/subagent-cache.js'
 import { cleanupOrphanSubagents } from './dispatcher/orphan-cleanup.js'
 import { RateLimiter } from './dispatcher/rate-limit.js'
-import { SubagentProcess } from './dispatcher/subagent-process.js'
+import { SubagentProcess, KNOWN_MCP_SERVERS } from './dispatcher/subagent-process.js'
 import { generateHookConfig } from './dispatcher/hook-config.js'
 import { createMessageRouter } from './dispatcher/message-router.js'
 import { ReactionRouter } from './dispatcher/reaction-router.js'
@@ -144,12 +144,27 @@ const SUBAGENT_TOOL_BLOCKLIST = new Set([
   'dc_access_revoke',
 ])
 
-/** Available MCP tool names + descriptions for the agent-setup card. */
-export function getAvailableMcpTools(): Array<{ name: string; description: string }> {
-  return [
-    ...coreTools.map((t) => ({ name: t.name, description: t.description })),
-    ...apps.flatMap((a) => a.tools()).map((t) => ({ name: t.name, description: t.description })),
-  ].filter((t) => !SUBAGENT_TOOL_BLOCKLIST.has(t.name))
+/** Available MCP servers for the agent-setup tool picker. */
+export function getAvailableMcpServers(): Array<{ prefix: string; label: string; toolCount: number }> {
+  const dcTools = [
+    ...coreTools.map(t => t.name),
+    ...apps.flatMap(a => a.tools()).map(t => t.name),
+  ].filter(n => !SUBAGENT_TOOL_BLOCKLIST.has(n))
+
+  const servers: Array<{ prefix: string; label: string; toolCount: number }> = []
+
+  // DC tools are always available — we know the exact count.
+  servers.push({ prefix: 'dc', label: KNOWN_MCP_SERVERS.dc, toolCount: dcTools.length })
+
+  // Other known servers: we can't enumerate their tools at this layer,
+  // but we include them so the picker can show toggles. Claude Code
+  // silently ignores --allowedTools prefixes for absent servers.
+  for (const [prefix, label] of Object.entries(KNOWN_MCP_SERVERS)) {
+    if (prefix === 'dc') continue
+    servers.push({ prefix, label, toolCount: 0 })
+  }
+
+  return servers
 }
 
 async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | null> {
@@ -203,12 +218,11 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     ...coreTools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
     ...apps.flatMap((a) => a.tools()).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
   ].filter((t) => !SUBAGENT_TOOL_BLOCKLIST.has(t.name))
-  // Per-agent MCP tool filtering: if the agent has an explicit allowlist,
-  // only include tools whose name is in it. null/undefined = all tools.
+  // Per-agent MCP server filtering: if the agent restricts servers,
+  // check whether 'dc' is in the allowed list. null/undefined = all allowed.
   const agent = resolved?.agent
-  const filteredToolDefs = agent?.allowedMcpTools != null
-    ? toolDefs.filter(t => agent.allowedMcpTools!.includes(t.name))
-    : toolDefs
+  const dcServerAllowed = agent?.allowedMcpServers == null || agent.allowedMcpServers.includes('dc')
+  const filteredToolDefs = dcServerAllowed ? toolDefs : []
   const { settingsPath, mcpConfigPath, tempDir } = generateHookConfig({
     hookScriptPath: HOOK_SCRIPT,
     toolsProxyPath: TOOLS_PROXY,
@@ -250,6 +264,7 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     systemPrompt: [resolved?.agent.system, appInstructions].filter(Boolean).join('\n\n'),
     suppressUserClaudeMd,
     allowedBuiltinTools: agent?.allowedBuiltinTools,
+    allowedMcpServers: agent?.allowedMcpServers,
     logf,
   })
   // Resume-fallback probe: if --resume was used and the child dies within
@@ -283,6 +298,7 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
         systemPrompt: [resolved?.agent.system, appInstructions].filter(Boolean).join('\n\n'),
         suppressUserClaudeMd,
         allowedBuiltinTools: agent?.allowedBuiltinTools,
+        allowedMcpServers: agent?.allowedMcpServers,
         logf,
       })
     }
@@ -395,7 +411,7 @@ ctx = {
       logf('ctx.evictSubagent: evict failed chat=%d: %v', chatId, err),
     )
   },
-  getAvailableMcpTools,
+  getAvailableMcpServers,
 }
 
 // App tool dispatch map — O(1) lookup, rebuilds on cache miss.
