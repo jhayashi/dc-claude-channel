@@ -4,12 +4,17 @@ import {
   todoStepEmoji,
   createActivityReactor,
   THINKING_EMOJIS,
+  CODING_EMOJIS,
+  RUNNING_EMOJIS,
 } from '../dispatcher/activity-reactions'
 
+const codingSet = new Set(CODING_EMOJIS)
+const runningSet = new Set(RUNNING_EMOJIS)
+
 describe('computeEmoji tool classes', () => {
-  test('coding tools → 👨‍💻', () => {
+  test('coding tools → random from coding pool', () => {
     for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
-      expect(computeEmoji(tool, {})).toBe('\u{1F468}\u{200D}\u{1F4BB}')
+      expect(codingSet.has(computeEmoji(tool, {})!)).toBe(true)
     }
   })
 
@@ -19,8 +24,8 @@ describe('computeEmoji tool classes', () => {
     }
   })
 
-  test('Bash → ⚙️', () => {
-    expect(computeEmoji('Bash', { command: 'ls' })).toBe('\u2699\uFE0F')
+  test('Bash → random from running pool', () => {
+    expect(runningSet.has(computeEmoji('Bash', { command: 'ls' })!)).toBe(true)
   })
 
   test('web tools → 🌐', () => {
@@ -163,7 +168,8 @@ describe('createActivityReactor', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toHaveLength(2)
     expect(isThinking(calls[0].emoji)).toBe(true)
-    expect(calls[1]).toEqual({ msgId: 100, emoji: '\u2699\uFE0F' })
+    expect(calls[1].msgId).toBe(100)
+    expect(runningSet.has(calls[1].emoji)).toBe(true)
   })
 
   test('debounces repeated same emoji', async () => {
@@ -188,8 +194,10 @@ describe('createActivityReactor', () => {
     expect(calls).toHaveLength(4)
     expect(isThinking(calls[0].emoji)).toBe(true)
     expect(calls[1]).toEqual({ msgId: 100, emoji: '\u{1F50D}' })
-    expect(calls[2]).toEqual({ msgId: 100, emoji: '\u2699\uFE0F' })
-    expect(calls[3]).toEqual({ msgId: 100, emoji: '\u{1F468}\u{200D}\u{1F4BB}' })
+    expect(calls[2].msgId).toBe(100)
+    expect(runningSet.has(calls[2].emoji)).toBe(true)
+    expect(calls[3].msgId).toBe(100)
+    expect(codingSet.has(calls[3].emoji)).toBe(true)
   })
 
   test('skips unknown tools without disturbing debounce state', async () => {
@@ -214,7 +222,8 @@ describe('createActivityReactor', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toHaveLength(2)
     expect(isThinking(calls[0].emoji)).toBe(true)
-    expect(calls[1]).toEqual({ msgId: 100, emoji: '\u2699\uFE0F' })
+    expect(calls[1].msgId).toBe(100)
+    expect(runningSet.has(calls[1].emoji)).toBe(true)
   })
 
   test('setTurnTarget on the same chat resets debounce and target', async () => {
@@ -227,10 +236,12 @@ describe('createActivityReactor', () => {
     expect(calls).toHaveLength(4)
     expect(isThinking(calls[0].emoji)).toBe(true)
     expect(calls[0].msgId).toBe(100)
-    expect(calls[1]).toEqual({ msgId: 100, emoji: '\u2699\uFE0F' })
+    expect(calls[1].msgId).toBe(100)
+    expect(runningSet.has(calls[1].emoji)).toBe(true)
     expect(isThinking(calls[2].emoji)).toBe(true)
     expect(calls[2].msgId).toBe(200)
-    expect(calls[3]).toEqual({ msgId: 200, emoji: '\u2699\uFE0F' })
+    expect(calls[3].msgId).toBe(200)
+    expect(runningSet.has(calls[3].emoji)).toBe(true)
   })
 
   test('chats are isolated', async () => {
@@ -246,7 +257,8 @@ describe('createActivityReactor', () => {
     expect(isThinking(calls[1].emoji)).toBe(true)
     expect(calls[1].msgId).toBe(200)
     expect(calls[2]).toEqual({ msgId: 100, emoji: '\u{1F50D}' })
-    expect(calls[3]).toEqual({ msgId: 200, emoji: '\u2699\uFE0F' })
+    expect(calls[3].msgId).toBe(200)
+    expect(runningSet.has(calls[3].emoji)).toBe(true)
   })
 
   test('swallows sendReaction failures silently', async () => {

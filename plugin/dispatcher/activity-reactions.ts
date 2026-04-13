@@ -9,9 +9,21 @@
  * before any tool fires.
  */
 
-const EMOJI_CODING = '\u{1F468}\u{200D}\u{1F4BB}'   // 👨‍💻
+export const CODING_EMOJIS = [
+  '\u{1FAA1}',   // 🪡 Sewing needle
+  '\u{1FA84}',   // 🪄 Magic wand
+  '\u270F\uFE0F', // ✏️ Pencil
+  '\u{1F58A}\uFE0F', // 🖊️ Pen
+  '\u{1F3A8}',   // 🎨 Artist palette
+]
 const EMOJI_READING = '\u{1F50D}'                    // 🔍
-const EMOJI_RUNNING = '\u2699\uFE0F'                 // ⚙️
+export const RUNNING_EMOJIS = [
+  '\u2699\uFE0F', // ⚙️ Gear
+  '\u{1F4A5}',   // 💥 Collision
+  '\u{1F528}',   // 🔨 Hammer
+  '\u{1F527}',   // 🔧 Wrench
+  '\u26CF\uFE0F', // ⛏️ Pick
+]
 const EMOJI_WEB = '\u{1F310}'                        // 🌐
 const EMOJI_PLANNING = '\u270D\uFE0F'                // ✍️
 const EMOJI_DELEGATING = '\u{1F91D}'                 // 🤝
@@ -37,11 +49,15 @@ const WEB_TOOLS = new Set(['WebFetch', 'WebSearch'])
  * Returns null for dc_* tools (noise), dc_react (would loop), and
  * unknown tools. TodoWrite is handled separately via todoStepEmoji.
  */
+function pick(pool: string[]): string {
+  return pool[Math.floor(Math.random() * pool.length)]
+}
+
 export function computeEmoji(toolName: string, toolInput: unknown): string | null {
   if (toolName.startsWith('dc_')) return null
-  if (CODING_TOOLS.has(toolName)) return EMOJI_CODING
+  if (CODING_TOOLS.has(toolName)) return pick(CODING_EMOJIS)
   if (READING_TOOLS.has(toolName)) return EMOJI_READING
-  if (toolName === 'Bash') return EMOJI_RUNNING
+  if (toolName === 'Bash') return pick(RUNNING_EMOJIS)
   if (WEB_TOOLS.has(toolName)) return EMOJI_WEB
   if (toolName === 'EnterPlanMode' || toolName === 'ExitPlanMode') return EMOJI_PLANNING
   if (toolName === 'Agent' || toolName === 'Task') return EMOJI_DELEGATING
