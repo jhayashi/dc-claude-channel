@@ -1610,8 +1610,8 @@ async function main(): Promise<void> {
     }
 
     try {
-      // React with 🎙️ so the user knows transcription is happening.
-      client.sendReaction(msg.id, '\u{1F399}\uFE0F').catch(() => {})
+      // React with 👂 so the user knows we're listening/transcribing.
+      client.sendReaction(msg.id, '\u{1F442}').catch(() => {})
 
       const modelPath = await ensureModel(sttConfig, logf, () => {
         client.send(msg.chatId, '\u{1F4E5} Downloading speech model (first use only)...').catch(() => {})
