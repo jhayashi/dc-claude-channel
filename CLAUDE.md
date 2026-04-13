@@ -66,6 +66,31 @@ Changes take effect on next subagent spawn (idle timeout or restart).
 a no-op hook. Per-agent tool capability restrictions use the separate
 `allowedBuiltinTools` and `allowedMcpServers` fields instead.
 
+## Familiar Runtime (v1.0+)
+
+The **Familiar runtime** lets subagents build custom WebXDC apps on the fly
+with Claude acting as a live backend. Two app types:
+
+- **Static apps** — self-contained HTML, sent via `dc_send_webxdc`. No
+  server component.
+- **Familiar apps** — WebXDC apps with a Claude backend, created via
+  `dc_familiar_create`. The subagent provides HTML (the client UI) and a
+  JavaScript handler function (server-side logic). The handler runs in an
+  eval sandbox with access to `ctx.state`, `ctx.sendUpdate()`, and
+  `ctx.requestLLM()` — no fs/net/process access.
+
+Familiar apps can be ephemeral (lost on restart) or persistent (state +
+handler saved to `~/.claude/channels/deltachat/familiars/`). Persistent
+apps are reloaded on dispatcher startup.
+
+**Import:** Send a `.familiar.yaml` file as an attachment in any paired
+chat. The dispatcher intercepts it, validates the YAML (required fields:
+`name`, `html`, `handler`), and creates the Familiar app. Invalid YAML is
+rejected with an error.
+
+**Tools:** `dc_familiar_create`, `dc_familiar_update`, `dc_familiar_list`,
+`dc_familiar_delete`.
+
 ## Subagent session resume
 
 Each binding holds a persistent claude session UUID. The first spawn for a
