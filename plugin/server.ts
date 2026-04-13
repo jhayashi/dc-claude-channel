@@ -1413,7 +1413,59 @@ async function main(): Promise<void> {
     return parts.join('\n')
   }
 
+  /**
+   * If the message has a .yaml/.yml file attachment, attempt to import it
+   * as an agent definition. Returns true if the attachment was handled
+   * (import succeeded or failed with an error message sent). Returns
+   * false if no .yaml attachment present — the message should proceed
+   * to the subagent normally.
+   */
+  const tryImportAgentAttachment = async (msg: Message): Promise<boolean> => {
+    if (!msg.file || !msg.fileName) return false
+    const lower = msg.fileName.toLowerCase()
+    if (!lower.endsWith('.yaml') && !lower.endsWith('.yml')) return false
+
+    const chatId = msg.chatId
+    const MAX_IMPORT_BYTES = 256 * 1024
+
+    try {
+      if (msg.fileBytes && msg.fileBytes > MAX_IMPORT_BYTES) {
+        await client.send(chatId, '\u26a0\ufe0f Agent import failed: file too large (max 256 KB).')
+        return true
+      }
+
+      const { readFileSync } = await import('node:fs')
+      const yamlStr = readFileSync(msg.file, 'utf-8')
+
+      if (yamlStr.length > MAX_IMPORT_BYTES) {
+        await client.send(chatId, '\u26a0\ufe0f Agent import failed: file too large (max 256 KB).')
+        return true
+      }
+
+      const result = agents.importAgentFromYaml(yamlStr)
+      const idNote = result.idChanged ? ` (saved as "${result.agent.id}" to avoid a name conflict)` : ''
+      await client.send(
+        chatId,
+        `\u2705 Imported agent "${result.agent.name}"${idNote}. To create a chat with it, use the agent setup card.`,
+      )
+      logf('import: agent "%s" (id=%s) imported from attachment in chat %d', result.agent.name, result.agent.id, chatId)
+      return true
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      // Truncate long Zod errors to keep the DC message short.
+      const short = message.length > 200 ? message.slice(0, 200) + '...' : message
+      await client.send(chatId, `\u26a0\ufe0f Couldn't import agent from "${msg.fileName}": ${short}`)
+      logf('import: failed for chat %d file=%s: %v', chatId, msg.fileName, err)
+      // Return false so the message still reaches the subagent — the user
+      // may have sent the file as context for a conversation.
+      return false
+    }
+  }
+
   const runSubagentTurn = async (msg: Message): Promise<void> => {
+    // Intercept .yaml/.yml attachments as agent imports.
+    if (await tryImportAgentAttachment(msg)) return
+
     const chatId = msg.chatId
     activityReactor.setTurnTarget(chatId, msg.id)
     // If no live subagent is cached for this chat, the next dispatch will
