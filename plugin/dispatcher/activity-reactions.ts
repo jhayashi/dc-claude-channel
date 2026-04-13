@@ -16,15 +16,16 @@ const EMOJI_WEB = '\u{1F310}'                        // 🌐
 const EMOJI_PLANNING = '\u270D\uFE0F'                // ✍️
 const EMOJI_DELEGATING = '\u{1F91D}'                 // 🤝
 export const THINKING_EMOJIS = [
-  '\u{1F914}',   // 🤔
-  '\u{1F4AD}',   // 💭
-  '\u{1F9E0}',   // 🧠
-  '\u2753',      // ❓
-  '\u{1F4A1}',   // 💡
-  '\u{1F937}',   // 🤷
-  '\u2728',      // ✨
-  '\u26A1',      // ⚡
-  '\u{1F3AF}',   // 🎯
+  '\u{1F914}',                    // 🤔
+  '\u{1F4AD}',                    // 💭
+  '\u{1F9E0}',                    // 🧠
+  '\u{1F468}\u{200D}\u{1F373}',  // 👨‍🍳
+  '\u{1F9D1}\u{200D}\u{1F373}',  // 🧑‍🍳
+  '\u{1F4A1}',                    // 💡
+  '\u{1F937}',                    // 🤷
+  '\u2728',                       // ✨
+  '\u26A1',                       // ⚡
+  '\u{1F52E}',                    // 🔮
 ]
 
 const CODING_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
