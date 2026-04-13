@@ -36,6 +36,18 @@ keeps its prior history, so the next turn runs under the new prompt but
 "remembers" things said under the old one. Usually fine; if you want a
 clean slate, start a new chat.
 
+**Import/export (v0.10+):** Agent definitions can be exported as `.yaml`
+files via the agent-setup WebXDC card ("Export" button) and imported by
+sending a `.yaml` file attachment into any paired DC chat. The dispatcher
+intercepts `.yaml` attachments before the subagent sees them: valid
+definitions are saved (with automatic ID collision resolution via `-2`,
+`-3`, etc. suffixes); invalid YAML is rejected with an error message and
+the attachment is forwarded to the subagent. Export sends the full agent
+definition including `x-dc-*` metadata. Bindings (host-local chat
+mappings) are not exported — the user creates a new chat via the
+agent-setup card after importing. Round-trip compatible with Claude
+Managed Agents API YAML format.
+
 **Forward compat:** the `tools: []` field is written on every agent as
 a no-op hook. Per-agent tool capability restrictions are deferred.
 
