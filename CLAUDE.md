@@ -168,31 +168,29 @@ Prerequisites for the dev path:
 
 ## Voice transcription (v1.0+)
 
-Voice messages (.m4a) are transcribed locally via whisper.cpp before
-reaching the subagent. The dispatcher intercepts voice messages in
-`runSubagentTurn`, runs ffmpeg → whisper.cpp → JSON parse, and prepends
-`[Voice transcript]: <text>` to the message text. The subagent sees a
-normal text message with `source=voice` metadata.
+Voice messages (.m4a) are transcribed locally via `@napi-rs/whisper`
+(prebuilt native bindings to whisper.cpp) before reaching the subagent.
+No system dependencies required — no cmake, no g++, no ffmpeg. Just
+`bun install` and it works.
 
-System requirements: `whisper.cpp` (or `whisper-cli`), `ffmpeg`, `ffprobe`
-must be on `$PATH`. Missing dependencies are logged at startup and voice
-messages fall through to the subagent as-is (with the audio file attached).
+The dispatcher intercepts voice messages in `runSubagentTurn`, decodes
+audio natively via Symphonia (`decodeAudio()`), runs whisper inference
+in-process, and prepends `[Voice transcript]: <text>` to the message
+text. The subagent sees a normal text message with `source=voice`
+metadata.
 
 Config (environment variables):
 - `DC_STT_ENABLED` — `true` (default) or `false`
-- `DC_STT_MODEL` — whisper.cpp model name (default `base.en`). Models are
+- `DC_STT_MODEL` — ggml model name (default `base.en`). Models are
   auto-downloaded from Hugging Face on first use to `$DC_STATE_DIR/whisper-models/`.
 - `DC_STT_ECHO` — `quoted` (default, echoes transcript back to chat) or `silent`
-- `DC_STT_CONFIDENCE` — avg_logprob threshold (default `-1.0`). Transcripts
-  below this are discarded. Values closer to 0 = higher confidence.
-- `DC_STT_TIMEOUT_SEC` — max whisper.cpp runtime (default `120`)
+- `DC_STT_TIMEOUT_SEC` — max transcription runtime (default `120`)
 - `DC_STT_MAX_DURATION_SEC` — max audio length to attempt (default `300`)
 
 Files:
-- `plugin/stt.ts` — Core transcription module (config, dependency checks,
-  audio conversion, model download, confidence scoring, transcription)
-- `plugin/test/stt.test.ts` — Unit tests for config parsing, confidence,
-  voice detection
+- `plugin/stt.ts` — Core transcription module (config, model download,
+  native audio decoding, transcription via @napi-rs/whisper)
+- `plugin/test/stt.test.ts` — Unit tests for config parsing, voice detection
 
 ## Key Gotchas
 
@@ -242,6 +240,8 @@ DC tool calls (`dc_send`, `dc_send_file`, `dc_chat_history`, etc.) from a subage
 **Skip-permissions mode:** An agent can opt into "trusted" mode via `metadata['x-dc-skipPermissions']` on its definition (exposed as a checkbox in the agent-setup WebXDC card, and via `getSkipPermissions` / `setSkipPermissions` in `agents.ts`). When a subagent bound to such an agent triggers the PreToolUse hook, the dispatcher short-circuits in `plugin/dispatcher/skip-permissions.ts` — it auto-approves the verdict and appends an entry to `~/.claude/channels/deltachat/audit/<chatId>.md` instead of showing the WebXDC permission card. The `dc_show_audit` core tool lets the subagent send the audit file back to the user via the file reviewer when asked (e.g. "what did you run?"). Audit files are append-only; there is no rotation.
 
 **Scheduled jobs (v0.10+):** Subagents can create recurring or one-shot prompts via `dc_schedule` / `dc_schedule_list` / `dc_schedule_delete`. Jobs persist in `~/.claude/channels/deltachat/schedules/<chatId>-<jobId>.json` and are owned by the dispatcher's in-process scheduler — they survive subagent eviction, idle timeout, and crash. When a job fires the dispatcher cold-spawns (or reuses) the subagent for that chat and sends a synthetic user turn. Missed fires during dispatcher downtime are silently skipped (not caught up); past-due one-shots are reaped at startup with a log line. A soft warning is returned when a new schedule would fire more than 30 times in the next 7 days; there are no hard caps on job count or interval. The scheduler is deterministic TypeScript — it consumes zero model tokens on its own; tokens are only spent when a fire delivers a synthetic turn to the chat's bound agent.
+
+**Shared memory:** The auto-memory system (`~/.claude/projects/<cwd-hash>/memory/`) is filesystem-based and scoped to the working directory. Because the dispatcher and all subagents run on the same host with the same working directory, they share the same memory path — there is no per-agent or per-chat memory isolation. Any subagent can read and write the shared `MEMORY.md` index and individual memory files. This is intentional: it allows a subagent to persist facts (user preferences, project context, reference links) that are available to all future sessions regardless of which chat spawned them. Be aware that memory written by one agent is visible to all others.
 
 Config:
 - `DC_SUBAGENT_MAX_ACTIVE` — cache size (default 8, range 1-16)

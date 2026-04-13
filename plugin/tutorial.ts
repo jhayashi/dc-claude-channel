@@ -23,6 +23,7 @@ export type TutorialState =
   | "agent_wait"
   | "phase2_offered"
   | "game_choice"
+  | "voice_offered"
   | "done";
 
 export interface TutorialAction {
@@ -35,6 +36,8 @@ export interface TutorialAction {
   sendSampleFile?: boolean;
   /** Send the agent setup card in create mode. */
   sendAgentSetup?: boolean;
+  /** Run STT dependency check and report results. */
+  checkVoiceDeps?: boolean;
   passThrough?: boolean;
   handoffToClaud?: boolean;
   gameChoice?: string;

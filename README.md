@@ -81,8 +81,10 @@ Reply "yes" to start, or "no" to skip. You can start using Claude immediately ei
 - **End-to-end encrypted** — all messages, files, and app data encrypted via Autocrypt. Your code never passes through a third-party server in readable form.
 - **Trivial bot setup** — two lines in Claude Code (`/plugin marketplace add` + `/plugin install`), scan a QR code, and pair with a 5-letter code. No tokens, no API keys, no cloud dashboards, no bot portals, no Rust toolchain, no separate `deltachat-rpc-server` install. The plugin auto-provisions an encrypted chatmail account on first run. A guided tutorial walks you through permissions, file review, and building your first WebXDC app — all in under 2 minutes.
 - **Tap-and-swipe permission control** — every built-in tool call (Bash, Edit, Write, WebFetch…) pauses the agent and sends an interactive WebXDC Allow/Deny card to the chat that triggered the action. Owner-verified — only the chat owner can approve. You stay in the loop from your phone without ever typing a command.
+- **Voice messages** — send a voice message and Claude transcribes it locally using prebuilt native whisper.cpp bindings — fully offline, no API calls, no system dependencies. Just `bun install` and it works. The transcript is echoed back to the chat and forwarded to the agent as text. Speech models auto-download from Hugging Face on first use. Configurable model size and echo mode via environment variables.
 - **Timers, reminders, and scheduled jobs** — ask Claude to "remind me to stretch every hour" or "check the build at 9am weekdays" and it sets up a real cron-backed schedule via `dc_schedule`. Jobs persist to disk and are owned by the dispatcher's in-process scheduler, so they survive subagent eviction, idle timeout, and restarts — no reliance on Claude's own in-session timers. Recurring and one-shot both supported; list with `dc_schedule_list`, cancel with `dc_schedule_delete`.
-- **Trusted agents with emoji progress + audit log** — for agents you trust (marked as skip-permissions in the setup card), tool calls run without prompting and the dispatcher reacts to your message with a live emoji showing what Claude is doing: 🔍 reading, 👨‍💻 editing, ⚙️ running commands, 🌐 web, 🤝 delegating, ✍️ planning. `TodoWrite` progresses through 1️⃣–9️⃣ then 🇦–🇿 so you can see which step of the plan it's on. Every auto-approved tool call is appended to a per-chat audit log; ask "what did you run?" and Claude sends the log back via the file reviewer.
+- **Trusted agents with emoji progress + audit log** — for agents you trust (marked as skip-permissions in the setup card), tool calls run without prompting and the dispatcher reacts to your message with a live emoji showing what Claude is doing: 🔍 reading, ✏️ editing, ⚙️ running commands, 🌐 web, 🤝 delegating, ✍️ planning. `TodoWrite` progresses through 1️⃣–9️⃣ then 🇦–🇿 so you can see which step of the plan it's on. Every auto-approved tool call is appended to a per-chat audit log; ask "what did you run?" and Claude sends the log back via the file reviewer.
+- **Custom apps with AI backend (Familiar)** — Claude can build interactive WebXDC apps with a live server-side handler powered by Claude itself. The handler runs in a sandboxed eval with access to persistent state, push updates, and LLM requests. Apps can be ephemeral or persistent (surviving restarts). Import apps by sending a `.familiar.yaml` file into any chat.
 - **Mobile friendly File Reviewer** — send code and documents as interactive WebXDC apps with syntax highlighting (TypeScript, Python, Go, Bash, and more) and inline commenting. Long-press a line to leave feedback, Claude reads your comments and makes changes.
 - **Slide presentations** — ask Claude to make a slide deck and it renders Marp-format slides as an interactive WebXDC presentation you can swipe through on your phone.
 - **WebXDC apps** — Claude can build single and multiplayer games, tools, and interactive apps as self-contained WebXDC bundles. Share them with friends by forwarding.
@@ -92,6 +94,8 @@ Reply "yes" to start, or "no" to skip. You can start using Claude immediately ei
 - **Parallel subagent architecture** — each chat runs as an independent subagent process, so a long coding task in one chat never blocks a quick question in another. Claude stays responsive across all your conversations. An LRU cache keeps recently active chats warm for sub-second response times while idle agents gracefully exit to free resources.
 - **Attachments** — send and receive images, PDFs, and files. Large files auto-download.
 - **Access control** — pairing codes, owner tracking, stranger lockout. Once paired, unknown contacts can't even trigger a pairing prompt.
+
+> **Beyond the channels research preview:** The Claude Code channels API provides the messaging transport — this plugin builds substantially on top of it. Features like multi-agent with per-agent tool restrictions, cron-backed scheduled jobs, interactive WebXDC permission cards (vs. text-based), the Familiar app runtime, local voice transcription, live activity emoji reactions, the file reviewer with inline commenting, and slide presentations are all implemented in this plugin and are not part of the base channels API. The official channels research preview provides message routing and basic tool proxying; everything above that is custom.
 
 ## Screenshots
 
@@ -123,8 +127,11 @@ Reply "yes" to start, or "no" to skip. You can start using Claude immediately ei
 |--|-----------|----------|---------|
 | **Encryption** | E2E encrypted (Autocrypt) | Server-side only (no E2E for bots) | None |
 | **Custom agents** | Per-chat model, prompt, tool access, and isolated context; import/export as YAML | Single bot config | Single bot config |
+| **Per-agent tool access** | Fine-grained per-tool and per-MCP-server restrictions | No | No |
 | **Parallelism** | Independent subagent per chat — long tasks never block other chats | Single event loop | Single event loop |
-| **Chat-native apps** | WebXDC apps (games, tools, GUIs) | Inline keyboards only | Slash commands only | 
+| **Voice messages** | Local whisper.cpp transcription (offline, zero config) | No built-in STT | No built-in STT |
+| **Scheduled jobs** | Cron-backed scheduler, persists across restarts | No | No |
+| **Chat-native apps** | WebXDC apps (games, tools, GUIs) + Familiar apps with AI backend | Inline keyboards only | Slash commands only | 
 | **Permission UX** | Interactive WebXDC app (tap Allow/Deny) | Text-based numbered replies | Text-based |
 | **File review** | Syntax-highlighted viewer + inline commenting | Plain file attachment | Plain file attachment |
 | **Bot setup** | Two slash commands + QR scan + guided tutorial | BotFather token + config | Bot portal + config |

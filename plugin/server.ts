@@ -49,14 +49,9 @@ import type { ServerMessage } from './shared/protocol.js'
 import type { Message } from './dc-client.js'
 import {
   parseSTTConfig,
-  findWhisperBinary,
-  checkFfmpeg,
-  checkFfprobe,
-  getAudioDuration,
   ensureModel,
   transcribe,
   isVoiceMessage,
-  MIN_AUDIO_DURATION_SEC,
   type STTConfig,
 } from './stt.js'
 
@@ -1585,43 +1580,8 @@ async function main(): Promise<void> {
    * is unavailable, the message isn't a voice message, or transcription
    * fails. In echo=quoted mode, sends the transcript back to the chat.
    */
-  let sttDepWarningShown = false
-
   const tryTranscribeVoice = async (msg: Message): Promise<Message | null> => {
     if (!sttConfig.enabled || !isVoiceMessage(msg)) return null
-
-    const whisperBin = await findWhisperBinary(logf)
-    const hasFfmpeg = await checkFfmpeg()
-    if (!whisperBin || !hasFfmpeg) {
-      logf('stt: skipping voice msg %d — missing dependencies', msg.id)
-      // Show install guidance once per session so the user knows what to do.
-      if (!sttDepWarningShown) {
-        sttDepWarningShown = true
-        const missing: string[] = []
-        if (!hasFfmpeg) missing.push('`ffmpeg`')
-        if (!whisperBin) missing.push('`whisper.cpp` (install cmake + g++ and restart — it auto-builds from npm)')
-        await client.send(msg.chatId,
-          `\u{1F399}\uFE0F Voice transcription needs: ${missing.join(', ')}.\n\n` +
-          `Install them and restart the dispatcher to enable voice messages.`,
-        )
-      }
-      return null
-    }
-
-    // Check duration if ffprobe is available.
-    if (await checkFfprobe()) {
-      const dur = await getAudioDuration(msg.file!)
-      if (dur !== null) {
-        if (dur < MIN_AUDIO_DURATION_SEC) {
-          logf('stt: skipping voice msg %d — too short (%.1fs)', msg.id, dur)
-          return null
-        }
-        if (dur > sttConfig.maxDurationSec) {
-          logf('stt: skipping voice msg %d — too long (%.0fs > %ds)', msg.id, dur, sttConfig.maxDurationSec)
-          return null
-        }
-      }
-    }
 
     try {
       // React with 👂 so the user knows we're listening/transcribing.
@@ -1631,19 +1591,12 @@ async function main(): Promise<void> {
         client.send(msg.chatId, '\u{1F4E5} Downloading speech model (first use only)...').catch(() => {})
       })
 
-      const result = await transcribe(msg.file!, sttConfig, whisperBin, modelPath, logf)
-      logf('stt: chat=%d msg=%d text="%s" confidence=%.2f duration=%.1fs',
-        msg.chatId, msg.id, result.text.slice(0, 100), result.confidence, result.durationSec)
+      const result = await transcribe(msg.file!, sttConfig, modelPath, logf)
+      logf('stt: chat=%d msg=%d text="%s" duration=%.1fs',
+        msg.chatId, msg.id, result.text.slice(0, 100), result.durationSec)
 
       if (!result.text.trim()) {
         logf('stt: empty transcript for msg %d', msg.id)
-        return null
-      }
-
-      // Confidence gate: if below threshold, skip.
-      if (result.confidence < sttConfig.confidenceThreshold) {
-        logf('stt: low confidence %.2f < %.2f for msg %d, skipping',
-          result.confidence, sttConfig.confidenceThreshold, msg.id)
         return null
       }
 
@@ -2022,22 +1975,9 @@ async function main(): Promise<void> {
 
   logf('dc channel: server started, address=%s', dcAddress)
 
-  // Log STT capability at startup (non-blocking).
+  // Log STT capability at startup.
   if (sttConfig.enabled) {
-    const [whisperBin, hasFfmpeg, hasFfprobe] = await Promise.all([
-      findWhisperBinary(logf),
-      checkFfmpeg(),
-      checkFfprobe(),
-    ])
-    if (whisperBin && hasFfmpeg && hasFfprobe) {
-      logf('stt: ready — whisper=%s model=%s echo=%s', whisperBin, sttConfig.model, sttConfig.echo)
-    } else {
-      const missing: string[] = []
-      if (!whisperBin) missing.push('whisper.cpp')
-      if (!hasFfmpeg) missing.push('ffmpeg')
-      if (!hasFfprobe) missing.push('ffprobe')
-      logf('stt: disabled — missing: %s', missing.join(', '))
-    }
+    logf('stt: ready — model=%s echo=%s', sttConfig.model, sttConfig.echo)
   } else {
     logf('stt: disabled via DC_STT_ENABLED=false')
   }
