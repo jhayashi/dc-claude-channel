@@ -144,6 +144,14 @@ const SUBAGENT_TOOL_BLOCKLIST = new Set([
   'dc_access_revoke',
 ])
 
+/** Available MCP tool names + descriptions for the agent-setup card. */
+export function getAvailableMcpTools(): Array<{ name: string; description: string }> {
+  return [
+    ...coreTools.map((t) => ({ name: t.name, description: t.description })),
+    ...apps.flatMap((a) => a.tools()).map((t) => ({ name: t.name, description: t.description })),
+  ].filter((t) => !SUBAGENT_TOOL_BLOCKLIST.has(t.name))
+}
+
 async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | null> {
   const resolvedCheck = bindings.resolveChat(chatId)
   if (!resolvedCheck) {
@@ -186,20 +194,26 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     return null
   }
   const subagentId = `sub-${chatId}-${randomBytes(4).toString('hex')}`
-  const toolDefs = [
-    ...coreTools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
-    ...apps.flatMap((a) => a.tools()).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
-  ].filter((t) => !SUBAGENT_TOOL_BLOCKLIST.has(t.name))
-  const { settingsPath, mcpConfigPath, tempDir } = generateHookConfig({
-    hookScriptPath: HOOK_SCRIPT,
-    toolsProxyPath: TOOLS_PROXY,
-    toolDefs,
-  })
   // Subagents inherit the dispatcher's cwd (the plugin/ subdir). Add
   // the repo root so they can read/edit docs, plans, etc. outside plugin/
   // without needing per-file permission prompts.
   const repoRoot = join(import.meta.dir, '..')
   const resolved = bindings.resolveChat(chatId)
+  const toolDefs = [
+    ...coreTools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+    ...apps.flatMap((a) => a.tools()).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+  ].filter((t) => !SUBAGENT_TOOL_BLOCKLIST.has(t.name))
+  // Per-agent MCP tool filtering: if the agent has an explicit allowlist,
+  // only include tools whose name is in it. null/undefined = all tools.
+  const agent = resolved?.agent
+  const filteredToolDefs = agent?.allowedMcpTools != null
+    ? toolDefs.filter(t => agent.allowedMcpTools!.includes(t.name))
+    : toolDefs
+  const { settingsPath, mcpConfigPath, tempDir } = generateHookConfig({
+    hookScriptPath: HOOK_SCRIPT,
+    toolsProxyPath: TOOLS_PROXY,
+    toolDefs: filteredToolDefs,
+  })
   let { sessionId, created } = bindings.loadOrCreateSessionId(chatId)
   logf(
     'subagent: chat=%d session=%s %s',
@@ -235,6 +249,7 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     claudeVersion: CLAUDE_VERSION,
     systemPrompt: [resolved?.agent.system, appInstructions].filter(Boolean).join('\n\n'),
     suppressUserClaudeMd,
+    allowedBuiltinTools: agent?.allowedBuiltinTools,
     logf,
   })
   // Resume-fallback probe: if --resume was used and the child dies within
@@ -267,6 +282,7 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
         claudeVersion: CLAUDE_VERSION,
         systemPrompt: [resolved?.agent.system, appInstructions].filter(Boolean).join('\n\n'),
         suppressUserClaudeMd,
+        allowedBuiltinTools: agent?.allowedBuiltinTools,
         logf,
       })
     }
