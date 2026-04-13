@@ -144,7 +144,8 @@ body {
   margin: 0 0 12px;
   color: #8b949e;
 }
-.content a { color: #58a6ff; text-decoration: none; }
+.content a { color: #58a6ff; text-decoration: underline; text-decoration-color: rgba(88,166,255,0.3); text-underline-offset: 2px; }
+.content a:hover { text-decoration-color: #58a6ff; }
 .content hr { border: none; border-top: 1px solid #30363d; margin: 16px 0; }
 .content strong { color: #e6edf3; }
 .content table { border-collapse: collapse; margin: 0 0 12px; width: 100%; }
@@ -571,7 +572,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.14;
+var APP_VERSION = 1.15;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -686,8 +687,8 @@ function renderMarkdown(md) {
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/~~(.+?)~~/g, '<del>$1</del>')
     .replace(/^---$/gm, '<hr>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, text) {
-      return '<a>' + esc(text) + '</a>';
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, text, url) {
+      return '<a href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(text) + '</a>';
     })
     // Task list items: - [ ] and - [x] (must run before plain list items)
     .replace(/^[*-] \[( |x|X)\] (.+)$/gm, function(_, mark, text) {
