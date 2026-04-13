@@ -50,6 +50,7 @@ export const THINKING_EMOJIS = [
   '\u2728',                       // ✨
   '\u26A1',                       // ⚡
   '\u{1F52E}',                    // 🔮
+  '\u{1F47E}',                    // 👾
 ]
 
 const CODING_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
