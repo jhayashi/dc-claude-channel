@@ -24,6 +24,7 @@ import { DCClient } from './dc-client.js'
 import * as access from './access.js'
 import * as agents from './agents.js'
 import * as bindings from './bindings.js'
+import * as familiarRuntime from './familiar-runtime.js'
 import { apps } from './apps.js'
 import type { WebXDCApp, AppContext } from './webxdc-app.js'
 import { filterUpdatesByOwner } from './webxdc-filter.js'
@@ -1469,6 +1470,63 @@ async function main(): Promise<void> {
   }
 
   /**
+   * If the message has a .familiar.yaml/.familiar.yml file attachment,
+   * attempt to import it as a familiar app definition. Returns true if
+   * the attachment was handled (import succeeded or failed with an error
+   * message sent). Returns false if no familiar attachment present.
+   */
+  const tryImportFamiliarAttachment = async (msg: Message): Promise<boolean> => {
+    if (!msg.file || !msg.fileName) return false
+    const lower = msg.fileName.toLowerCase()
+    if (!lower.endsWith('.familiar.yaml') && !lower.endsWith('.familiar.yml')) return false
+
+    const chatId = msg.chatId
+    const MAX_IMPORT_BYTES = 512 * 1024
+
+    try {
+      if (msg.fileBytes && msg.fileBytes > MAX_IMPORT_BYTES) {
+        await client.send(chatId, '\u26a0\ufe0f Familiar import failed: file too large (max 512 KB).')
+        return true
+      }
+
+      const { readFileSync } = await import('node:fs')
+      const yamlStr = readFileSync(msg.file, 'utf-8')
+      const parsed = familiarRuntime.parseFamiliarYaml(yamlStr)
+
+      // Find the familiar app instance from the apps array
+      const familiarAppInstance = apps.find(a => a.id === 'familiar')
+      if (!familiarAppInstance) {
+        await client.send(chatId, '\u26a0\ufe0f Familiar runtime not available.')
+        return true
+      }
+
+      const result = await familiarAppInstance.callTool('dc_familiar_create', {
+        chat_id: String(chatId),
+        title: parsed.name,
+        html: parsed.html,
+        handler: parsed.handler,
+        initial_state: parsed.initialState ?? {},
+        persistent: parsed.persistent ?? false,
+      }, ctx)
+
+      if (result?.isError) {
+        await client.send(chatId, `\u26a0\ufe0f Familiar import failed: ${(result.content[0] as { text: string }).text}`)
+        return true
+      }
+
+      await client.send(chatId, `\u2705 Imported Familiar app "${parsed.name}". ${(result?.content[0] as { text: string })?.text ?? ''}`)
+      logf('familiar-import: "%s" imported from attachment in chat %d', parsed.name, chatId)
+      return true
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      const short = message.length > 200 ? message.slice(0, 200) + '...' : message
+      await client.send(chatId, `\u26a0\ufe0f Couldn't import Familiar app from "${msg.fileName}": ${short}`)
+      logf('familiar-import: failed for chat %d file=%s: %v', chatId, msg.fileName, err)
+      return false
+    }
+  }
+
+  /**
    * If the message has a .yaml/.yml file attachment, attempt to import it
    * as an agent definition. Returns true if the attachment was handled
    * (import succeeded or failed with an error message sent). Returns
@@ -1588,6 +1646,8 @@ async function main(): Promise<void> {
   }
 
   const runSubagentTurn = async (msg: Message): Promise<void> => {
+    // Intercept .familiar.yaml/.familiar.yml attachments as familiar imports.
+    if (await tryImportFamiliarAttachment(msg)) return
     // Intercept .yaml/.yml attachments as agent imports.
     if (await tryImportAgentAttachment(msg)) return
 
