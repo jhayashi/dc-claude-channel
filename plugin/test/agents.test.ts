@@ -283,7 +283,7 @@ describe('skipPermissions helpers', () => {
   })
 })
 
-describe('allowedBuiltinTools and allowedMcpTools schema fields', () => {
+describe('allowedBuiltinTools and allowedMcpServers schema fields', () => {
   test('schema accepts agent with allowedBuiltinTools list', () => {
     const raw = {
       id: 'test-agent',
@@ -298,7 +298,21 @@ describe('allowedBuiltinTools and allowedMcpTools schema fields', () => {
     expect(result.data?.allowedBuiltinTools).toEqual(['Bash', 'Read', 'Write'])
   })
 
-  test('schema accepts agent with allowedMcpTools list', () => {
+  test('schema accepts agent with allowedMcpServers list', () => {
+    const raw = {
+      id: 'test-agent',
+      name: 'Test Agent',
+      model: 'claude-sonnet-4-6',
+      system: '',
+      tools: [],
+      allowedMcpServers: ['dc', 'claude_ai_Gmail'],
+    }
+    const result = agents.AgentDefSchema.safeParse(raw)
+    expect(result.success).toBe(true)
+    expect(result.data?.allowedMcpServers).toEqual(['dc', 'claude_ai_Gmail'])
+  })
+
+  test('schema still accepts legacy allowedMcpTools for migration', () => {
     const raw = {
       id: 'test-agent',
       name: 'Test Agent',
@@ -326,18 +340,18 @@ describe('allowedBuiltinTools and allowedMcpTools schema fields', () => {
     expect(result.data?.allowedBuiltinTools).toBeNull()
   })
 
-  test('schema accepts null for allowedMcpTools (means all allowed)', () => {
+  test('schema accepts null for allowedMcpServers (means all allowed)', () => {
     const raw = {
       id: 'test-agent',
       name: 'Test Agent',
       model: 'claude-sonnet-4-6',
       system: '',
       tools: [],
-      allowedMcpTools: null,
+      allowedMcpServers: null,
     }
     const result = agents.AgentDefSchema.safeParse(raw)
     expect(result.success).toBe(true)
-    expect(result.data?.allowedMcpTools).toBeNull()
+    expect(result.data?.allowedMcpServers).toBeNull()
   })
 
   test('fields are optional — existing agents without them still load', () => {
@@ -355,10 +369,10 @@ describe('allowedBuiltinTools and allowedMcpTools schema fields', () => {
     const loaded = agents.getAgent('legacy-agent')
     expect(loaded).not.toBeNull()
     expect(loaded!.allowedBuiltinTools).toBeUndefined()
-    expect(loaded!.allowedMcpTools).toBeUndefined()
+    expect(loaded!.allowedMcpServers).toBeUndefined()
   })
 
-  test('empty arrays mean no tools allowed (distinct from null/absent)', () => {
+  test('empty arrays mean no tools/servers allowed (distinct from null/absent)', () => {
     const raw = {
       id: 'test-agent',
       name: 'Test Agent',
@@ -366,25 +380,74 @@ describe('allowedBuiltinTools and allowedMcpTools schema fields', () => {
       system: '',
       tools: [],
       allowedBuiltinTools: [],
-      allowedMcpTools: [],
+      allowedMcpServers: [],
     }
     const result = agents.AgentDefSchema.safeParse(raw)
     expect(result.success).toBe(true)
     expect(result.data?.allowedBuiltinTools).toEqual([])
-    expect(result.data?.allowedMcpTools).toEqual([])
+    expect(result.data?.allowedMcpServers).toEqual([])
   })
 
-  test('round-trips allowedBuiltinTools and allowedMcpTools through YAML', () => {
+  test('round-trips allowedBuiltinTools and allowedMcpServers through YAML', () => {
     const def = makeDef({
       id: 'tool-restricted',
       allowedBuiltinTools: ['Read', 'Glob'],
-      allowedMcpTools: ['dc_send'],
+      allowedMcpServers: ['dc', 'claude_ai_Gmail'],
     })
     agents.saveAgent(def)
     const loaded = agents.getAgent('tool-restricted')
     expect(loaded).not.toBeNull()
     expect(loaded!.allowedBuiltinTools).toEqual(['Read', 'Glob'])
-    expect(loaded!.allowedMcpTools).toEqual(['dc_send'])
+    expect(loaded!.allowedMcpServers).toEqual(['dc', 'claude_ai_Gmail'])
+  })
+
+  test('migrateToolsToServers converts legacy allowedMcpTools on load', () => {
+    // Write a YAML file with the old allowedMcpTools field
+    writeFileSync(
+      join(testDir, 'legacy-mcp.yaml'),
+      YAML.stringify({
+        id: 'legacy-mcp',
+        name: 'Legacy MCP',
+        model: 'claude-sonnet-4-6',
+        system: 'test',
+        tools: [],
+        allowedMcpTools: ['dc_send', 'dc_chat_history'],
+      }),
+    )
+    const loaded = agents.getAgent('legacy-mcp')
+    expect(loaded).not.toBeNull()
+    // Should have been migrated to allowedMcpServers
+    expect(loaded!.allowedMcpServers).toEqual(['dc'])
+    expect(loaded!.allowedMcpTools).toBeUndefined()
+  })
+
+  test('migrateToolsToServers converts empty allowedMcpTools to empty servers', () => {
+    writeFileSync(
+      join(testDir, 'legacy-empty.yaml'),
+      YAML.stringify({
+        id: 'legacy-empty',
+        name: 'Legacy Empty',
+        model: 'claude-sonnet-4-6',
+        system: 'test',
+        tools: [],
+        allowedMcpTools: [],
+      }),
+    )
+    const loaded = agents.getAgent('legacy-empty')
+    expect(loaded).not.toBeNull()
+    expect(loaded!.allowedMcpServers).toEqual([])
+    expect(loaded!.allowedMcpTools).toBeUndefined()
+  })
+
+  test('migrateToolsToServers does not touch agents with allowedMcpServers already set', () => {
+    const def = makeDef({
+      id: 'already-migrated',
+      allowedMcpServers: ['dc', 'claude_ai_Gmail'],
+    })
+    agents.saveAgent(def)
+    const loaded = agents.getAgent('already-migrated')
+    expect(loaded).not.toBeNull()
+    expect(loaded!.allowedMcpServers).toEqual(['dc', 'claude_ai_Gmail'])
   })
 
   test('getAgentsDir returns the current agents directory', () => {

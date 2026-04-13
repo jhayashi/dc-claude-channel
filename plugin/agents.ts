@@ -116,9 +116,11 @@ export const AgentDefSchema = z.object({
    */
   allowedBuiltinTools: z.array(z.string()).nullable().optional(),
   /**
-   * Allowlist of MCP tool names (dc_send, dc_chat_history, etc.) this agent
-   * may use. null or absent = all tools allowed. [] = no tools allowed.
+   * Allowlist of MCP server prefixes (dc, claude_ai_Gmail, etc.) this agent
+   * may use. null or absent = all servers allowed. [] = no MCP servers.
    */
+  allowedMcpServers: z.array(z.string()).nullable().optional(),
+  /** @deprecated Use allowedMcpServers. Kept for migration compat. */
   allowedMcpTools: z.array(z.string()).nullable().optional(),
 })
 
@@ -154,6 +156,18 @@ export function listAgents(): AgentDef[] {
   return out.sort((a, b) => a.id.localeCompare(b.id))
 }
 
+/**
+ * Migrate legacy allowedMcpTools (per-tool names) to allowedMcpServers
+ * (per-server prefixes). All DC tools map to the 'dc' server prefix.
+ */
+export function migrateToolsToServers(agent: AgentDef): AgentDef {
+  if (agent.allowedMcpTools != null && agent.allowedMcpServers === undefined) {
+    agent.allowedMcpServers = agent.allowedMcpTools.length > 0 ? ['dc'] : []
+    agent.allowedMcpTools = undefined
+  }
+  return agent
+}
+
 /** Get a single agent by id. Returns null if missing or invalid. */
 export function getAgent(id: string): AgentDef | null {
   const path = agentPath(id)
@@ -165,7 +179,7 @@ export function getAgent(id: string): AgentDef | null {
     return null
   }
   const parsed = AgentDefSchema.safeParse(raw)
-  return parsed.success ? parsed.data : null
+  return parsed.success ? migrateToolsToServers(parsed.data) : null
 }
 
 /** Save an agent definition. Atomic via temp + rename. */
