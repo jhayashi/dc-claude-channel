@@ -31,6 +31,11 @@ export function setAgentsDir(dir: string): void {
   AGENTS_DIR = dir
 }
 
+/** Return the current agents storage directory (for tests). */
+export function getAgentsDir(): string {
+  return AGENTS_DIR
+}
+
 /** Allowed model ids for agent definitions. */
 export const ALLOWED_MODELS = [
   'claude-opus-4-6',
@@ -105,6 +110,16 @@ export const AgentDefSchema = z.object({
   skills: z.array(z.unknown()).optional(),
   mcp_servers: z.array(z.unknown()).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * Allowlist of built-in tool names (Bash, Read, Write, etc.) this agent
+   * may use. null or absent = all tools allowed. [] = no tools allowed.
+   */
+  allowedBuiltinTools: z.array(z.string()).nullable().optional(),
+  /**
+   * Allowlist of MCP tool names (dc_send, dc_chat_history, etc.) this agent
+   * may use. null or absent = all tools allowed. [] = no tools allowed.
+   */
+  allowedMcpTools: z.array(z.string()).nullable().optional(),
 })
 
 export type AgentDef = z.infer<typeof AgentDefSchema>

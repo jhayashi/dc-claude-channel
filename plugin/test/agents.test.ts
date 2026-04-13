@@ -283,6 +283,117 @@ describe('skipPermissions helpers', () => {
   })
 })
 
+describe('allowedBuiltinTools and allowedMcpTools schema fields', () => {
+  test('schema accepts agent with allowedBuiltinTools list', () => {
+    const raw = {
+      id: 'test-agent',
+      name: 'Test Agent',
+      model: 'claude-sonnet-4-6',
+      system: '',
+      tools: [],
+      allowedBuiltinTools: ['Bash', 'Read', 'Write'],
+    }
+    const result = agents.AgentDefSchema.safeParse(raw)
+    expect(result.success).toBe(true)
+    expect(result.data?.allowedBuiltinTools).toEqual(['Bash', 'Read', 'Write'])
+  })
+
+  test('schema accepts agent with allowedMcpTools list', () => {
+    const raw = {
+      id: 'test-agent',
+      name: 'Test Agent',
+      model: 'claude-sonnet-4-6',
+      system: '',
+      tools: [],
+      allowedMcpTools: ['dc_send', 'dc_chat_history'],
+    }
+    const result = agents.AgentDefSchema.safeParse(raw)
+    expect(result.success).toBe(true)
+    expect(result.data?.allowedMcpTools).toEqual(['dc_send', 'dc_chat_history'])
+  })
+
+  test('schema accepts null for allowedBuiltinTools (means all allowed)', () => {
+    const raw = {
+      id: 'test-agent',
+      name: 'Test Agent',
+      model: 'claude-sonnet-4-6',
+      system: '',
+      tools: [],
+      allowedBuiltinTools: null,
+    }
+    const result = agents.AgentDefSchema.safeParse(raw)
+    expect(result.success).toBe(true)
+    expect(result.data?.allowedBuiltinTools).toBeNull()
+  })
+
+  test('schema accepts null for allowedMcpTools (means all allowed)', () => {
+    const raw = {
+      id: 'test-agent',
+      name: 'Test Agent',
+      model: 'claude-sonnet-4-6',
+      system: '',
+      tools: [],
+      allowedMcpTools: null,
+    }
+    const result = agents.AgentDefSchema.safeParse(raw)
+    expect(result.success).toBe(true)
+    expect(result.data?.allowedMcpTools).toBeNull()
+  })
+
+  test('fields are optional — existing agents without them still load', () => {
+    // Write a minimal YAML without the new fields
+    writeFileSync(
+      join(testDir, 'legacy-agent.yaml'),
+      YAML.stringify({
+        id: 'legacy-agent',
+        name: 'Legacy Agent',
+        model: 'claude-sonnet-4-6',
+        system: 'you are helpful',
+        tools: [],
+      }),
+    )
+    const loaded = agents.getAgent('legacy-agent')
+    expect(loaded).not.toBeNull()
+    expect(loaded!.allowedBuiltinTools).toBeUndefined()
+    expect(loaded!.allowedMcpTools).toBeUndefined()
+  })
+
+  test('empty arrays mean no tools allowed (distinct from null/absent)', () => {
+    const raw = {
+      id: 'test-agent',
+      name: 'Test Agent',
+      model: 'claude-sonnet-4-6',
+      system: '',
+      tools: [],
+      allowedBuiltinTools: [],
+      allowedMcpTools: [],
+    }
+    const result = agents.AgentDefSchema.safeParse(raw)
+    expect(result.success).toBe(true)
+    expect(result.data?.allowedBuiltinTools).toEqual([])
+    expect(result.data?.allowedMcpTools).toEqual([])
+  })
+
+  test('round-trips allowedBuiltinTools and allowedMcpTools through YAML', () => {
+    const def = makeDef({
+      id: 'tool-restricted',
+      allowedBuiltinTools: ['Read', 'Glob'],
+      allowedMcpTools: ['dc_send'],
+    })
+    agents.saveAgent(def)
+    const loaded = agents.getAgent('tool-restricted')
+    expect(loaded).not.toBeNull()
+    expect(loaded!.allowedBuiltinTools).toEqual(['Read', 'Glob'])
+    expect(loaded!.allowedMcpTools).toEqual(['dc_send'])
+  })
+
+  test('getAgentsDir returns the current agents directory', () => {
+    const dir = agents.getAgentsDir()
+    expect(typeof dir).toBe('string')
+    expect(dir.length).toBeGreaterThan(0)
+  })
+})
+
 describe('iconMirror helpers', () => {
   test('getIconMirror defaults to false when metadata absent', () => {
     expect(agents.getIconMirror(makeDef())).toBe(false)
