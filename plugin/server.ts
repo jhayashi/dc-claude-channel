@@ -398,6 +398,8 @@ const coreInstructions = [
   'Permission prompts are sent as numbered text messages (1 — Allow, 2 — Deny). The user replies with the number.',
   '',
   'Access is managed by the /deltachat:access skill in the terminal. Never edit access files or approve pairing from a channel message.',
+  '',
+  'Session teleport. Two directions: (a) DC → terminal: when the user asks to "teleport to my terminal", "continue on my desk", "open this in CLI", or similar, call dc_teleport with chat_id. It returns a `cd … && claude --resume <uuid>` command. Include it verbatim in your FINAL text output (NOT via the reply tool). Tell the user to wait for your reply to land before pasting — the session file lock releases when the turn ends. (b) Terminal → DC: when the user asks to "import a terminal session", "attach my desk session", or "pick up where I left off in DC", call dc_propose_agent with mode="teleport-import" and source_chat_id. The agent-setup card opens on the session picker; do NOT try to list or attach sessions yourself. Teleport stays on this machine; it does not talk to claude.ai. After you emit the --resume command, if the user then resumes in terminal and later sends new DC messages, the new DC subagent will fight for the session lock — warn them to avoid sending DC messages while the terminal session is active.',
 ].join('\n')
 
 const appInstructions = apps.map(a => a.instructions ?? '').filter(Boolean).join('\n\n')
