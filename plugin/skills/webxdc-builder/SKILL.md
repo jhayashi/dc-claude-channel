@@ -21,11 +21,13 @@ Build interactive apps that run inside Delta Chat. Two paths: **static** (one-sh
 |----------|--------------------------|--------------------------------|
 | Needs server-side logic? | No | Yes |
 | Needs persistent state? | No | Yes (set `persistent: true`) |
-| Needs LLM responses? | No | Yes (`ctx.requestLLM`) |
+| Needs LLM responses? | No | Yes (`ctx.requestLLM`) — see cost note below |
 | Multi-user interaction? | Read-only sharing | Yes (route on `senderAddr`) |
 | Examples | info cards, charts, slideshows | polls, quizzes, games, chatbots, dashboards |
 
 **Rule of thumb:** If tapping a button should change something for everyone or call the LLM, use Familiar. If the app is purely client-side, use static.
+
+> **`ctx.requestLLM` cost:** each call dispatches a full agent turn — it takes several seconds and consumes tokens from the chat's agent budget. Debounce, cache, or pre-compute answers when possible. Don't call it on every keystroke or from `setUpdateListener`.
 
 ---
 
@@ -54,8 +56,9 @@ Every WebXDC HTML file -- static or Familiar -- MUST follow these rules:
    ```
    Every payload MUST include `senderAddr: window.webxdc.selfAddr`. Payloads without it are silently dropped.
 5. **Replay safety:** `setUpdateListener(fn, 0)` replays ALL updates from the beginning on every app open. Handlers must rebuild state from the full replay, not append incrementally.
-6. **XSS prevention:** Use `textContent` (not `innerHTML`) for any user-supplied data.
+6. **XSS prevention:** Use `textContent` (not `innerHTML`) for any user-supplied data -- including anything that came from `ctx.requestLLM()` in a handler. LLM output can contain `<script>` or `<img onerror>` via prompt injection.
 7. **All CSS/JS/assets inline.** Single HTML file, no imports.
+8. **Debounce `sendUpdate`.** Never fire it directly from a high-frequency event (rapid taps, mousemove, keystrokes). WebXDC rate-limits `sendUpdate` to roughly once every 10 seconds per app; bursts get queued or dropped silently. For tap-driven apps, batch into a delta and flush on a timer (see counter pattern below).
 
 ---
 
@@ -121,7 +124,12 @@ For apps that need server-side logic, persistent state, or LLM integration. You 
 
 ### Handler API
 
-The handler is a JS string. It runs in a sandbox with dangerous globals (`fs`, `process`, `fetch`, `require`, `Bun`, `setTimeout`, etc.) shadowed as `undefined`. Only standard JS builtins (Math, JSON, Date, Array, String, etc.) and the context object are available.
+The handler is a JS string that the runtime compiles and runs **inside the dispatcher process**. Dangerous globals (`fs`, `process`, `fetch`, `require`, `Bun`, `Function`, `eval`, `setTimeout`, etc.) are shadowed as `undefined` to discourage casual misuse, but this is **not a sandbox** — a determined handler can re-acquire them via prototype-chain tricks. Treat the handler source as code you would personally run in the dispatcher.
+
+This has two practical consequences:
+
+1. **Never embed unreviewed user input into a handler string.** If a user says "make a counter that starts at 5", generate a handler with the literal value `5`, don't concatenate `${userValue}` into handler source. The user approving `dc_familiar_create` is the security gate, and they're approving the handler they see.
+2. **Keep handlers short and explicit.** Standard JS builtins (Math, JSON, Date, Array, String, Promise) work normally. Anything outside the explicit `ctx` API should make you stop and ask whether you need it.
 
 The handler receives two arguments:
 
@@ -150,30 +158,46 @@ function handler(update, ctx) { ... }
 
 No LLM calls -- just state logic.
 
-**HTML (counter app):**
+**HTML (counter app):** Note the debounced send — rapid taps accumulate into `pendingDelta` and flush after 250ms. Without this, the sendUpdate rate limit (rule 8) silently drops bursts.
+
 ```html
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <script src="webxdc.js"></script>
 <style>
   body { font-family: system-ui; text-align: center; padding: 2em; }
-  button { font-size: 1.5em; padding: 0.5em 1em; margin: 0.5em; }
+  button { font-size: 1.5em; padding: 0.5em 1em; margin: 0.5em; touch-action: manipulation; }
   #count { font-size: 3em; margin: 1em 0; }
 </style>
 </head><body>
 <h2>Counter</h2>
-<div id="count">0</div>
-<button onclick="send('increment')">+1</button>
-<button onclick="send('decrement')">-1</button>
+<div id="count" aria-live="polite">0</div>
+<button onclick="addDelta(1)">+1</button>
+<button onclick="addDelta(-1)">-1</button>
 <script>
-function send(action) {
-  window.webxdc.sendUpdate({
-    payload: { senderAddr: window.webxdc.selfAddr, type: action }
-  }, action);
+// Authoritative state lives in JS vars, never in the DOM.
+var serverCount = 0;
+var pendingDelta = 0;
+var flushTimer = null;
+function render() {
+  document.getElementById('count').textContent = String(serverCount + pendingDelta);
+}
+function addDelta(n) {
+  pendingDelta += n;
+  render();  // optimistic: show serverCount + pendingDelta
+  if (flushTimer) return;
+  flushTimer = setTimeout(function() {
+    var d = pendingDelta; pendingDelta = 0; flushTimer = null;
+    window.webxdc.sendUpdate({
+      payload: { senderAddr: window.webxdc.selfAddr, type: 'add', delta: d }
+    }, 'add ' + d);
+  }, 250);
 }
 window.webxdc.setUpdateListener(function(update) {
-  if (update.payload && update.payload.count !== undefined) {
-    document.getElementById('count').textContent = update.payload.count;
+  // Server is authoritative. Overwrite serverCount on every echo, then re-render.
+  if (update.payload && typeof update.payload.count === 'number') {
+    serverCount = update.payload.count;
+    render();
   }
 }, 0);
 </script>
@@ -182,13 +206,18 @@ window.webxdc.setUpdateListener(function(update) {
 
 **Handler:**
 ```js
-if (update.type === 'increment') {
-  ctx.state.count = (ctx.state.count || 0) + 1;
-} else if (update.type === 'decrement') {
-  ctx.state.count = (ctx.state.count || 0) - 1;
+if (update.type === 'add') {
+  var delta = typeof update.delta === 'number' ? update.delta : 0;
+  ctx.state.count = (ctx.state.count || 0) + delta;
 }
 ctx.sendUpdate({ count: ctx.state.count });
 ```
+
+> **Never parse the DOM to reconstruct app state — keep a JS variable, render from it.** `setUpdateListener(fn, 0)` replays every update from serial 0 on app open, so anything that mutates state *inside* the listener (e.g. `counts[k]++`) multiplies by open-count. Store the authoritative snapshot in a JS variable, overwrite it from each update, and render imperatively.
+
+**Notes:**
+- The HTML renders optimistically from `serverCount + pendingDelta` for responsiveness. When the server echo arrives, `serverCount` is overwritten and `pendingDelta` has already been flushed — the next render snaps to the authoritative value.
+- The handler validates `update.delta` (rule: never trust client-supplied fields without a type check) before applying it. Treat `update` the way you'd treat `req.body` in a web handler.
 
 ### Pure LLM (chat assistant)
 
@@ -201,6 +230,22 @@ if (update.type === 'ask') {
   ctx.sendUpdate({ type: 'answer', text: answer });
 }
 ```
+
+**HTML (answer rendering — `textContent` is mandatory):**
+```html
+<div id="answer"></div>
+<script>
+  window.webxdc.setUpdateListener(function(update) {
+    if (update.payload && update.payload.type === 'answer') {
+      // textContent — NOT innerHTML. LLM output can contain <script> or
+      // <img src=x onerror=...> triggered by prompt injection.
+      document.getElementById('answer').textContent = update.payload.text;
+    }
+  }, 0);
+</script>
+```
+
+> **Use `textContent`, never `innerHTML`**, when rendering any value that came from `ctx.requestLLM()` or user input. An LLM response may contain `<img src=x onerror=...>` triggered by prompt injection; `innerHTML` executes it, `textContent` shows it as literal text.
 
 ### Hybrid (deterministic + LLM)
 
@@ -242,7 +287,7 @@ if (update.type === 'vote') {
   if (!ctx.state.votes) ctx.state.votes = {};
   ctx.state.votes[update.senderAddr] = update.option;
 
-  // Count votes per option
+  // Recount every time — server computes the authoritative tally from ctx.state.
   var counts = {};
   var addrs = Object.keys(ctx.state.votes);
   for (var i = 0; i < addrs.length; i++) {
@@ -252,6 +297,31 @@ if (update.type === 'vote') {
   ctx.sendUpdate({ type: 'results', counts: counts, totalVoters: addrs.length });
 }
 ```
+
+**HTML (poll client — render from the server's authoritative counts, never accumulate locally):**
+```html
+<div id="results"></div>
+<script>
+  var latestResults = null;
+  window.webxdc.setUpdateListener(function(update) {
+    if (update.payload && update.payload.type === 'results') {
+      latestResults = update.payload.counts;  // overwrite, don't accumulate
+      render(latestResults);
+    }
+  }, 0);
+  function render(counts) {
+    var el = document.getElementById('results');
+    el.textContent = '';  // clear
+    Object.keys(counts).forEach(function(k) {
+      var row = document.createElement('div');
+      row.textContent = k + ': ' + counts[k];  // textContent, never innerHTML
+      el.appendChild(row);
+    });
+  }
+</script>
+```
+
+> **Never `counts[k]++` inside `setUpdateListener`.** Replay-from-serial-0 on every app open multiplies votes by the open-count. The server sends authoritative totals; the client overwrites a JS variable and re-renders.
 
 ---
 
