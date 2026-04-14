@@ -121,6 +121,9 @@ export function _resetSttWorker(): void {
     _worker.terminate()
     _worker = null
   }
+  for (const [, p] of _pending) {
+    p.reject(new Error('stt-worker terminated'))
+  }
   _pending.clear()
 }
 

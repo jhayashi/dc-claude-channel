@@ -102,6 +102,13 @@ describe('MIN_AUDIO_DURATION_SEC enforcement', () => {
   })
 })
 
+describe('_resetSttWorker', () => {
+  test('is idempotent and safe to call with no worker', () => {
+    expect(() => _resetSttWorker()).not.toThrow()
+    expect(() => _resetSttWorker()).not.toThrow()  // second call
+  })
+})
+
 describe('transcribe does not block the event loop', () => {
   test('setTimeout callbacks fire during a transcription', async () => {
     if (process.env.DC_STT_INTEGRATION_TEST !== '1') return
