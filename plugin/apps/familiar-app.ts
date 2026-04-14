@@ -29,6 +29,12 @@ import { tmpdir } from 'node:os'
 import { zipSync, strToU8 } from 'fflate'
 
 // ---------------------------------------------------------------------------
+// Payload size cap — matches file-reviewer-app.ts
+// ---------------------------------------------------------------------------
+
+const MAX_PAYLOAD_BYTES = 120_000
+
+// ---------------------------------------------------------------------------
 // Icon (read once at import time)
 // ---------------------------------------------------------------------------
 
@@ -195,8 +201,25 @@ export const familiarApp: WebXDCApp = {
 
       // Flush collected updates sequentially to preserve ordering
       for (const outPayload of pendingUpdates) {
+        const payloadStr = JSON.stringify({ payload: outPayload })
+        if (payloadStr.length > MAX_PAYLOAD_BYTES) {
+          ctx.logf('familiar: payload too large (%d bytes > %d) for app %s — dropping', payloadStr.length, MAX_PAYLOAD_BYTES, inst.appId)
+          const errPayload = JSON.stringify({
+            payload: {
+              type: 'handler_error',
+              senderAddr: null,
+              message: `payload too large (${payloadStr.length} bytes exceeds ${MAX_PAYLOAD_BYTES} limit)`,
+            },
+          })
+          try {
+            await ctx.client.sendWebXDCUpdate(inst.msgId, errPayload)
+          } catch (err: unknown) {
+            ctx.logf('familiar: diagnostic sendUpdate error for app %s: %s', inst.appId, err)
+          }
+          continue
+        }
         try {
-          await ctx.client.sendWebXDCUpdate(inst.msgId, JSON.stringify({ payload: outPayload }))
+          await ctx.client.sendWebXDCUpdate(inst.msgId, payloadStr)
         } catch (err: unknown) {
           ctx.logf('familiar: sendUpdate error for app %s: %s', inst.appId, err)
         }
@@ -338,6 +361,15 @@ async function handleUpdate(
   }
 
   const update = JSON.stringify({ payload })
+  if (update.length > MAX_PAYLOAD_BYTES) {
+    return {
+      content: [{
+        type: 'text',
+        text: `dc_familiar_update: payload too large (${update.length} bytes exceeds ${MAX_PAYLOAD_BYTES} limit)`,
+      }],
+      isError: true,
+    }
+  }
   await ctx.client.sendWebXDCUpdate(inst.msgId, update)
 
   return { content: [{ type: 'text', text: `Update sent to "${inst.title}" (${appId}).` }] }

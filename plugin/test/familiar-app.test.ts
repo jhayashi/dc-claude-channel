@@ -407,6 +407,65 @@ describe('onWebXDCUpdate', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Payload size cap (120KB)
+// ---------------------------------------------------------------------------
+
+describe('familiar payload size cap', () => {
+  test('oversized handler sendUpdate emits handler_error instead of the large payload', async () => {
+    const ctx = makeCtx()
+    // Create an app whose handler emits a >120KB payload
+    await familiarApp.callTool('dc_familiar_create', {
+      chat_id: '42',
+      title: 'Big',
+      html: '<html></html>',
+      // handler emits a string that is definitely >120 000 chars once serialized
+      handler: 'ctx.sendUpdate({ blob: "x".repeat(200_000) });',
+    }, ctx)
+
+    const instances = listInstances(42)
+    const inst = instances[0]!
+    sentUpdates.length = 0
+
+    await familiarApp.onWebXDCUpdate!(inst.msgId, [
+      { serial: 1, maxSerial: 1, payload: { action: 'go' } } as any,
+    ], ctx)
+
+    // Should have sent exactly one update: the handler_error diagnostic, not the big blob
+    expect(sentUpdates.length).toBe(1)
+    const parsed = JSON.parse(sentUpdates[0]!.update)
+    expect(parsed.payload.type).toBe('handler_error')
+    expect(parsed.payload.message).toContain('too large')
+    // The oversized blob must NOT have been sent
+    expect(sentUpdates[0]!.update).not.toContain('x'.repeat(100))
+  })
+
+  test('dc_familiar_update rejects oversized payload with isError', async () => {
+    const ctx = makeCtx()
+    await familiarApp.callTool('dc_familiar_create', {
+      chat_id: '42',
+      title: 'Big Update',
+      html: '<html></html>',
+      handler: 'ctx.sendUpdate({});',
+    }, ctx)
+
+    const instances = listInstances(42)
+    const appId = instances[0]!.appId
+    sentUpdates.length = 0
+
+    const result = await familiarApp.callTool('dc_familiar_update', {
+      chat_id: '42',
+      app_id: appId,
+      payload: { blob: 'x'.repeat(200_000) },
+    }, ctx)
+
+    expect(result!.isError).toBe(true)
+    expect(result!.content[0]!.text).toContain('too large')
+    // No WebXDC update should have been sent
+    expect(sentUpdates.length).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // buildFamiliarXDC embeds runtime title in manifest
 // ---------------------------------------------------------------------------
 
