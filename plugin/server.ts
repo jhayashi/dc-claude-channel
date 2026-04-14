@@ -1860,6 +1860,11 @@ async function main(): Promise<void> {
   // WebXDC updates — event-driven, O(1) dispatch via msgId registry.
   // Centralized owner verification: reads updates, filters by senderAddr,
   // and only forwards owner-verified updates to apps.
+  // Per-msgId serialization: if two update events arrive for the same
+  // msgId before the first handler finishes (e.g. during a multi-second
+  // requestLLM call), chain them so they run sequentially rather than
+  // racing on shared state. Different msgIds still run concurrently.
+  const webxdcHandlerChain = new Map<number, Promise<void>>()
   client.onWebXDCUpdate(async (msgId, _serial) => {
     if (shuttingDown) return
 
@@ -1924,7 +1929,15 @@ async function main(): Promise<void> {
       })
       if (filtered.length === 0) return
 
-      await entry.app.onWebXDCUpdate(msgId, filtered, ctx)
+      const prevTurn = webxdcHandlerChain.get(msgId) ?? Promise.resolve()
+      const thisTurn = prevTurn
+        .then(() => entry.app.onWebXDCUpdate!(msgId, filtered, ctx))
+        .catch(err => logf('webxdc: handler error for msg %d: %v', msgId, err))
+      webxdcHandlerChain.set(msgId, thisTurn)
+      await thisTurn
+      if (webxdcHandlerChain.get(msgId) === thisTurn) {
+        webxdcHandlerChain.delete(msgId)
+      }
 
       // Tutorial auto-advance: if this chat is in a tutorial step waiting for
       // an app interaction, advance it (so the user doesn't need to type a reply).
