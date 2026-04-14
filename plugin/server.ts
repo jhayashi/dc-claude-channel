@@ -42,6 +42,7 @@ import { ReactionRouter } from './dispatcher/reaction-router.js'
 import { tryAutoApprove } from './dispatcher/skip-permissions.js'
 import { createActivityReactor, THINKING_EMOJIS, type ActivityReactor } from './dispatcher/activity-reactions.js'
 import * as audit from './audit.js'
+import * as teleport from './teleport.js'
 import { ScheduleStore, type ScheduledJob } from './dispatcher/schedule-store.js'
 import { Scheduler, countFiresIn7Days } from './dispatcher/scheduler.js'
 import { CronExpressionParser } from 'cron-parser'
@@ -771,6 +772,18 @@ const coreTools = [
       required: ['chat_id', 'job_id'],
     },
   },
+  {
+    name: 'dc_teleport',
+    description:
+      'Emit a one-line `cd … && claude --resume <uuid>` command that resumes this DC chat\'s conversation in the user\'s terminal. Call this when the user asks to continue the chat from their terminal, or to "teleport" the chat to their desk. Returns the command plus a warning telling the user to wait for the current turn to finish before pasting — the session file lock releases when the turn ends.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        chat_id: { type: 'string', description: 'The chat to teleport from.' },
+      },
+      required: ['chat_id'],
+    },
+  },
 ]
 
 // ── Tool list ───────────────────────────────────────────────────────────
@@ -1287,6 +1300,26 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         if (!jobId) return { content: [{ type: 'text' as const, text: 'dc_schedule_delete: job_id is required' }], isError: true }
         const existed = scheduler.remove(chatId, jobId)
         return { content: [{ type: 'text' as const, text: JSON.stringify({ deleted: existed }) }] }
+      }
+
+      case 'dc_teleport': {
+        const chatIdRaw = args.chat_id as string
+        const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
+        if (!Number.isFinite(chatId)) {
+          return { content: [{ type: 'text' as const, text: 'dc_teleport: chat_id is required' }], isError: true }
+        }
+        if (!access.isAllowed(chatId)) {
+          return { content: [{ type: 'text' as const, text: `dc_teleport: chat ${chatId} is not accessible` }], isError: true }
+        }
+        const result = teleport.buildResumeCommand(chatId)
+        if ('error' in result) {
+          return { content: [{ type: 'text' as const, text: `dc_teleport: ${result.error}` }], isError: true }
+        }
+        const lines: string[] = []
+        lines.push(`\`\`\`\n${result.command}\n\`\`\``)
+        lines.push(`Session: ${result.sessionId}`)
+        lines.push(`\nWait for my current turn to finish, then paste the command. The session file unlocks once this reply lands.`)
+        return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
       }
 
       default:
