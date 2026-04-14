@@ -11,6 +11,7 @@ import * as agentSetup from '../agent-setup.js'
 import * as agents from '../agents.js'
 import * as bindings from '../bindings.js'
 import * as access from '../access.js'
+import * as teleport from '../teleport.js'
 import { ALL_BUILTIN_TOOLS, BUILTIN_TOOL_DESCRIPTIONS } from '../dispatcher/subagent-process.js'
 
 function availableToolsPayload(ctx: AppContext) {
@@ -64,7 +65,7 @@ async function sendInit(
   app: WebXDCApp,
   sourceChatId: number,
   draft: agents.DraftAgent,
-  startScreen: 'list' | 'create' = 'list',
+  startScreen: 'list' | 'create' | 'teleport-import' = 'list',
 ): Promise<Session> {
   // Reuse existing session if present.
   const existing = sessions.get(sourceChatId)
@@ -198,7 +199,8 @@ export const agentSetupApp: WebXDCApp = {
     '6. When the user explicitly asks to CREATE a new agent ("create a new agent", ' +
     '"make an agent for X", "new agent"), pass mode="create" so the card opens ' +
     'directly on the create form instead of the agent list. Leave mode off for ' +
-    'open-ended requests like "manage agents" or "edit settings".',
+    'open-ended requests like "manage agents" or "edit settings".\n' +
+    '7. When the user asks to "teleport", "import terminal session", or "continue my terminal session here", pass mode="teleport-import" so the card opens directly on the import pane.',
 
   tools(): ToolDef[] {
     return [
@@ -231,8 +233,8 @@ export const agentSetupApp: WebXDCApp = {
             },
             mode: {
               type: 'string',
-              description: 'Which screen the card should open on. "create" opens directly on the create form; "manage" (default) opens on the agent list.',
-              enum: ['create', 'manage'],
+              description: 'Which screen the card should open on. "create" opens directly on the create form; "teleport-import" opens the terminal-session picker; "manage" (default) opens on the agent list.',
+              enum: ['create', 'manage', 'teleport-import'],
             },
           },
           required: ['source_chat_id', 'description'],
@@ -261,7 +263,10 @@ export const agentSetupApp: WebXDCApp = {
       ? modelArg as agents.AllowedModel
       : undefined
     const modeArg = args.mode as string | undefined
-    const startScreen: 'list' | 'create' = modeArg === 'create' ? 'create' : 'list'
+    const startScreen: 'list' | 'create' | 'teleport-import' =
+      modeArg === 'create' ? 'create'
+      : modeArg === 'teleport-import' ? 'teleport-import'
+      : 'list'
     const { agent } = agents.draftAgentFromDescription(description, model)
     try {
       await sendInit(ctx, agentSetupApp, sourceChatId, agent, startScreen)
@@ -491,6 +496,73 @@ export const agentSetupApp: WebXDCApp = {
           try { unlinkSync(filePath) } catch {}
         } catch (err) {
           ctx.logf('agent-setup: export failed for agent %s: %v', agentId, err)
+        }
+        continue
+      }
+
+      if (payload.type === 'teleport_list_request') {
+        const requestId = typeof (payload as { requestId?: unknown }).requestId === 'number'
+          ? (payload as { requestId: number }).requestId : 0
+        const candidates = teleport.listResumeCandidates()
+        try {
+          const update = JSON.stringify({
+            payload: {
+              type: 'teleport_list',
+              requestId,
+              candidates,
+              version: agentSetup.getAgentSetupVersion(),
+              senderAddr: 'server',
+            },
+            summary: 'Session list',
+          })
+          await ctx.client.sendWebXDCUpdate(session.msgId, update)
+        } catch (err) {
+          ctx.logf('agent-setup: teleport_list send failed: %v', err)
+        }
+        continue
+      }
+
+      if (payload.type === 'teleport_attach') {
+        const requestId = typeof (payload as { requestId?: unknown }).requestId === 'number'
+          ? (payload as { requestId: number }).requestId : 0
+        const sessionId = typeof (payload as { sessionId?: unknown }).sessionId === 'string'
+          ? (payload as { sessionId: string }).sessionId : ''
+        if (!sessionId) {
+          ctx.logf('agent-setup: teleport_attach missing sessionId')
+          continue
+        }
+        try {
+          await ctx.evictSubagent(session.sourceChatId)
+          await teleport.attachSessionToChat(session.sourceChatId, sessionId)
+          const update = JSON.stringify({
+            payload: {
+              type: 'teleport_attach_ok',
+              requestId,
+              sessionId,
+              version: agentSetup.getAgentSetupVersion(),
+              senderAddr: 'server',
+            },
+            summary: 'Attached',
+          })
+          await ctx.client.sendWebXDCUpdate(session.msgId, update)
+          ctx.logf('agent-setup: attached session %s to chat %d', sessionId, session.sourceChatId)
+        } catch (err) {
+          const msg = (err as Error).message || 'attach failed'
+          ctx.logf('agent-setup: teleport_attach failed: %v', err)
+          try {
+            await ctx.client.sendWebXDCUpdate(session.msgId, JSON.stringify({
+              payload: {
+                type: 'teleport_attach_err',
+                requestId,
+                message: msg,
+                version: agentSetup.getAgentSetupVersion(),
+                senderAddr: 'server',
+              },
+              summary: 'Attach failed',
+            }))
+          } catch (sendErr) {
+            ctx.logf('agent-setup: teleport_attach_err send failed: %v', sendErr)
+          }
         }
         continue
       }
