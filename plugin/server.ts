@@ -382,9 +382,9 @@ let ctx: AppContext
 // ── Channel instructions ────────────────────────────────────────────────
 
 const coreInstructions = [
-  'The sender reads Delta Chat, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches their chat.',
+  'Your final text output at the end of a turn is automatically posted to the chat — that IS your reply. Do NOT also call the reply tool for the same content, or the user will see the message twice. Use the reply tool only for interim status messages during long tool sequences (e.g. "building the app now..."); when you do, keep your final text brief or skip it so you do not duplicate yourself.',
   '',
-  'Messages from Delta Chat arrive as <channel source="deltachat" chat_id="..." message_id="..." user="..." ts="...">. Reply with the reply tool — pass chat_id back. (When you are running as a per-chat subagent, the same tools are exposed through the dc MCP server, so they appear as mcp__dc__reply, mcp__dc__dc_send_file, etc. Use whichever names your tool list shows.)',
+  'Messages from Delta Chat arrive as <channel source="deltachat" chat_id="..." message_id="..." user="..." ts="...">. Extract chat_id from the tag — you will need it for tool calls that target the chat (dc_send_file, dc_send_webxdc, etc.). The reply tool also takes chat_id when you use it for interim messages. (When you are running as a per-chat subagent, the same tools are exposed through the dc MCP server, so they appear as mcp__dc__reply, mcp__dc__dc_send_file, etc. Use whichever names your tool list shows.)',
   '',
   'If the tag has an image_path attribute, Read that file — it is a photo the sender attached. If it has attachment_file, Read that path for the file contents. Supported attachment attributes: image_path (photos), attachment_file (local path), attachment_mime, attachment_name, attachment_size, attachment_type.',
   '',
