@@ -2,6 +2,44 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
+## [1.0.0] — 2026-04-13
+
+First stable release. Adds **Familiar runtime** (Claude-authored WebXDC apps with a live JS handler backend) and **local voice transcription** via whisper, and hardens both against a full pre-release security review.
+
+### Added
+- **Familiar runtime** (#35) — subagents can build interactive WebXDC apps on the fly with Claude acting as the backend. Each Familiar is HTML (the client) + a JS handler string (server-side logic) running in an eval sandbox inside the dispatcher. Handlers have access to `ctx.state` (persistent, optional), `ctx.sendUpdate()`, and `ctx.requestLLM()`. Ephemeral or persistent (saved to `~/.claude/channels/deltachat/familiars/` and reloaded on dispatcher startup). Four tools: `dc_familiar_create`, `dc_familiar_update`, `dc_familiar_list`, `dc_familiar_delete`. `.familiar.yaml` files can be sent as attachments for import.
+- **`webxdc-builder` skill** (#35) — teaches subagents when to use static WebXDC vs Familiar, the mandatory HTML rules (senderAddr owner verification, `textContent` for LLM output, replay safety, debounced sendUpdate), and reference patterns for counter / poll / Pure-LLM / hybrid / multi-user apps.
+- **`ctx.requestLLM`** (#35) — Familiar handlers can dispatch a full agent turn for LLM-backed responses, wired through the dispatcher's existing subagent machinery.
+- **Local voice transcription** — voice messages (.m4a) are transcribed via `@napi-rs/whisper` (prebuilt native bindings to whisper.cpp) before reaching the subagent. No system dependencies — no cmake, g++, or ffmpeg. Models auto-download from Hugging Face on first use to `$DC_STATE_DIR/whisper-models/`. Config via `DC_STT_ENABLED`, `DC_STT_MODEL`, `DC_STT_ECHO`, `DC_STT_TIMEOUT_SEC`, `DC_STT_MAX_DURATION_SEC`. Audio is decoded natively via Symphonia and inference runs in a cached Worker thread so the model stays loaded across calls.
+- **Voice activity reactions** — 👂 during transcription, thinking emoji on the transcript echo, inclusion in tutorial recap, guidance on missing deps.
+- **Startup prototype freeze** — `Object`, `Array`, and `Function` prototypes are frozen at dispatcher startup as defence in depth against prototype-pollution escapes from the Familiar sandbox.
+
+### Changed
+- **Subagents see the full repo, not just `plugin/`** (carry-over from 0.9 era, reaffirmed).
+- **Default STT model:** `base.en`. English-only, ~140 MB, fast enough for interactive use.
+
+### Fixed
+- **`dc-client`: wait for full attachment download before dispatching messages** — previously, the message event could fire before the file bytes finished downloading, so attachment-handling code saw stale or missing data.
+- **Server: `statSync` fallback when `msg.fileBytes` is unreliable** — some DC JSON-RPC versions report `fileBytes: 0` even when the attachment is fully downloaded; fall back to `statSync` on the file path.
+- **STT: drop sub-0.5 s audio** to eliminate whisper's silent-input hallucinations (`MIN_AUDIO_DURATION_SEC = 0.5`).
+- **STT: Worker lifecycle** — move inference into a cached Worker, cache the loaded model across calls, reject pending transcriptions when the worker is reset (terminate doesn't fire onerror, so callers would otherwise hang).
+- **Familiar: sandbox hardening** — shadow `Function`, `eval`, and `WebAssembly` as `undefined` inside the handler eval context (closes the easy `Function('return globalThis')()` escape; `({}).constructor.constructor` path remains, documented as not a true sandbox).
+- **Familiar: tighten `validateHtmlSenderAddr`** — parse each `sendUpdate(...)` argument by bracket balance instead of count-matching `senderAddr` against the whole file, so comments and string literals can't create false-positive matches.
+- **Familiar: per-msgId promise-chain serialization for WebXDC update handlers** — back-to-back updates for the same app no longer race inside the handler.
+- **Familiar: drop instances + persisted files in `cleanupChat`** — deleting a paired chat now fully tears down its Familiars instead of leaving orphaned disk files.
+- **Familiar: synthesize `manifest.toml` per app** — each Familiar's title now appears in the DC app list instead of a shared static name.
+- **Familiar: cap `sendUpdate` payloads at 120 KB** (UTF-8 byte-accurate) — oversized updates are dropped with a typed `handler_error` diagnostic; `dc_familiar_update` returns `isError`. Matches the file-reviewer cap.
+- **Familiar: full UUID app IDs + mkdtempSync leak fix + UUID-suffixed tmp paths** — collision-safe atomic writes, no more concurrent-write clobber.
+- **Familiar: block dynamic `import()` in sandbox**; handler syntax errors no longer silently drop the create.
+- **Familiar: serialize `sendUpdate` delivery** to guarantee ordering.
+
+### Docs
+- **`CLAUDE.md` documents the Familiar runtime, voice transcription, and the `webxdc-builder` skill.**
+- **`webxdc-builder/SKILL.md` rewrite** — replace the DOM-as-state counter with a `serverCount + pendingDelta` JS-var pattern, add a poll client snippet, add a Pure-LLM `textContent` rendering example, add a `ctx.requestLLM` cost callout, soften the unverified rate-limit claim on `sendUpdate`.
+- **Security review** filed post-tag: #42 (`validateHtmlSenderAddr` on persisted reload), #43 (`cleanupFamiliarForChat` helper for test coverage), #44 (`_resetSttWorker` pending-rejection test), #46 (STT model SHA-256 verification), #47 (group-chat WebXDC under dc-core ≥ 2.48 hashed `selfAddr`), #48 (scheduler tmp-path UUID suffix).
+
+---
+
 ## [0.9.5] — 2026-04-12
 
 Feature release: adds **per-agent tool access**, **agent import/export**, **MCP server toggles**, and the **Marp slide viewer**.
@@ -134,7 +172,8 @@ First public release of the Delta Chat channel for Claude Code.
 - File-based allowlist + pairing codes.
 - `deltachat-rpc-server` integration.
 
-[0.9.5]: https://github.com/jhayashi/dc-claude-channel/compare/v0.9.1...HEAD
+[1.0.0]: https://github.com/jhayashi/dc-claude-channel/compare/v0.9.5...v1.0.0
+[0.9.5]: https://github.com/jhayashi/dc-claude-channel/compare/v0.9.1...v0.9.5
 [0.9.1]: https://github.com/jhayashi/dc-claude-channel/compare/v0.9...v0.9.1
 [0.9]: https://github.com/jhayashi/dc-claude-channel/compare/v0.8.3...v0.9
 [0.8.3]: https://github.com/jhayashi/dc-claude-channel/compare/v0.8.1...v0.8.3
