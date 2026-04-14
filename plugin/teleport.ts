@@ -173,16 +173,19 @@ function readSessionMeta(path: string, sizeBytes: number): { summary: string | n
   let summary: string | null = null
   try {
     const fd = openSync(path, 'r')
-    const buf = Buffer.alloc(4096)
-    const n = readSync(fd, buf, 0, 4096, 0)
-    closeSync(fd)
-    const head = buf.slice(0, n).toString('utf-8')
-    const nl = head.indexOf('\n')
-    if (nl > 0) {
-      try {
-        const obj = JSON.parse(head.slice(0, nl)) as { summary?: string }
-        if (typeof obj.summary === 'string') summary = obj.summary
-      } catch { /* first line isn't JSON; leave summary null */ }
+    try {
+      const buf = Buffer.alloc(4096)
+      const n = readSync(fd, buf, 0, 4096, 0)
+      const head = buf.slice(0, n).toString('utf-8')
+      const nl = head.indexOf('\n')
+      if (nl > 0) {
+        try {
+          const obj = JSON.parse(head.slice(0, nl)) as { summary?: string }
+          if (typeof obj.summary === 'string') summary = obj.summary
+        } catch { /* first line isn't JSON; leave summary null */ }
+      }
+    } finally {
+      closeSync(fd)
     }
   } catch { /* ignore */ }
   const messageCount = sizeBytes > 0 ? Math.max(1, Math.round(sizeBytes / 400)) : null
