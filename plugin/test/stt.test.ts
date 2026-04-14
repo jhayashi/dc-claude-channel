@@ -3,6 +3,8 @@ import {
   parseSTTConfig,
   isVoiceMessage,
   MIN_AUDIO_DURATION_SEC,
+  AudioTooShortError,
+  checkAudioDuration,
 } from '../stt'
 
 describe('parseSTTConfig', () => {
@@ -81,8 +83,17 @@ describe('isVoiceMessage', () => {
   })
 })
 
-describe('MIN_AUDIO_DURATION_SEC', () => {
-  test('is 0.5 seconds', () => {
+describe('MIN_AUDIO_DURATION_SEC enforcement', () => {
+  test('checkAudioDuration throws AudioTooShortError for sub-min audio', () => {
+    expect(() => checkAudioDuration(0.3)).toThrow(AudioTooShortError)
+  })
+
+  test('checkAudioDuration accepts audio at the minimum', () => {
+    expect(() => checkAudioDuration(0.5)).not.toThrow()
+    expect(() => checkAudioDuration(1.0)).not.toThrow()
+  })
+
+  test('MIN_AUDIO_DURATION_SEC is 0.5', () => {
     expect(MIN_AUDIO_DURATION_SEC).toBe(0.5)
   })
 })

@@ -52,6 +52,7 @@ import {
   ensureModel,
   transcribe,
   isVoiceMessage,
+  AudioTooShortError,
   type STTConfig,
 } from './stt.js'
 
@@ -1592,11 +1593,13 @@ async function main(): Promise<void> {
 
   /**
    * Attempt to transcribe a voice message. Returns an enriched copy of
-   * the message with the transcript prepended to text, or null if STT
-   * is unavailable, the message isn't a voice message, or transcription
-   * fails. In echo=quoted mode, sends the transcript back to the chat.
+   * the message with the transcript prepended to text, null if STT is
+   * unavailable/the message isn't a voice message/transcription fails
+   * (caller should proceed with original message), or 'drop' if the
+   * message should be silently discarded (e.g. sub-min duration clip).
+   * In echo=quoted mode, sends the transcript back to the chat.
    */
-  const tryTranscribeVoice = async (msg: Message): Promise<Message | null> => {
+  const tryTranscribeVoice = async (msg: Message): Promise<Message | 'drop' | null> => {
     if (!sttConfig.enabled || !isVoiceMessage(msg)) return null
 
     try {
@@ -1629,7 +1632,12 @@ async function main(): Promise<void> {
         ...msg,
         text: `[Voice transcript]: ${result.text}${msg.text ? '\n' + msg.text : ''}`,
       }
-    } catch (err) {
+    } catch (err: unknown) {
+      if (err instanceof AudioTooShortError) {
+        logf('stt: dropping sub-0.5s voice message (%ss) in chat %d', err.durationSec.toFixed(2), msg.chatId)
+        client.sendReaction(msg.id, '\u{1F90F}').catch(() => {})
+        return 'drop'
+      }
       logf('stt: transcription failed for msg %d: %v', msg.id, err)
       return null
     }
@@ -1642,7 +1650,9 @@ async function main(): Promise<void> {
     if (await tryImportAgentAttachment(msg)) return
 
     // Transcribe voice messages before forwarding to the subagent.
-    const enrichedMsg = await tryTranscribeVoice(msg) ?? msg
+    const transcribeResult = await tryTranscribeVoice(msg)
+    if (transcribeResult === 'drop') return
+    const enrichedMsg = transcribeResult ?? msg
 
     const chatId = msg.chatId
     activityReactor.setTurnTarget(chatId, msg.id)

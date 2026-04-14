@@ -180,6 +180,7 @@ export async function transcribe(
   if (audioDurationSec > config.maxDurationSec) {
     throw new Error(`Audio too long (${audioDurationSec.toFixed(0)}s > ${config.maxDurationSec}s)`)
   }
+  checkAudioDuration(audioDurationSec)
 
   // 2. Load model and configure parameters
   const whisper = new Whisper(modelPath)
@@ -239,3 +240,22 @@ export function isVoiceMessage(msg: { viewType?: string; file?: string }): boole
 
 /** Minimum audio duration (seconds) to attempt transcription. */
 export const MIN_AUDIO_DURATION_SEC = 0.5
+
+/**
+ * Thrown by `transcribe` when the decoded audio is shorter than
+ * `MIN_AUDIO_DURATION_SEC`. Callers should treat this as "silently drop";
+ * whisper output on sub-0.5s clips is hallucinated text.
+ */
+export class AudioTooShortError extends Error {
+  constructor(public readonly durationSec: number) {
+    super(`Audio too short (${durationSec.toFixed(2)}s < ${MIN_AUDIO_DURATION_SEC}s)`)
+    this.name = 'AudioTooShortError'
+  }
+}
+
+/** Throws AudioTooShortError if durationSec < MIN_AUDIO_DURATION_SEC. */
+export function checkAudioDuration(durationSec: number): void {
+  if (durationSec < MIN_AUDIO_DURATION_SEC) {
+    throw new AudioTooShortError(durationSec)
+  }
+}
