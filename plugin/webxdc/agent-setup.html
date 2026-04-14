@@ -131,8 +131,8 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .btn:disabled { opacity: 0.4; cursor: default; }
 .btn-create { background: linear-gradient(135deg, #238636 0%, #2ea043 100%); color: white; }
 .btn-back { background: #30363d; color: #e6edf3; }
-#step0, #step2, #step3, #outdated, #loading { display: none; }
-#step0.visible, #step2.visible, #step3.visible, #outdated.visible, #loading.visible { display: block; }
+#step0, #step2, #step3, #outdated, #loading, #teleport-import { display: none; }
+#step0.visible, #step2.visible, #step3.visible, #outdated.visible, #loading.visible, #teleport-import.visible { display: block; }
 .center { text-align: center; padding: 50px 20px; color: #8b949e; }
 .spinner { width: 28px; height: 28px; border: 3px solid #30363d; border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 14px; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -322,6 +322,21 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       <div style="font-size:14px;font-weight:600;color:#58a6ff;margin-top:18px;">&#x2190; Swipe or tap back to return to chat</div>
     </div>
   </div>
+
+  <div id="teleport-import">
+    <div class="body">
+      <h2 style="font-size:18px;margin-bottom:4px;">Import terminal session</h2>
+      <p style="font-size:13px;color:#8b949e;margin-bottom:14px;">Pick a terminal <code>claude</code> session from the last 48 hours. Your next message here will continue it.</p>
+      <div id="teleport-loading" style="font-size:13px;color:#8b949e;" role="status">Loading recent sessions&hellip;</div>
+      <div id="teleport-empty" style="display:none;font-size:13px;color:#8b949e;">No terminal sessions found in the last 48 hours.</div>
+      <div id="teleport-error" style="display:none;font-size:13px;color:#f85149;" role="alert"></div>
+      <div id="teleport-list" style="display:none" role="listbox" aria-label="Recent terminal sessions"></div>
+      <div style="display:flex;gap:8px;margin-top:16px;">
+        <button type="button" id="teleport-cancel" class="btn btn-back">Cancel</button>
+        <button type="button" id="teleport-attach" class="btn btn-create" disabled>Attach</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="modal" class="modal-overlay" onclick="dismissModal(event)">
@@ -335,7 +350,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.35;
+var APP_VERSION = 1.36;
 var draft = null;
 var existingAgents = [];
 var creating = false;
@@ -350,6 +365,10 @@ var modalCountdown = 0;
 // every open, so it's only truthy for live responses.
 var pendingAction = null;
 
+var teleportRequestId = 0;
+var teleportListRequested = false;
+var selectedTeleportSessionId = null;
+
 var MODEL_LABELS = {
   'claude-opus-4-6': 'opus',
   'claude-sonnet-4-6': 'sonnet',
@@ -357,7 +376,7 @@ var MODEL_LABELS = {
 };
 
 function show(id) {
-  var ids = ['loading', 'step0', 'step2', 'step3', 'outdated'];
+  var ids = ['loading', 'step0', 'step2', 'step3', 'outdated', 'teleport-import'];
   for (var i = 0; i < ids.length; i++) {
     var el = document.getElementById(ids[i]);
     if (ids[i] === id) el.classList.add('visible'); else el.classList.remove('visible');
@@ -825,6 +844,108 @@ function refreshList() {
   }
 }
 
+function isOnTeleportPane() {
+  var el = document.getElementById('teleport-import');
+  return el && el.classList.contains('visible');
+}
+
+function requestTeleportList() {
+  teleportRequestId++;
+  var myReq = teleportRequestId;
+  var loading = document.getElementById('teleport-loading');
+  var empty = document.getElementById('teleport-empty');
+  var err = document.getElementById('teleport-error');
+  var list = document.getElementById('teleport-list');
+  if (loading) loading.style.display = 'block';
+  if (empty) empty.style.display = 'none';
+  if (err) err.style.display = 'none';
+  if (list) list.style.display = 'none';
+  selectedTeleportSessionId = null;
+  var attachBtn = document.getElementById('teleport-attach');
+  if (attachBtn) attachBtn.disabled = true;
+  window.webxdc.sendUpdate({
+    payload: { type: 'teleport_list_request', requestId: myReq, senderAddr: window.webxdc.selfAddr },
+    summary: 'Loading sessions'
+  }, 'teleport list request ' + myReq);
+}
+
+function renderTeleportList(candidates) {
+  var loading = document.getElementById('teleport-loading');
+  var empty = document.getElementById('teleport-empty');
+  var list = document.getElementById('teleport-list');
+  if (loading) loading.style.display = 'none';
+  if (!candidates || candidates.length === 0) {
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (!list) return;
+  while (list.firstChild) list.removeChild(list.firstChild);
+  list.style.display = 'block';
+  candidates.forEach(function(c) {
+    var row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'existing-card';
+    row.setAttribute('role', 'option');
+    row.setAttribute('aria-pressed', 'false');
+    row.dataset.sessionId = c.sessionId;
+
+    var label = document.createElement('div');
+    label.className = 'label';
+    var labelText = shortCwd(c.cwd || '') + '  ' + c.sessionId.slice(0, 8) + '\u2026';
+    label.textContent = labelText;
+    if (c.isProbablyLive) {
+      var badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.style.background = '#f85149';
+      badge.style.color = '#fff';
+      badge.textContent = 'active now';
+      label.appendChild(document.createTextNode(' '));
+      label.appendChild(badge);
+    }
+
+    var desc = document.createElement('div');
+    desc.className = 'desc';
+    var parts = [];
+    if (typeof c.messageCount === 'number') parts.push('~' + c.messageCount + ' lines');
+    parts.push(relativeTime(c.mtimeMs));
+    if (c.summary) parts.push(c.summary);
+    desc.textContent = parts.join(' \u00b7 ');
+
+    row.appendChild(label);
+    row.appendChild(desc);
+    row.addEventListener('click', function() {
+      selectedTeleportSessionId = c.sessionId;
+      var all = list.querySelectorAll('.existing-card');
+      for (var i = 0; i < all.length; i++) {
+        all[i].classList.remove('current-agent');
+        all[i].setAttribute('aria-pressed', 'false');
+      }
+      row.classList.add('current-agent');
+      row.setAttribute('aria-pressed', 'true');
+      var attachBtn = document.getElementById('teleport-attach');
+      if (attachBtn) attachBtn.disabled = false;
+    });
+    list.appendChild(row);
+  });
+}
+
+function shortCwd(cwd) {
+  if (!cwd) return '(unknown)';
+  var parts = cwd.split('/');
+  if (parts.length <= 3) return cwd;
+  return '\u2026/' + parts.slice(-2).join('/');
+}
+
+function relativeTime(ms) {
+  var delta = Date.now() - ms;
+  var mins = Math.round(delta / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  var hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  return Math.round(hrs / 24) + 'd ago';
+}
+
 window.webxdc.setUpdateListener(function(update) {
   var d = update.payload;
   if (!d) return;
@@ -851,6 +972,12 @@ window.webxdc.setUpdateListener(function(update) {
     renderExistingList();
     if (d.startScreen === 'create') {
       gotoCreate();
+    } else if (d.startScreen === 'teleport-import') {
+      show('teleport-import');
+      if (!teleportListRequested) {
+        teleportListRequested = true;
+        requestTeleportList();
+      }
     } else if (existingAgents.length > 0) {
       show('step0');
     } else {
@@ -915,7 +1042,51 @@ window.webxdc.setUpdateListener(function(update) {
     alert(d.message || 'Export failed.');
     return;
   }
+
+  if (d.type === 'teleport_list') {
+    if (d.requestId !== teleportRequestId) return;
+    if (!isOnTeleportPane()) return;
+    renderTeleportList(d.candidates || []);
+  }
+
+  if (d.type === 'teleport_attach_ok') {
+    if (d.requestId !== teleportRequestId) return;
+    if (!isOnTeleportPane()) return;
+    showModal('Session attached', 'Your next message in this chat will continue session ' + (d.sessionId || '').slice(0, 8) + '\u2026');
+  }
+
+  if (d.type === 'teleport_attach_err') {
+    if (d.requestId !== teleportRequestId) return;
+    if (!isOnTeleportPane()) return;
+    var errEl = document.getElementById('teleport-error');
+    if (errEl) { errEl.style.display = 'block'; errEl.textContent = d.message || 'Attach failed.'; }
+    var attachBtn = document.getElementById('teleport-attach');
+    if (attachBtn) attachBtn.disabled = false;
+  }
 }, 0);
+
+document.addEventListener('DOMContentLoaded', function() {
+  var _teleportCancelBtn = document.getElementById('teleport-cancel');
+  if (_teleportCancelBtn) _teleportCancelBtn.addEventListener('click', function() {
+    if (existingAgents.length > 0) show('step0'); else gotoCreate();
+  });
+  var _teleportAttachBtn = document.getElementById('teleport-attach');
+  if (_teleportAttachBtn) _teleportAttachBtn.addEventListener('click', function() {
+    if (!selectedTeleportSessionId) return;
+    _teleportAttachBtn.disabled = true;
+    teleportRequestId++;
+    var myReq = teleportRequestId;
+    window.webxdc.sendUpdate({
+      payload: {
+        type: 'teleport_attach',
+        sessionId: selectedTeleportSessionId,
+        requestId: myReq,
+        senderAddr: window.webxdc.selfAddr,
+      },
+      summary: 'Attaching session'
+    }, 'teleport attach ' + selectedTeleportSessionId);
+  });
+});
 </script>
 </body>
 </html>
