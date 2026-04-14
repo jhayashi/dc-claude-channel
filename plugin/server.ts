@@ -55,6 +55,16 @@ import {
   type STTConfig,
 } from './stt.js'
 
+// ── Security hardening ──────────────────────────────────────────────────
+// Freeze Object.prototype at startup to block prototype-pollution from any
+// code we run in-process — primarily Familiar handlers (see familiar-runtime.ts)
+// which have mutable access to ctx.state and could otherwise write
+// ctx.state.__proto__.x and affect every plain object in the dispatcher.
+// Must happen before any user code runs.
+Object.freeze(Object.prototype)
+Object.freeze(Array.prototype)
+Object.freeze(Function.prototype)
+
 // ── Logging ─────────────────────────────────────────────────────────────
 
 const LOG_FILE = join(homedir(), '.claude', 'channels', 'deltachat', 'debug.log')
