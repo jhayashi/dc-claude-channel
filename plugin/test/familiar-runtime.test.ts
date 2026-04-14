@@ -380,45 +380,42 @@ describe('persistence', () => {
 // ---------------------------------------------------------------------------
 describe('validateHtmlSenderAddr', () => {
   test('passes when every sendUpdate payload references senderAddr', () => {
-    const html = `
-      <script>
-        window.webxdc.sendUpdate({payload: {senderAddr: window.webxdc.selfAddr, x: 1}}, '');
-        window.webxdc.sendUpdate({payload: {senderAddr: window.webxdc.selfAddr, y: 2}}, '');
-      </script>
-    `
+    const html = `<script>
+      window.webxdc.sendUpdate({payload: {senderAddr: window.webxdc.selfAddr, x: 1}}, '')
+      window.webxdc.sendUpdate({payload: {senderAddr: window.webxdc.selfAddr, y: 2}}, '')
+    </script>`
     expect(() => validateHtmlSenderAddr(html)).not.toThrow()
   })
 
   test('passes when html has no sendUpdate calls', () => {
-    const html = '<html><body>static</body></html>'
-    expect(() => validateHtmlSenderAddr(html)).not.toThrow()
+    expect(() => validateHtmlSenderAddr('<html><body>static</body></html>')).not.toThrow()
   })
 
-  test('throws when a sendUpdate call has no senderAddr', () => {
-    const html = `
-      <script>
-        window.webxdc.sendUpdate({payload: {x: 1}}, '');
-      </script>
-    `
+  test('throws when a sendUpdate call has no senderAddr in its argument', () => {
+    const html = `<script>window.webxdc.sendUpdate({payload: {x: 1}}, '')</script>`
     expect(() => validateHtmlSenderAddr(html)).toThrow(/senderAddr/)
   })
 
-  test('throws when senderAddr count is less than sendUpdate count', () => {
-    const html = `
-      <script>
-        window.webxdc.sendUpdate({payload: {senderAddr: window.webxdc.selfAddr, x: 1}}, '');
-        window.webxdc.sendUpdate({payload: {x: 2}}, '');
-      </script>
-    `
-    expect(() => validateHtmlSenderAddr(html)).toThrow(/2 sendUpdate call.*1 senderAddr/)
+  test('rejects when senderAddr is only in a comment (not in payload)', () => {
+    const html = `<script>
+      // TODO: every payload needs senderAddr
+      window.webxdc.sendUpdate({payload: {x: 1}}, '')
+    </script>`
+    expect(() => validateHtmlSenderAddr(html)).toThrow(/senderAddr/)
   })
 
-  test('accepts whitespace variations in sendUpdate( call', () => {
-    const html = `
+  test('rejects when explanatory comment mentions senderAddr but payload does not', () => {
+    const html = `<!-- remember senderAddr, senderAddr, senderAddr -->
       <script>
-        window.webxdc . sendUpdate ( {payload: {senderAddr: window.webxdc.selfAddr}}, '' );
-      </script>
-    `
+        window.webxdc.sendUpdate({payload: {type: 'click'}}, '')
+      </script>`
+    expect(() => validateHtmlSenderAddr(html)).toThrow()
+  })
+
+  test('accepts sendUpdate with whitespace around dot and parens', () => {
+    const html = `<script>
+      window.webxdc . sendUpdate({payload: {type: 'click', senderAddr: window.webxdc.selfAddr}}, '')
+    </script>`
     expect(() => validateHtmlSenderAddr(html)).not.toThrow()
   })
 })

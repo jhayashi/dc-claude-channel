@@ -147,22 +147,39 @@ export function createSandbox(
 }
 
 /**
- * Validate that familiar HTML includes `senderAddr` in every `sendUpdate`
- * call. The server-side owner-verification filter silently drops updates
- * without `senderAddr`, so missing references produce dead UI — clicks
- * visually respond but the handler never runs. Checks are count-based:
- * there must be at least as many `senderAddr` occurrences as `sendUpdate(`
- * calls. Same heuristic as `test/webxdc-sender-addr.test.ts`.
+ * Validate that familiar HTML includes `senderAddr` inside the argument
+ * of every `sendUpdate(...)` call. The server-side owner-verification
+ * filter silently drops updates without `senderAddr`, so missing
+ * references produce dead UI. Parses each call site's argument by
+ * bracket-balance; does NOT count-match against the whole file (which
+ * would mis-count `senderAddr` in comments, strings, etc).
+ *
+ * Best-effort lint: `senderAddr` inside a comment within the argument
+ * still passes. Accepted false-negative risk — swap in a real parser
+ * later if that becomes a real problem.
  */
 export function validateHtmlSenderAddr(html: string): void {
-  const sendCalls = html.match(/\.sendUpdate\s*\(/g)
-  if (!sendCalls) return
-  const addrRefs = html.match(/senderAddr/g)?.length ?? 0
-  if (addrRefs < sendCalls.length) {
-    throw new Error(
-      `html has ${sendCalls.length} sendUpdate call(s) but only ${addrRefs} senderAddr reference(s); ` +
-      `every sendUpdate payload must include senderAddr: window.webxdc.selfAddr`,
-    )
+  const re = /\.\s*sendUpdate\s*\(/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(html)) !== null) {
+    const argStart = m.index + m[0].length
+    let depth = 1
+    let i = argStart
+    while (i < html.length && depth > 0) {
+      const c = html[i++]
+      if (c === '(' || c === '{' || c === '[') depth++
+      else if (c === ')' || c === '}' || c === ']') depth--
+    }
+    if (depth !== 0) {
+      throw new Error(`unbalanced sendUpdate(...) argument at offset ${m.index}`)
+    }
+    const arg = html.slice(argStart, i - 1)
+    if (!arg.includes('senderAddr')) {
+      throw new Error(
+        `sendUpdate call at offset ${m.index} is missing senderAddr in its argument; ` +
+        `every sendUpdate payload must include senderAddr: window.webxdc.selfAddr`,
+      )
+    }
   }
 }
 
