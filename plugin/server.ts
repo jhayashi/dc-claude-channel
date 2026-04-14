@@ -1493,12 +1493,15 @@ async function main(): Promise<void> {
     const MAX_IMPORT_BYTES = 512 * 1024
 
     try {
-      if (msg.fileBytes && msg.fileBytes > MAX_IMPORT_BYTES) {
+      // Check msg.fileBytes first (fast path) but fall back to statSync
+      // because msg.fileBytes may be undefined/0 on some DC clients.
+      const { readFileSync, statSync } = await import('node:fs')
+      const actualSize = msg.fileBytes || statSync(msg.file).size
+      if (actualSize > MAX_IMPORT_BYTES) {
         await client.send(chatId, '\u26a0\ufe0f Familiar import failed: file too large (max 512 KB).')
         return true
       }
 
-      const { readFileSync } = await import('node:fs')
       const yamlStr = readFileSync(msg.file, 'utf-8')
       const parsed = familiarRuntime.parseFamiliarYaml(yamlStr)
 
@@ -1551,12 +1554,15 @@ async function main(): Promise<void> {
     const MAX_IMPORT_BYTES = 256 * 1024
 
     try {
-      if (msg.fileBytes && msg.fileBytes > MAX_IMPORT_BYTES) {
+      // Same pattern as tryImportFamiliarAttachment — statSync fallback
+      // because msg.fileBytes may be undefined/0 on some DC clients.
+      const { readFileSync, statSync } = await import('node:fs')
+      const actualSize = msg.fileBytes || statSync(msg.file).size
+      if (actualSize > MAX_IMPORT_BYTES) {
         await client.send(chatId, '\u26a0\ufe0f Agent import failed: file too large (max 256 KB).')
         return true
       }
 
-      const { readFileSync } = await import('node:fs')
       const yamlStr = readFileSync(msg.file, 'utf-8')
 
       if (yamlStr.length > MAX_IMPORT_BYTES) {
