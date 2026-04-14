@@ -1377,6 +1377,18 @@ async function main(): Promise<void> {
     } catch (err) {
       logf('dc channel: cleanup file-reviewer error: %v', err)
     }
+    // Drop familiar instances (in-memory + persisted) so they don't revive
+    // against a deleted chat on next startup.
+    try {
+      for (const inst of familiarRuntime.listInstances(chatId)) {
+        familiarRuntime.deleteInstance(inst.appId)
+        if (inst.persistent) familiarRuntime.deletePersistedInstance(inst.appId)
+        webxdcAppRegistry.delete(inst.msgId)
+        webxdcLastSerial.delete(inst.msgId)
+      }
+    } catch (err) {
+      logf('dc channel: cleanup familiar error: %v', err)
+    }
     // Clear any in-flight tutorial state.
     tutorial.clearTutorial(chatId)
     // Drop any scheduled jobs for this chat and rearm the scheduler in
