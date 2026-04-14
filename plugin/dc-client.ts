@@ -133,6 +133,39 @@ export class DCClient {
   }
 
   /**
+   * Ensure a message's blob is downloaded. `downloadFullMessage` kicks off
+   * the download but returns before it completes — state typically goes
+   * Available → InProgress → Done. Poll until Done (or terminal error, or
+   * timeout) so handlers see a usable file. Returns the latest snapshot.
+   */
+  private async ensureDownloaded(snap: any, msgId: number): Promise<any> {
+    const { rpc, accountId } = this.ensureAccount();
+    if (snap.downloadState !== 'Available' && snap.downloadState !== 'InProgress') {
+      return snap;
+    }
+    if (snap.downloadState === 'Available') {
+      this.log('dc-client: downloading full message %d', msgId);
+      await rpc.downloadFullMessage(accountId, msgId).catch(err =>
+        this.log('dc-client: downloadFullMessage error for %d: %v', msgId, err),
+      );
+    }
+    const DEADLINE_MS = 30_000;
+    const POLL_MS = 250;
+    const start = Date.now();
+    let latest = snap;
+    while (Date.now() - start < DEADLINE_MS) {
+      latest = await rpc.getMessage(accountId, msgId);
+      if (latest.downloadState === 'Done'
+        || latest.downloadState === 'Failure'
+        || latest.downloadState === 'Undecipherable') break;
+      await new Promise(r => setTimeout(r, POLL_MS));
+    }
+    this.log('dc-client: after download msg=%d: downloadState=%s file=%s elapsed=%dms',
+      msgId, latest.downloadState, latest.file ?? 'null', Date.now() - start);
+    return latest;
+  }
+
+  /**
    * Start the deltachat-rpc-server subprocess.
    * Creates the data directory if it does not exist.
    */
@@ -243,14 +276,9 @@ export class DCClient {
         if (snap.fromId === CONTACT_SELF) return;
         await rpc.markseenMsgs(accountId, [event.msgId]).catch(() => {});
 
-        // Auto-download attachments that aren't fully downloaded yet
+        // Auto-download attachments that aren't fully downloaded yet.
         this.log('dc-client: msg %d: viewType=%s downloadState=%s file=%s', snap.id, snap.viewType, snap.downloadState, snap.file ?? 'null');
-        if (snap.downloadState === 'Available') {
-          this.log('dc-client: downloading full message %d', event.msgId);
-          await rpc.downloadFullMessage(accountId, event.msgId);
-          snap = await rpc.getMessage(accountId, event.msgId);
-          this.log('dc-client: after download: downloadState=%s file=%s', snap.downloadState, snap.file ?? 'null');
-        }
+        snap = await this.ensureDownloaded(snap, event.msgId);
 
         handler({
           id: snap.id,
@@ -519,10 +547,7 @@ export class DCClient {
   async downloadMessage(msgId: number): Promise<Message | null> {
     const { rpc, accountId } = this.ensureAccount();
     let snap = await rpc.getMessage(accountId, msgId);
-    if (snap.downloadState === 'Available') {
-      await rpc.downloadFullMessage(accountId, msgId);
-      snap = await rpc.getMessage(accountId, msgId);
-    }
+    snap = await this.ensureDownloaded(snap, msgId);
     return {
       id: snap.id,
       chatId: snap.chatId,
