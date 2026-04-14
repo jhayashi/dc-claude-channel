@@ -53,6 +53,7 @@ import {
   transcribe,
   isVoiceMessage,
   AudioTooShortError,
+  _resetSttWorker,
   type STTConfig,
 } from './stt.js'
 
@@ -2017,6 +2018,7 @@ function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
   process.stderr.write('deltachat channel: shutting down\n')
+  try { _resetSttWorker() } catch {}
   try { scheduler?.stop() } catch {}
   for (const app of apps) {
     app.stop?.()

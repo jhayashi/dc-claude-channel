@@ -1,10 +1,14 @@
 import { describe, test, expect } from 'bun:test'
+import { join } from 'node:path'
 import {
   parseSTTConfig,
   isVoiceMessage,
   MIN_AUDIO_DURATION_SEC,
   AudioTooShortError,
   checkAudioDuration,
+  ensureModel,
+  transcribe,
+  _resetSttWorker,
 } from '../stt'
 
 describe('parseSTTConfig', () => {
@@ -96,4 +100,25 @@ describe('MIN_AUDIO_DURATION_SEC enforcement', () => {
   test('MIN_AUDIO_DURATION_SEC is 0.5', () => {
     expect(MIN_AUDIO_DURATION_SEC).toBe(0.5)
   })
+})
+
+describe('transcribe does not block the event loop', () => {
+  test('setTimeout callbacks fire during a transcription', async () => {
+    if (process.env.DC_STT_INTEGRATION_TEST !== '1') return
+    const fixturePath = join(import.meta.dir, 'fixtures', 'hello.wav')
+    const config = parseSTTConfig({})
+    const modelPath = await ensureModel(config, () => {})
+
+    let tickCount = 0
+    const ticker = setInterval(() => { tickCount++ }, 50)
+    try {
+      await transcribe(fixturePath, config, modelPath, () => {})
+    } finally {
+      clearInterval(ticker)
+      _resetSttWorker()
+    }
+    // If the event loop was blocked the entire run, tickCount would be 0 or 1.
+    // A real Worker-based transcribe should yield many ticks.
+    expect(tickCount).toBeGreaterThan(3)
+  }, 30_000)
 })

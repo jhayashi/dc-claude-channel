@@ -75,6 +75,55 @@ export interface TranscriptionResult {
 
 export type LogFn = (fmt: string, ...args: unknown[]) => void
 
+// ── Worker pool ──────────────────────────────────────────────────────
+
+let _worker: Worker | null = null
+let _nextReqId = 0
+interface PendingCall {
+  resolve: (r: TranscriptionResult) => void
+  reject: (e: Error) => void
+}
+const _pending = new Map<number, PendingCall>()
+
+function getWorker(): Worker {
+  if (_worker) return _worker
+  const w = new Worker(new URL('./stt-worker.ts', import.meta.url).href, { type: 'module' })
+  w.onmessage = (ev: MessageEvent) => {
+    const { id, ok, text, segments, durationSec, error } = ev.data as {
+      id: number
+      ok: boolean
+      text?: string
+      segments?: TranscriptionSegment[]
+      durationSec?: number
+      error?: string
+    }
+    const p = _pending.get(id)
+    if (!p) return
+    _pending.delete(id)
+    if (ok) {
+      p.resolve({ text: text ?? '', segments: segments ?? [], durationSec: durationSec ?? 0 })
+    } else {
+      p.reject(new Error(error ?? 'unknown worker error'))
+    }
+  }
+  w.onerror = (ev: ErrorEvent) => {
+    for (const [, p] of _pending) p.reject(new Error(`stt-worker crashed: ${ev.message}`))
+    _pending.clear()
+    _worker = null
+  }
+  _worker = w
+  return w
+}
+
+/** For tests/shutdown: terminate the Worker. */
+export function _resetSttWorker(): void {
+  if (_worker) {
+    _worker.terminate()
+    _worker = null
+  }
+  _pending.clear()
+}
+
 // ── Config ───────────────────────────────────────────────────────────
 
 const VALID_ECHO_MODES: EchoMode[] = ['quoted', 'silent']
@@ -148,10 +197,12 @@ export async function ensureModel(
 // ── Transcription ────────────────────────────────────────────────────
 
 /**
- * Transcribe an audio file using @napi-rs/whisper native bindings.
+ * Transcribe an audio file using @napi-rs/whisper via a Worker thread.
  *
- * Decodes audio natively (no ffmpeg), loads the ggml model, and runs
- * whisper inference in-process. Respects timeout via AbortController.
+ * Pre-flight duration checks run on the main thread to surface
+ * AudioTooShortError without a worker round-trip. The heavy whisper.full()
+ * call runs in the Worker so the event loop stays responsive during inference.
+ * The Worker caches the Whisper instance across calls to avoid model-reload cost.
  */
 export async function transcribe(
   filePath: string,
@@ -160,75 +211,50 @@ export async function transcribe(
   logf: LogFn,
 ): Promise<TranscriptionResult> {
   ensureLibStdCpp()
-  const {
-    Whisper,
-    WhisperFullParams,
-    WhisperSamplingStrategy,
-    decodeAudio,
-  } = await import('@napi-rs/whisper')
 
-  logf('stt: transcribing %s with model %s', filePath, config.model)
-  const startTime = Date.now()
-
-  // 1. Decode audio to PCM samples (handles m4a, mp3, wav, etc.)
+  // Pre-flight duration check on the main thread so AudioTooShortError surfaces
+  // synchronously (doesn't require a worker round-trip).
+  const { decodeAudio } = await import('@napi-rs/whisper')
   const audioData = readFileSync(filePath)
   const samples = decodeAudio(new Uint8Array(audioData), filePath)
-  logf('stt: decoded %d samples from %s', samples.length, filePath)
+  const durationSec = samples.length / 16000
 
-  // Check duration from sample count (16kHz)
-  const audioDurationSec = samples.length / 16000
-  if (audioDurationSec > config.maxDurationSec) {
-    throw new Error(`Audio too long (${audioDurationSec.toFixed(0)}s > ${config.maxDurationSec}s)`)
+  if (durationSec > config.maxDurationSec) {
+    throw new Error(`Audio too long (${durationSec.toFixed(0)}s > ${config.maxDurationSec}s)`)
   }
-  checkAudioDuration(audioDurationSec)
+  checkAudioDuration(durationSec)
 
-  // 2. Load model and configure parameters
-  const whisper = new Whisper(modelPath)
-  const params = new WhisperFullParams(WhisperSamplingStrategy.Greedy)
+  logf('stt: dispatching to worker: %s (%.1fs)', filePath, durationSec)
+  const startTime = Date.now()
+  const worker = getWorker()
+  const id = ++_nextReqId
 
-  // Detect language from model name: *.en models are English-only
-  if (config.model.endsWith('.en')) {
-    params.language = 'en'
-  } else {
-    params.detectLanguage = true
-  }
-  params.printProgress = false
-  params.printRealtime = false
-  params.printTimestamps = false
-  params.singleSegment = false
-  params.noTimestamps = false
-
-  // Collect segments via callback
-  const segments: TranscriptionSegment[] = []
-  params.onNewSegment = (seg: { text: string; start: number; end: number }) => {
-    const text = seg.text.trim()
-    if (text) {
-      segments.push({ start: seg.start, end: seg.end, text })
-    }
-  }
-
-  // 3. Run transcription with timeout
   const timeoutMs = config.timeoutSec * 1000
-  const text = await Promise.race([
-    new Promise<string>((resolve) => {
-      const result = whisper.full(params, samples)
-      resolve(result)
-    }),
-    new Promise<never>((_resolve, reject) =>
-      setTimeout(() => reject(new Error(`Transcription timed out after ${config.timeoutSec}s`)), timeoutMs),
-    ),
-  ])
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  const result = await new Promise<TranscriptionResult>((resolve, reject) => {
+    _pending.set(id, { resolve, reject })
+    timer = setTimeout(() => {
+      if (_pending.delete(id)) {
+        // Worker is stuck in sync native code — terminate to prevent backlog.
+        _resetSttWorker()
+        reject(new Error(`Transcription timed out after ${config.timeoutSec}s`))
+      }
+    }, timeoutMs)
+    worker.postMessage({
+      id,
+      filePath,
+      modelPath,
+      modelName: config.model,
+      maxDurationSec: config.maxDurationSec,
+    })
+  }).finally(() => {
+    if (timer) clearTimeout(timer)
+  })
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-  logf('stt: whisper completed in %ss', elapsed)
-
-  // Use text from full() (most reliable), fall back to joined segments
-  const finalText = text.trim()
-  const durationSec = segments.length > 0
-    ? segments[segments.length - 1].end / 1000
-    : audioDurationSec
-
-  return { text: finalText, segments, durationSec }
+  logf('stt: worker completed in %ss', elapsed)
+  return result
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
