@@ -158,9 +158,9 @@ describe('listResumeCandidates', () => {
   })
 
   it('extracts CWD from the project-hash directory name', () => {
-    writeSession('-var-home-j-src-dc-claude-channel-plugin', 'cwd00000-0000-0000-0000-000000000000', 1000, {})
+    writeSession('-home-user-src-myproject', 'cwd00000-0000-0000-0000-000000000000', 1000, {})
     const out = teleport.listResumeCandidates({ limit: 10 })
-    expect(out[0]!.cwd).toBe('/var/home/j/src/dc-claude-channel/plugin')
+    expect(out[0]!.cwd).toBe('/home/user/src/myproject')
   })
 
   it('reads summary from first line if present', () => {
