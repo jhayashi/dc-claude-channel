@@ -130,6 +130,14 @@ After pairing, the bot sends two WebXDC apps (Permission Prompt and File Reviewe
 
 Reply "yes" to start, or "no" to skip. You can start using Claude immediately either way.
 
+## Teleporting sessions
+
+A conversation can move between a DC chat and a local `claude` terminal session, because both sides use the same `.jsonl` session file. Tell Claude "teleport this to my terminal" and the reply includes a one-line `cd … && claude --resume <uuid>` command. Wait for the reply to land, then paste it in a terminal — your full history (TodoWrites, plans, tool outputs) loads instantly.
+
+Going the other direction: tell Claude "import my terminal session" (or open the agent-setup card and tap **Import terminal session**). The card lists recent terminal `claude` sessions from the last 48 hours; pick one and the next message you send in the DC chat continues that session.
+
+The session file is single-writer, so finish your DC turn before pasting the resume command — the lock releases when the reply lands. Don't send DC messages while the terminal session is still active, or the two sides will fight over the file. This is a same-machine feature; it doesn't involve claude.ai.
+
 ## Development
 
 To hack on the plugin itself:

@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
+## [Unreleased]
+
+### Added
+
+- **Session teleport** (#41) — move a conversation between a DC chat and a local `claude` terminal session. `dc_teleport` emits a `cd … && claude --resume <uuid>` command (DC → terminal); the agent-setup card's new **Import terminal session** pane lists sessions from the last 48 hours for terminal → DC. Bridge the shared session UUID with no Anthropic round-trip; same-machine only. Pure helpers in `plugin/teleport.ts` (bounded 4 KB first-line reads, size-based message-count estimate, live-session badge on recently-modified candidates).
+
 ## [1.0.0] — 2026-04-13
 
 First stable release. Adds **local voice transcription** via whisper, the **Familiar WebXDC pattern** (Claude-authored WebXDC apps with a live JS handler backend), and a full **pre-release security review** with hardening fixes across both.
