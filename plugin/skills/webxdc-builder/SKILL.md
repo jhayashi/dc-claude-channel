@@ -58,7 +58,7 @@ Every WebXDC HTML file -- static or Familiar -- MUST follow these rules:
 5. **Replay safety:** `setUpdateListener(fn, 0)` replays ALL updates from the beginning on every app open. Handlers must rebuild state from the full replay, not append incrementally.
 6. **XSS prevention:** Use `textContent` (not `innerHTML`) for any user-supplied data -- including anything that came from `ctx.requestLLM()` in a handler. LLM output can contain `<script>` or `<img onerror>` via prompt injection.
 7. **All CSS/JS/assets inline.** Single HTML file, no imports.
-8. **Debounce `sendUpdate`.** Never fire it directly from a high-frequency event (rapid taps, mousemove, keystrokes). WebXDC rate-limits `sendUpdate` to roughly once every 10 seconds per app; bursts get queued or dropped silently. For tap-driven apps, batch into a delta and flush on a timer (see counter pattern below).
+8. **Debounce `sendUpdate`.** Never fire it directly from a high-frequency event (rapid taps, mousemove, keystrokes). Every call goes over the Delta Chat transport and may be rate-limited or throttled by the messenger; bursts can be queued or dropped silently. For tap-driven apps, batch into a delta and flush on a timer (see counter pattern below).
 
 ---
 
@@ -158,7 +158,7 @@ function handler(update, ctx) { ... }
 
 No LLM calls -- just state logic.
 
-**HTML (counter app):** Note the debounced send — rapid taps accumulate into `pendingDelta` and flush after 250ms. Without this, the sendUpdate rate limit (rule 8) silently drops bursts.
+**HTML (counter app):** Note the debounced send — rapid taps accumulate into `pendingDelta` and flush after 250ms. Without this, every tap goes through the DC transport (see rule 8) and bursts can be throttled or dropped.
 
 ```html
 <!DOCTYPE html>
