@@ -15,6 +15,7 @@ import {
   loadPersistedInstances,
   parseFamiliarYaml,
   setFamiliarsDir,
+  validateHtmlSenderAddr,
   _resetRegistry,
   type FamiliarInstance,
   type SandboxContext,
@@ -55,7 +56,7 @@ describe('createSandbox', () => {
     expect(sent).toEqual([{ echo: 'hello' }])
   })
 
-  test('handler cannot access fs, process, fetch, Bun', async () => {
+  test('handler cannot access fs, process, fetch, Bun, Function, eval', async () => {
     const fn = createSandbox(`
       const results = {
         fs: typeof fs,
@@ -74,6 +75,9 @@ describe('createSandbox', () => {
         setTimeout: typeof setTimeout,
         setInterval: typeof setInterval,
         globalThis: typeof globalThis,
+        Function: typeof Function,
+        evalType: typeof eval,
+        WebAssembly: typeof WebAssembly,
       };
       ctx.sendUpdate(results);
     `)
@@ -103,6 +107,40 @@ describe('createSandbox', () => {
     expect(results.setTimeout).toBe('undefined')
     expect(results.setInterval).toBe('undefined')
     expect(results.globalThis).toBe('undefined')
+    expect(results.Function).toBe('undefined')
+    expect(results.evalType).toBe('undefined')
+    expect(results.WebAssembly).toBe('undefined')
+  })
+
+  test('handler cannot re-acquire globals via Function constructor', async () => {
+    // With Function shadowed, the classic `Function('return globalThis')()`
+    // escape hatch should fail. Determined handlers can still reach
+    // globals via `({}).constructor.constructor` — that's defence-in-depth,
+    // not a hard sandbox, and the module comment states so.
+    const fn = createSandbox(`
+      let threwOrFalsy = false;
+      try {
+        const F = Function;
+        if (!F) threwOrFalsy = true;
+        else {
+          const g = F('return globalThis')();
+          if (!g) threwOrFalsy = true;
+        }
+      } catch {
+        threwOrFalsy = true;
+      }
+      ctx.sendUpdate({ threwOrFalsy });
+    `)
+    const sent: unknown[] = []
+    const ctx: SandboxContext = {
+      state: {},
+      sendUpdate: (p: unknown) => { sent.push(p) },
+      requestLLM: async () => '',
+      appId: 'test-app',
+      chatId: 1,
+    }
+    await fn({}, ctx)
+    expect((sent[0] as { threwOrFalsy: boolean }).threwOrFalsy).toBe(true)
   })
 
   test('handler with dynamic import() is rejected at compile time', () => {
@@ -334,5 +372,53 @@ describe('persistence', () => {
     expect(loadPersistedInstances().length).toBe(1)
     deletePersistedInstance('persist-del')
     expect(loadPersistedInstances().length).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// validateHtmlSenderAddr
+// ---------------------------------------------------------------------------
+describe('validateHtmlSenderAddr', () => {
+  test('passes when every sendUpdate payload references senderAddr', () => {
+    const html = `
+      <script>
+        window.webxdc.sendUpdate({payload: {senderAddr: window.webxdc.selfAddr, x: 1}}, '');
+        window.webxdc.sendUpdate({payload: {senderAddr: window.webxdc.selfAddr, y: 2}}, '');
+      </script>
+    `
+    expect(() => validateHtmlSenderAddr(html)).not.toThrow()
+  })
+
+  test('passes when html has no sendUpdate calls', () => {
+    const html = '<html><body>static</body></html>'
+    expect(() => validateHtmlSenderAddr(html)).not.toThrow()
+  })
+
+  test('throws when a sendUpdate call has no senderAddr', () => {
+    const html = `
+      <script>
+        window.webxdc.sendUpdate({payload: {x: 1}}, '');
+      </script>
+    `
+    expect(() => validateHtmlSenderAddr(html)).toThrow(/senderAddr/)
+  })
+
+  test('throws when senderAddr count is less than sendUpdate count', () => {
+    const html = `
+      <script>
+        window.webxdc.sendUpdate({payload: {senderAddr: window.webxdc.selfAddr, x: 1}}, '');
+        window.webxdc.sendUpdate({payload: {x: 2}}, '');
+      </script>
+    `
+    expect(() => validateHtmlSenderAddr(html)).toThrow(/2 sendUpdate call.*1 senderAddr/)
+  })
+
+  test('accepts whitespace variations in sendUpdate( call', () => {
+    const html = `
+      <script>
+        window.webxdc . sendUpdate ( {payload: {senderAddr: window.webxdc.selfAddr}}, '' );
+      </script>
+    `
+    expect(() => validateHtmlSenderAddr(html)).not.toThrow()
   })
 })

@@ -9,12 +9,16 @@
  *
  * **Security model:** The `new Function()` call is intentional — it is the
  * core mechanism that allows Claude to author interactive applet logic at
- * runtime. The user sees the handler source in the familiar YAML and
- * approves it before it runs. Dangerous globals (fs, process, fetch,
- * child_process, net, http, Bun, require, import, etc.) are shadowed in
- * the function's parameter list so they resolve to `undefined` inside the
- * handler body. This is defence-in-depth, not a security boundary — the
- * approval step is the primary gate.
+ * runtime. **The primary security gate is user review and approval of the
+ * handler source before it runs** — the user sees the handler in the familiar
+ * YAML (or in the subagent's tool-call output) and chooses whether to allow
+ * it. The global-shadowing done here is *defence in depth only*: we cannot
+ * claim this is a sandbox. A determined handler can re-acquire dangerous
+ * globals via `({}).constructor.constructor('return globalThis')()` and
+ * similar prototype-chain tricks that are not blocked by parameter-name
+ * shadowing. Treat handler source the same as any other code you would run
+ * in the dispatcher process. Do not compose handlers by concatenating
+ * untrusted strings.
  */
 
 import {
@@ -82,6 +86,11 @@ const SHADOWED_GLOBALS = [
   'fs', 'child_process', 'net', 'http', 'https', 'os', 'path', 'crypto',
   'Buffer',
   'setTimeout', 'setInterval', 'setImmediate', 'clearTimeout', 'clearInterval',
+  // Shadowing Function/eval/WebAssembly closes the easy escape hatch
+  // (`Function('return globalThis')()`). Determined handlers can still reach
+  // them via `({}).constructor.constructor` etc. — this is defence in depth,
+  // not a true sandbox. See module-level doc comment.
+  'Function', 'eval', 'WebAssembly',
 ] as const
 
 // ---------------------------------------------------------------------------
@@ -96,10 +105,9 @@ const SHADOWED_GLOBALS = [
  * reference `update` (the incoming WebXDC payload) and `ctx` (a
  * SandboxContext with state, sendUpdate, requestLLM, appId, chatId).
  *
- * **Security note:** The `new Function()` usage below is intentional and
- * is the core feature of the familiar runtime. Claude authors the handler
- * code; users review and approve it before execution. The shadowed globals
- * provide defence-in-depth but are not the primary security boundary.
+ * **Security note:** See module-level doc comment. The primary gate is
+ * user review/approval of the handler source; the shadowed globals below
+ * are defence in depth and do not constitute a true sandbox.
  *
  * Returns a function `(update, ctx) => Promise<{error?}>`.
  */
@@ -135,6 +143,26 @@ export function createSandbox(
       const message = err instanceof Error ? err.message : String(err)
       return { error: message }
     }
+  }
+}
+
+/**
+ * Validate that familiar HTML includes `senderAddr` in every `sendUpdate`
+ * call. The server-side owner-verification filter silently drops updates
+ * without `senderAddr`, so missing references produce dead UI — clicks
+ * visually respond but the handler never runs. Checks are count-based:
+ * there must be at least as many `senderAddr` occurrences as `sendUpdate(`
+ * calls. Same heuristic as `test/webxdc-sender-addr.test.ts`.
+ */
+export function validateHtmlSenderAddr(html: string): void {
+  const sendCalls = html.match(/\.sendUpdate\s*\(/g)
+  if (!sendCalls) return
+  const addrRefs = html.match(/senderAddr/g)?.length ?? 0
+  if (addrRefs < sendCalls.length) {
+    throw new Error(
+      `html has ${sendCalls.length} sendUpdate call(s) but only ${addrRefs} senderAddr reference(s); ` +
+      `every sendUpdate payload must include senderAddr: window.webxdc.selfAddr`,
+    )
   }
 }
 
@@ -237,7 +265,9 @@ export function persistInstance(inst: FamiliarInstance): void {
   mkdirSync(FAMILIARS_DIR, { recursive: true })
   const { _fn, ...serializable } = inst
   const finalPath = instancePath(inst.appId)
-  const tmpPath = `${finalPath}.tmp.${process.pid}`
+  // Include a UUID suffix so same-PID concurrent writes don't collide on
+  // the tmp path (previously: last writer silently clobbered the first).
+  const tmpPath = `${finalPath}.tmp.${process.pid}.${crypto.randomUUID().slice(0, 8)}`
   writeFileSync(tmpPath, JSON.stringify(serializable, null, 2))
   renameSync(tmpPath, finalPath)
 }
