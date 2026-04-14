@@ -154,9 +154,13 @@ export function createSandbox(
  * bracket-balance; does NOT count-match against the whole file (which
  * would mis-count `senderAddr` in comments, strings, etc).
  *
- * Best-effort lint: `senderAddr` inside a comment within the argument
- * still passes. Accepted false-negative risk — swap in a real parser
- * later if that becomes a real problem.
+ * Known limitations (best-effort lint — swap in acorn if these bite):
+ * - `senderAddr` inside a comment within the argument passes (false negative).
+ * - Bracket-balance does NOT track string-literal context, so a `)` or `}`
+ *   inside a string literal in the argument can terminate the walk early.
+ *   Effect: false positive if `senderAddr` appears AFTER a `)`-in-string
+ *   (throws even though the payload is valid). Workaround: put `senderAddr`
+ *   first in the payload, which is the idiomatic shape anyway.
  */
 export function validateHtmlSenderAddr(html: string): void {
   const re = /\.\s*sendUpdate\s*\(/g
