@@ -29,10 +29,9 @@ import { tmpdir } from 'node:os'
 import { zipSync, strToU8 } from 'fflate'
 
 // ---------------------------------------------------------------------------
-// Manifest + icon (read once at import time)
+// Icon (read once at import time)
 // ---------------------------------------------------------------------------
 
-const MANIFEST_TOML = readFileSync(join(import.meta.dir, '..', 'webxdc', 'familiar-manifest.toml'))
 let ICON_PNG: Uint8Array | null = null
 try {
   const raw = readFileSync(join(import.meta.dir, '..', 'webxdc', 'familiar-icon.png'))
@@ -45,20 +44,22 @@ try {
 // XDC builder (inline zip via fflate — HTML is a string, not a file)
 // ---------------------------------------------------------------------------
 
-function buildFamiliarXDC(html: string, title: string): string {
+export function buildFamiliarXDC(html: string, title: string): string {
+  // Strip control chars for TOML safety; keep Unicode (including emoji).
+  const safeTitle = title.replace(/[\x00-\x1f\x7f]/g, '').trim() || 'Familiar'
+  const manifestToml = `name = ${JSON.stringify(safeTitle)}\n`
+
   const files: Record<string, Uint8Array> = {
     'index.html': strToU8(html),
-    'manifest.toml': MANIFEST_TOML instanceof Uint8Array
-      ? MANIFEST_TOML
-      : new Uint8Array(MANIFEST_TOML.buffer, MANIFEST_TOML.byteOffset, MANIFEST_TOML.byteLength),
+    'manifest.toml': strToU8(manifestToml),
   }
   if (ICON_PNG) files['icon.png'] = ICON_PNG
 
   const zipped = zipSync(files)
-  const safe = title.toLowerCase().replace(/[^\x20-\x7e]+/g, '').trim().replace(/\s+/g, '-') || 'familiar'
+  const filenameSafe = safeTitle.toLowerCase().replace(/[^\x20-\x7e]+/g, '').trim().replace(/\s+/g, '-') || 'familiar'
   // Write directly to a unique tempfile — previously we created a temp
   // directory via mkdtempSync and leaked it on every create.
-  const xdcPath = join(tmpdir(), `claude-dc-familiar-${crypto.randomUUID()}-${safe}.xdc`)
+  const xdcPath = join(tmpdir(), `claude-dc-familiar-${crypto.randomUUID()}-${filenameSafe}.xdc`)
   writeFileSync(xdcPath, zipped)
   return xdcPath
 }

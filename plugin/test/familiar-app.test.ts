@@ -1,8 +1,9 @@
 import { describe, test, expect, beforeEach, afterAll } from 'bun:test'
-import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { familiarApp } from '../apps/familiar-app'
+import { unzipSync, strFromU8 } from 'fflate'
+import { familiarApp, buildFamiliarXDC } from '../apps/familiar-app'
 import {
   _resetRegistry,
   setFamiliarsDir,
@@ -402,5 +403,26 @@ describe('onWebXDCUpdate', () => {
     const persisted = loadPersistedInstances()
     expect(persisted.length).toBe(1)
     expect(persisted[0]!.state.count).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// buildFamiliarXDC embeds runtime title in manifest
+// ---------------------------------------------------------------------------
+
+describe('buildFamiliarXDC embeds runtime title in manifest', () => {
+  test('manifest.toml contains the title argument', () => {
+    const title = 'Quiz about Ruby on Rails 🚂'
+    const html = '<script src="webxdc.js"></script>'
+    const xdcPath = buildFamiliarXDC(html, title)
+    try {
+      const zipBytes = readFileSync(xdcPath)
+      const files = unzipSync(new Uint8Array(zipBytes))
+      const manifest = strFromU8(files['manifest.toml'])
+      expect(manifest).toContain('Quiz about Ruby on Rails')
+      expect(manifest.startsWith('name = ')).toBe(true)
+    } finally {
+      try { unlinkSync(xdcPath) } catch {}
+    }
   })
 })
