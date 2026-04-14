@@ -19,10 +19,11 @@ import {
   persistInstance,
   deletePersistedInstance,
   loadPersistedInstances,
+  validateHtmlSenderAddr,
   type FamiliarInstance,
   type SandboxContext,
 } from '../familiar-runtime.js'
-import { readFileSync, writeFileSync, mkdtempSync, unlinkSync } from 'node:fs'
+import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { zipSync, strToU8 } from 'fflate'
@@ -54,9 +55,10 @@ function buildFamiliarXDC(html: string, title: string): string {
   if (ICON_PNG) files['icon.png'] = ICON_PNG
 
   const zipped = zipSync(files)
-  const dir = mkdtempSync(join(tmpdir(), 'claude-dc-familiar-'))
   const safe = title.toLowerCase().replace(/[^\x20-\x7e]+/g, '').trim().replace(/\s+/g, '-') || 'familiar'
-  const xdcPath = join(dir, `${safe}.xdc`)
+  // Write directly to a unique tempfile — previously we created a temp
+  // directory via mkdtempSync and leaked it on every create.
+  const xdcPath = join(tmpdir(), `claude-dc-familiar-${crypto.randomUUID()}-${safe}.xdc`)
   writeFileSync(xdcPath, zipped)
   return xdcPath
 }
@@ -66,7 +68,10 @@ function buildFamiliarXDC(html: string, title: string): string {
 // ---------------------------------------------------------------------------
 
 function generateAppId(): string {
-  return crypto.randomUUID().slice(0, 8)
+  // Full UUID — 8-char slice had a ~65k birthday-collision threshold and
+  // registerInstance silently overwrites on collision (→ split-brain state).
+  // App IDs are machine-passed (tool arg), so length cost is irrelevant.
+  return crypto.randomUUID()
 }
 
 // ---------------------------------------------------------------------------
@@ -255,6 +260,16 @@ async function handleCreate(
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     return { content: [{ type: 'text', text: `dc_familiar_create: handler compile error: ${msg}` }], isError: true }
+  }
+
+  // Validate every sendUpdate call in HTML includes senderAddr — otherwise
+  // the server-side owner filter silently drops clicks and the app looks
+  // dead on the client.
+  try {
+    validateHtmlSenderAddr(html)
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { content: [{ type: 'text', text: `dc_familiar_create: ${msg}` }], isError: true }
   }
 
   // Build and send XDC

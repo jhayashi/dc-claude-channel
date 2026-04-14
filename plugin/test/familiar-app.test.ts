@@ -119,6 +119,19 @@ describe('dc_familiar_create', () => {
     expect(instances[0]!.chatId).toBe(42)
   })
 
+  test('rejects html with sendUpdate missing senderAddr', async () => {
+    const ctx = makeCtx()
+    const result = await familiarApp.callTool('dc_familiar_create', {
+      chat_id: '42',
+      title: 'Missing',
+      html: '<html><script>window.webxdc.sendUpdate({payload: {x: 1}}, "");</script></html>',
+      handler: 'ctx.sendUpdate({});',
+    }, ctx)
+
+    expect(result!.isError).toBe(true)
+    expect(result!.content[0]!.text).toContain('senderAddr')
+  })
+
   test('rejects invalid handler (syntax error)', async () => {
     const ctx = makeCtx()
     const result = await familiarApp.callTool('dc_familiar_create', {
@@ -230,7 +243,7 @@ describe('dc_familiar_delete', () => {
     }, ctx)
 
     // Extract app_id from result text
-    const appIdMatch = createResult!.content[0]!.text.match(/app_id: (\w+)/)
+    const appIdMatch = createResult!.content[0]!.text.match(/app_id: ([\w-]+)/)
     const appId = appIdMatch![1]!
 
     const deleteResult = await familiarApp.callTool('dc_familiar_delete', {
