@@ -202,13 +202,16 @@ export const familiarApp: WebXDCApp = {
       // Flush collected updates sequentially to preserve ordering
       for (const outPayload of pendingUpdates) {
         const payloadStr = JSON.stringify({ payload: outPayload })
-        if (payloadStr.length > MAX_PAYLOAD_BYTES) {
-          ctx.logf('familiar: payload too large (%d bytes > %d) for app %s — dropping', payloadStr.length, MAX_PAYLOAD_BYTES, inst.appId)
+        const payloadBytes = new TextEncoder().encode(payloadStr).length
+        if (payloadBytes > MAX_PAYLOAD_BYTES) {
+          ctx.logf('familiar: payload too large (%d bytes > %d) for app %s — dropping', payloadBytes, MAX_PAYLOAD_BYTES, inst.appId)
+          // senderAddr: null is safe here — webxdc-filter.ts only rejects
+          // inbound (user→app) updates missing senderAddr, never outbound.
           const errPayload = JSON.stringify({
             payload: {
               type: 'handler_error',
               senderAddr: null,
-              message: `payload too large (${payloadStr.length} bytes exceeds ${MAX_PAYLOAD_BYTES} limit)`,
+              message: `payload too large (${payloadBytes} bytes exceeds ${MAX_PAYLOAD_BYTES} limit)`,
             },
           })
           try {
@@ -361,11 +364,12 @@ async function handleUpdate(
   }
 
   const update = JSON.stringify({ payload })
-  if (update.length > MAX_PAYLOAD_BYTES) {
+  const updateBytes = new TextEncoder().encode(update).length
+  if (updateBytes > MAX_PAYLOAD_BYTES) {
     return {
       content: [{
         type: 'text',
-        text: `dc_familiar_update: payload too large (${update.length} bytes exceeds ${MAX_PAYLOAD_BYTES} limit)`,
+        text: `dc_familiar_update: payload too large (${updateBytes} bytes exceeds ${MAX_PAYLOAD_BYTES} limit)`,
       }],
       isError: true,
     }
