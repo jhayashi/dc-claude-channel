@@ -204,6 +204,19 @@ Files:
   native audio decoding, transcription via @napi-rs/whisper)
 - `plugin/test/stt.test.ts` — Unit tests for config parsing, voice detection
 
+## Visual communication via WebXDC
+
+When the conversation calls for visual output — UI mockups, design
+comparisons, diagrams, data visualizations — build a self-contained HTML
+app and send it via `dc_send_webxdc`. A throwaway `.xdc` renders properly
+on any device and stays accessible from the DC app list. Don't describe
+visuals in markdown when you can show them.
+
+**Naming:** Use a clear, descriptive manifest name with a version so the
+user can track iterations in the app list. For example:
+`name = "Agent Settings Mockup v2"` not `name = "mockup"`. Bump the
+version each time you send an updated revision.
+
 ## Key Gotchas
 
 - `deltachat-rpc-server` uses file locking — only one process per account database. Multiple sessions = lock contention.

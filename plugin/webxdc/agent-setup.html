@@ -350,7 +350,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.36;
+var APP_VERSION = 1.37;
 var draft = null;
 var existingAgents = [];
 var creating = false;
@@ -891,7 +891,9 @@ function renderTeleportList(candidates) {
 
     var label = document.createElement('div');
     label.className = 'label';
-    var labelText = shortCwd(c.cwd || '') + '  ' + c.sessionId.slice(0, 8) + '\u2026';
+    var labelText = c.sessionName
+      ? c.sessionName + '  \u2014  ' + shortCwd(c.cwd || '')
+      : shortCwd(c.cwd || '') + '  ' + c.sessionId.slice(0, 8) + '\u2026';
     label.textContent = labelText;
     if (c.isProbablyLive) {
       var badge = document.createElement('span');
