@@ -55,6 +55,8 @@ export interface SubagentSpawnOptions {
   userName?: string
   /** Claude Code CLI version string (e.g. '2.1.100'). */
   claudeVersion?: string
+  /** Session display name (synced with DC chat name). Passed as `--name`. */
+  sessionName?: string
   /** Extra system prompt appended to the standard env block. */
   systemPrompt?: string
   /**
@@ -172,6 +174,9 @@ export function buildSubagentArgs(
   ]
   if (opts.model) {
     args.push('--model', opts.model)
+  }
+  if (opts.sessionName) {
+    args.push('--name', opts.sessionName)
   }
   if (opts.mcpConfigPath) {
     // No --strict-mcp-config: our dc server is merged with the user's

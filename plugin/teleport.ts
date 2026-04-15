@@ -11,6 +11,7 @@
  */
 
 import { existsSync, readdirSync, statSync, openSync, readSync, closeSync, mkdirSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { copyFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -48,6 +49,7 @@ export interface TeleportCommand {
   command: string
   sessionId: string
   sessionPath: string
+  sessionName: string | null
 }
 
 export interface TeleportError {
@@ -65,8 +67,9 @@ export interface TeleportError {
  */
 export function buildResumeCommand(
   chatId: number,
-  cwd: string = PLUGIN_DIR,
+  opts: { cwd?: string; chatName?: string } = {},
 ): TeleportCommand | TeleportError {
+  const cwd = opts.cwd ?? PLUGIN_DIR
   const binding = bindings.getBinding(chatId)
   if (!binding?.sessionId) {
     return { error: 'No session yet. Send a message in this chat to initialize, then try again.' }
@@ -76,11 +79,17 @@ export function buildResumeCommand(
   if (!existsSync(sessionPath)) {
     return { error: `Session file not found at ${sessionPath}. The session may have been deleted; clear the binding and start a new chat.` }
   }
+  const nameFlag = opts.chatName ? ` --name ${shellQuote(opts.chatName)}` : ''
   return {
-    command: `cd ${cwd} && claude --resume ${sessionId}`,
+    command: `cd ${cwd} && claude --resume ${sessionId}${nameFlag}`,
     sessionId,
     sessionPath,
+    sessionName: opts.chatName ?? null,
   }
+}
+
+function shellQuote(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'"
 }
 
 export interface Candidate {
@@ -89,9 +98,11 @@ export interface Candidate {
   cwd: string
   mtimeMs: number
   summary: string | null
+  /** Session display name from `--name` flag (stored as custom-title/agent-name in .jsonl). */
+  sessionName: string | null
   /** Size-based estimate (not exact line count) to avoid scanning large files. */
   messageCount: number | null
-  /** True when mtime is within ~5 minutes — a terminal may still be using it. */
+  /** True when a process has the session file open (checked via fuser). */
   isProbablyLive: boolean
 }
 
@@ -102,7 +113,18 @@ export interface ListOptions {
   maxAgeDays?: number
 }
 
-const LIVE_WINDOW_MS = 5 * 60 * 1000
+/**
+ * Check whether any process has a file open using fuser(1).
+ * Returns true if at least one process holds the file.
+ */
+function isFileInUse(path: string): boolean {
+  try {
+    const result = spawnSync('fuser', [path], { timeout: 3000, stdio: 'pipe' })
+    return result.status === 0
+  } catch {
+    return false
+  }
+}
 
 /**
  * Scan ~/.claude/projects/STAR/STAR.jsonl and return recent sessions not
@@ -113,7 +135,6 @@ export function listResumeCandidates(opts: ListOptions = {}): Candidate[] {
   const limit = opts.limit ?? 25
   const maxAgeDays = opts.maxAgeDays ?? 2
   const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000
-  const now = Date.now()
 
   if (!existsSync(PROJECTS_ROOT)) return []
 
@@ -142,15 +163,16 @@ export function listResumeCandidates(opts: ListOptions = {}): Candidate[] {
       try { fstat = statSync(sessionPath) } catch { continue }
       if (fstat.mtimeMs < cutoff) continue
 
-      const { summary, messageCount } = readSessionMeta(sessionPath, fstat.size)
+      const { summary, sessionName, messageCount } = readSessionMeta(sessionPath, fstat.size)
       candidates.push({
         sessionId,
         sessionPath,
         cwd,
         mtimeMs: fstat.mtimeMs,
         summary,
+        sessionName,
         messageCount,
-        isProbablyLive: now - fstat.mtimeMs < LIVE_WINDOW_MS,
+        isProbablyLive: isFileInUse(sessionPath),
       })
     }
   }
@@ -165,31 +187,36 @@ function cwdFromProjectHash(hash: string): string {
 }
 
 /**
- * Read the first ~4 KB of a session file and parse line 1 for the summary.
+ * Read the first ~8 KB of a session file and parse early lines for metadata.
+ * Looks for: summary (line 1), custom-title or agent-name entries (session name).
  * Estimates message count from file size (~400 bytes/line) instead of
  * counting newlines — avoids scanning multi-MB session files.
  */
-function readSessionMeta(path: string, sizeBytes: number): { summary: string | null; messageCount: number | null } {
+function readSessionMeta(path: string, sizeBytes: number): { summary: string | null; sessionName: string | null; messageCount: number | null } {
   let summary: string | null = null
+  let sessionName: string | null = null
   try {
     const fd = openSync(path, 'r')
     try {
-      const buf = Buffer.alloc(4096)
-      const n = readSync(fd, buf, 0, 4096, 0)
+      const buf = Buffer.alloc(8192)
+      const n = readSync(fd, buf, 0, 8192, 0)
       const head = buf.slice(0, n).toString('utf-8')
-      const nl = head.indexOf('\n')
-      if (nl > 0) {
+      const lines = head.split('\n')
+      for (const line of lines) {
+        if (!line.trim()) continue
         try {
-          const obj = JSON.parse(head.slice(0, nl)) as { summary?: string }
-          if (typeof obj.summary === 'string') summary = obj.summary
-        } catch { /* first line isn't JSON; leave summary null */ }
+          const obj = JSON.parse(line) as { type?: string; summary?: string; customTitle?: string; agentName?: string }
+          if (typeof obj.summary === 'string' && !summary) summary = obj.summary
+          if (obj.type === 'custom-title' && typeof obj.customTitle === 'string') sessionName = obj.customTitle
+          if (obj.type === 'agent-name' && typeof obj.agentName === 'string' && !sessionName) sessionName = obj.agentName
+        } catch { /* skip non-JSON lines */ }
       }
     } finally {
       closeSync(fd)
     }
   } catch { /* ignore */ }
   const messageCount = sizeBytes > 0 ? Math.max(1, Math.round(sizeBytes / 400)) : null
-  return { summary, messageCount }
+  return { summary, sessionName, messageCount }
 }
 
 /**
@@ -242,4 +269,57 @@ function findSessionFile(sessionId: string): string | null {
     if (existsSync(p)) return p
   }
   return null
+}
+
+/**
+ * Read the last ~32 KB of a session file and extract text content from
+ * recent user/assistant turns. Returns a condensed string suitable for
+ * feeding to an LLM to generate a summary and chat title.
+ */
+export function readRecentTurns(sessionId: string, maxBytes: number = 32768): string {
+  const path = findSessionFile(sessionId)
+  if (!path) return ''
+
+  let size: number
+  try { size = statSync(path).size } catch { return '' }
+  if (size === 0) return ''
+
+  const readSize = Math.min(size, maxBytes)
+  const offset = Math.max(0, size - readSize)
+
+  const fd = openSync(path, 'r')
+  try {
+    const buf = Buffer.alloc(readSize)
+    readSync(fd, buf, 0, readSize, offset)
+    const raw = buf.toString('utf-8')
+
+    const lines = raw.split('\n').filter(Boolean)
+    const turns: string[] = []
+    for (const line of lines) {
+      try {
+        const obj = JSON.parse(line) as { type?: string; message?: unknown }
+        if (obj.type !== 'user' && obj.type !== 'assistant') continue
+        const msg = obj.message
+        if (!msg) continue
+        let text = ''
+        if (typeof msg === 'string') {
+          text = msg
+        } else if (Array.isArray(msg)) {
+          text = (msg as Array<{ type?: string; text?: string }>)
+            .filter(b => b.type === 'text' && b.text)
+            .map(b => b.text!)
+            .join('\n')
+        } else if (typeof msg === 'object' && 'content' in (msg as object)) {
+          const c = (msg as { content?: string }).content
+          if (typeof c === 'string') text = c
+        }
+        if (text.trim()) {
+          turns.push(`[${obj.type}]: ${text.slice(0, 500)}`)
+        }
+      } catch { /* skip malformed lines */ }
+    }
+    return turns.slice(-20).join('\n\n')
+  } finally {
+    closeSync(fd)
+  }
 }

@@ -69,6 +69,35 @@ describe('buildResumeCommand', () => {
     expect(result.sessionPath).toBe(join(projectsRoot, teleport.projectHashForCwd(teleport.PLUGIN_DIR), `${sessionId}.jsonl`))
   })
 
+  it('includes --name flag when chatName is provided', () => {
+    const sessionId = '3b9526d5-a8f9-4ccc-a8e8-c08f6fd515ee'
+    writeSessionFile(teleport.PLUGIN_DIR, sessionId)
+    bindings.saveBinding({
+      chatId: 42,
+      sessionId,
+      createdAt: new Date().toISOString(),
+    })
+
+    const result = teleport.buildResumeCommand(42, { chatName: 'My Agent' })
+    if ('error' in result) throw new Error(`expected success: ${result.error}`)
+    expect(result.command).toContain("--name 'My Agent'")
+    expect(result.sessionName).toBe('My Agent')
+  })
+
+  it('shell-quotes chat names with special characters', () => {
+    const sessionId = '3b9526d5-a8f9-4ccc-a8e8-c08f6fd515ee'
+    writeSessionFile(teleport.PLUGIN_DIR, sessionId)
+    bindings.saveBinding({
+      chatId: 42,
+      sessionId,
+      createdAt: new Date().toISOString(),
+    })
+
+    const result = teleport.buildResumeCommand(42, { chatName: "Joe's Chat" })
+    if ('error' in result) throw new Error(`expected success: ${result.error}`)
+    expect(result.command).toContain("--name 'Joe'\\''s Chat'")
+  })
+
   it('errors when the chat has no binding', () => {
     const result = teleport.buildResumeCommand(99)
     expect('error' in result).toBe(true)
@@ -169,14 +198,43 @@ describe('listResumeCandidates', () => {
     expect(out[0]!.summary).toBe('Working on Teleport')
   })
 
-  it('flags isProbablyLive when mtime is within 5 minutes', () => {
-    writeSession('-p', 'live0000-0000-0000-0000-000000000000', 60 * 1000, {})
-    writeSession('-p', 'idle0000-0000-0000-0000-000000000000', 2 * 60 * 60 * 1000, {})
+  it('reads sessionName from custom-title entry in .jsonl', () => {
+    const sessionId = 'name0000-0000-0000-0000-000000000000'
+    const dir = join(projectsRoot, '-p')
+    mkdirSync(dir, { recursive: true })
+    const file = join(dir, `${sessionId}.jsonl`)
+    const lines = [
+      JSON.stringify({ type: 'custom-title', customTitle: 'My Terminal Session', sessionId }),
+      JSON.stringify({ type: 'agent-name', agentName: 'My Terminal Session', sessionId }),
+      JSON.stringify({ type: 'permission-mode', permissionMode: 'default', sessionId }),
+    ]
+    writeFileSync(file, lines.join('\n') + '\n')
     const out = teleport.listResumeCandidates({ limit: 10 })
-    const live = out.find(c => c.sessionId.startsWith('live'))
-    const idle = out.find(c => c.sessionId.startsWith('idle'))
-    expect(live!.isProbablyLive).toBe(true)
-    expect(idle!.isProbablyLive).toBe(false)
+    expect(out[0]!.sessionName).toBe('My Terminal Session')
+  })
+
+  it('returns null sessionName when no custom-title entry exists', () => {
+    writeSession('-p', 'noname00-0000-0000-0000-000000000000', 1000, { type: 'permission-mode', permissionMode: 'default' })
+    const out = teleport.listResumeCandidates({ limit: 10 })
+    expect(out[0]!.sessionName).toBeNull()
+  })
+
+  it('flags isProbablyLive when a process has the file open', () => {
+    writeSession('-p', 'live0000-0000-0000-0000-000000000000', 60 * 1000, {})
+    writeSession('-p', 'idle0000-0000-0000-0000-000000000000', 60 * 1000, {})
+    // Hold the "live" file open so fuser detects it.
+    const { openSync, closeSync } = require('node:fs')
+    const livePath = join(projectsRoot, '-p', 'live0000-0000-0000-0000-000000000000.jsonl')
+    const fd = openSync(livePath, 'r')
+    try {
+      const out = teleport.listResumeCandidates({ limit: 10 })
+      const live = out.find(c => c.sessionId.startsWith('live'))
+      const idle = out.find(c => c.sessionId.startsWith('idle'))
+      expect(live!.isProbablyLive).toBe(true)
+      expect(idle!.isProbablyLive).toBe(false)
+    } finally {
+      closeSync(fd)
+    }
   })
 
   it('estimates messageCount from file size without reading entire file', () => {

@@ -488,6 +488,12 @@ export class DCClient {
     return info.chatType === 'Single';
   }
 
+  async getChatName(chatId: number): Promise<string> {
+    const { rpc, accountId } = this.ensureAccount();
+    const info = await rpc.getBasicChatInfo(accountId, chatId);
+    return info.name;
+  }
+
   async setChatName(chatId: number, name: string): Promise<void> {
     const { rpc, accountId } = this.ensureAccount();
     await rpc.setChatName(accountId, chatId, name);
@@ -508,6 +514,12 @@ export class DCClient {
   async deleteChat(chatId: number): Promise<void> {
     const { rpc, accountId } = this.ensureAccount();
     await rpc.deleteChat(accountId, chatId);
+  }
+
+  /** Remove the bot (self, contact 1) from a group chat. */
+  async leaveChat(chatId: number): Promise<void> {
+    const { rpc, accountId } = this.ensureAccount();
+    await rpc.removeContactFromChat(accountId, chatId, 1);
   }
 
   async getGroupInviteLink(chatId: number): Promise<string> {

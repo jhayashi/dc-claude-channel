@@ -273,6 +273,9 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
   if (ownerContactId) {
     userName = (await client.getContactName(ownerContactId)) ?? undefined
   }
+  // Sync DC chat name → session --name so /resume picker and teleport show it.
+  let sessionName: string | undefined
+  try { sessionName = await client.getChatName(chatId) || undefined } catch { /* best effort */ }
 
   let resumeFailed = false
   let sub = new SubagentProcess({
@@ -287,6 +290,7 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     addDirs: [repoRoot],
     model: resolved?.agent.model ?? 'claude-sonnet-4-6',
     agentName: resolved?.agent.name,
+    sessionName,
     userName,
     claudeVersion: CLAUDE_VERSION,
     systemPrompt: [resolved?.agent.system, appInstructions].filter(Boolean).join('\n\n'),
@@ -321,6 +325,7 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
         addDirs: [repoRoot],
         model: resolved?.agent.model ?? 'claude-sonnet-4-6',
         agentName: resolved?.agent.name,
+        sessionName,
         userName,
         claudeVersion: CLAUDE_VERSION,
         systemPrompt: [resolved?.agent.system, appInstructions].filter(Boolean).join('\n\n'),
@@ -1313,7 +1318,9 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         if (!access.isAllowed(chatId)) {
           return { content: [{ type: 'text' as const, text: `dc_teleport: chat ${chatId} is not accessible` }], isError: true }
         }
-        const result = teleport.buildResumeCommand(chatId)
+        let chatName: string | undefined
+        try { chatName = await client.getChatName(chatId) || undefined } catch { /* best effort */ }
+        const result = teleport.buildResumeCommand(chatId, { chatName })
         if ('error' in result) {
           return { content: [{ type: 'text' as const, text: `dc_teleport: ${result.error}` }], isError: true }
         }
@@ -1321,6 +1328,24 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         lines.push(`\`\`\`\n${result.command}\n\`\`\``)
         lines.push(`Session: ${result.sessionId}`)
         lines.push(`\nWait for my current turn to finish, then paste the command. The session file unlocks once this reply lands.`)
+
+        // Schedule post-turn cleanup: goodbye message, unbind session, leave chat.
+        setTimeout(async () => {
+          try {
+            await client.send(chatId, 'Session teleported to your terminal. You can delete this chat — it\'s no longer connected.')
+            const binding = bindings.getBinding(chatId)
+            if (binding) {
+              bindings.saveBinding({ ...binding, sessionId: undefined })
+            }
+            await subagentCache.evictChat(chatId).catch(() => {})
+            access.removeChat(chatId)
+            await client.leaveChat(chatId)
+            logf('dc_teleport: cleaned up chat %d after teleport-out', chatId)
+          } catch (err) {
+            logf('dc_teleport: post-teleport cleanup failed for chat %d: %v', chatId, err)
+          }
+        }, 5000)
+
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
       }
 

@@ -532,20 +532,94 @@ export const agentSetupApp: WebXDCApp = {
           continue
         }
         try {
-          await ctx.evictSubagent(session.sourceChatId)
-          await teleport.attachSessionToChat(session.sourceChatId, sessionId)
+          const ownerContactId = await resolveOwner()
+          if (!ownerContactId) continue
+
+          const candidates = teleport.listResumeCandidates()
+          const candidate = candidates.find(c => c.sessionId === sessionId)
+          if (candidate?.isProbablyLive) {
+            ctx.logf('agent-setup: session %s appears active in terminal, warning user', sessionId)
+            await ctx.client.sendWebXDCUpdate(session.msgId, JSON.stringify({
+              payload: {
+                type: 'teleport_attach_err',
+                requestId,
+                message: 'This session appears to be active in a terminal. Close it first, then try again.',
+                version: agentSetup.getAgentSetupVersion(),
+                senderAddr: 'server',
+              },
+              summary: 'Session active',
+            }))
+            continue
+          }
+
+          const sourceBinding = bindings.getBinding(session.sourceChatId)
+          const agentId = sourceBinding?.agentId ?? 'claude-code'
+          const agent = agents.getAgent(agentId)
+
+          // Use terminal session name for the DC chat if available.
+          const initialName = candidate?.sessionName || 'Teleported session'
+          const newChatId = await ctx.client.createGroup(initialName)
+          await ctx.client.addContactToChat(newChatId, ownerContactId)
+          access.addChat(newChatId, ownerContactId)
+
+          bindings.bindAgent(newChatId, agentId, {
+            inheritClaudeMd: agent ? agents.inheritClaudeMdForModel(agent.model) : true,
+          })
+          await teleport.attachSessionToChat(newChatId, sessionId)
+          if (agent) await decorateAgentChat(ctx, newChatId, agent)
+
+          ctx.logf('agent-setup: teleport-import created chat %d with session %s for owner %d', newChatId, sessionId, ownerContactId)
+
+          if (candidate?.sessionName) {
+            // Terminal session already had a name — use it directly, skip LLM naming.
+            // Still dispatch a summary message so the user sees context.
+            if (ctx.dispatchAndCollect) {
+              try {
+                await ctx.dispatchAndCollect(newChatId,
+                  '[system] This session was just teleported from a terminal into this new Delta Chat. ' +
+                  'Briefly summarize what we were working on (2-3 sentences), then on a new line write ' +
+                  'CHAT_NAME: followed by a short name (3-5 words) for this chat based on the recent work.')
+              } catch (err) {
+                ctx.logf('agent-setup: teleport-import summary dispatch failed: %v', err)
+                await ctx.client.send(newChatId, 'Terminal session imported. Send a message to continue where you left off.')
+              }
+            } else {
+              await ctx.client.send(newChatId, 'Terminal session imported. Send a message to continue where you left off.')
+            }
+          } else if (ctx.dispatchAndCollect) {
+            // No terminal session name — ask the LLM to generate one.
+            try {
+              const resp = await ctx.dispatchAndCollect(newChatId,
+                '[system] This session was just teleported from a terminal into this new Delta Chat. ' +
+                'Briefly summarize what we were working on (2-3 sentences), then on a new line write ' +
+                'CHAT_NAME: followed by a short name (3-5 words) for this chat based on the recent work.')
+              const nameMatch = resp.match(/CHAT_NAME:\s*(.+)/i)
+              if (nameMatch) {
+                const chatName = nameMatch[1].trim().slice(0, 50)
+                await ctx.client.setChatName(newChatId, chatName)
+              }
+            } catch (err) {
+              ctx.logf('agent-setup: teleport-import summary dispatch failed: %v', err)
+              await ctx.client.send(newChatId, 'Terminal session imported. Send a message to continue where you left off.')
+            }
+          } else {
+            await ctx.client.send(newChatId, 'Terminal session imported. Send a message to continue where you left off.')
+          }
+
           const update = JSON.stringify({
             payload: {
               type: 'teleport_attach_ok',
               requestId,
               sessionId,
+              chatId: newChatId,
               version: agentSetup.getAgentSetupVersion(),
               senderAddr: 'server',
             },
             summary: 'Attached',
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
-          ctx.logf('agent-setup: attached session %s to chat %d', sessionId, session.sourceChatId)
+          ctx.unregisterWebXDCMsg(msgId)
+          sessions.delete(session.sourceChatId)
         } catch (err) {
           const msg = (err as Error).message || 'attach failed'
           ctx.logf('agent-setup: teleport_attach failed: %v', err)

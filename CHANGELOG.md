@@ -2,11 +2,22 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
-## [Unreleased]
+## [1.01] — 2026-04-14
 
-### Added
+Feature release: adds **session teleport** — seamlessly move conversations between Delta Chat and a local terminal `claude` session in either direction.
 
-- **Session teleport** (#41) — move a conversation between a DC chat and a local `claude` terminal session. `dc_teleport` emits a `cd … && claude --resume <uuid>` command (DC → terminal); the agent-setup card's new **Import terminal session** pane lists sessions from the last 48 hours for terminal → DC. Bridge the shared session UUID with no Anthropic round-trip; same-machine only. Pure helpers in `plugin/teleport.ts` (bounded 4 KB first-line reads, size-based message-count estimate, live-session badge on recently-modified candidates).
+### Session teleport
+
+- **DC → terminal (`dc_teleport`)** (#41) — ask "teleport this to my terminal" and the subagent emits a one-line `cd … && claude --resume <uuid>` command. Paste it in a terminal to resume the exact conversation with full history. The DC subagent goes quiet once the terminal takes the session lock.
+- **Terminal → DC (agent-setup card)** (#41) — the agent-setup card gains an **Import terminal session** pane (opened via `dc_propose_agent mode="teleport-import"` or by saying "import my terminal session" in chat). Lists sessions from the last 48 hours with timestamps, message counts, and a live-session badge. Picking one creates a new DC chat bound to that session UUID — the next message resumes the terminal history.
+- **Pure helpers** — `plugin/teleport.ts` provides `buildResumeCommand`, `listResumeCandidates`, and `attachSessionToChat`. Bounded 4 KB first-line reads for metadata, size-based message-count estimation, and `fuser(1)` live-session detection. CWD resolved via `import.meta.url` so the dispatcher works from any launch directory.
+- **Bidirectional channel instructions** — subagents are taught when to call `dc_teleport` (DC → terminal) and when to open the import pane (terminal → DC), including session-lock warnings.
+
+### Docs
+
+- README, CLAUDE.md, and CHANGELOG updated with teleport documentation.
+
+---
 
 ## [1.0.0] — 2026-04-13
 
@@ -174,6 +185,7 @@ First public release of the Delta Chat channel for Claude Code.
 - File-based allowlist + pairing codes.
 - `deltachat-rpc-server` integration.
 
+[1.01]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.0...v1.01
 [1.0.0]: https://github.com/jhayashi/dc-claude-channel/compare/v0.9.5...v1.0.0
 [0.9.5]: https://github.com/jhayashi/dc-claude-channel/compare/v0.9.1...v0.9.5
 [0.9.1]: https://github.com/jhayashi/dc-claude-channel/compare/v0.9...v0.9.1
