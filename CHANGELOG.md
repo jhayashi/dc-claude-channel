@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
-## [1.01] — 2026-04-14
+## [1.0.1] — 2026-04-14
 
 Feature release: adds **session teleport** — seamlessly move conversations between Delta Chat and a local terminal `claude` session in either direction.
 
@@ -185,7 +185,7 @@ First public release of the Delta Chat channel for Claude Code.
 - File-based allowlist + pairing codes.
 - `deltachat-rpc-server` integration.
 
-[1.01]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.0...v1.01
+[1.0.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jhayashi/dc-claude-channel/compare/v0.9.5...v1.0.0
 [0.9.5]: https://github.com/jhayashi/dc-claude-channel/compare/v0.9.1...v0.9.5
 [0.9.1]: https://github.com/jhayashi/dc-claude-channel/compare/v0.9...v0.9.1
