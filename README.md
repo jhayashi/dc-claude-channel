@@ -1,21 +1,21 @@
 # Delta Chat Channel for Claude Code
 
-D4C (Delta Chat Channel for Claude Code) is a Claude Code channel plugin that bridges [Delta Chat](https://delta.chat/) to Claude Code. You get an end-to-end encrypted, open-source chat interface to Claude from any phone or desktop with a Delta Chat client, backed entirely by your own machine — no API keys, no bot portals, no fuss. Installation is two slash commands in Claude Code; pairing is a QR scan and a 5-letter code.
+D4C (Delta Chat Channel for Claude Code) is a Claude Code channel plugin that bridges [Delta Chat](https://delta.chat/) to Claude Code. You get an end-to-end encrypted chat interface to Claude from any phone or desktop with a Delta Chat client, backed entirely by your own machine or machines you control — no API keys, no bot portals, no fuss. Installation is two slash commands in Claude Code; pairing is a QR scan and a 5-letter code.
 
-It gives you the full power of Claude Code in an open-source, privacy-forward, cross-platform chat app. Kick off a refactor on the train and tap and swipe through permission prompts on the way in. Ask Claude to summarize your inbox every morning at 8 and deliver the digest to a specific chat. On your morning walk, use your voice to vibe code. Because each chat is an independent agent with its own model, prompt, and tool access, a single Delta Chat account can hold a deep-reasoning coding agent, a news digester, an app builder, and a quick-Q&A assistant side by side.
+It gives you the full power of Claude Code in an open-source, privacy-forward, cross-platform chat app. Kick off a refactor on the train and tap and swipe through permission prompts on the way home. Ask Claude to summarize your inbox every morning at 8 and deliver the digest to a specific chat. On your morning walk, use your voice to vibe code. Because each chat is an independent agent with its own model, prompt, and tool access, a single Delta Chat account can hold a deep-reasoning coding agent, a news digester, a productivity agent for work, and agent helping you plan your next vacation.
 
-Delta Chat's strong privacy and support for chat-native applications make it a great choice for developers. We've built on top of that foundation to add a parallel subagent architecture, built-in scheduling, private voice transcription, and easy-to-use chat-native GUIs that make configuration, coding, and productivity a great experience on the go.
+Delta Chat's strong privacy and support for chat-native applications make it a great choice for developers. We've built on top of that foundation with a parallel subagent architecture, to offer integrated cron-like scheduling, private voice transcription, and easy-to-use chat-native GUIs that make configuration, coding, and productivity a great experience on the go.
 
 ## Feature Highlights
 
 ### For coding
 
 - **End-to-end encryption** — all messages, files, voice recordings, and app data are automatically encrypted via [Autocrypt](https://autocrypt.org/). Your code never passes through a third-party server in readable form.
-- **Parallel agent architecture** — each chat runs as an independent subagent process, so a long coding task in one chat never blocks a quick question in another. Claude stays responsive across all your conversations. Each chat also has a private context, so you aren't confusing your agents with unrelated requests. You can even reuse agent definitions across multiple chats.
-- **Your chats have apps** — Delta Chat ships with a unique open-source app architecture called WebXDC, and Claude can easily build whatever you want — games, GUIs for your productivity tools, even multi-person app experiences (think a real-time, private fantasy sports app, but for any tool or topic). Because your chats are connected to Claude, your chat apps come alive with information and intelligence. We call this the "Familiar" WebXDC pattern, and it's unique to Delta Chat and this plugin.
-- **Fine-grained control: permissions, tools, MCP servers** — you decide the permission limits, access controls, and capabilities of every agent.
+- **Parallel agent architecture** — each chat runs as an independent subagent process, so a long coding task in one chat never blocks a quick question in another. Claude stays responsive across all your conversations. Each chat also has an isolated context, so you aren't wasting tokens on irrelevant context. You can even reuse agent definitions across multiple chats.
+- **Your chats have apps** — Delta Chat ships with a unique open-source app architecture called [WebXDC,](https://webxdc.org/) and Claude can easily build whatever you want using it — games, GUIs for your productivity tools, even multi-person app experiences - think a [real-time,](https://delta.chat/en/2024-11-20-webxdc-realtime) private fantasy sports like experience, but for anything! If that weren't cool enough, because your chat apps are connected to Claude, they can come alive with information and intelligence using Claude as a backend. We call this the "Familiar" WebXDC pattern (a skill and beta runtime is already included), and it's unique to Delta Chat and this channel plugin.
+- **Fine-grained control: permissions, tools, MCP servers** — you decide the permission limits, access controls, and capabilities of every agent. Skipping permissions in channels is not longer an all or nothing dangerous choice, you decide where you want permissions and where you what to let Claude run free.
 - **On-the-go file iteration** — D4C includes a built-in file reviewer that makes it easy to comment on specific parts of a markdown or source file and have Claude make the changes you need.
-- **Coming soon** — teleport your terminal sessions to Delta Chat and back. Literally take your active coding session with you on the bus, on your morning walk, or even to your fundraising pitch.
+- **Coming soon** — teleport your terminal sessions to Delta Chat and back. Literally take your active coding session with you on the bus, on your morning walk, or to your next meeting.
 
 ### For productivity
 
@@ -26,11 +26,11 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
 
 ### For everybody
 
-- **Easy to get started** — D4C is the easiest Claude Code channel to set up. It even comes with an optional Getting Started tour to familiarize you with its features and walk you through building your first WebXDC app.
+- **Easy to get started** — Despite all it does, D4C is the easiest Claude Code channel to set up. It even comes with an optional Getting Started tour to familiarize you with its features and walk you through one-shotting your first WebXDC app.
 - **Type with your voice, privately** — D4C includes built-in voice transcription that installs and uses a local model on your machine for high-quality, open-source, private transcription (Whisper).
-- **Vibe code games with your kids** — need to distract the kids? Have them tell Claude what kind of game to make for infinite entertainment — using their voice.
+- **Vibe code games with your kids** — need to distract the kids? Have them tell Claude what kind of game to make for infinite entertainment — using their voice!
 
-> **Beyond the channels research preview:** The Claude Code channels API provides the messaging transport — this plugin builds substantially on top of it. Features like multi-agent with per-agent tool restrictions, cron-backed scheduled jobs, interactive WebXDC permission cards (vs. text-based), the Familiar app runtime, local voice transcription, live activity emoji reactions, the file reviewer with inline commenting, and slide presentations are all implemented in this plugin and are not part of the base channels API. The official channels research preview provides message routing and basic tool proxying; everything above that is custom.
+> **Beyond the channels research preview:** The Claude Code channels API provides the messaging transport — this plugin builds substantially on top of it. Features like multi-agent with per-agent tool restrictions, cron-like scheduled jobs, interactive WebXDC permission cards (vs. text-based), the Familiar app runtime, local voice transcription, live activity emoji reactions, the file reviewer with inline commenting, and slide presentations are all implemented in this plugin and are not part of the base channels API. The official channels research preview provides message routing and basic tool proxying; everything above that is custom.
 
 ## Screenshots
 
@@ -40,9 +40,9 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
   <img src="screenshots/agent-setup.jpg" width="250" alt="Agent setup card">
 </p>
 <p align="center">
-  <em>Multiple agents, each with their own chat and model</em>
+  <em>Multiple agents, isoldated chats</em>
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <em>Agent setup and management in a WebXDC app</em>
+  <em>Agent setup in a WebXDC app</em>
 </p>
 
 <p align="center">
@@ -51,7 +51,7 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
   <img src="screenshots/file-reviewer.jpg" width="250" alt="File reviewer">
 </p>
 <p align="center">
-  <em>Tap to Allow or Deny tool permissions</em>
+  <em>Optional permissions GUI</em>
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <em>Review and comment on code from your phone</em>
 </p>
