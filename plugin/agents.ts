@@ -287,6 +287,16 @@ export function iconForAgent(def: AgentDef): string {
 }
 
 /**
+ * Return the explicitly-set icon glyph, or null if the agent relies on
+ * the archetype default. Used by the edit UI to show the raw override
+ * (vs. the rendered fallback).
+ */
+export function getExplicitIcon(def: AgentDef): string | null {
+  const explicit = def.metadata?.[ICON_META_KEY]
+  return typeof explicit === 'string' && explicit.length > 0 ? explicit : null
+}
+
+/**
  * Write an icon glyph to an agent's metadata bag. Passing null or an
  * empty string clears the explicit icon (reverts to archetype default).
  * Does not persist — callers must follow with saveAgent.

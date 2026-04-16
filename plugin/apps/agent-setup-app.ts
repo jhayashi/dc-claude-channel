@@ -396,6 +396,7 @@ export const agentSetupApp: WebXDCApp = {
           iconMirror: agents.getIconMirror(agent),
           archetype: agents.getArchetype(agent),
           icon: agents.iconForAgent(agent),
+          explicitIcon: agents.getExplicitIcon(agent),
           allowedBuiltinTools: agent.allowedBuiltinTools ?? null,
           allowedMcpServers: agent.allowedMcpServers ?? null,
         }
@@ -778,6 +779,11 @@ export const agentSetupApp: WebXDCApp = {
           agents.setSkipPermissions(updated, skipPerms)
           agents.setIconMirror(updated, iconMirror)
           if (archetype) agents.setArchetype(updated, archetype)
+          const rawIcon = (payload as { icon?: unknown }).icon
+          if (typeof rawIcon === 'string') {
+            // Trim whitespace; empty string clears the explicit icon.
+            agents.setIcon(updated, rawIcon.trim() || null)
+          }
           agents.saveAgent(updated)
           ctx.logf(
             'agent-setup: edited agent %s (model=%s skip=%s mirror=%s archetype=%s)',
@@ -933,6 +939,10 @@ export const agentSetupApp: WebXDCApp = {
           const newAgent: agents.AgentDef = { ...draft, id: agentId, allowedBuiltinTools, allowedMcpServers }
           agents.setSkipPermissions(newAgent, skipPerms)
           if (archetype) agents.setArchetype(newAgent, archetype)
+          const rawIcon = (payload as { icon?: unknown }).icon
+          if (typeof rawIcon === 'string' && rawIcon.trim()) {
+            agents.setIcon(newAgent, rawIcon.trim())
+          }
           // Roll a random orientation once at creation so same-model agents
           // are visually differentiable. Edits can override via the setup card.
           agents.setIconMirror(newAgent, Math.random() < 0.5)

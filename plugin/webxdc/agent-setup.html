@@ -128,6 +128,23 @@ body {
   margin-right: 4px;
   vertical-align: middle;
 }
+input.icon-input {
+  width: 60px;
+  text-align: center;
+  font-size: 18px;
+  padding: 6px 8px;
+}
+.icon-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+.icon-hint {
+  font-size: 11px;
+  color: #6e7681;
+  font-style: italic;
+}
 .section-label {
   font-size: 11px;
   text-transform: uppercase;
@@ -339,6 +356,11 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         <button type="button" class="archetype-btn" data-archetype="utility" onclick="selectArchetype('create', 'utility')"><span class="icon">&#x2699;&#xFE0F;</span>Utility</button>
         <button type="button" class="archetype-btn" data-archetype="project" onclick="selectArchetype('create', 'project')"><span class="icon">&#x1F4CB;</span>Project</button>
       </div>
+      <label class="field" for="icon">Icon (optional)</label>
+      <div class="icon-row">
+        <input id="icon" class="text icon-input" type="text" maxlength="8" placeholder="">
+        <span class="icon-hint">Leave empty to use the archetype icon.</span>
+      </div>
       <label class="field" for="model">Model</label>
       <select id="model" class="text">
         <option value="claude-opus-4-6">Opus 4.6</option>
@@ -371,6 +393,11 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         <button type="button" class="archetype-btn" data-archetype="role" onclick="selectArchetype('edit', 'role')"><span class="icon">&#x1F464;</span>Role</button>
         <button type="button" class="archetype-btn" data-archetype="utility" onclick="selectArchetype('edit', 'utility')"><span class="icon">&#x2699;&#xFE0F;</span>Utility</button>
         <button type="button" class="archetype-btn" data-archetype="project" onclick="selectArchetype('edit', 'project')"><span class="icon">&#x1F4CB;</span>Project</button>
+      </div>
+      <label class="field" for="edit-icon">Icon (optional)</label>
+      <div class="icon-row">
+        <input id="edit-icon" class="text icon-input" type="text" maxlength="8" placeholder="">
+        <span class="icon-hint">Leave empty to use the archetype icon.</span>
       </div>
       <label class="field" for="edit-model">Model</label>
       <select id="edit-model" class="text">
@@ -868,6 +895,7 @@ function populateForm() {
   document.getElementById('model').value = draft.model || 'claude-sonnet-4-6';
   document.getElementById('system').value = draft.system || '';
   document.getElementById('skip-permissions').checked = !!draft.skipPermissions;
+  document.getElementById('icon').value = '';
   createArchetype = draft.archetype || 'role';
   refreshArchetypeRow('create');
 }
