@@ -371,10 +371,10 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       <textarea id="system" class="text" maxlength="100000" style="min-height:60px;font-family:inherit;"></textarea>
       <label class="field" style="display:flex;align-items:flex-start;gap:8px;margin-top:12px;">
         <input id="skip-permissions" type="checkbox" style="margin-top:3px;flex-shrink:0;">
-        <span style="font-weight:400;font-size:12px;line-height:1.4;">Skip permission prompts (trusted agent). Tool calls auto-approve and are recorded in an audit log you can pull up later by asking the agent to show it.</span>
+        <span style="font-weight:400;font-size:12px;line-height:1.4;">Trusted agent — tool calls auto-approve instead of asking you first. Actions are recorded in an audit log you can pull up by asking the agent to show it.</span>
       </label>
       <div style="margin-top:16px;">
-        <div class="section-label">Allowed Tools</div>
+        <div class="section-label">Tools</div>
         <div id="create-tool-picker"></div>
       </div>
     </div>
@@ -409,7 +409,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       <textarea id="edit-system" class="text" maxlength="100000" style="min-height:60px;font-family:inherit;"></textarea>
       <label class="field" style="display:flex;align-items:flex-start;gap:8px;margin-top:12px;">
         <input id="edit-skip-permissions" type="checkbox" style="margin-top:3px;flex-shrink:0;">
-        <span style="font-weight:400;font-size:12px;line-height:1.4;">Skip permission prompts (trusted agent). Tool calls auto-approve and are recorded in an audit log you can pull up later by asking the agent to show it.</span>
+        <span style="font-weight:400;font-size:12px;line-height:1.4;">Trusted agent — tool calls auto-approve instead of asking you first. Actions are recorded in an audit log you can pull up by asking the agent to show it.</span>
       </label>
       <label class="field" style="margin-top:12px;">Icon orientation</label>
       <div style="display:flex;gap:16px;font-size:13px;">
@@ -421,7 +421,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         </label>
       </div>
       <div style="margin-top:16px;">
-        <div class="section-label">Allowed Tools</div>
+        <div class="section-label">Tools</div>
         <div id="edit-tool-picker"></div>
       </div>
     </div>
@@ -442,7 +442,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 
   <div id="teleport-import">
     <div class="body">
-      <h2 style="font-size:18px;margin-bottom:4px;">Import terminal session</h2>
+      <h2 style="font-size:18px;margin-bottom:4px;">Resume a conversation</h2>
       <p style="font-size:13px;color:#8b949e;margin-bottom:14px;">Pick a terminal <code>claude</code> session from the last 48 hours. Your next message here will continue it.</p>
       <div id="teleport-loading" style="font-size:13px;color:#8b949e;" role="status">Loading recent sessions&hellip;</div>
       <div id="teleport-empty" style="display:none;font-size:13px;color:#8b949e;">No terminal sessions found in the last 48 hours.</div>
@@ -467,7 +467,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.41;
+var APP_VERSION = 1.42;
 var draft = null;
 var existingAgents = [];
 var templateList = [];
@@ -634,7 +634,13 @@ function renderTemplates() {
     if (!t.available && t.requiresMcpServers && t.requiresMcpServers.length > 0) {
       var warn = document.createElement('div');
       warn.className = 'warn';
-      warn.textContent = 'Needs: ' + t.requiresMcpServers.join(', ');
+      var labels = t.requiresMcpServers.map(function(prefix) {
+        for (var j = 0; j < availableMcpServers.length; j++) {
+          if (availableMcpServers[j].prefix === prefix) return availableMcpServers[j].label;
+        }
+        return prefix;
+      });
+      warn.textContent = 'Needs: ' + labels.join(', ');
       btn.appendChild(warn);
     }
     container.appendChild(btn);
@@ -768,7 +774,7 @@ function renderMcpServersSection(container, allowedMcpServers) {
 
   var headerLeft = document.createElement('div');
   headerLeft.className = 'tool-header-left';
-  headerLeft.textContent = 'MCP Servers';
+  headerLeft.textContent = 'Connected services';
   var countSpan = document.createElement('span');
   countSpan.className = 'tool-count' + (enabledCount === availableMcpServers.length ? ' all-on' : '');
   countSpan.textContent = enabledCount + ' / ' + availableMcpServers.length + (enabledCount === availableMcpServers.length ? ' \u2713' : '');
