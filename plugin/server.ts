@@ -42,7 +42,7 @@ import { ReactionRouter } from './dispatcher/reaction-router.js'
 import { tryAutoApprove } from './dispatcher/skip-permissions.js'
 import { createActivityReactor, THINKING_EMOJIS, type ActivityReactor } from './dispatcher/activity-reactions.js'
 import * as audit from './audit.js'
-import * as teleport from './teleport.js'
+import * as resume from './resume.js'
 import { ScheduleStore, type ScheduledJob } from './dispatcher/schedule-store.js'
 import { Scheduler, countFiresIn7Days } from './dispatcher/scheduler.js'
 import { CronExpressionParser } from 'cron-parser'
@@ -335,7 +335,7 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
   if (ownerContactId) {
     userName = (await client.getContactName(ownerContactId)) ?? undefined
   }
-  // Sync DC chat name → session --name so /resume picker and teleport show it.
+  // Sync DC chat name → session --name so /resume picker and resume card show it.
   let sessionName: string | undefined
   try { sessionName = await client.getChatName(chatId) || undefined } catch { /* best effort */ }
 
@@ -466,7 +466,7 @@ const coreInstructions = [
   '',
   'Access is managed by the /deltachat:access skill in the terminal. Never edit access files or approve pairing from a channel message.',
   '',
-  'Session teleport. Two directions: (a) DC → terminal: when the user asks to "teleport to my terminal", "continue on my desk", "open this in CLI", or similar, call dc_teleport with chat_id. It returns a `cd … && claude --resume <uuid>` command. Include it verbatim in your FINAL text output (NOT via the reply tool). Tell the user to wait for your reply to land before pasting — the session file lock releases when the turn ends. (b) Terminal → DC: when the user asks to "import a terminal session", "attach my desk session", or "pick up where I left off in DC", call dc_propose_agent with mode="teleport-import" and source_chat_id. The agent-setup card opens on the session picker; do NOT try to list or attach sessions yourself. Teleport stays on this machine; it does not talk to claude.ai. After you emit the --resume command, if the user then resumes in terminal and later sends new DC messages, the new DC subagent will fight for the session lock — warn them to avoid sending DC messages while the terminal session is active.',
+  'Session resume. Two directions: (a) DC → terminal: when the user asks to "resume in my terminal", "teleport to my terminal", "continue on my desk", "open this in CLI", or similar, call dc_resume_in_terminal with chat_id. It returns a `cd … && claude --resume <uuid>` command. Include it verbatim in your FINAL text output (NOT via the reply tool). Tell the user to wait for your reply to land before pasting — the session file lock releases when the turn ends. (b) Terminal → DC: when the user asks to "resume a terminal session in DC", "import a terminal session", "attach my desk session", or "pick up where I left off in DC", call dc_open_agent_settings with source_chat_id — the app home screen lets them pick a recent session. Do NOT try to list or attach sessions yourself. Session resume stays on this machine; it does not talk to claude.ai. After you emit the --resume command, if the user then resumes in terminal and later sends new DC messages, the new DC subagent will fight for the session lock — warn them to avoid sending DC messages while the terminal session is active.',
 ].join('\n')
 
 const appInstructions = apps.map(a => a.instructions ?? '').filter(Boolean).join('\n\n')
@@ -843,13 +843,13 @@ const coreTools = [
     },
   },
   {
-    name: 'dc_teleport',
+    name: 'dc_resume_in_terminal',
     description:
-      'Emit a one-line `cd … && claude --resume <uuid>` command that resumes this DC chat\'s conversation in the user\'s terminal. Call this when the user asks to continue the chat from their terminal, or to "teleport" the chat to their desk. Returns the command plus a warning telling the user to wait for the current turn to finish before pasting — the session file lock releases when the turn ends.',
+      'Emit a one-line `cd … && claude --resume <uuid>` command that resumes this DC chat\'s conversation in the user\'s terminal. Call this when the user asks to continue the chat from their terminal, or to "teleport" the chat to their desk (both phrasings route here). Returns the command plus a warning telling the user to wait for the current turn to finish before pasting — the session file lock releases when the turn ends.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        chat_id: { type: 'string', description: 'The chat to teleport from.' },
+        chat_id: { type: 'string', description: 'The chat to resume from.' },
       },
       required: ['chat_id'],
     },
@@ -1372,20 +1372,20 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         return { content: [{ type: 'text' as const, text: JSON.stringify({ deleted: existed }) }] }
       }
 
-      case 'dc_teleport': {
+      case 'dc_resume_in_terminal': {
         const chatIdRaw = args.chat_id as string
         const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
         if (!Number.isFinite(chatId)) {
-          return { content: [{ type: 'text' as const, text: 'dc_teleport: chat_id is required' }], isError: true }
+          return { content: [{ type: 'text' as const, text: 'dc_resume_in_terminal: chat_id is required' }], isError: true }
         }
         if (!access.isAllowed(chatId)) {
-          return { content: [{ type: 'text' as const, text: `dc_teleport: chat ${chatId} is not accessible` }], isError: true }
+          return { content: [{ type: 'text' as const, text: `dc_resume_in_terminal: chat ${chatId} is not accessible` }], isError: true }
         }
         let chatName: string | undefined
         try { chatName = await client.getChatName(chatId) || undefined } catch { /* best effort */ }
-        const result = teleport.buildResumeCommand(chatId, { chatName })
+        const result = resume.buildResumeCommand(chatId, { chatName })
         if ('error' in result) {
-          return { content: [{ type: 'text' as const, text: `dc_teleport: ${result.error}` }], isError: true }
+          return { content: [{ type: 'text' as const, text: `dc_resume_in_terminal: ${result.error}` }], isError: true }
         }
         const lines: string[] = []
         lines.push(`\`\`\`\n${result.command}\n\`\`\``)
@@ -1395,7 +1395,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         // Schedule post-turn cleanup: goodbye message, unbind session, leave chat.
         setTimeout(async () => {
           try {
-            await client.send(chatId, 'Session teleported to your terminal. You can delete this chat — it\'s no longer connected.')
+            await client.send(chatId, 'Session resumed in your terminal. You can delete this chat — it\'s no longer connected.')
             const binding = bindings.getBinding(chatId)
             if (binding) {
               bindings.saveBinding({ ...binding, sessionId: undefined })
@@ -1403,9 +1403,9 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
             await subagentCache.evictChat(chatId).catch(() => {})
             access.removeChat(chatId)
             await client.leaveChat(chatId)
-            logf('dc_teleport: cleaned up chat %d after teleport-out', chatId)
+            logf('dc_resume_in_terminal: cleaned up chat %d after resume-out', chatId)
           } catch (err) {
-            logf('dc_teleport: post-teleport cleanup failed for chat %d: %v', chatId, err)
+            logf('dc_resume_in_terminal: post-resume cleanup failed for chat %d: %v', chatId, err)
           }
         }, 5000)
 

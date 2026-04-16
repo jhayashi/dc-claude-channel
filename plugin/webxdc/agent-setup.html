@@ -327,8 +327,8 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .btn:disabled { opacity: 0.4; cursor: default; }
 .btn-create { background: linear-gradient(135deg, #238636 0%, #2ea043 100%); color: white; }
 .btn-back { background: #30363d; color: #e6edf3; }
-#step0, #new-chat, #manage, #step2, #step3, #outdated, #loading, #teleport-import { display: none; }
-#step0.visible, #new-chat.visible, #manage.visible, #step2.visible, #step3.visible, #outdated.visible, #loading.visible, #teleport-import.visible { display: block; }
+#step0, #new-chat, #manage, #step2, #step3, #outdated, #loading, #resume-import { display: none; }
+#step0.visible, #new-chat.visible, #manage.visible, #step2.visible, #step3.visible, #outdated.visible, #loading.visible, #resume-import.visible { display: block; }
 .screen-heading { font-size: 16px; font-weight: 600; color: #c9d1d9; margin: 0 0 12px; }
 .screen-sub { font-size: 12px; color: #8b949e; margin: -6px 0 14px; line-height: 1.4; }
 .home-count { font-size: 12px; color: #8b949e; margin: -8px 0 14px; }
@@ -394,23 +394,23 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.teleport-row {
+.resume-row {
   width: 100%; background: #161b22; border: 1px solid #30363d;
   border-radius: 8px; padding: 10px 14px; margin-bottom: 6px;
   color: #c9d1d9; text-align: left; cursor: pointer; font-family: inherit;
 }
-.teleport-row:hover { background: #1c2128; }
-.teleport-row.selected { border-color: #58a6ff; background: #1c2a40; }
-.teleport-header {
+.resume-row:hover { background: #1c2128; }
+.resume-row.selected { border-color: #58a6ff; background: #1c2a40; }
+.resume-header {
   display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
 }
-.teleport-name {
+.resume-name {
   font-size: 15px; font-weight: 600; color: #e6edf3;
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.teleport-ts { font-size: 13px; font-weight: 600; color: #79c0ff; white-space: nowrap; }
-.teleport-ts.live { color: #ff7b72; }
-.teleport-meta {
+.resume-ts { font-size: 13px; font-weight: 600; color: #79c0ff; white-space: nowrap; }
+.resume-ts.live { color: #ff7b72; }
+.resume-meta {
   font-size: 12px; color: #8b949e; margin-top: 3px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -519,7 +519,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
           <span class="home-action-icon">&#x1F4E5;</span>
           <span class="home-action-body">
             <span class="home-action-label">Resume a conversation</span>
-            <span class="home-action-desc">Continue a terminal <code>claude</code> session in Delta Chat.</span>
+            <span class="home-action-desc">Continue a recent <code>claude</code> session in Delta Chat.</span>
           </span>
           <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
         </button>
@@ -666,16 +666,16 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     </div>
   </div>
 
-  <div id="teleport-import">
+  <div id="resume-import">
     <div class="body">
       <h2 style="font-size:18px;margin-bottom:4px;">Resume a conversation</h2>
-      <p style="font-size:13px;color:#8b949e;margin-bottom:14px;">Pick a terminal <code>claude</code> session from the last 48 hours. Your next message here will continue it.</p>
-      <div id="teleport-empty" style="display:none;font-size:13px;color:#8b949e;">No terminal sessions found in the last 48 hours.</div>
-      <div id="teleport-error" style="display:none;font-size:13px;color:#f85149;" role="alert"></div>
-      <div id="teleport-list" style="display:none" role="listbox" aria-label="Recent terminal sessions"></div>
+      <p style="font-size:13px;color:#8b949e;margin-bottom:14px;">Pick a <code>claude</code> session from the last 5 days. Your next message here will continue it.</p>
+      <div id="resume-empty" style="display:none;font-size:13px;color:#8b949e;">No sessions found in the last 5 days.</div>
+      <div id="resume-error" style="display:none;font-size:13px;color:#f85149;" role="alert"></div>
+      <div id="resume-list" style="display:none" role="listbox" aria-label="Recent sessions"></div>
       <div style="display:flex;gap:8px;margin-top:16px;">
-        <button type="button" id="teleport-cancel" class="btn btn-back">Cancel</button>
-        <button type="button" id="teleport-attach" class="btn btn-create" disabled>Attach</button>
+        <button type="button" id="resume-cancel" class="btn btn-back">Cancel</button>
+        <button type="button" id="resume-attach" class="btn btn-create" disabled>Attach</button>
       </div>
     </div>
   </div>
@@ -695,7 +695,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   <div class="modal-box" onclick="event.stopPropagation()">
     <div class="spinner"></div>
     <div class="modal-heading" style="color:#e6edf3;">Loading sessions</div>
-    <div class="modal-sub">Scanning the last 48 hours of terminal activity&hellip;</div>
+    <div class="modal-sub">Scanning the last 5 days of claude sessions&hellip;</div>
   </div>
 </div>
 
@@ -712,7 +712,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.49;
+var APP_VERSION = 1.50;
 var draft = null;
 var existingAgents = [];
 var templateList = [];
@@ -730,8 +730,8 @@ var modalCountdown = 0;
 // every open, so it's only truthy for live responses.
 var pendingAction = null;
 
-var teleportRequestId = 0;
-var selectedTeleportSessionId = null;
+var resumeRequestId = 0;
+var selectedResumeSessionId = null;
 
 var MODEL_LABELS = {
   'claude-opus-4-6': 'opus',
@@ -740,7 +740,7 @@ var MODEL_LABELS = {
 };
 
 function show(id) {
-  var ids = ['loading', 'step0', 'new-chat', 'manage', 'step2', 'step3', 'outdated', 'teleport-import'];
+  var ids = ['loading', 'step0', 'new-chat', 'manage', 'step2', 'step3', 'outdated', 'resume-import'];
   for (var i = 0; i < ids.length; i++) {
     var el = document.getElementById(ids[i]);
     if (ids[i] === id) el.classList.add('visible'); else el.classList.remove('visible');
@@ -1233,16 +1233,16 @@ function gotoManage() {
 }
 
 function gotoResume() {
-  resetTeleportPane();
-  show('teleport-import');
-  requestTeleportList();
+  resetResumePane();
+  show('resume-import');
+  requestResumeList();
 }
 
-function resetTeleportPane() {
-  selectedTeleportSessionId = null;
-  var errEl = document.getElementById('teleport-error');
+function resetResumePane() {
+  selectedResumeSessionId = null;
+  var errEl = document.getElementById('resume-error');
   if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
-  var attachBtn = document.getElementById('teleport-attach');
+  var attachBtn = document.getElementById('resume-attach');
   if (attachBtn) attachBtn.disabled = true;
 }
 
@@ -1510,8 +1510,8 @@ function refreshList() {
   }
 }
 
-function isOnTeleportPane() {
-  var el = document.getElementById('teleport-import');
+function isOnResumePane() {
+  var el = document.getElementById('resume-import');
   return el && el.classList.contains('visible');
 }
 
@@ -1522,29 +1522,29 @@ function hideLoadingModal() {
   document.getElementById('loading-modal').classList.remove('visible');
 }
 
-function requestTeleportList() {
-  teleportRequestId++;
-  var myReq = teleportRequestId;
-  var empty = document.getElementById('teleport-empty');
-  var err = document.getElementById('teleport-error');
-  var list = document.getElementById('teleport-list');
+function requestResumeList() {
+  resumeRequestId++;
+  var myReq = resumeRequestId;
+  var empty = document.getElementById('resume-empty');
+  var err = document.getElementById('resume-error');
+  var list = document.getElementById('resume-list');
   if (empty) empty.style.display = 'none';
   if (err) err.style.display = 'none';
   if (list) list.style.display = 'none';
-  selectedTeleportSessionId = null;
-  var attachBtn = document.getElementById('teleport-attach');
+  selectedResumeSessionId = null;
+  var attachBtn = document.getElementById('resume-attach');
   if (attachBtn) attachBtn.disabled = true;
   showLoadingModal();
   window.webxdc.sendUpdate({
-    payload: { type: 'teleport_list_request', requestId: myReq, senderAddr: window.webxdc.selfAddr },
+    payload: { type: 'resume_list_request', requestId: myReq, senderAddr: window.webxdc.selfAddr },
     summary: 'Loading sessions'
-  }, 'teleport list request ' + myReq);
+  }, 'resume list request ' + myReq);
 }
 
-function renderTeleportList(candidates) {
+function renderResumeList(candidates) {
   hideLoadingModal();
-  var empty = document.getElementById('teleport-empty');
-  var list = document.getElementById('teleport-list');
+  var empty = document.getElementById('resume-empty');
+  var list = document.getElementById('resume-list');
   if (!candidates || candidates.length === 0) {
     if (empty) empty.style.display = 'block';
     return;
@@ -1555,7 +1555,7 @@ function renderTeleportList(candidates) {
   candidates.forEach(function(c) {
     var row = document.createElement('button');
     row.type = 'button';
-    row.className = 'teleport-row';
+    row.className = 'resume-row';
     row.setAttribute('role', 'option');
     row.setAttribute('aria-pressed', 'false');
     row.dataset.sessionId = c.sessionId;
@@ -1563,17 +1563,17 @@ function renderTeleportList(candidates) {
     // Header line: name on left (session name + short UUID in parens, or full
     // UUID if unnamed), timestamp on right.
     var header = document.createElement('div');
-    header.className = 'teleport-header';
+    header.className = 'resume-header';
 
     var name = document.createElement('div');
-    name.className = 'teleport-name';
+    name.className = 'resume-name';
     var shortId = (c.sessionId || '').slice(0, 8);
     name.textContent = c.sessionName
       ? c.sessionName + ' (' + shortId + ')'
       : (c.sessionId || '');
 
     var ts = document.createElement('div');
-    ts.className = 'teleport-ts';
+    ts.className = 'resume-ts';
     if (c.isProbablyLive) {
       ts.classList.add('live');
       ts.textContent = 'active now';
@@ -1585,7 +1585,7 @@ function renderTeleportList(candidates) {
     header.appendChild(ts);
 
     var meta = document.createElement('div');
-    meta.className = 'teleport-meta';
+    meta.className = 'resume-meta';
     var metaParts = [];
     metaParts.push(shortCwd(c.cwd || ''));
     if (typeof c.messageCount === 'number') metaParts.push('~' + c.messageCount + ' lines');
@@ -1594,15 +1594,15 @@ function renderTeleportList(candidates) {
     row.appendChild(header);
     row.appendChild(meta);
     row.addEventListener('click', function() {
-      selectedTeleportSessionId = c.sessionId;
-      var all = list.querySelectorAll('.teleport-row');
+      selectedResumeSessionId = c.sessionId;
+      var all = list.querySelectorAll('.resume-row');
       for (var i = 0; i < all.length; i++) {
         all[i].classList.remove('selected');
         all[i].setAttribute('aria-pressed', 'false');
       }
       row.classList.add('selected');
       row.setAttribute('aria-pressed', 'true');
-      var attachBtn = document.getElementById('teleport-attach');
+      var attachBtn = document.getElementById('resume-attach');
       if (attachBtn) attachBtn.disabled = false;
     });
     list.appendChild(row);
@@ -1718,48 +1718,48 @@ window.webxdc.setUpdateListener(function(update) {
     return;
   }
 
-  if (d.type === 'teleport_list') {
-    if (d.requestId !== teleportRequestId) return;
-    if (!isOnTeleportPane()) return;
-    renderTeleportList(d.candidates || []);
+  if (d.type === 'resume_list') {
+    if (d.requestId !== resumeRequestId) return;
+    if (!isOnResumePane()) return;
+    renderResumeList(d.candidates || []);
   }
 
-  if (d.type === 'teleport_attach_ok') {
-    if (d.requestId !== teleportRequestId) return;
-    if (!isOnTeleportPane()) return;
+  if (d.type === 'resume_attach_ok') {
+    if (d.requestId !== resumeRequestId) return;
+    if (!isOnResumePane()) return;
     showModal('Session attached', 'Your next message in this chat will continue session ' + (d.sessionId || '').slice(0, 8) + '\u2026');
   }
 
-  if (d.type === 'teleport_attach_err') {
-    if (d.requestId !== teleportRequestId) return;
-    if (!isOnTeleportPane()) return;
-    var errEl = document.getElementById('teleport-error');
+  if (d.type === 'resume_attach_err') {
+    if (d.requestId !== resumeRequestId) return;
+    if (!isOnResumePane()) return;
+    var errEl = document.getElementById('resume-error');
     if (errEl) { errEl.style.display = 'block'; errEl.textContent = d.message || 'Attach failed.'; }
-    var attachBtn = document.getElementById('teleport-attach');
+    var attachBtn = document.getElementById('resume-attach');
     if (attachBtn) attachBtn.disabled = false;
   }
 }, 0);
 
 document.addEventListener('DOMContentLoaded', function() {
-  var _teleportCancelBtn = document.getElementById('teleport-cancel');
-  if (_teleportCancelBtn) _teleportCancelBtn.addEventListener('click', function() {
+  var _resumeCancelBtn = document.getElementById('resume-cancel');
+  if (_resumeCancelBtn) _resumeCancelBtn.addEventListener('click', function() {
     show('step0');
   });
-  var _teleportAttachBtn = document.getElementById('teleport-attach');
-  if (_teleportAttachBtn) _teleportAttachBtn.addEventListener('click', function() {
-    if (!selectedTeleportSessionId) return;
-    _teleportAttachBtn.disabled = true;
-    teleportRequestId++;
-    var myReq = teleportRequestId;
+  var _resumeAttachBtn = document.getElementById('resume-attach');
+  if (_resumeAttachBtn) _resumeAttachBtn.addEventListener('click', function() {
+    if (!selectedResumeSessionId) return;
+    _resumeAttachBtn.disabled = true;
+    resumeRequestId++;
+    var myReq = resumeRequestId;
     window.webxdc.sendUpdate({
       payload: {
-        type: 'teleport_attach',
-        sessionId: selectedTeleportSessionId,
+        type: 'resume_attach',
+        sessionId: selectedResumeSessionId,
         requestId: myReq,
         senderAddr: window.webxdc.selfAddr,
       },
       summary: 'Attaching session'
-    }, 'teleport attach ' + selectedTeleportSessionId);
+    }, 'resume attach ' + selectedResumeSessionId);
   });
 });
 </script>

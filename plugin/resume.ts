@@ -1,9 +1,12 @@
 /**
- * Session teleport — bridge a DC chat's session UUID with a local
+ * Session resume — bridge a DC chat's session UUID with a local
  * terminal `claude` session. Pure helpers; no DC client I/O.
  *
  *   DC → terminal: buildResumeCommand(chatId) emits `cd … && claude --resume <uuid>`.
  *   Terminal → DC: listResumeCandidates() + attachSessionToChat(chatId, sessionId).
+ *
+ * Formerly called "teleport" — the user-facing tool description still
+ * mentions that word so the model routes "teleport" utterances here.
  *
  * Roots are overridable for tests:
  *   - projectsRoot (default ~/.claude/projects) — where claude stores <cwd-hash>/<uuid>.jsonl.
@@ -45,20 +48,20 @@ export function projectHashForCwd(cwd: string): string {
   return cwd.replace(/\//g, '-')
 }
 
-export interface TeleportCommand {
+export interface ResumeCommand {
   command: string
   sessionId: string
   sessionPath: string
   sessionName: string | null
 }
 
-export interface TeleportError {
+export interface ResumeError {
   error: string
 }
 
 /**
  * Build a `cd <cwd> && claude --resume <uuid>` command for a chat's
- * bound session. Returns TeleportError if no binding, no sessionId,
+ * bound session. Returns ResumeError if no binding, no sessionId,
  * or the session file is missing.
  *
  * cwd defaults to PLUGIN_DIR — where subagents are spawned, and where
@@ -68,7 +71,7 @@ export interface TeleportError {
 export function buildResumeCommand(
   chatId: number,
   opts: { cwd?: string; chatName?: string } = {},
-): TeleportCommand | TeleportError {
+): ResumeCommand | ResumeError {
   const cwd = opts.cwd ?? PLUGIN_DIR
   const binding = bindings.getBinding(chatId)
   if (!binding?.sessionId) {
@@ -127,10 +130,10 @@ function isFileInUse(path: string): boolean {
 }
 
 /**
- * Scan ~/.claude/projects/STAR/STAR.jsonl and return recent terminal
- * sessions — excludes sessions already bound to a DC chat and sessions
- * that live under the plugin CWD (those are DC subagents). Used by the
- * agent-setup card to populate the "Import terminal session" picker.
+ * Scan ~/.claude/projects/STAR/STAR.jsonl and return recent claude
+ * sessions eligible for resume — excludes only sessions already bound
+ * to a DC chat. Orphan DC-born sessions (under PLUGIN_DIR but no longer
+ * bound) are included so they can be rescued into a new chat.
  */
 export function listResumeCandidates(opts: ListOptions = {}): Candidate[] {
   const limit = opts.limit ?? 25
@@ -143,14 +146,8 @@ export function listResumeCandidates(opts: ListOptions = {}): Candidate[] {
     bindings.listBindings().map(b => b.sessionId).filter((x): x is string => !!x),
   )
 
-  // Skip sessions that live under the plugin's own CWD — those are DC
-  // subagents, not terminal sessions, and teleport is for moving terminal
-  // sessions into DC. (DC-subagent history already lives in the bound chat.)
-  const pluginProjectHash = projectHashForCwd(PLUGIN_DIR)
-
   const candidates: Candidate[] = []
   for (const projectDir of readdirSync(PROJECTS_ROOT)) {
-    if (projectDir === pluginProjectHash) continue
     const projectPath = join(PROJECTS_ROOT, projectDir)
     let dstat: ReturnType<typeof statSync>
     try { dstat = statSync(projectPath) } catch { continue }

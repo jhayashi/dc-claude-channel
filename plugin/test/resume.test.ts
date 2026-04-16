@@ -2,28 +2,28 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import * as teleport from '../teleport.js'
+import * as resume from '../resume.js'
 import * as bindings from '../bindings.js'
 
 describe('projectHashForCwd', () => {
   it('transforms a POSIX path to the claude project-hash convention', () => {
-    expect(teleport.projectHashForCwd('/var/home/jhayashi/src/foo')).toBe(
+    expect(resume.projectHashForCwd('/var/home/jhayashi/src/foo')).toBe(
       '-var-home-jhayashi-src-foo'
     )
   })
 
   it('handles nested paths with multiple segments', () => {
-    expect(teleport.projectHashForCwd('/a/b/c')).toBe('-a-b-c')
+    expect(resume.projectHashForCwd('/a/b/c')).toBe('-a-b-c')
   })
 
   it('throws on a relative path', () => {
-    expect(() => teleport.projectHashForCwd('relative/path')).toThrow()
+    expect(() => resume.projectHashForCwd('relative/path')).toThrow()
   })
 })
 
 describe('PLUGIN_DIR', () => {
   it('points at the plugin directory containing this module', () => {
-    expect(teleport.PLUGIN_DIR).toMatch(/\/plugin$/)
+    expect(resume.PLUGIN_DIR).toMatch(/\/plugin$/)
   })
 })
 
@@ -33,19 +33,19 @@ describe('buildResumeCommand', () => {
   let bindingsRoot: string
 
   beforeEach(() => {
-    tmpRoot = mkdtempSync(join(tmpdir(), 'teleport-test-'))
+    tmpRoot = mkdtempSync(join(tmpdir(), 'resume-test-'))
     projectsRoot = join(tmpRoot, 'projects')
     bindingsRoot = join(tmpRoot, 'bindings')
     mkdirSync(projectsRoot, { recursive: true })
     mkdirSync(bindingsRoot, { recursive: true })
-    teleport.setProjectsRoot(projectsRoot)
+    resume.setProjectsRoot(projectsRoot)
     bindings.setBindingsDir(bindingsRoot)
   })
 
   afterEach(() => rmSync(tmpRoot, { recursive: true, force: true }))
 
   function writeSessionFile(cwd: string, sessionId: string): void {
-    const dir = join(projectsRoot, teleport.projectHashForCwd(cwd))
+    const dir = join(projectsRoot, resume.projectHashForCwd(cwd))
     mkdirSync(dir, { recursive: true })
     writeFileSync(
       join(dir, `${sessionId}.jsonl`),
@@ -55,30 +55,30 @@ describe('buildResumeCommand', () => {
 
   it('emits a cd && claude --resume command for a bound chat using PLUGIN_DIR', () => {
     const sessionId = '3b9526d5-a8f9-4ccc-a8e8-c08f6fd515ee'
-    writeSessionFile(teleport.PLUGIN_DIR, sessionId)
+    writeSessionFile(resume.PLUGIN_DIR, sessionId)
     bindings.saveBinding({
       chatId: 42,
       sessionId,
       createdAt: new Date().toISOString(),
     })
 
-    const result = teleport.buildResumeCommand(42)
+    const result = resume.buildResumeCommand(42)
     if ('error' in result) throw new Error(`expected success: ${result.error}`)
     expect(result.sessionId).toBe(sessionId)
-    expect(result.command).toBe(`cd ${teleport.PLUGIN_DIR} && claude --resume ${sessionId}`)
-    expect(result.sessionPath).toBe(join(projectsRoot, teleport.projectHashForCwd(teleport.PLUGIN_DIR), `${sessionId}.jsonl`))
+    expect(result.command).toBe(`cd ${resume.PLUGIN_DIR} && claude --resume ${sessionId}`)
+    expect(result.sessionPath).toBe(join(projectsRoot, resume.projectHashForCwd(resume.PLUGIN_DIR), `${sessionId}.jsonl`))
   })
 
   it('includes --name flag when chatName is provided', () => {
     const sessionId = '3b9526d5-a8f9-4ccc-a8e8-c08f6fd515ee'
-    writeSessionFile(teleport.PLUGIN_DIR, sessionId)
+    writeSessionFile(resume.PLUGIN_DIR, sessionId)
     bindings.saveBinding({
       chatId: 42,
       sessionId,
       createdAt: new Date().toISOString(),
     })
 
-    const result = teleport.buildResumeCommand(42, { chatName: 'My Agent' })
+    const result = resume.buildResumeCommand(42, { chatName: 'My Agent' })
     if ('error' in result) throw new Error(`expected success: ${result.error}`)
     expect(result.command).toContain("--name 'My Agent'")
     expect(result.sessionName).toBe('My Agent')
@@ -86,27 +86,27 @@ describe('buildResumeCommand', () => {
 
   it('shell-quotes chat names with special characters', () => {
     const sessionId = '3b9526d5-a8f9-4ccc-a8e8-c08f6fd515ee'
-    writeSessionFile(teleport.PLUGIN_DIR, sessionId)
+    writeSessionFile(resume.PLUGIN_DIR, sessionId)
     bindings.saveBinding({
       chatId: 42,
       sessionId,
       createdAt: new Date().toISOString(),
     })
 
-    const result = teleport.buildResumeCommand(42, { chatName: "Joe's Chat" })
+    const result = resume.buildResumeCommand(42, { chatName: "Joe's Chat" })
     if ('error' in result) throw new Error(`expected success: ${result.error}`)
     expect(result.command).toContain("--name 'Joe'\\''s Chat'")
   })
 
   it('errors when the chat has no binding', () => {
-    const result = teleport.buildResumeCommand(99)
+    const result = resume.buildResumeCommand(99)
     expect('error' in result).toBe(true)
     if ('error' in result) expect(result.error).toMatch(/no session/i)
   })
 
   it('errors when the binding has no sessionId', () => {
     bindings.saveBinding({ chatId: 42, createdAt: new Date().toISOString() })
-    const result = teleport.buildResumeCommand(42)
+    const result = resume.buildResumeCommand(42)
     expect('error' in result).toBe(true)
   })
 
@@ -116,7 +116,7 @@ describe('buildResumeCommand', () => {
       sessionId: 'deadbeef-aaaa-bbbb-cccc-dddddddddddd',
       createdAt: new Date().toISOString(),
     })
-    const result = teleport.buildResumeCommand(42)
+    const result = resume.buildResumeCommand(42)
     expect('error' in result).toBe(true)
     if ('error' in result) expect(result.error).toMatch(/session file not found/i)
   })
@@ -128,12 +128,12 @@ describe('listResumeCandidates', () => {
   let bindingsRoot: string
 
   beforeEach(() => {
-    tmpRoot = mkdtempSync(join(tmpdir(), 'teleport-test-'))
+    tmpRoot = mkdtempSync(join(tmpdir(), 'resume-test-'))
     projectsRoot = join(tmpRoot, 'projects')
     bindingsRoot = join(tmpRoot, 'bindings')
     mkdirSync(projectsRoot, { recursive: true })
     mkdirSync(bindingsRoot, { recursive: true })
-    teleport.setProjectsRoot(projectsRoot)
+    resume.setProjectsRoot(projectsRoot)
     bindings.setBindingsDir(bindingsRoot)
   })
   afterEach(() => rmSync(tmpRoot, { recursive: true, force: true }))
@@ -151,7 +151,7 @@ describe('listResumeCandidates', () => {
   it('lists recent sessions, newest first', () => {
     writeSession('-home-user-proj-a', 'aaa11111-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 1 * 60 * 1000, { summary: 'Session A' })
     writeSession('-home-user-proj-b', 'bbb22222-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 5 * 60 * 1000, { summary: 'Session B' })
-    const out = teleport.listResumeCandidates({ limit: 10 })
+    const out = resume.listResumeCandidates({ limit: 10 })
     expect(out.length).toBe(2)
     expect(out[0]!.sessionId).toBe('aaa11111-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     expect(out[1]!.sessionId).toBe('bbb22222-bbbb-bbbb-bbbb-bbbbbbbbbbbb')
@@ -160,18 +160,17 @@ describe('listResumeCandidates', () => {
   it('defaults to a 5-day window', () => {
     writeSession('-p', 'old00000-0000-0000-0000-000000000000', 6 * 24 * 60 * 60 * 1000, {})
     writeSession('-p', 'new00000-0000-0000-0000-000000000000', 1 * 60 * 60 * 1000, {})
-    const out = teleport.listResumeCandidates({ limit: 10 })
+    const out = resume.listResumeCandidates({ limit: 10 })
     expect(out.length).toBe(1)
     expect(out[0]!.sessionId).toBe('new00000-0000-0000-0000-000000000000')
   })
 
-  it('excludes sessions that live under the plugin CWD (DC subagents)', () => {
-    const pluginHash = teleport.projectHashForCwd(teleport.PLUGIN_DIR)
+  it('includes orphan DC-born sessions when they are not currently bound', () => {
+    const pluginHash = resume.projectHashForCwd(resume.PLUGIN_DIR)
     writeSession(pluginHash, 'dc000000-0000-0000-0000-000000000000', 1000, {})
     writeSession('-home-user-proj', 'tty00000-0000-0000-0000-000000000000', 1000, {})
-    const out = teleport.listResumeCandidates({ limit: 10 })
-    expect(out.length).toBe(1)
-    expect(out[0]!.sessionId).toBe('tty00000-0000-0000-0000-000000000000')
+    const out = resume.listResumeCandidates({ limit: 10 })
+    expect(out.length).toBe(2)
   })
 
   it('excludes sessions already bound to a DC chat', () => {
@@ -182,7 +181,7 @@ describe('listResumeCandidates', () => {
       sessionId: 'bound000-0000-0000-0000-000000000000',
       createdAt: new Date().toISOString(),
     })
-    const out = teleport.listResumeCandidates({ limit: 10 })
+    const out = resume.listResumeCandidates({ limit: 10 })
     expect(out.length).toBe(1)
     expect(out[0]!.sessionId).toBe('free0000-0000-0000-0000-000000000000')
   })
@@ -191,20 +190,20 @@ describe('listResumeCandidates', () => {
     for (let i = 0; i < 10; i++) {
       writeSession('-p', `sess${String(i).padStart(4, '0')}-0000-0000-0000-000000000000`, (i + 1) * 1000, {})
     }
-    const out = teleport.listResumeCandidates({ limit: 3 })
+    const out = resume.listResumeCandidates({ limit: 3 })
     expect(out.length).toBe(3)
   })
 
   it('extracts CWD from the project-hash directory name', () => {
     writeSession('-home-user-src-myproject', 'cwd00000-0000-0000-0000-000000000000', 1000, {})
-    const out = teleport.listResumeCandidates({ limit: 10 })
+    const out = resume.listResumeCandidates({ limit: 10 })
     expect(out[0]!.cwd).toBe('/home/user/src/myproject')
   })
 
   it('reads summary from first line if present', () => {
-    writeSession('-p', 'sum00000-0000-0000-0000-000000000000', 1000, { type: 'summary', summary: 'Working on Teleport' })
-    const out = teleport.listResumeCandidates({ limit: 10 })
-    expect(out[0]!.summary).toBe('Working on Teleport')
+    writeSession('-p', 'sum00000-0000-0000-0000-000000000000', 1000, { type: 'summary', summary: 'Working on Resume' })
+    const out = resume.listResumeCandidates({ limit: 10 })
+    expect(out[0]!.summary).toBe('Working on Resume')
   })
 
   it('reads sessionName from custom-title entry in .jsonl', () => {
@@ -218,13 +217,13 @@ describe('listResumeCandidates', () => {
       JSON.stringify({ type: 'permission-mode', permissionMode: 'default', sessionId }),
     ]
     writeFileSync(file, lines.join('\n') + '\n')
-    const out = teleport.listResumeCandidates({ limit: 10 })
+    const out = resume.listResumeCandidates({ limit: 10 })
     expect(out[0]!.sessionName).toBe('My Terminal Session')
   })
 
   it('returns null sessionName when no custom-title entry exists', () => {
     writeSession('-p', 'noname00-0000-0000-0000-000000000000', 1000, { type: 'permission-mode', permissionMode: 'default' })
-    const out = teleport.listResumeCandidates({ limit: 10 })
+    const out = resume.listResumeCandidates({ limit: 10 })
     expect(out[0]!.sessionName).toBeNull()
   })
 
@@ -236,7 +235,7 @@ describe('listResumeCandidates', () => {
     const livePath = join(projectsRoot, '-p', 'live0000-0000-0000-0000-000000000000.jsonl')
     const fd = openSync(livePath, 'r')
     try {
-      const out = teleport.listResumeCandidates({ limit: 10 })
+      const out = resume.listResumeCandidates({ limit: 10 })
       const live = out.find(c => c.sessionId.startsWith('live'))
       const idle = out.find(c => c.sessionId.startsWith('idle'))
       expect(live!.isProbablyLive).toBe(true)
@@ -253,7 +252,7 @@ describe('listResumeCandidates', () => {
     const file = join(dir, `${sessionId}.jsonl`)
     const body = 'x'.repeat(2000)
     writeFileSync(file, JSON.stringify({ summary: 's', filler: body }) + '\n')
-    const out = teleport.listResumeCandidates({ limit: 10 })
+    const out = resume.listResumeCandidates({ limit: 10 })
     expect(typeof out[0]!.messageCount).toBe('number')
     expect(out[0]!.messageCount).toBeGreaterThan(0)
   })
@@ -265,18 +264,18 @@ describe('attachSessionToChat', () => {
   let bindingsRoot: string
 
   beforeEach(() => {
-    tmpRoot = mkdtempSync(join(tmpdir(), 'teleport-test-'))
+    tmpRoot = mkdtempSync(join(tmpdir(), 'resume-test-'))
     projectsRoot = join(tmpRoot, 'projects')
     bindingsRoot = join(tmpRoot, 'bindings')
     mkdirSync(projectsRoot, { recursive: true })
     mkdirSync(bindingsRoot, { recursive: true })
-    teleport.setProjectsRoot(projectsRoot)
+    resume.setProjectsRoot(projectsRoot)
     bindings.setBindingsDir(bindingsRoot)
   })
   afterEach(() => rmSync(tmpRoot, { recursive: true, force: true }))
 
   function writeSrcSession(cwd: string, sessionId: string): string {
-    const dir = join(projectsRoot, teleport.projectHashForCwd(cwd))
+    const dir = join(projectsRoot, resume.projectHashForCwd(cwd))
     mkdirSync(dir, { recursive: true })
     const p = join(dir, `${sessionId}.jsonl`)
     writeFileSync(p, JSON.stringify({ summary: 's' }) + '\n')
@@ -287,19 +286,19 @@ describe('attachSessionToChat', () => {
     const sessionId = 'attach00-0000-0000-0000-000000000000'
     writeSrcSession('/home/user/other-proj', sessionId)
 
-    await teleport.attachSessionToChat(42, sessionId)
+    await resume.attachSessionToChat(42, sessionId)
 
     const binding = bindings.getBinding(42)
     expect(binding?.sessionId).toBe(sessionId)
 
-    const destPath = join(projectsRoot, teleport.projectHashForCwd(teleport.PLUGIN_DIR), `${sessionId}.jsonl`)
+    const destPath = join(projectsRoot, resume.projectHashForCwd(resume.PLUGIN_DIR), `${sessionId}.jsonl`)
     expect(existsSync(destPath)).toBe(true)
   })
 
   it('skips the copy when source and destination resolve to the same file', async () => {
     const sessionId = 'same0000-0000-0000-0000-000000000000'
-    const srcPath = writeSrcSession(teleport.PLUGIN_DIR, sessionId)
-    await teleport.attachSessionToChat(42, sessionId)
+    const srcPath = writeSrcSession(resume.PLUGIN_DIR, sessionId)
+    await resume.attachSessionToChat(42, sessionId)
     expect(bindings.getBinding(42)?.sessionId).toBe(sessionId)
     expect(existsSync(srcPath)).toBe(true)
   })
@@ -313,7 +312,7 @@ describe('attachSessionToChat', () => {
       inheritClaudeMd: true,
       createdAt: '2026-01-01T00:00:00.000Z',
     })
-    await teleport.attachSessionToChat(42, sessionId)
+    await resume.attachSessionToChat(42, sessionId)
     const b = bindings.getBinding(42)
     expect(b?.agentId).toBe('existing-agent')
     expect(b?.inheritClaudeMd).toBe(true)
@@ -323,7 +322,7 @@ describe('attachSessionToChat', () => {
 
   it('throws when the source session does not exist anywhere', async () => {
     await expect(
-      teleport.attachSessionToChat(42, 'nope0000-0000-0000-0000-000000000000')
+      resume.attachSessionToChat(42, 'nope0000-0000-0000-0000-000000000000')
     ).rejects.toThrow(/not found/i)
   })
 
@@ -331,6 +330,6 @@ describe('attachSessionToChat', () => {
     const sessionId = 'taken000-0000-0000-0000-000000000000'
     writeSrcSession('/x', sessionId)
     bindings.saveBinding({ chatId: 1, sessionId, createdAt: new Date().toISOString() })
-    await expect(teleport.attachSessionToChat(42, sessionId)).rejects.toThrow(/already bound/i)
+    await expect(resume.attachSessionToChat(42, sessionId)).rejects.toThrow(/already bound/i)
   })
 })

@@ -11,7 +11,7 @@ import * as agentSetup from '../agent-setup.js'
 import * as agents from '../agents.js'
 import * as bindings from '../bindings.js'
 import * as access from '../access.js'
-import * as teleport from '../teleport.js'
+import * as resume from '../resume.js'
 import * as templates from '../templates.js'
 import { ALL_BUILTIN_TOOLS, BUILTIN_TOOL_DESCRIPTIONS } from '../dispatcher/subagent-process.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
@@ -319,7 +319,7 @@ export const agentSetupApp: WebXDCApp = {
           'opens on a home screen where the user chooses what to do: start a ' +
           'new chat with an agent, manage (edit / delete / export) existing ' +
           'agents, or resume a terminal session. Call this whenever the user ' +
-          'asks about agents, new chats, terminal-session teleport, or anything ' +
+          'asks about agents, new chats, resuming a terminal session, or anything ' +
           'else that belongs in the settings UI — the app handles all of it.',
         inputSchema: {
           type: 'object',
@@ -593,14 +593,14 @@ export const agentSetupApp: WebXDCApp = {
         continue
       }
 
-      if (payload.type === 'teleport_list_request') {
+      if (payload.type === 'resume_list_request') {
         const requestId = typeof (payload as { requestId?: unknown }).requestId === 'number'
           ? (payload as { requestId: number }).requestId : 0
-        const candidates = teleport.listResumeCandidates()
+        const candidates = resume.listResumeCandidates()
         try {
           const update = JSON.stringify({
             payload: {
-              type: 'teleport_list',
+              type: 'resume_list',
               requestId,
               candidates,
               version: agentSetup.getAgentSetupVersion(),
@@ -610,31 +610,31 @@ export const agentSetupApp: WebXDCApp = {
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
         } catch (err) {
-          ctx.logf('agent-setup: teleport_list send failed: %v', err)
+          ctx.logf('agent-setup: resume_list send failed: %v', err)
         }
         continue
       }
 
-      if (payload.type === 'teleport_attach') {
+      if (payload.type === 'resume_attach') {
         const requestId = typeof (payload as { requestId?: unknown }).requestId === 'number'
           ? (payload as { requestId: number }).requestId : 0
         const sessionId = typeof (payload as { sessionId?: unknown }).sessionId === 'string'
           ? (payload as { sessionId: string }).sessionId : ''
         if (!sessionId) {
-          ctx.logf('agent-setup: teleport_attach missing sessionId')
+          ctx.logf('agent-setup: resume_attach missing sessionId')
           continue
         }
         try {
           const ownerContactId = await resolveOwner()
           if (!ownerContactId) continue
 
-          const candidates = teleport.listResumeCandidates()
+          const candidates = resume.listResumeCandidates()
           const candidate = candidates.find(c => c.sessionId === sessionId)
           if (candidate?.isProbablyLive) {
             ctx.logf('agent-setup: session %s appears active in terminal, warning user', sessionId)
             await ctx.client.sendWebXDCUpdate(session.msgId, JSON.stringify({
               payload: {
-                type: 'teleport_attach_err',
+                type: 'resume_attach_err',
                 requestId,
                 message: 'This session appears to be active in a terminal. Close it first, then try again.',
                 version: agentSetup.getAgentSetupVersion(),
@@ -650,7 +650,7 @@ export const agentSetupApp: WebXDCApp = {
           const agent = agents.getAgent(agentId)
 
           // Use terminal session name for the DC chat if available.
-          const initialName = candidate?.sessionName || 'Teleported session'
+          const initialName = candidate?.sessionName || 'Resumed session'
           const newChatId = await ctx.client.createGroup(initialName)
           await ctx.client.addContactToChat(newChatId, ownerContactId)
           access.addChat(newChatId, ownerContactId)
@@ -658,10 +658,10 @@ export const agentSetupApp: WebXDCApp = {
           bindings.bindAgent(newChatId, agentId, {
             inheritClaudeMd: agent ? agents.inheritClaudeMdForModel(agent.model) : true,
           })
-          await teleport.attachSessionToChat(newChatId, sessionId)
+          await resume.attachSessionToChat(newChatId, sessionId)
           if (agent) await decorateAgentChat(ctx, newChatId, agent)
 
-          ctx.logf('agent-setup: teleport-import created chat %d with session %s for owner %d', newChatId, sessionId, ownerContactId)
+          ctx.logf('agent-setup: resume-import created chat %d with session %s for owner %d', newChatId, sessionId, ownerContactId)
 
           if (candidate?.sessionName) {
             // Terminal session already had a name — use it directly, skip LLM naming.
@@ -669,11 +669,11 @@ export const agentSetupApp: WebXDCApp = {
             if (ctx.dispatchAndCollect) {
               try {
                 await ctx.dispatchAndCollect(newChatId,
-                  '[system] This session was just teleported from a terminal into this new Delta Chat. ' +
+                  '[system] This session was just resumed from a terminal into this new Delta Chat. ' +
                   'Briefly summarize what we were working on (2-3 sentences), then on a new line write ' +
                   'CHAT_NAME: followed by a short name (3-5 words) for this chat based on the recent work.')
               } catch (err) {
-                ctx.logf('agent-setup: teleport-import summary dispatch failed: %v', err)
+                ctx.logf('agent-setup: resume-import summary dispatch failed: %v', err)
                 await ctx.client.send(newChatId, 'Terminal session imported. Send a message to continue where you left off.')
               }
             } else {
@@ -683,7 +683,7 @@ export const agentSetupApp: WebXDCApp = {
             // No terminal session name — ask the LLM to generate one.
             try {
               const resp = await ctx.dispatchAndCollect(newChatId,
-                '[system] This session was just teleported from a terminal into this new Delta Chat. ' +
+                '[system] This session was just resumed from a terminal into this new Delta Chat. ' +
                 'Briefly summarize what we were working on (2-3 sentences), then on a new line write ' +
                 'CHAT_NAME: followed by a short name (3-5 words) for this chat based on the recent work.')
               const nameMatch = resp.match(/CHAT_NAME:\s*(.+)/i)
@@ -692,7 +692,7 @@ export const agentSetupApp: WebXDCApp = {
                 await ctx.client.setChatName(newChatId, chatName)
               }
             } catch (err) {
-              ctx.logf('agent-setup: teleport-import summary dispatch failed: %v', err)
+              ctx.logf('agent-setup: resume-import summary dispatch failed: %v', err)
               await ctx.client.send(newChatId, 'Terminal session imported. Send a message to continue where you left off.')
             }
           } else {
@@ -701,7 +701,7 @@ export const agentSetupApp: WebXDCApp = {
 
           const update = JSON.stringify({
             payload: {
-              type: 'teleport_attach_ok',
+              type: 'resume_attach_ok',
               requestId,
               sessionId,
               chatId: newChatId,
@@ -716,11 +716,11 @@ export const agentSetupApp: WebXDCApp = {
           // same card. The home screen is always reachable.
         } catch (err) {
           const msg = (err as Error).message || 'attach failed'
-          ctx.logf('agent-setup: teleport_attach failed: %v', err)
+          ctx.logf('agent-setup: resume_attach failed: %v', err)
           try {
             await ctx.client.sendWebXDCUpdate(session.msgId, JSON.stringify({
               payload: {
-                type: 'teleport_attach_err',
+                type: 'resume_attach_err',
                 requestId,
                 message: msg,
                 version: agentSetup.getAgentSetupVersion(),
@@ -729,7 +729,7 @@ export const agentSetupApp: WebXDCApp = {
               summary: 'Attach failed',
             }))
           } catch (sendErr) {
-            ctx.logf('agent-setup: teleport_attach_err send failed: %v', sendErr)
+            ctx.logf('agent-setup: resume_attach_err send failed: %v', sendErr)
           }
         }
         continue
