@@ -157,12 +157,21 @@ describe('listResumeCandidates', () => {
     expect(out[1]!.sessionId).toBe('bbb22222-bbbb-bbbb-bbbb-bbbbbbbbbbbb')
   })
 
-  it('defaults to a 48-hour window', () => {
-    writeSession('-p', 'old00000-0000-0000-0000-000000000000', 3 * 24 * 60 * 60 * 1000, {})
+  it('defaults to a 5-day window', () => {
+    writeSession('-p', 'old00000-0000-0000-0000-000000000000', 6 * 24 * 60 * 60 * 1000, {})
     writeSession('-p', 'new00000-0000-0000-0000-000000000000', 1 * 60 * 60 * 1000, {})
     const out = teleport.listResumeCandidates({ limit: 10 })
     expect(out.length).toBe(1)
     expect(out[0]!.sessionId).toBe('new00000-0000-0000-0000-000000000000')
+  })
+
+  it('excludes sessions that live under the plugin CWD (DC subagents)', () => {
+    const pluginHash = teleport.projectHashForCwd(teleport.PLUGIN_DIR)
+    writeSession(pluginHash, 'dc000000-0000-0000-0000-000000000000', 1000, {})
+    writeSession('-home-user-proj', 'tty00000-0000-0000-0000-000000000000', 1000, {})
+    const out = teleport.listResumeCandidates({ limit: 10 })
+    expect(out.length).toBe(1)
+    expect(out[0]!.sessionId).toBe('tty00000-0000-0000-0000-000000000000')
   })
 
   it('excludes sessions already bound to a DC chat', () => {

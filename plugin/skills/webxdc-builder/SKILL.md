@@ -325,6 +325,74 @@ if (update.type === 'vote') {
 
 ---
 
+## Design Notes
+
+Background for apps that grow beyond a single screen of state. The mandatory rules above are enough to build a working app; this section is for picking the right shape when an app gets ambitious.
+
+### Replay cost model
+
+Every time the app is opened, `setUpdateListener(fn, 0)` fires once per update from serial 0 up to the current serial. Cost scales linearly with total update count — not with "new since last open."
+
+- A poll or counter with hundreds of updates: replay is sub-millisecond, invisible.
+- A long-lived game or dashboard with thousands of updates: still fine if the handler is `state = applyOp(state, payload)` with no side effects.
+- A character-level collaborative doc editor: designed poorly (one update per keystroke), replay becomes the bottleneck. Redesign around coarser ops — paragraph-level diffs, periodic snapshot updates that supersede earlier ones.
+
+The protocol has no snapshotting or compaction. If you need that, the app builds it: periodically emit a `type: 'snapshot'` update containing the full state, and let the listener treat snapshots as authoritative (ignore earlier updates when a later snapshot exists).
+
+### Serial cursor (escape hatch)
+
+`setUpdateListener(fn, N)` starts replay at serial N, not 0. If the app persists "last processed serial = N" to `localStorage`, reopens skip the historical replay.
+
+```js
+var cursor = Number(localStorage.getItem('serial') || 0);
+window.webxdc.setUpdateListener(function(update) {
+  apply(update.payload);
+  localStorage.setItem('serial', String(update.serial));
+}, cursor);
+```
+
+Caveats:
+- `localStorage` is not reliable across clean installs or across devices — treat it as a cache, not storage.
+- If the cursor is missing or stale, fall back to full replay from 0. The handler must still be idempotent.
+- The reconstructed state itself also needs to be cached in `localStorage` (or rebuilt from a snapshot update) — otherwise skipping replay leaves you with empty state.
+
+Rule of thumb: don't reach for this unless profiling shows replay is actually slow. Idempotent handlers + occasional snapshot updates solve most cases.
+
+### Realtime layer (not used in D4C today)
+
+Delta Chat 1.48 (Nov 2024) added `window.webxdc.joinRealtimeChannel()` — ephemeral p2p sync layered over iroh-net (QUIC with NAT traversal via relay fallback).
+
+```js
+var channel = window.webxdc.joinRealtimeChannel();
+channel.setListener(function(bytes) {
+  var msg = JSON.parse(new TextDecoder().decode(bytes));
+  // apply ephemeral event (cursor move, typing indicator, live input)
+});
+var payload = new TextEncoder().encode(JSON.stringify({ cursor: {x: 42, y: 100} }));
+channel.send(payload);
+```
+
+Properties:
+- **Ephemeral.** Nothing is stored. Offline peers miss traffic. Closing the app loses the channel.
+- **Low latency.** Direct p2p when NAT allows, relay fallback when it doesn't.
+- **Forward secret.** Fresh key per session.
+- **Unauthenticated at the app layer.** Transport is encrypted but identity binding is weak — bootstrap authentication via a `sendUpdate` message carrying the iroh ticket.
+- **Binary payloads.** `Uint8Array` in and out; you pick the encoding (JSON, MessagePack, raw bytes).
+
+When to reach for it:
+- High-frequency transient events: cursor positions, typing indicators, live reactions, real-time game input.
+- Anything where "offline peers miss it" is fine.
+
+When NOT to use it:
+- Anything that must persist (use `sendUpdate`).
+- Anything where "one peer is offline" breaks the app (use `sendUpdate` and let late joiners catch up via replay).
+
+The idiomatic pattern is **hybrid**: `sendUpdate` for durable state and bootstrap (including the join ticket), `joinRealtimeChannel` for live events. If realtime fails or a peer is offline, the app degrades to the sendUpdate path and catches up on reconnect.
+
+D4C's Familiar runtime currently exposes only the `sendUpdate` path through its handler API. Realtime is tracked in issue #36.
+
+---
+
 ## Integration with dc_schedule
 
 For Familiar apps that need periodic updates (dashboards, daily digests, reminders), combine with `dc_schedule`:

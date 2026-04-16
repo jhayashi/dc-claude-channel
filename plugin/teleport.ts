@@ -109,7 +109,7 @@ export interface Candidate {
 export interface ListOptions {
   /** Maximum number of candidates to return (default 25). */
   limit?: number
-  /** Skip sessions with mtime older than this (default 2, per Joe). */
+  /** Skip sessions with mtime older than this (default 5, per Joe). */
   maxAgeDays?: number
 }
 
@@ -127,13 +127,14 @@ function isFileInUse(path: string): boolean {
 }
 
 /**
- * Scan ~/.claude/projects/STAR/STAR.jsonl and return recent sessions not
- * already bound to a DC chat. Used by the agent-setup card to populate
- * the "Import terminal session" picker.
+ * Scan ~/.claude/projects/STAR/STAR.jsonl and return recent terminal
+ * sessions — excludes sessions already bound to a DC chat and sessions
+ * that live under the plugin CWD (those are DC subagents). Used by the
+ * agent-setup card to populate the "Import terminal session" picker.
  */
 export function listResumeCandidates(opts: ListOptions = {}): Candidate[] {
   const limit = opts.limit ?? 25
-  const maxAgeDays = opts.maxAgeDays ?? 2
+  const maxAgeDays = opts.maxAgeDays ?? 5
   const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000
 
   if (!existsSync(PROJECTS_ROOT)) return []
@@ -142,8 +143,14 @@ export function listResumeCandidates(opts: ListOptions = {}): Candidate[] {
     bindings.listBindings().map(b => b.sessionId).filter((x): x is string => !!x),
   )
 
+  // Skip sessions that live under the plugin's own CWD — those are DC
+  // subagents, not terminal sessions, and teleport is for moving terminal
+  // sessions into DC. (DC-subagent history already lives in the bound chat.)
+  const pluginProjectHash = projectHashForCwd(PLUGIN_DIR)
+
   const candidates: Candidate[] = []
   for (const projectDir of readdirSync(PROJECTS_ROOT)) {
+    if (projectDir === pluginProjectHash) continue
     const projectPath = join(PROJECTS_ROOT, projectDir)
     let dstat: ReturnType<typeof statSync>
     try { dstat = statSync(projectPath) } catch { continue }

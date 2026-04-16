@@ -386,6 +386,34 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 }
 .modal-dismiss:hover { background: #3d444d; }
 .modal-dismiss:active { transform: scale(0.97); }
+.spinner {
+  width: 32px; height: 32px;
+  border: 3px solid #30363d; border-top-color: #58a6ff;
+  border-radius: 50%; margin: 0 auto 12px;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.teleport-row {
+  width: 100%; background: #161b22; border: 1px solid #30363d;
+  border-radius: 8px; padding: 10px 14px; margin-bottom: 6px;
+  color: #c9d1d9; text-align: left; cursor: pointer; font-family: inherit;
+}
+.teleport-row:hover { background: #1c2128; }
+.teleport-row.selected { border-color: #58a6ff; background: #1c2a40; }
+.teleport-header {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+}
+.teleport-name {
+  font-size: 15px; font-weight: 600; color: #e6edf3;
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.teleport-ts { font-size: 13px; font-weight: 600; color: #79c0ff; white-space: nowrap; }
+.teleport-ts.live { color: #ff7b72; }
+.teleport-meta {
+  font-size: 12px; color: #8b949e; margin-top: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .tool-section {
   border: 1px solid #30363d;
   border-radius: 10px;
@@ -642,7 +670,6 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     <div class="body">
       <h2 style="font-size:18px;margin-bottom:4px;">Resume a conversation</h2>
       <p style="font-size:13px;color:#8b949e;margin-bottom:14px;">Pick a terminal <code>claude</code> session from the last 48 hours. Your next message here will continue it.</p>
-      <div id="teleport-loading" style="font-size:13px;color:#8b949e;" role="status">Loading recent sessions&hellip;</div>
       <div id="teleport-empty" style="display:none;font-size:13px;color:#8b949e;">No terminal sessions found in the last 48 hours.</div>
       <div id="teleport-error" style="display:none;font-size:13px;color:#f85149;" role="alert"></div>
       <div id="teleport-list" style="display:none" role="listbox" aria-label="Recent terminal sessions"></div>
@@ -664,8 +691,28 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   </div>
 </div>
 
+<div id="loading-modal" class="modal-overlay">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="spinner"></div>
+    <div class="modal-heading" style="color:#e6edf3;">Loading sessions</div>
+    <div class="modal-sub">Scanning the last 48 hours of terminal activity&hellip;</div>
+  </div>
+</div>
+
+<div id="confirm-modal" class="modal-overlay">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-icon">&#x26A0;&#xFE0F;</div>
+    <div class="modal-heading" id="confirm-heading"></div>
+    <div class="modal-sub" id="confirm-sub"></div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button class="modal-dismiss" id="confirm-cancel" onclick="confirmCancel()" style="flex:1; background:#444;">Cancel</button>
+      <button class="modal-dismiss" id="confirm-ok" onclick="confirmOk()" style="flex:1; background:#c23;">Delete</button>
+    </div>
+  </div>
+</div>
+
 <script>
-var APP_VERSION = 1.47;
+var APP_VERSION = 1.49;
 var draft = null;
 var existingAgents = [];
 var templateList = [];
@@ -713,6 +760,8 @@ function resetTransientState() {
   if (createTimeout) { clearTimeout(createTimeout); createTimeout = null; }
   if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
   if (deleteTimeout) { clearTimeout(deleteTimeout); deleteTimeout = null; }
+  var lm = document.getElementById('loading-modal');
+  if (lm) lm.classList.remove('visible');
   var saveBtn = document.getElementById('save-btn');
   if (saveBtn) saveBtn.disabled = false;
   var createBtn = document.getElementById('create-btn');
@@ -748,6 +797,28 @@ function dismissModal() {
   if (saveBtn) saveBtn.disabled = false;
   var createBtn = document.getElementById('create-btn');
   if (createBtn) createBtn.disabled = false;
+}
+
+// In-app confirmation dialog. Native window.confirm() is blocked by the
+// WebXDC sandbox (iframe without allow-modals) and silently returns false,
+// so we build our own.
+var confirmCallback = null;
+function showConfirm(heading, sub, okLabel, onConfirm) {
+  document.getElementById('confirm-heading').textContent = heading;
+  document.getElementById('confirm-sub').textContent = sub;
+  document.getElementById('confirm-ok').textContent = okLabel || 'Confirm';
+  confirmCallback = onConfirm;
+  document.getElementById('confirm-modal').classList.add('visible');
+}
+function confirmOk() {
+  document.getElementById('confirm-modal').classList.remove('visible');
+  var cb = confirmCallback;
+  confirmCallback = null;
+  if (cb) cb();
+}
+function confirmCancel() {
+  document.getElementById('confirm-modal').classList.remove('visible');
+  confirmCallback = null;
 }
 
 function renderManageList() {
@@ -1393,26 +1464,28 @@ function deleteAgent(agentId) {
   if (creating) return;
   var agent = existingAgents.find(function(a){ return a.id === agentId; });
   if (!agent) return;
-  var message = 'Delete "' + agent.name + '"? This cannot be undone.';
+  var heading = 'Delete "' + agent.name + '"?';
+  var sub = 'This cannot be undone.';
   if (agent.bindingCount > 0) {
-    message = 'Delete "' + agent.name + '"? It is bound to ' + agent.bindingCount + ' chat(s) \u2014 those chats will switch to a default assistant.';
+    sub = 'Bound to ' + agent.bindingCount + ' chat(s) \u2014 those chats will switch to a default assistant.';
   }
-  if (!confirm(message)) return;
-  creating = true;
-  pendingAction = 'delete';
-  if (deleteTimeout) clearTimeout(deleteTimeout);
-  deleteTimeout = setTimeout(function() {
-    deleteTimeout = null;
-    if (pendingAction === 'delete') {
-      pendingAction = null;
-      creating = false;
-      showModal('No response', 'The server did not respond. This card may be outdated \u2014 ask Claude to send you the agent settings card again.');
-    }
-  }, 10000);
-  window.webxdc.sendUpdate({
-    payload: { type: 'delete', agentId: agentId, senderAddr: window.webxdc.selfAddr },
-    summary: 'Delete agent: ' + agentId
-  }, 'Delete agent');
+  showConfirm(heading, sub, 'Delete', function() {
+    creating = true;
+    pendingAction = 'delete';
+    if (deleteTimeout) clearTimeout(deleteTimeout);
+    deleteTimeout = setTimeout(function() {
+      deleteTimeout = null;
+      if (pendingAction === 'delete') {
+        pendingAction = null;
+        creating = false;
+        showModal('No response', 'The server did not respond. This card may be outdated \u2014 ask Claude to send you the agent settings card again.');
+      }
+    }, 10000);
+    window.webxdc.sendUpdate({
+      payload: { type: 'delete', agentId: agentId, senderAddr: window.webxdc.selfAddr },
+      summary: 'Delete agent: ' + agentId
+    }, 'Delete agent');
+  });
 }
 
 function exportAgent(agentId) {
@@ -1442,20 +1515,26 @@ function isOnTeleportPane() {
   return el && el.classList.contains('visible');
 }
 
+function showLoadingModal() {
+  document.getElementById('loading-modal').classList.add('visible');
+}
+function hideLoadingModal() {
+  document.getElementById('loading-modal').classList.remove('visible');
+}
+
 function requestTeleportList() {
   teleportRequestId++;
   var myReq = teleportRequestId;
-  var loading = document.getElementById('teleport-loading');
   var empty = document.getElementById('teleport-empty');
   var err = document.getElementById('teleport-error');
   var list = document.getElementById('teleport-list');
-  if (loading) loading.style.display = 'block';
   if (empty) empty.style.display = 'none';
   if (err) err.style.display = 'none';
   if (list) list.style.display = 'none';
   selectedTeleportSessionId = null;
   var attachBtn = document.getElementById('teleport-attach');
   if (attachBtn) attachBtn.disabled = true;
+  showLoadingModal();
   window.webxdc.sendUpdate({
     payload: { type: 'teleport_list_request', requestId: myReq, senderAddr: window.webxdc.selfAddr },
     summary: 'Loading sessions'
@@ -1463,10 +1542,9 @@ function requestTeleportList() {
 }
 
 function renderTeleportList(candidates) {
-  var loading = document.getElementById('teleport-loading');
+  hideLoadingModal();
   var empty = document.getElementById('teleport-empty');
   var list = document.getElementById('teleport-list');
-  if (loading) loading.style.display = 'none';
   if (!candidates || candidates.length === 0) {
     if (empty) empty.style.display = 'block';
     return;
@@ -1477,45 +1555,52 @@ function renderTeleportList(candidates) {
   candidates.forEach(function(c) {
     var row = document.createElement('button');
     row.type = 'button';
-    row.className = 'existing-card';
+    row.className = 'teleport-row';
     row.setAttribute('role', 'option');
     row.setAttribute('aria-pressed', 'false');
     row.dataset.sessionId = c.sessionId;
 
-    var label = document.createElement('div');
-    label.className = 'label';
-    var labelText = c.sessionName
-      ? c.sessionName + '  \u2014  ' + shortCwd(c.cwd || '')
-      : shortCwd(c.cwd || '') + '  ' + c.sessionId.slice(0, 8) + '\u2026';
-    label.textContent = labelText;
+    // Header line: name on left (session name + short UUID in parens, or full
+    // UUID if unnamed), timestamp on right.
+    var header = document.createElement('div');
+    header.className = 'teleport-header';
+
+    var name = document.createElement('div');
+    name.className = 'teleport-name';
+    var shortId = (c.sessionId || '').slice(0, 8);
+    name.textContent = c.sessionName
+      ? c.sessionName + ' (' + shortId + ')'
+      : (c.sessionId || '');
+
+    var ts = document.createElement('div');
+    ts.className = 'teleport-ts';
     if (c.isProbablyLive) {
-      var badge = document.createElement('span');
-      badge.className = 'badge';
-      badge.style.background = '#f85149';
-      badge.style.color = '#fff';
-      badge.textContent = 'active now';
-      label.appendChild(document.createTextNode(' '));
-      label.appendChild(badge);
+      ts.classList.add('live');
+      ts.textContent = 'active now';
+    } else {
+      ts.textContent = relativeTime(c.mtimeMs);
     }
 
-    var desc = document.createElement('div');
-    desc.className = 'desc';
-    var parts = [];
-    if (typeof c.messageCount === 'number') parts.push('~' + c.messageCount + ' lines');
-    parts.push(relativeTime(c.mtimeMs));
-    if (c.summary) parts.push(c.summary);
-    desc.textContent = parts.join(' \u00b7 ');
+    header.appendChild(name);
+    header.appendChild(ts);
 
-    row.appendChild(label);
-    row.appendChild(desc);
+    var meta = document.createElement('div');
+    meta.className = 'teleport-meta';
+    var metaParts = [];
+    metaParts.push(shortCwd(c.cwd || ''));
+    if (typeof c.messageCount === 'number') metaParts.push('~' + c.messageCount + ' lines');
+    meta.textContent = metaParts.join(' \u00b7 ');
+
+    row.appendChild(header);
+    row.appendChild(meta);
     row.addEventListener('click', function() {
       selectedTeleportSessionId = c.sessionId;
-      var all = list.querySelectorAll('.existing-card');
+      var all = list.querySelectorAll('.teleport-row');
       for (var i = 0; i < all.length; i++) {
-        all[i].classList.remove('current-agent');
+        all[i].classList.remove('selected');
         all[i].setAttribute('aria-pressed', 'false');
       }
-      row.classList.add('current-agent');
+      row.classList.add('selected');
       row.setAttribute('aria-pressed', 'true');
       var attachBtn = document.getElementById('teleport-attach');
       if (attachBtn) attachBtn.disabled = false;

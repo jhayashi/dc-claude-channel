@@ -65,8 +65,6 @@ function templatesPayload(ctx: AppContext): Array<{
 interface Session {
   msgId: number
   sourceChatId: number
-  /** Number of times dc_open_agent_settings has been called for this chat. */
-  callCount: number
 }
 
 // Per-chat msgId pointer: "has this chat seen the setup card yet, and if so,
@@ -110,7 +108,6 @@ function loadSessions(): Session[] {
         out.push({
           msgId: (entry as Session).msgId,
           sourceChatId: (entry as Session).sourceChatId,
-          callCount: typeof (entry as Session).callCount === 'number' ? (entry as Session).callCount : 1,
         })
       }
     }
@@ -180,21 +177,14 @@ async function sendInit(
     templates: templatesPayload(ctx),
     ...availableToolsPayload(ctx),
   }
-  // DC dedupes consecutive identical info text, so each call gets a distinct
-  // suffix — this guarantees the user sees a fresh tappable notification
-  // that surfaces the card.
-  const callCount = (existing?.callCount ?? 0) + 1
-  const infoText = callCount === 1 ? 'Agent settings' : `Agent settings (${callCount})`
   const update = JSON.stringify({
     payload,
     summary: 'Agent setup',
-    info: infoText,
+    info: 'Tap to open agent settings',
     href: 'index.html',
   })
 
   if (existing) {
-    existing.callCount = callCount
-    persistSessions()
     await ctx.client.sendWebXDCUpdate(existing.msgId, update)
     return existing
   }
@@ -206,7 +196,7 @@ async function sendInit(
     unlinkSync(xdcPath)
   } catch {}
   await ctx.client.sendWebXDCUpdate(msgId, update)
-  const session: Session = { msgId, sourceChatId, callCount }
+  const session: Session = { msgId, sourceChatId }
   sessions.set(sourceChatId, session)
   persistSessions()
   ctx.registerWebXDCMsg(msgId, app, sourceChatId)
@@ -485,26 +475,38 @@ export const agentSetupApp: WebXDCApp = {
           continue
         }
         try {
-          // Unbind affected chats: notify, evict subagents, delete bindings.
-          // Auto-repair in spawnSubagentForChat will bind them to default-quick-agent
-          // on the next message.
+          // Rebind affected chats to the default agent and refresh their
+          // profile icon so the chat avatar reflects the new assistant
+          // immediately (don't wait for the next message / auto-repair).
           const affected = bindings.listBindings().filter(b => b.agentId === agentId)
           if (affected.length > 0) {
+            const defaultAgent = agents.ensureDefaultAgent()
             await Promise.all(
               affected.map(b =>
                 ctx.client.send(
                   b.chatId,
-                  `The "${agent.name}" agent was deleted. This chat will use a default assistant.`,
+                  `The "${agent.name}" agent was deleted. This chat will use the "${defaultAgent.name}" default assistant.`,
                 ).catch(() => {}),
               ),
             )
             await Promise.all(
               affected.map(async b => {
                 await ctx.evictSubagent(b.chatId)
-                bindings.deleteBinding(b.chatId)
+                bindings.saveBinding({
+                  chatId: b.chatId,
+                  agentId: defaultAgent.id,
+                  inheritClaudeMd: agents.inheritClaudeMdForModel(defaultAgent.model),
+                  createdAt: new Date().toISOString(),
+                })
+                bindings.clearSessionId(b.chatId)
+                try {
+                  await setAgentIcon({ client: ctx.client, logf: ctx.logf }, b.chatId, defaultAgent)
+                } catch (err) {
+                  ctx.logf('agent-setup: icon refresh failed for chat %d: %v', b.chatId, err)
+                }
               }),
             )
-            ctx.logf('agent-setup: unbound %d chat(s) from agent %s', affected.length, agentId)
+            ctx.logf('agent-setup: rebound %d chat(s) from agent %s to default', affected.length, agentId)
           }
 
           agents.deleteAgent(agentId)
