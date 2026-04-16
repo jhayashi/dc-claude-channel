@@ -191,10 +191,10 @@ input.icon-input {
   line-height: 1.5;
 }
 .home-heading {
-  font-size: 16px;
-  font-weight: 500;
-  margin: 4px 0 14px;
-  color: #c9d1d9;
+  font-size: 18px;
+  font-weight: 700;
+  margin: 4px 0 4px;
+  color: #e6edf3;
 }
 .home-actions {
   display: flex;
@@ -208,9 +208,9 @@ input.icon-input {
   gap: 14px;
   width: 100%;
   padding: 14px 16px;
-  background: #161b22;
+  background: #0d1117;
   border: 1px solid #30363d;
-  border-radius: 8px;
+  border-radius: 12px;
   color: #c9d1d9;
   text-align: left;
   cursor: pointer;
@@ -223,25 +223,41 @@ input.icon-input {
   outline: none;
 }
 .home-action-icon {
-  font-size: 24px;
-  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
   line-height: 1;
+  flex-shrink: 0;
+  background: #1f6feb22;
 }
+.home-action[data-variant="manage"] .home-action-icon { background: #8957e533; }
+.home-action[data-variant="resume"] .home-action-icon { background: #23863633; }
 .home-action-body {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  flex: 1;
 }
 .home-action-label {
-  font-size: 14px;
-  font-weight: 500;
-  color: #c9d1d9;
+  font-size: 15px;
+  font-weight: 600;
+  color: #e6edf3;
 }
 .home-action-desc {
   font-size: 12px;
   color: #8b949e;
   line-height: 1.4;
+}
+.home-action-chev {
+  color: #6e7681;
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-left: 8px;
 }
 .home-action code {
   background: transparent;
@@ -311,8 +327,23 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .btn:disabled { opacity: 0.4; cursor: default; }
 .btn-create { background: linear-gradient(135deg, #238636 0%, #2ea043 100%); color: white; }
 .btn-back { background: #30363d; color: #e6edf3; }
-#step0, #step2, #step3, #outdated, #loading, #teleport-import { display: none; }
-#step0.visible, #step2.visible, #step3.visible, #outdated.visible, #loading.visible, #teleport-import.visible { display: block; }
+#step0, #new-chat, #manage, #step2, #step3, #outdated, #loading, #teleport-import { display: none; }
+#step0.visible, #new-chat.visible, #manage.visible, #step2.visible, #step3.visible, #outdated.visible, #loading.visible, #teleport-import.visible { display: block; }
+.screen-heading { font-size: 16px; font-weight: 600; color: #c9d1d9; margin: 0 0 12px; }
+.screen-sub { font-size: 12px; color: #8b949e; margin: -6px 0 14px; line-height: 1.4; }
+.home-count { font-size: 12px; color: #8b949e; margin: -8px 0 14px; }
+.home-action:disabled { opacity: 0.4; cursor: not-allowed; }
+.home-action:disabled:hover { background: #161b22; border-color: #30363d; }
+.or-divider { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; color: #6e7681; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+.or-divider::before, .or-divider::after { content: ''; flex: 1; height: 1px; background: #30363d; }
+.pick-card { display: flex; align-items: center; gap: 12px; width: 100%; background: #0d1117; border: 1px solid #30363d; border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; font-family: inherit; color: inherit; text-align: left; transition: border-color 0.15s; }
+.pick-card:hover { border-color: #58a6ff; }
+.pick-card:active { transform: scale(0.98); }
+.pick-card.current-agent { border-color: #238636; }
+.pick-card .pick-icon { font-size: 22px; flex-shrink: 0; line-height: 1; }
+.pick-card .pick-body { flex: 1; min-width: 0; }
+.pick-card .pick-name { font-size: 14px; font-weight: 600; color: #e6edf3; }
+.pick-card .pick-meta { font-size: 11px; color: #8b949e; margin-top: 2px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .center { text-align: center; padding: 50px 20px; color: #8b949e; }
 .spinner { width: 28px; height: 28px; border: 3px solid #30363d; border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 14px; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -438,30 +469,61 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   <div id="step0">
     <div class="body">
       <h2 class="home-heading">What would you like to do?</h2>
+      <div id="home-count" class="home-count"></div>
       <div class="home-actions">
-        <button class="home-action" onclick="gotoCreate()">
-          <span class="home-action-icon">&#x2728;</span>
+        <button class="home-action" data-variant="new" onclick="gotoNewChat()">
+          <span class="home-action-icon">&#x1F4AC;</span>
           <span class="home-action-body">
-            <span class="home-action-label">Create a new agent</span>
-            <span class="home-action-desc">Set up a fresh agent with its own prompt and tools.</span>
+            <span class="home-action-label">New chat</span>
+            <span class="home-action-desc">Pick an agent or create one from a template.</span>
           </span>
+          <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
         </button>
-        <button class="home-action" onclick="gotoResume()">
-          <span class="home-action-icon">&#x1F504;</span>
+        <button class="home-action" data-variant="manage" id="home-manage-btn" onclick="gotoManage()">
+          <span class="home-action-icon">&#x2699;&#xFE0F;</span>
+          <span class="home-action-body">
+            <span class="home-action-label">Manage agents</span>
+            <span class="home-action-desc">Edit, export, or delete your agents.</span>
+          </span>
+          <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
+        </button>
+        <button class="home-action" data-variant="resume" onclick="gotoResume()">
+          <span class="home-action-icon">&#x1F4E5;</span>
           <span class="home-action-body">
             <span class="home-action-label">Resume a conversation</span>
-            <span class="home-action-desc">Pick up a terminal <code>claude</code> session here.</span>
+            <span class="home-action-desc">Continue a terminal <code>claude</code> session in Delta Chat.</span>
           </span>
+          <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
         </button>
       </div>
+    </div>
+  </div>
+
+  <div id="new-chat">
+    <div class="body">
+      <h2 class="screen-heading">Pick an agent for your new chat</h2>
+      <div id="pick-list"></div>
       <div id="templates-section" style="display:none;">
-        <div class="section-label">Start from a template</div>
+        <div class="or-divider"><span>or start from a template</span></div>
         <div id="templates-list" class="template-grid"></div>
       </div>
-      <div id="existing-section" style="display:none;">
-        <div class="section-label">Manage existing agents</div>
-        <div id="existing-list"></div>
-      </div>
+      <div class="or-divider"><span>or</span></div>
+      <button class="create-new-btn" onclick="gotoCreate()">+ Create from scratch</button>
+    </div>
+    <div class="actions">
+      <button class="btn btn-back" onclick="show('step0')">Back</button>
+    </div>
+  </div>
+
+  <div id="manage">
+    <div class="body">
+      <h2 class="screen-heading">Manage agents</h2>
+      <p class="screen-sub">Edit, export, or delete your agents. Changes apply to every chat using the agent.</p>
+      <div id="manage-list"></div>
+      <div id="manage-empty" style="display:none;font-size:13px;color:#8b949e;padding:8px 0;">No agents yet. Create one from <b>New chat</b>.</div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-back" onclick="show('step0')">Back</button>
     </div>
   </div>
 
@@ -603,7 +665,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.44;
+var APP_VERSION = 1.47;
 var draft = null;
 var existingAgents = [];
 var templateList = [];
@@ -622,7 +684,6 @@ var modalCountdown = 0;
 var pendingAction = null;
 
 var teleportRequestId = 0;
-var teleportListRequested = false;
 var selectedTeleportSessionId = null;
 
 var MODEL_LABELS = {
@@ -632,11 +693,30 @@ var MODEL_LABELS = {
 };
 
 function show(id) {
-  var ids = ['loading', 'step0', 'step2', 'step3', 'outdated', 'teleport-import'];
+  var ids = ['loading', 'step0', 'new-chat', 'manage', 'step2', 'step3', 'outdated', 'teleport-import'];
   for (var i = 0; i < ids.length; i++) {
     var el = document.getElementById(ids[i]);
     if (ids[i] === id) el.classList.add('visible'); else el.classList.remove('visible');
   }
+  // Escape hatch: the home screen is the one place we hard-reset transient
+  // flow state so a stuck card (e.g. a response never arrived because the
+  // dispatcher restarted and orphaned this msgId) can always be recovered
+  // by the user tapping "Back".
+  if (id === 'step0') resetTransientState();
+}
+
+function resetTransientState() {
+  creating = false;
+  pendingAction = null;
+  editingAgentId = null;
+  wizardStep = 1;
+  if (createTimeout) { clearTimeout(createTimeout); createTimeout = null; }
+  if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
+  if (deleteTimeout) { clearTimeout(deleteTimeout); deleteTimeout = null; }
+  var saveBtn = document.getElementById('save-btn');
+  if (saveBtn) saveBtn.disabled = false;
+  var createBtn = document.getElementById('create-btn');
+  if (createBtn) createBtn.disabled = false;
 }
 
 function showModal(heading, sub) {
@@ -670,15 +750,15 @@ function dismissModal() {
   if (createBtn) createBtn.disabled = false;
 }
 
-function renderExistingList() {
-  var container = document.getElementById('existing-list');
+function renderManageList() {
+  var container = document.getElementById('manage-list');
+  if (!container) return;
   container.textContent = '';
   for (var i = 0; i < existingAgents.length; i++) {
     var a = existingAgents[i];
-    var btn = document.createElement('button');
-    btn.className = 'existing-card';
-    if (a.isCurrentAgent) btn.classList.add('current-agent');
-    btn.onclick = (function(id){ return function(){ pickExisting(id); }; })(a.id);
+    var card = document.createElement('div');
+    card.className = 'existing-card';
+    if (a.isCurrentAgent) card.classList.add('current-agent');
     var label = document.createElement('div');
     label.className = 'label';
     if (a.icon) {
@@ -697,7 +777,7 @@ function renderExistingList() {
     countBadge.className = 'badge badge-count';
     countBadge.textContent = (a.bindingCount || 0) + ' chat' + ((a.bindingCount !== 1) ? 's' : '');
     label.appendChild(countBadge);
-    btn.appendChild(label);
+    card.appendChild(label);
     var actions = document.createElement('div');
     actions.className = 'card-actions';
     var editBtn = document.createElement('button');
@@ -705,6 +785,11 @@ function renderExistingList() {
     editBtn.textContent = '\u270E Edit';
     editBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); editAgent(id); }; })(a.id);
     actions.appendChild(editBtn);
+    var exportBtn = document.createElement('button');
+    exportBtn.className = 'card-action-btn';
+    exportBtn.textContent = '\u2B07 Export';
+    exportBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); exportAgent(id); }; })(a.id);
+    actions.appendChild(exportBtn);
     var deleteBtn = document.createElement('button');
     deleteBtn.className = 'card-action-btn';
     deleteBtn.textContent = '\u2715 Delete';
@@ -715,22 +800,64 @@ function renderExistingList() {
       deleteBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); deleteAgent(id); }; })(a.id);
     }
     actions.appendChild(deleteBtn);
-    var exportBtn = document.createElement('button');
-    exportBtn.className = 'card-action-btn';
-    exportBtn.textContent = '\u2B07 Export';
-    exportBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); exportAgent(id); }; })(a.id);
-    actions.appendChild(exportBtn);
-    btn.appendChild(actions);
+    card.appendChild(actions);
     if (a.isUndeletable) {
       var hint = document.createElement('div');
       hint.className = 'card-hint';
       hint.textContent = 'Default \u2014 can\u2019t be removed';
-      btn.appendChild(hint);
+      card.appendChild(hint);
     }
+    container.appendChild(card);
+  }
+  var empty = document.getElementById('manage-empty');
+  if (empty) empty.style.display = existingAgents.length === 0 ? '' : 'none';
+}
+
+function renderPickList() {
+  var container = document.getElementById('pick-list');
+  if (!container) return;
+  container.textContent = '';
+  for (var i = 0; i < existingAgents.length; i++) {
+    var a = existingAgents[i];
+    var btn = document.createElement('button');
+    btn.className = 'pick-card';
+    if (a.isCurrentAgent) btn.classList.add('current-agent');
+    btn.onclick = (function(id){ return function(){ pickExisting(id); }; })(a.id);
+    var icon = document.createElement('span');
+    icon.className = 'pick-icon';
+    icon.textContent = a.icon || '\u{1F464}';
+    btn.appendChild(icon);
+    var body = document.createElement('span');
+    body.className = 'pick-body';
+    var name = document.createElement('div');
+    name.className = 'pick-name';
+    name.textContent = a.name;
+    body.appendChild(name);
+    var meta = document.createElement('div');
+    meta.className = 'pick-meta';
+    var mb = document.createElement('span');
+    mb.className = 'badge';
+    mb.textContent = MODEL_LABELS[a.model] || a.model;
+    meta.appendChild(mb);
+    var cb = document.createElement('span');
+    cb.className = 'badge badge-count';
+    cb.textContent = (a.bindingCount || 0) + ' chat' + ((a.bindingCount !== 1) ? 's' : '');
+    meta.appendChild(cb);
+    body.appendChild(meta);
+    btn.appendChild(body);
     container.appendChild(btn);
   }
-  var section = document.getElementById('existing-section');
-  if (section) section.style.display = existingAgents.length > 0 ? '' : 'none';
+}
+
+function renderHomeCount() {
+  var el = document.getElementById('home-count');
+  if (!el) return;
+  var chats = 0;
+  for (var i = 0; i < existingAgents.length; i++) chats += existingAgents[i].bindingCount || 0;
+  var agentCount = existingAgents.length;
+  el.textContent = 'You have ' + agentCount + ' agent' + (agentCount === 1 ? '' : 's') + ' and ' + chats + ' chat' + (chats === 1 ? '' : 's') + '.';
+  var manageBtn = document.getElementById('home-manage-btn');
+  if (manageBtn) manageBtn.disabled = agentCount === 0;
 }
 
 function renderTemplates() {
@@ -1022,12 +1149,30 @@ function gotoCreate() {
   show('step2');
 }
 
+function gotoNewChat() {
+  renderPickList();
+  renderTemplates();
+  show('new-chat');
+}
+
+function gotoManage() {
+  if (existingAgents.length === 0) return;
+  renderManageList();
+  show('manage');
+}
+
 function gotoResume() {
+  resetTeleportPane();
   show('teleport-import');
-  if (!teleportListRequested) {
-    teleportListRequested = true;
-    requestTeleportList();
-  }
+  requestTeleportList();
+}
+
+function resetTeleportPane() {
+  selectedTeleportSessionId = null;
+  var errEl = document.getElementById('teleport-error');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  var attachBtn = document.getElementById('teleport-attach');
+  if (attachBtn) attachBtn.disabled = true;
 }
 
 function pickExisting(agentId) {
@@ -1129,7 +1274,7 @@ function refreshIconPreview(which) {
 }
 
 function backFromCreate() {
-  show('step0');
+  gotoNewChat();
 }
 
 function populateEditForm() {
@@ -1151,10 +1296,11 @@ function populateEditForm() {
 function backFromStep3() {
   creating = false;
   editingAgentId = null;
-  show('step0');
+  gotoManage();
 }
 
 var saveTimeout = null;
+var deleteTimeout = null;
 function saveEdit() {
   if (creating || !draft || !editingAgentId) return;
   creating = true;
@@ -1254,6 +1400,15 @@ function deleteAgent(agentId) {
   if (!confirm(message)) return;
   creating = true;
   pendingAction = 'delete';
+  if (deleteTimeout) clearTimeout(deleteTimeout);
+  deleteTimeout = setTimeout(function() {
+    deleteTimeout = null;
+    if (pendingAction === 'delete') {
+      pendingAction = null;
+      creating = false;
+      showModal('No response', 'The server did not respond. This card may be outdated \u2014 ask Claude to send you the agent settings card again.');
+    }
+  }, 10000);
   window.webxdc.sendUpdate({
     payload: { type: 'delete', agentId: agentId, senderAddr: window.webxdc.selfAddr },
     summary: 'Delete agent: ' + agentId
@@ -1268,14 +1423,17 @@ function exportAgent(agentId) {
 }
 
 function refreshList() {
-  // Request a fresh init from the server by re-triggering the flow.
-  // For now, just re-render with whatever we have — the server will
-  // send a fresh init on the next propose_agent call.
-  renderExistingList();
-  if (existingAgents.length > 0) {
+  renderManageList();
+  renderPickList();
+  renderHomeCount();
+  if (existingAgents.length === 0) {
     show('step0');
-  } else {
-    gotoCreate();
+    return;
+  }
+  var step2 = document.getElementById('step2');
+  var step3 = document.getElementById('step3');
+  if ((step2 && step2.classList.contains('visible')) || (step3 && step3.classList.contains('visible'))) {
+    show('manage');
   }
 }
 
@@ -1408,19 +1566,11 @@ window.webxdc.setUpdateListener(function(update) {
     availableMcpServers = d.availableMcpServers || [];
     connectedMcpServers = d.connectedMcpServers || [];
     renderToolPicker('create-tool-picker', null, null);
-    renderExistingList();
+    renderManageList();
+    renderPickList();
     renderTemplates();
-    if (d.startScreen === 'create') {
-      gotoCreate();
-    } else if (d.startScreen === 'teleport-import') {
-      show('teleport-import');
-      if (!teleportListRequested) {
-        teleportListRequested = true;
-        requestTeleportList();
-      }
-    } else {
-      show('step0');
-    }
+    renderHomeCount();
+    show('step0');
   }
 
   if (d.type === 'edit') {
@@ -1448,6 +1598,7 @@ window.webxdc.setUpdateListener(function(update) {
   }
 
   if (d.type === 'deleted') {
+    if (deleteTimeout) { clearTimeout(deleteTimeout); deleteTimeout = null; }
     if (d.existingAgents) existingAgents = d.existingAgents;
     else if (d.name) existingAgents = existingAgents.filter(function(a) { return a.name !== d.name; });
     creating = false;

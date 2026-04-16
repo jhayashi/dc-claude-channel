@@ -466,9 +466,9 @@ const SYSTEM_PROMPTS: Record<string, string> = {
 
 /**
  * Build a draft agent from a free-form description. Defaults to Sonnet;
- * callers (dc_propose_agent, dc_create_agent) can override the model
- * via an optional `model` parameter — the calling LLM has full
- * conversation context and picks the best tier.
+ * callers (dc_create_agent) can override the model via an optional
+ * `model` parameter — the calling LLM has full conversation context
+ * and picks the best tier.
  */
 export function draftAgentFromDescription(
   description: string,

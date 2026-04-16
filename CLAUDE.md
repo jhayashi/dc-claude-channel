@@ -109,8 +109,8 @@ context that `dc_chat_history` can't recover.
 Subagents and local terminal `claude` sessions share the same on-disk `.jsonl`
 format, so either side can resume the other by UUID. The `dc_teleport` tool
 emits a `cd … && claude --resume <uuid>` command (DC → terminal). The
-agent-setup card's "Import terminal session" pane — opened via
-`dc_propose_agent mode="teleport-import"` — lets the user pick a terminal
+agent-setup card's "Import terminal session" pane — reached from the
+home screen of the agent settings app — lets the user pick a terminal
 session from the last 48 hours and bind it to the current DC chat
 (terminal → DC). Implementation in `plugin/teleport.ts`; CWD is resolved via
 `import.meta.url` (not `process.cwd()`) so the dispatcher can be launched

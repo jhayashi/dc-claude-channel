@@ -14,6 +14,9 @@ import * as access from '../access.js'
 import * as teleport from '../teleport.js'
 import * as templates from '../templates.js'
 import { ALL_BUILTIN_TOOLS, BUILTIN_TOOL_DESCRIPTIONS } from '../dispatcher/subagent-process.js'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { homedir } from 'node:os'
 
 function availableToolsPayload(ctx: AppContext) {
   return {
@@ -62,12 +65,72 @@ function templatesPayload(ctx: AppContext): Array<{
 interface Session {
   msgId: number
   sourceChatId: number
-  draft: agents.DraftAgent
+  /** Number of times dc_open_agent_settings has been called for this chat. */
+  callCount: number
 }
 
-// Sessions are keyed by the chat the user is messaging from (source chat).
-// One active setup card per source chat.
+// Per-chat msgId pointer: "has this chat seen the setup card yet, and if so,
+// which msgId?" First dc_open_agent_settings call sends a new xdc; later calls
+// send a status update to the same msgId so the card returns to the top via
+// the info notification. No flow state lives here — the card always opens on
+// home.
+//
+// Persisted to disk so `bun server.ts` restarts don't orphan existing cards
+// (which would silently drop user interactions — every sent update arrives
+// at onWebXDCUpdate with a msgId the central registry doesn't know about).
 const sessions = new Map<number, Session>()
+
+const SESSIONS_FILE = join(homedir(), '.claude', 'channels', 'deltachat', 'agent-setup-sessions.json')
+
+function persistSessions(): void {
+  try {
+    mkdirSync(join(homedir(), '.claude', 'channels', 'deltachat'), { recursive: true })
+    const array = Array.from(sessions.values())
+    writeFileSync(SESSIONS_FILE, JSON.stringify(array, null, 2))
+  } catch {
+    // Non-fatal: worst case, next restart orphans these cards. Log via ctx
+    // isn't available here; silent swallow is acceptable since the caller
+    // already logged the successful send.
+  }
+}
+
+function loadSessions(): Session[] {
+  if (!existsSync(SESSIONS_FILE)) return []
+  try {
+    const raw = readFileSync(SESSIONS_FILE, 'utf-8')
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    const out: Session[] = []
+    for (const entry of parsed) {
+      if (
+        entry && typeof entry === 'object' &&
+        typeof (entry as Session).msgId === 'number' &&
+        typeof (entry as Session).sourceChatId === 'number'
+      ) {
+        out.push({
+          msgId: (entry as Session).msgId,
+          sourceChatId: (entry as Session).sourceChatId,
+          callCount: typeof (entry as Session).callCount === 'number' ? (entry as Session).callCount : 1,
+        })
+      }
+    }
+    return out
+  } catch {
+    return []
+  }
+}
+
+/** Baseline draft for a fresh "create agent" form. The client populates
+ *  these values when the user navigates to the create screen from home. */
+function blankDraft(): agents.DraftAgent {
+  return {
+    name: 'New agent',
+    model: agents.DEFAULT_MODEL,
+    description: '',
+    system: agents.DEFAULT_SYSTEM_PROMPT,
+    tools: [],
+  }
+}
 
 /** Summarize agents for the picker screen. */
 function listExistingForPicker(sourceChatId: number): Array<{ id: string; name: string; model: string; archetype: string; icon: string; bindingCount: number; isCurrentAgent: boolean; isUndeletable: boolean }> {
@@ -101,11 +164,9 @@ async function sendInit(
   ctx: AppContext,
   app: WebXDCApp,
   sourceChatId: number,
-  draft: agents.DraftAgent,
-  startScreen: 'list' | 'create' | 'teleport-import' = 'list',
 ): Promise<Session> {
-  // Reuse existing session if present.
   const existing = sessions.get(sourceChatId)
+  const draft = blankDraft()
   const payload = {
     type: 'init' as const,
     version: agentSetup.getAgentSetupVersion(),
@@ -115,26 +176,25 @@ async function sendInit(
       iconMirror: agents.getIconMirror(draft as agents.AgentDef),
     },
     existingAgents: listExistingForPicker(sourceChatId),
-    startScreen,
     senderAddr: 'server',
     templates: templatesPayload(ctx),
     ...availableToolsPayload(ctx),
   }
-  // Info text MUST be unique per call — DC dedupes consecutive identical
-  // info text and the user gets no notification. Include the draft name
-  // so each setup card produces a fresh tappable info message.
-  const prefix = 'Agent setup: '
-  const maxName = 80 - prefix.length
-  const shortName = draft.name.length > maxName ? draft.name.slice(0, maxName - 1) + '\u2026' : draft.name
+  // DC dedupes consecutive identical info text, so each call gets a distinct
+  // suffix — this guarantees the user sees a fresh tappable notification
+  // that surfaces the card.
+  const callCount = (existing?.callCount ?? 0) + 1
+  const infoText = callCount === 1 ? 'Agent settings' : `Agent settings (${callCount})`
   const update = JSON.stringify({
     payload,
     summary: 'Agent setup',
-    info: prefix + shortName,
+    info: infoText,
     href: 'index.html',
   })
 
   if (existing) {
-    existing.draft = draft
+    existing.callCount = callCount
+    persistSessions()
     await ctx.client.sendWebXDCUpdate(existing.msgId, update)
     return existing
   }
@@ -146,8 +206,9 @@ async function sendInit(
     unlinkSync(xdcPath)
   } catch {}
   await ctx.client.sendWebXDCUpdate(msgId, update)
-  const session: Session = { msgId, sourceChatId, draft }
+  const session: Session = { msgId, sourceChatId, callCount }
   sessions.set(sourceChatId, session)
+  persistSessions()
   ctx.registerWebXDCMsg(msgId, app, sourceChatId)
   ctx.logf('agent-setup: sent app (msg %d) to chat %d', msgId, sourceChatId)
   return session
@@ -232,101 +293,80 @@ export async function decorateAgentChat(
 export const agentSetupApp: WebXDCApp = {
   id: 'agent-setup',
 
+  start(ctx: AppContext): void {
+    const saved = loadSessions()
+    for (const s of saved) {
+      sessions.set(s.sourceChatId, s)
+      ctx.registerWebXDCMsg(s.msgId, agentSetupApp, s.sourceChatId)
+    }
+    if (saved.length > 0) {
+      ctx.logf('agent-setup: rehydrated %d session(s) from disk', saved.length)
+    }
+  },
+
   instructions:
-    'CRITICAL — AGENT MANAGEMENT RULES:\n' +
-    '1. When the user mentions ANYTHING about agents — creating, editing, deleting, ' +
-    'managing, settings, "agent app", "agent card", "settings app", "send me the app", ' +
-    '"change the model", "change my prompt", "edit this agent" — you MUST call ' +
-    'dc_propose_agent. No exceptions.\n' +
-    '2. NEVER build or send agent-setup.xdc yourself via Bash/dc_send_webxdc. ' +
-    'NEVER read agent-setup.ts or agent-setup-app.ts. NEVER read or edit agent YAML files.\n' +
-    '3. NEVER offer to change agent settings through conversation.\n' +
-    '4. dc_propose_agent is the ONLY way to manage agents. It sends a setup card ' +
-    'that handles everything: create, edit, delete, bind.\n' +
-    '5. Use a short description (e.g. "manage agents", "edit agent settings").\n' +
-    '6. When the user explicitly asks to CREATE a new agent ("create a new agent", ' +
-    '"make an agent for X", "new agent"), pass mode="create" so the card opens ' +
-    'directly on the create form instead of the agent list. Leave mode off for ' +
-    'open-ended requests like "manage agents" or "edit settings".\n' +
-    '7. When the user asks to "teleport", "import terminal session", or "continue my terminal session here", pass mode="teleport-import" so the card opens directly on the import pane.',
+    'AGENT SETTINGS APP:\n' +
+    '1. The agent settings app is a self-contained UI where the user manages ' +
+    'their agents, starts new chats, and resumes terminal sessions. Call ' +
+    'dc_open_agent_settings to surface it whenever the user mentions ANY of: ' +
+    'creating a new agent, starting a new chat, editing/deleting/managing ' +
+    'agents, "agent app", "agent card", "settings app", "send me the app", ' +
+    '"change the model", "change my prompt", "edit this agent", "teleport", ' +
+    '"import terminal session", "resume a session". The app always opens on ' +
+    'its home screen — the user picks what they want to do from there.\n' +
+    '2. Do NOT build or send agent-setup.xdc yourself via Bash/dc_send_webxdc. ' +
+    'Do NOT read agent-setup.ts or agent-setup-app.ts. Do NOT read or edit ' +
+    'agent YAML files. dc_open_agent_settings is the only supported path.\n' +
+    '3. Do NOT offer to change agent settings through conversation — send ' +
+    'the app instead.',
 
   tools(): ToolDef[] {
     return [
       {
-        name: 'dc_propose_agent',
+        name: 'dc_open_agent_settings',
         description:
-          'Send an agent setup card to the user. The card lets them create new ' +
-          'agents, reuse existing ones, edit agent settings (name, model, prompt), ' +
-          'or delete agents. Call this whenever the user asks about agent management. ' +
-          'Set mode="create" when the user explicitly asks to create a new agent ' +
-          '("create a new agent", "make an agent for X", "new agent") so the card ' +
-          'opens directly on the create form. Leave mode unset (or use "manage") ' +
-          'for open-ended requests like "edit agent settings", "manage my agents", ' +
-          'or "send me the agent app".',
+          'Surface the Agent settings app in the user\'s chat. The app always ' +
+          'opens on a home screen where the user chooses what to do: start a ' +
+          'new chat with an agent, manage (edit / delete / export) existing ' +
+          'agents, or resume a terminal session. Call this whenever the user ' +
+          'asks about agents, new chats, terminal-session teleport, or anything ' +
+          'else that belongs in the settings UI — the app handles all of it.',
         inputSchema: {
           type: 'object',
           properties: {
             source_chat_id: {
               type: 'string',
-              description: 'The chat the user is messaging from (where to send the setup card).',
-            },
-            description: {
-              type: 'string',
-              description: 'Free-form description of what the agent is for.',
-            },
-            model: {
-              type: 'string',
-              description: 'Suggested model. Use opus for coding/software tasks, haiku for simple Q&A, sonnet for everything else.',
-              enum: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-6'],
-            },
-            mode: {
-              type: 'string',
-              description: 'Which screen the card should open on. "create" opens directly on the create form; "teleport-import" opens the terminal-session picker; "manage" (default) opens on the agent list.',
-              enum: ['create', 'manage', 'teleport-import'],
+              description: 'The chat the user is messaging from (where to surface the settings app).',
             },
           },
-          required: ['source_chat_id', 'description'],
+          required: ['source_chat_id'],
         },
       },
     ]
   },
 
   async callTool(name: string, args: Record<string, unknown>, ctx: AppContext): Promise<ToolResult | null> {
-    if (name !== 'dc_propose_agent') return null
+    if (name !== 'dc_open_agent_settings') return null
 
     const sourceChatId = Number(args.source_chat_id as string)
     if (!sourceChatId || Number.isNaN(sourceChatId)) {
-      return { content: [{ type: 'text', text: 'dc_propose_agent: invalid source_chat_id' }], isError: true }
+      return { content: [{ type: 'text', text: 'dc_open_agent_settings: invalid source_chat_id' }], isError: true }
     }
     if (!ctx.isAllowed(sourceChatId)) {
-      return { content: [{ type: 'text', text: `dc_propose_agent: chat ${sourceChatId} not allowed` }], isError: true }
-    }
-    const description = ((args.description as string) ?? '').trim()
-    if (!description) {
-      return { content: [{ type: 'text', text: 'dc_propose_agent: description is required' }], isError: true }
+      return { content: [{ type: 'text', text: `dc_open_agent_settings: chat ${sourceChatId} not allowed` }], isError: true }
     }
 
-    const modelArg = args.model as string | undefined
-    const model = modelArg && agents.ALLOWED_MODELS.includes(modelArg as agents.AllowedModel)
-      ? modelArg as agents.AllowedModel
-      : undefined
-    const modeArg = args.mode as string | undefined
-    const startScreen: 'list' | 'create' | 'teleport-import' =
-      modeArg === 'create' ? 'create'
-      : modeArg === 'teleport-import' ? 'teleport-import'
-      : 'list'
-    const { agent } = agents.draftAgentFromDescription(description, model)
     try {
-      await sendInit(ctx, agentSetupApp, sourceChatId, agent, startScreen)
+      await sendInit(ctx, agentSetupApp, sourceChatId)
     } catch (err) {
       ctx.logf('agent-setup: send failed: %v', err)
-      return { content: [{ type: 'text', text: `dc_propose_agent: send failed: ${(err as Error).message}` }], isError: true }
+      return { content: [{ type: 'text', text: `dc_open_agent_settings: send failed: ${(err as Error).message}` }], isError: true }
     }
 
     return {
       content: [{
         type: 'text',
-        text: `Setup card sent to chat ${sourceChatId} (drafted as model=${agent.model}). Tap to review and confirm.`,
+        text: `Agent settings app surfaced in chat ${sourceChatId}.`,
       }],
     }
   },
@@ -358,7 +398,7 @@ export const agentSetupApp: WebXDCApp = {
         ctx.unregisterWebXDCMsg(msgId)
         sessions.delete(session.sourceChatId)
         try {
-          await sendInit(ctx, agentSetupApp, session.sourceChatId, session.draft)
+          await sendInit(ctx, agentSetupApp, session.sourceChatId)
         } catch (err) {
           ctx.logf('agent-setup: resend after version mismatch failed: %v', err)
         }
@@ -669,8 +709,9 @@ export const agentSetupApp: WebXDCApp = {
             summary: 'Attached',
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
-          ctx.unregisterWebXDCMsg(msgId)
-          sessions.delete(session.sourceChatId)
+          // Session stays alive — the user may want to import another
+          // session, create an agent, or manage existing ones from this
+          // same card. The home screen is always reachable.
         } catch (err) {
           const msg = (err as Error).message || 'attach failed'
           ctx.logf('agent-setup: teleport_attach failed: %v', err)
@@ -734,8 +775,7 @@ export const agentSetupApp: WebXDCApp = {
             summary: 'Agent created',
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
-          ctx.unregisterWebXDCMsg(msgId)
-          sessions.delete(session.sourceChatId)
+          // Session stays alive — user may keep using the settings card.
         } catch (err) {
           ctx.logf('agent-setup: instantiateTemplate failed: %v', err)
           try { agents.deleteAgent(newAgentId) } catch {}
@@ -922,9 +962,7 @@ export const agentSetupApp: WebXDCApp = {
             summary: 'Agent created',
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
-
-          ctx.unregisterWebXDCMsg(msgId)
-          sessions.delete(session.sourceChatId)
+          // Session stays alive — user may keep using the settings card.
         } catch (err) {
           ctx.logf('agent-setup: bind failed: %v', err)
         }
@@ -974,9 +1012,7 @@ export const agentSetupApp: WebXDCApp = {
             summary: 'Agent created',
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
-
-          ctx.unregisterWebXDCMsg(msgId)
-          sessions.delete(session.sourceChatId)
+          // Session stays alive — user may keep using the settings card.
         } catch (err) {
           ctx.logf('agent-setup: create failed: %v', err)
           // Roll back the agent file if it was written but binding failed.

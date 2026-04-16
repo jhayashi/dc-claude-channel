@@ -1084,7 +1084,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         }
         const resolved = bindings.resolveChat(chatId)
         if (!resolved) {
-          return { content: [{ type: 'text' as const, text: `No agent configured for chat ${chatId}. Use dc_propose_agent first.` }], isError: true }
+          return { content: [{ type: 'text' as const, text: `No agent configured for chat ${chatId}. Use dc_open_agent_settings first.` }], isError: true }
         }
         const agentId = resolved.agent.id
         const changes: string[] = []
@@ -1877,9 +1877,9 @@ async function main(): Promise<void> {
         if (app) await app.callTool('dc_send_file', fileArgs, ctx)
       }
       if (tutorialAction.sendAgentSetup) {
-        const proposeArgs = { source_chat_id: String(msg.chatId), description: 'tutorial agent creation', mode: 'create' }
-        const app = appToolMap.get('dc_propose_agent')
-        if (app) await app.callTool('dc_propose_agent', proposeArgs, ctx)
+        const proposeArgs = { source_chat_id: String(msg.chatId) }
+        const app = appToolMap.get('dc_open_agent_settings')
+        if (app) await app.callTool('dc_open_agent_settings', proposeArgs, ctx)
       }
       if (tutorialAction.handoffToClaud) {
         const handoffText = `I just finished the onboarding tutorial and chose to build a game! I'd like a "${tutorialAction.gameChoice}" game as a WebXDC app. Build it and send it to this chat (chat_id ${msg.chatId}). Make the game post high scores to the chat using window.webxdc.sendUpdate with an info field (e.g. info: "New high score: 1234!") so scores appear as centered messages in the chat. Include senderAddr: window.webxdc.selfAddr in every sendUpdate payload. Remind me that I can take a screenshot and send it back if something looks wrong, and that I can share the app with friends by forwarding it.`
