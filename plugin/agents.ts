@@ -23,6 +23,7 @@ import { join } from 'node:path'
 import YAML from 'yaml'
 import { z } from 'zod'
 import * as bindings from './bindings.js'
+import * as models from './models.js'
 
 let AGENTS_DIR = join(homedir(), '.claude', 'channels', 'deltachat', 'agents')
 
@@ -36,20 +37,20 @@ export function getAgentsDir(): string {
   return AGENTS_DIR
 }
 
-/** Allowed model ids for agent definitions. */
-export const ALLOWED_MODELS = [
-  'claude-opus-4-6',
-  'claude-sonnet-4-6',
-  'claude-haiku-4-5',
-] as const
-export type AllowedModel = typeof ALLOWED_MODELS[number]
+/**
+ * Allowed model ids for agent definitions. Sourced from the models
+ * manifest (plugin/models.json) so adding a new model only requires
+ * editing JSON + restarting the dispatcher.
+ */
+export const ALLOWED_MODELS: readonly string[] = models.MODEL_IDS
+export type AllowedModel = string
 
 /** Default system prompt for newly created agents. */
 export const DEFAULT_SYSTEM_PROMPT =
   'You are a helpful assistant in this chat. Match the tone of the conversation.'
 
 /** Default model for newly created agents. */
-export const DEFAULT_MODEL: AllowedModel = 'claude-sonnet-4-6'
+export const DEFAULT_MODEL: string = models.DEFAULT_MODEL
 
 /**
  * Sentinel id for the built-in default agent. This agent is always
@@ -88,11 +89,9 @@ export function ensureDefaultAgent(): AgentDef {
 
 /**
  * Whether an agent should inherit the dispatcher's CLAUDE.md.
- * Haiku agents skip it (minimal context); others get full project context.
+ * Delegates to the models manifest (haiku skips it; others include it).
  */
-export function inheritClaudeMdForModel(model: AllowedModel): boolean {
-  return model !== 'claude-haiku-4-5'
-}
+export const inheritClaudeMdForModel = models.inheritClaudeMdForModel
 
 /**
  * Agent definition schema. Matches the Claude Managed Agents API format
@@ -103,7 +102,10 @@ export function inheritClaudeMdForModel(model: AllowedModel): boolean {
 export const AgentDefSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'id must be a lowercase slug'),
   name: z.string().min(1).max(256),
-  model: z.enum(ALLOWED_MODELS),
+  model: z.string().refine(
+    (v): v is string => models.isKnownModel(v),
+    v => ({ message: `Unknown model "${v}". Allowed: ${ALLOWED_MODELS.join(', ')}` }),
+  ),
   description: z.string().max(2048).default(''),
   system: z.string().max(100_000).default(''),
   tools: z.array(z.object({ type: z.string() })).default([]),
@@ -454,16 +456,6 @@ export function importAgentFromYaml(yamlStr: string): ImportResult {
   return { agent, idChanged }
 }
 
-/** System prompt templates per model tier. */
-const SYSTEM_PROMPTS: Record<string, string> = {
-  'claude-opus-4-6':
-    'You are helping with software engineering work in this chat. ' +
-    'Read code carefully, prefer surgical edits, and explain non-obvious decisions.',
-  'claude-haiku-4-5':
-    'You are answering quick questions in this chat. Be concise and direct. ' +
-    'Skip preamble; one or two sentences is usually enough.',
-}
-
 /**
  * Build a draft agent from a free-form description. Defaults to Sonnet;
  * callers (dc_create_agent) can override the model via an optional
@@ -478,7 +470,8 @@ export function draftAgentFromDescription(
   inheritClaudeMd: boolean
 } {
   const effectiveModel = model ?? DEFAULT_MODEL
-  const system = SYSTEM_PROMPTS[effectiveModel] ?? DEFAULT_SYSTEM_PROMPT
+  const tier = models.tierForModel(effectiveModel)
+  const system = models.systemPromptForTier(tier) ?? DEFAULT_SYSTEM_PROMPT
 
   // Extract purpose-only name by removing preamble like "I want a", "create a".
   let name = description.trim()

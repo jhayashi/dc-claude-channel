@@ -9,6 +9,7 @@ import type { WebXDCApp, ToolDef, ToolResult, AppContext } from '../webxdc-app.j
 import type { WebXDCUpdate } from '../dc-client.js'
 import * as agentSetup from '../agent-setup.js'
 import * as agents from '../agents.js'
+import * as models from '../models.js'
 import * as bindings from '../bindings.js'
 import * as access from '../access.js'
 import * as resume from '../resume.js'
@@ -175,6 +176,8 @@ async function sendInit(
     existingAgents: listExistingForPicker(sourceChatId),
     senderAddr: 'server',
     templates: templatesPayload(ctx),
+    availableModels: models.MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier })),
+    defaultModel: models.DEFAULT_MODEL,
     ...availableToolsPayload(ctx),
   }
   const update = JSON.stringify({
@@ -204,19 +207,13 @@ async function sendInit(
   return session
 }
 
-/** Icon filename per model, with -skip and -mirror orientation variants. */
-const MODEL_ICON_BASE: Record<string, string> = {
-  'claude-opus-4-6': 'agent-opus',
-  'claude-sonnet-4-6': 'agent-sonnet',
-  'claude-haiku-4-5': 'agent-haiku',
-}
-
+/** Icon filename per model, derived from tier with -skip/-mirror variants. */
 export function iconFilenameFor(
   model: string,
   skipPermissions: boolean,
   mirror: boolean,
 ): string {
-  const base = MODEL_ICON_BASE[model] || 'agent-sonnet'
+  const base = `agent-${models.tierForModel(model)}`
   const skipPart = skipPermissions ? '-skip' : ''
   const mirrorPart = mirror ? '-mirror' : ''
   return `${base}${skipPart}${mirrorPart}.png`
@@ -447,6 +444,8 @@ export const agentSetupApp: WebXDCApp = {
               draft: editDraft,
               version: agentSetup.getAgentSetupVersion(),
               senderAddr: 'server',
+              availableModels: models.MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier })),
+              defaultModel: models.DEFAULT_MODEL,
               ...availableToolsPayload(ctx),
             },
             summary: 'Editing agent',
@@ -663,54 +662,50 @@ export const agentSetupApp: WebXDCApp = {
 
           ctx.logf('agent-setup: resume-import created chat %d with session %s for owner %d', newChatId, sessionId, ownerContactId)
 
-          if (candidate?.sessionName) {
-            // Terminal session already had a name — use it directly, skip LLM naming.
-            // Still dispatch a summary message so the user sees context.
-            if (ctx.dispatchAndCollect) {
-              try {
-                await ctx.dispatchAndCollect(newChatId,
-                  '[system] This session was just resumed from a terminal into this new Delta Chat. ' +
-                  'Briefly summarize what we were working on (2-3 sentences), then on a new line write ' +
-                  'CHAT_NAME: followed by a short name (3-5 words) for this chat based on the recent work.')
-              } catch (err) {
-                ctx.logf('agent-setup: resume-import summary dispatch failed: %v', err)
-                await ctx.client.send(newChatId, 'Terminal session imported. Send a message to continue where you left off.')
-              }
-            } else {
-              await ctx.client.send(newChatId, 'Terminal session imported. Send a message to continue where you left off.')
-            }
-          } else if (ctx.dispatchAndCollect) {
-            // No terminal session name — ask the LLM to generate one.
-            try {
-              const resp = await ctx.dispatchAndCollect(newChatId,
-                '[system] This session was just resumed from a terminal into this new Delta Chat. ' +
-                'Briefly summarize what we were working on (2-3 sentences), then on a new line write ' +
-                'CHAT_NAME: followed by a short name (3-5 words) for this chat based on the recent work.')
-              const nameMatch = resp.match(/CHAT_NAME:\s*(.+)/i)
-              if (nameMatch) {
-                const chatName = nameMatch[1].trim().slice(0, 50)
-                await ctx.client.setChatName(newChatId, chatName)
-              }
-            } catch (err) {
-              ctx.logf('agent-setup: resume-import summary dispatch failed: %v', err)
-              await ctx.client.send(newChatId, 'Terminal session imported. Send a message to continue where you left off.')
-            }
-          } else {
-            await ctx.client.send(newChatId, 'Terminal session imported. Send a message to continue where you left off.')
-          }
-
+          // Send the success modal ASAP — chat, binding, and file are
+          // all in place. The LLM summary + autorename below can take
+          // 10–30 s and the user doesn't need to wait in front of a
+          // "disabled button, nothing happening" UI for that.
           const update = JSON.stringify({
             payload: {
               type: 'resume_attach_ok',
               requestId,
               sessionId,
               chatId: newChatId,
+              chatName: initialName,
               version: agentSetup.getAgentSetupVersion(),
               senderAddr: 'server',
             },
             summary: 'Attached',
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
+
+          // Background: dispatch a summary turn into the new chat so the
+          // user sees context; for sessions with no terminal name, also
+          // rename the chat once the LLM responds. Fire-and-forget —
+          // errors surface only to the log.
+          const summaryPrompt =
+            '[system] This session was just resumed from a terminal into this new Delta Chat. ' +
+            'Briefly summarize what we were working on (2-3 sentences), then on a new line write ' +
+            'CHAT_NAME: followed by a short name (3-5 words) for this chat based on the recent work.'
+          const fallback = 'Terminal session imported. Send a message to continue where you left off.'
+
+          if (ctx.dispatchAndCollect) {
+            ctx.dispatchAndCollect(newChatId, summaryPrompt).then(resp => {
+              if (!candidate?.sessionName) {
+                const nameMatch = resp.match(/CHAT_NAME:\s*(.+)/i)
+                if (nameMatch) {
+                  const chatName = nameMatch[1].trim().slice(0, 50)
+                  return ctx.client.setChatName(newChatId, chatName)
+                }
+              }
+            }).catch(err => {
+              ctx.logf('agent-setup: resume-import summary dispatch failed: %v', err)
+              ctx.client.send(newChatId, fallback).catch(() => {})
+            })
+          } else {
+            await ctx.client.send(newChatId, fallback)
+          }
           // Session stays alive — the user may want to import another
           // session, create an agent, or manage existing ones from this
           // same card. The home screen is always reachable.

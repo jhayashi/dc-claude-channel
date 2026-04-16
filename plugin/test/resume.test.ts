@@ -53,28 +53,32 @@ describe('buildResumeCommand', () => {
     )
   }
 
-  it('emits a cd && claude --resume command for a bound chat using PLUGIN_DIR', () => {
+  it('emits a cd && claude --resume command using the binding workingDir', () => {
     const sessionId = '3b9526d5-a8f9-4ccc-a8e8-c08f6fd515ee'
-    writeSessionFile(resume.PLUGIN_DIR, sessionId)
+    const workingDir = '/home/user/src/myproject'
+    writeSessionFile(workingDir, sessionId)
     bindings.saveBinding({
       chatId: 42,
       sessionId,
+      workingDir,
       createdAt: new Date().toISOString(),
     })
 
     const result = resume.buildResumeCommand(42)
     if ('error' in result) throw new Error(`expected success: ${result.error}`)
     expect(result.sessionId).toBe(sessionId)
-    expect(result.command).toBe(`cd ${resume.PLUGIN_DIR} && claude --resume ${sessionId}`)
-    expect(result.sessionPath).toBe(join(projectsRoot, resume.projectHashForCwd(resume.PLUGIN_DIR), `${sessionId}.jsonl`))
+    expect(result.command).toBe(`cd ${workingDir} && claude --resume ${sessionId}`)
+    expect(result.sessionPath).toBe(join(projectsRoot, resume.projectHashForCwd(workingDir), `${sessionId}.jsonl`))
   })
 
   it('includes --name flag when chatName is provided', () => {
     const sessionId = '3b9526d5-a8f9-4ccc-a8e8-c08f6fd515ee'
-    writeSessionFile(resume.PLUGIN_DIR, sessionId)
+    const workingDir = '/home/user/src/myproject'
+    writeSessionFile(workingDir, sessionId)
     bindings.saveBinding({
       chatId: 42,
       sessionId,
+      workingDir,
       createdAt: new Date().toISOString(),
     })
 
@@ -86,6 +90,25 @@ describe('buildResumeCommand', () => {
 
   it('shell-quotes chat names with special characters', () => {
     const sessionId = '3b9526d5-a8f9-4ccc-a8e8-c08f6fd515ee'
+    const workingDir = '/home/user/src/myproject'
+    writeSessionFile(workingDir, sessionId)
+    bindings.saveBinding({
+      chatId: 42,
+      sessionId,
+      workingDir,
+      createdAt: new Date().toISOString(),
+    })
+
+    const result = resume.buildResumeCommand(42, { chatName: "Joe's Chat" })
+    if ('error' in result) throw new Error(`expected success: ${result.error}`)
+    expect(result.command).toContain("--name 'Joe'\\''s Chat'")
+  })
+
+  it('falls back to PLUGIN_DIR when the binding has no workingDir (legacy v1.0.1 and earlier)', () => {
+    // Pre-refactor, DC subagents spawned with cwd = PLUGIN_DIR, so their
+    // session files live under projectHashForCwd(PLUGIN_DIR). Legacy
+    // bindings upgrading past the refactor must resolve to that dir.
+    const sessionId = '3b9526d5-a8f9-4ccc-a8e8-c08f6fd515ee'
     writeSessionFile(resume.PLUGIN_DIR, sessionId)
     bindings.saveBinding({
       chatId: 42,
@@ -93,9 +116,9 @@ describe('buildResumeCommand', () => {
       createdAt: new Date().toISOString(),
     })
 
-    const result = resume.buildResumeCommand(42, { chatName: "Joe's Chat" })
+    const result = resume.buildResumeCommand(42)
     if ('error' in result) throw new Error(`expected success: ${result.error}`)
-    expect(result.command).toContain("--name 'Joe'\\''s Chat'")
+    expect(result.command).toBe(`cd ${resume.PLUGIN_DIR} && claude --resume ${sessionId}`)
   })
 
   it('errors when the chat has no binding', () => {
@@ -114,6 +137,7 @@ describe('buildResumeCommand', () => {
     bindings.saveBinding({
       chatId: 42,
       sessionId: 'deadbeef-aaaa-bbbb-cccc-dddddddddddd',
+      workingDir: '/home/user/src/myproject',
       createdAt: new Date().toISOString(),
     })
     const result = resume.buildResumeCommand(42)
@@ -278,29 +302,29 @@ describe('attachSessionToChat', () => {
     const dir = join(projectsRoot, resume.projectHashForCwd(cwd))
     mkdirSync(dir, { recursive: true })
     const p = join(dir, `${sessionId}.jsonl`)
-    writeFileSync(p, JSON.stringify({ summary: 's' }) + '\n')
+    writeFileSync(
+      p,
+      JSON.stringify({ summary: 's' }) + '\n' +
+        JSON.stringify({ type: 'user', cwd, sessionId }) + '\n',
+    )
     return p
   }
 
-  it('writes a binding and copies the session into the plugin hash', async () => {
+  it('records workingDir from the source cwd and leaves the .jsonl in place', async () => {
     const sessionId = 'attach00-0000-0000-0000-000000000000'
-    writeSrcSession('/home/user/other-proj', sessionId)
+    const srcCwd = '/home/user/other-proj'
+    const srcPath = writeSrcSession(srcCwd, sessionId)
 
     await resume.attachSessionToChat(42, sessionId)
 
     const binding = bindings.getBinding(42)
     expect(binding?.sessionId).toBe(sessionId)
+    expect(binding?.workingDir).toBe(srcCwd)
 
-    const destPath = join(projectsRoot, resume.projectHashForCwd(resume.PLUGIN_DIR), `${sessionId}.jsonl`)
-    expect(existsSync(destPath)).toBe(true)
-  })
-
-  it('skips the copy when source and destination resolve to the same file', async () => {
-    const sessionId = 'same0000-0000-0000-0000-000000000000'
-    const srcPath = writeSrcSession(resume.PLUGIN_DIR, sessionId)
-    await resume.attachSessionToChat(42, sessionId)
-    expect(bindings.getBinding(42)?.sessionId).toBe(sessionId)
+    // Source file stays put; no copy is made anywhere else.
     expect(existsSync(srcPath)).toBe(true)
+    const pluginDestPath = join(projectsRoot, resume.projectHashForCwd(resume.PLUGIN_DIR), `${sessionId}.jsonl`)
+    expect(existsSync(pluginDestPath)).toBe(false)
   })
 
   it('preserves existing binding fields (agentId, inheritClaudeMd) when attaching', async () => {
@@ -318,6 +342,7 @@ describe('attachSessionToChat', () => {
     expect(b?.inheritClaudeMd).toBe(true)
     expect(b?.createdAt).toBe('2026-01-01T00:00:00.000Z')
     expect(b?.sessionId).toBe(sessionId)
+    expect(b?.workingDir).toBe('/somewhere')
   })
 
   it('throws when the source session does not exist anywhere', async () => {

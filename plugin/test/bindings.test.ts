@@ -246,4 +246,20 @@ describe('bindAgent', () => {
     const b = bindings.bindAgent(42, 'm', { inheritClaudeMd: true })
     expect(b.createdAt).toBe(originalCreatedAt)
   })
+
+  test('preserves workingDir when updating an existing binding', () => {
+    // Real data-loss path: user attaches a terminal session (sets
+    // workingDir), then picks an agent via the setup card. Without
+    // preservation the subagent re-spawns in process.cwd() and the
+    // session .jsonl at the attached cwd is unreachable.
+    bindings.saveBinding({
+      chatId: 42,
+      sessionId: 'attached-sess-0000-0000-0000-000000000000',
+      workingDir: '/home/user/src/terminal-project',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    })
+    agents.saveAgent(makeAgent('m'))
+    const b = bindings.bindAgent(42, 'm', { inheritClaudeMd: true })
+    expect(b.workingDir).toBe('/home/user/src/terminal-project')
+  })
 })

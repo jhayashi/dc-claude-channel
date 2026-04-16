@@ -13,9 +13,8 @@
  *   - bindings injected via plugin/bindings.ts (setBindingsDir).
  */
 
-import { existsSync, readdirSync, statSync, openSync, readSync, closeSync, mkdirSync } from 'node:fs'
+import { existsSync, readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { copyFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,8 +23,8 @@ import * as bindings from './bindings.js'
 /**
  * Absolute path to the plugin directory. Derived from this module's own URL,
  * not `process.cwd()`, because the dispatcher may be launched from anywhere.
- * Subagents spawn with CWD = PLUGIN_DIR, so their session files live under
- * projectHashForCwd(PLUGIN_DIR).
+ * Kept exported for tests and as a last-resort fallback; live subagent cwd
+ * now comes from the per-chat binding.workingDir.
  */
 export const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
 
@@ -64,24 +63,30 @@ export interface ResumeError {
  * bound session. Returns ResumeError if no binding, no sessionId,
  * or the session file is missing.
  *
- * cwd defaults to PLUGIN_DIR — where subagents are spawned, and where
- * their session files live. Do NOT use process.cwd(); the dispatcher
- * may be launched from anywhere.
+ * cwd comes from the binding's workingDir — the same dir the subagent
+ * was spawned in, so claude's `--resume` finds the .jsonl on the first
+ * try. Terminal and DC now share the exact same file on disk; no copy,
+ * no sync. Falls back to PLUGIN_DIR only for legacy bindings from before
+ * workingDir was tracked — those sessions were written under PLUGIN_DIR's
+ * project hash by the old spawn path.
  */
 export function buildResumeCommand(
   chatId: number,
   opts: { cwd?: string; chatName?: string } = {},
 ): ResumeCommand | ResumeError {
-  const cwd = opts.cwd ?? PLUGIN_DIR
   const binding = bindings.getBinding(chatId)
   if (!binding?.sessionId) {
     return { error: 'No session yet. Send a message in this chat to initialize, then try again.' }
   }
   const sessionId = binding.sessionId
+
+  const cwd = opts.cwd ?? binding.workingDir ?? PLUGIN_DIR
   const sessionPath = join(PROJECTS_ROOT, projectHashForCwd(cwd), `${sessionId}.jsonl`)
+
   if (!existsSync(sessionPath)) {
-    return { error: `Session file not found at ${sessionPath}. The session may have been deleted; clear the binding and start a new chat.` }
+    return { error: `Session file not found for ${sessionId}. The session may have been deleted; clear the binding and start a new chat.` }
   }
+
   const nameFlag = opts.chatName ? ` --name ${shellQuote(opts.chatName)}` : ''
   return {
     command: `cd ${cwd} && claude --resume ${sessionId}${nameFlag}`,
@@ -132,8 +137,11 @@ function isFileInUse(path: string): boolean {
 /**
  * Scan ~/.claude/projects/STAR/STAR.jsonl and return recent claude
  * sessions eligible for resume — excludes only sessions already bound
- * to a DC chat. Orphan DC-born sessions (under PLUGIN_DIR but no longer
- * bound) are included so they can be rescued into a new chat.
+ * to a DC chat. Orphan DC-born sessions (cwd no longer bound) are
+ * included so they can be rescued into a new chat. With the per-chat
+ * cwd model each session has exactly one on-disk copy, so no dedup is
+ * needed — duplicate-copy entries left over from the old copy-based
+ * model will age out of the 5-day window naturally.
  */
 export function listResumeCandidates(opts: ListOptions = {}): Candidate[] {
   const limit = opts.limit ?? 25
@@ -224,9 +232,37 @@ function readSessionMeta(path: string, sizeBytes: number): { summary: string | n
 }
 
 /**
- * Attach an existing claude session UUID to a DC chat. Finds the source
- * `.jsonl` file under PROJECTS_ROOT, copies it into the plugin hash dir
- * (or skips if it's already there), and writes a binding. Preserves
+ * Read the first ~16 KB of a session file and return the original `cwd`
+ * recorded on a user/assistant turn (lossless, unlike the reverse of the
+ * project-hash dir). Returns null if no cwd field is found.
+ */
+function readSessionCwd(path: string): string | null {
+  try {
+    const fd = openSync(path, 'r')
+    try {
+      const buf = Buffer.alloc(16384)
+      const n = readSync(fd, buf, 0, 16384, 0)
+      const head = buf.slice(0, n).toString('utf-8')
+      for (const line of head.split('\n')) {
+        if (!line.trim()) continue
+        try {
+          const obj = JSON.parse(line) as { cwd?: string }
+          if (typeof obj.cwd === 'string' && obj.cwd.startsWith('/')) return obj.cwd
+        } catch { /* skip non-JSON lines */ }
+      }
+    } finally {
+      closeSync(fd)
+    }
+  } catch { /* ignore */ }
+  return null
+}
+
+/**
+ * Attach an existing claude session UUID to a DC chat. The `.jsonl`
+ * file stays in its origin project-hash dir — the subagent will spawn
+ * with cwd = that same dir so `--resume <uuid>` finds the file on the
+ * first try and terminal/DC share a single on-disk source of truth.
+ * Records the origin cwd as `workingDir` on the binding. Preserves
  * existing binding fields (agentId, inheritClaudeMd, createdAt).
  *
  * Throws if the session isn't found on disk or is already bound to
@@ -235,7 +271,6 @@ function readSessionMeta(path: string, sizeBytes: number): { summary: string | n
 export async function attachSessionToChat(
   chatId: number,
   sessionId: string,
-  destCwd: string = PLUGIN_DIR,
 ): Promise<void> {
   for (const b of bindings.listBindings()) {
     if (b.sessionId === sessionId && b.chatId !== chatId) {
@@ -248,13 +283,13 @@ export async function attachSessionToChat(
     throw new Error(`Session ${sessionId} not found under ${PROJECTS_ROOT}.`)
   }
 
-  const destDir = join(PROJECTS_ROOT, projectHashForCwd(destCwd))
-  const destPath = join(destDir, `${sessionId}.jsonl`)
-
-  if (srcPath !== destPath) {
-    mkdirSync(destDir, { recursive: true })
-    await copyFile(srcPath, destPath)
-  }
+  // Prefer the cwd recorded inline in the .jsonl (lossless) over the
+  // reverse of the project-hash dir name (lossy when paths contain `-`).
+  // The subagent spawns in this dir; a wrong path would leave claude
+  // unable to `cd` into it.
+  const srcProjectDir = dirname(srcPath)
+  const srcHashName = srcProjectDir.slice(PROJECTS_ROOT.length + 1)
+  const workingDir = readSessionCwd(srcPath) ?? cwdFromProjectHash(srcHashName)
 
   const existing = bindings.getBinding(chatId)
   bindings.saveBinding({
@@ -262,6 +297,7 @@ export async function attachSessionToChat(
     agentId: existing?.agentId,
     inheritClaudeMd: existing?.inheritClaudeMd,
     sessionId,
+    workingDir,
     createdAt: existing?.createdAt ?? new Date().toISOString(),
   })
 }

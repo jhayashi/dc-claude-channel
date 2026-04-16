@@ -33,6 +33,15 @@ export const BindingSchema = z.object({
   agentId: z.string().optional(),
   sessionId: z.string().optional(),
   inheritClaudeMd: z.boolean().optional(),
+  /**
+   * Working directory the subagent is spawned in for this chat, and the
+   * cwd emitted by dc_resume_in_terminal. Set on first spawn (to the
+   * dispatcher's process.cwd() for DC-native chats) or on
+   * resume.attachSessionToChat (to the origin cwd of a terminal session
+   * being pulled in). Determines which project-hash dir the session's
+   * .jsonl lives in — terminal and DC both read/write the same file.
+   */
+  workingDir: z.string().optional(),
   createdAt: z.string(),
 })
 
@@ -154,6 +163,7 @@ export function bindAgent(
     agentId,
     inheritClaudeMd: opts.inheritClaudeMd,
     sessionId: existing?.sessionId,
+    workingDir: existing?.workingDir,
     createdAt: existing?.createdAt ?? new Date().toISOString(),
   }
   saveBinding(binding)

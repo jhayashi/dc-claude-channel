@@ -43,6 +43,7 @@ import { tryAutoApprove } from './dispatcher/skip-permissions.js'
 import { createActivityReactor, THINKING_EMOJIS, type ActivityReactor } from './dispatcher/activity-reactions.js'
 import * as audit from './audit.js'
 import * as resume from './resume.js'
+import * as models from './models.js'
 import { ScheduleStore, type ScheduledJob } from './dispatcher/schedule-store.js'
 import { Scheduler, countFiresIn7Days } from './dispatcher/scheduler.js'
 import { CronExpressionParser } from 'cron-parser'
@@ -339,6 +340,23 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
   let sessionName: string | undefined
   try { sessionName = await client.getChatName(chatId) || undefined } catch { /* best effort */ }
 
+  // Working directory for this subagent. For brand-new DC-native chats we
+  // adopt the dispatcher's process.cwd() and persist it onto the binding so
+  // it stays stable across dispatcher restarts (even if the user relaunches
+  // `bun server.ts` from a different dir). Terminal-origin sessions already
+  // have workingDir set by resume.attachSessionToChat. Persist for unbound
+  // bindings too — the chat may have a sessionId from loadOrCreateSessionId
+  // above but no agentId yet, and we don't want the cwd to drift if the
+  // dispatcher is relaunched from elsewhere before the user picks an agent.
+  const existing = bindings.getBinding(chatId)
+  let workingDir = existing?.workingDir
+  if (!workingDir) {
+    workingDir = process.cwd()
+    if (existing) {
+      bindings.saveBinding({ ...existing, workingDir })
+    }
+  }
+
   let resumeFailed = false
   let sub = new SubagentProcess({
     chatId,
@@ -349,8 +367,9 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     dispatcherSecret: DISPATCHER_SECRET,
     sessionId,
     resume: !created,
+    cwd: workingDir,
     addDirs: [repoRoot],
-    model: resolved?.agent.model ?? 'claude-sonnet-4-6',
+    model: resolved?.agent.model ?? models.DEFAULT_MODEL,
     agentName: resolved?.agent.name,
     sessionName,
     userName,
@@ -384,8 +403,9 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
         dispatcherSecret: DISPATCHER_SECRET,
         sessionId,
         resume: false,
+        cwd: workingDir,
         addDirs: [repoRoot],
-        model: resolved?.agent.model ?? 'claude-sonnet-4-6',
+        model: resolved?.agent.model ?? models.DEFAULT_MODEL,
         agentName: resolved?.agent.name,
         sessionName,
         userName,
@@ -706,7 +726,7 @@ const coreTools = [
         model: {
           type: 'string',
           description: 'Model for this agent. Use opus for coding/software tasks, haiku for simple Q&A, sonnet for everything else.',
-          enum: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-6'],
+          enum: [...models.MODEL_IDS],
         },
       },
       required: ['name', 'prompt', 'user_chat_id'],
@@ -733,8 +753,8 @@ const coreTools = [
         prompt: { type: 'string', description: 'Updated behavior prompt (optional)' },
         model: {
           type: 'string',
-          description: 'Updated subagent model (optional). One of: claude-haiku-4-5, claude-sonnet-4-6, claude-opus-4-6.',
-          enum: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-6'],
+          description: `Updated subagent model (optional). One of: ${models.MODEL_IDS.join(', ')}.`,
+          enum: [...models.MODEL_IDS],
         },
       },
       required: ['chat_id'],
@@ -1387,10 +1407,15 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         if ('error' in result) {
           return { content: [{ type: 'text' as const, text: `dc_resume_in_terminal: ${result.error}` }], isError: true }
         }
-        const lines: string[] = []
-        lines.push(`\`\`\`\n${result.command}\n\`\`\``)
-        lines.push(`Session: ${result.sessionId}`)
-        lines.push(`\nWait for my current turn to finish, then paste the command. The session file unlocks once this reply lands.`)
+        // Send the paste command directly to the chat. Relying on Claude
+        // to echo the tool result in its final text isn't reliable — it
+        // sometimes abbreviates to "Paste that after this turn lands"
+        // without including the command. This guarantees the user sees it.
+        try {
+          await client.send(chatId, `\`\`\`\n${result.command}\n\`\`\``)
+        } catch (err) {
+          logf('dc_resume_in_terminal: failed to send command to chat %d: %v', chatId, err)
+        }
 
         // Schedule post-turn cleanup: goodbye message, unbind session, leave chat.
         setTimeout(async () => {
@@ -1409,7 +1434,10 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           }
         }, 5000)
 
-        return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
+        return { content: [{ type: 'text' as const, text:
+          `Resume command already sent to chat ${chatId} (session ${result.sessionId}).\n\n` +
+          `Do NOT repeat the command in your reply. Send a brief one-line message telling the user to wait for your turn to end, then paste the command in their terminal.`
+        }] }
       }
 
       default:

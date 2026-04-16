@@ -1,0 +1,13 @@
+{
+  "default": "claude-sonnet-4-6",
+  "models": [
+    { "id": "claude-opus-4-7", "label": "Opus 4.7", "tier": "opus", "inheritClaudeMd": true },
+    { "id": "claude-opus-4-6", "label": "Opus 4.6", "tier": "opus", "inheritClaudeMd": true },
+    { "id": "claude-sonnet-4-6", "label": "Sonnet 4.6", "tier": "sonnet", "inheritClaudeMd": true },
+    { "id": "claude-haiku-4-5", "label": "Haiku 4.5", "tier": "haiku", "inheritClaudeMd": false }
+  ],
+  "tierSystemPrompts": {
+    "opus": "You are helping with software engineering work in this chat. Read code carefully, prefer surgical edits, and explain non-obvious decisions.",
+    "haiku": "You are answering quick questions in this chat. Be concise and direct. Skip preamble; one or two sentences is usually enough."
+  }
+}

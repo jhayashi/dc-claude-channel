@@ -329,6 +329,8 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .btn-back { background: #30363d; color: #e6edf3; }
 #step0, #new-chat, #manage, #step2, #step3, #outdated, #loading, #resume-import { display: none; }
 #step0.visible, #new-chat.visible, #manage.visible, #step2.visible, #step3.visible, #outdated.visible, #loading.visible, #resume-import.visible { display: block; }
+#resume-import.visible { display: flex; flex-direction: column; max-height: calc(100vh - 40px); }
+#resume-import .body { flex: 1; overflow-y: auto; min-height: 0; }
 .screen-heading { font-size: 16px; font-weight: 600; color: #c9d1d9; margin: 0 0 12px; }
 .screen-sub { font-size: 12px; color: #8b949e; margin: -6px 0 14px; line-height: 1.4; }
 .home-count { font-size: 12px; color: #8b949e; margin: -8px 0 14px; }
@@ -405,14 +407,29 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
 }
 .resume-name {
-  font-size: 15px; font-weight: 600; color: #e6edf3;
+  font-size: 15px; font-weight: 700; color: #ffffff;
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.resume-name.unnamed {
+  font-weight: 400; color: #8b949e;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
 }
 .resume-ts { font-size: 13px; font-weight: 600; color: #79c0ff; white-space: nowrap; }
 .resume-ts.live { color: #ff7b72; }
 .resume-meta {
   font-size: 12px; color: #8b949e; margin-top: 3px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.resume-group-header {
+  font-size: 14px; font-weight: 700; color: #58a6ff;
+  margin: 22px 0 8px; padding: 0 2px 6px;
+  border-bottom: 1px solid #21262d;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.resume-group-header:first-child { margin-top: 4px; }
+.resume-group-header .resume-group-path {
+  font-weight: 400; color: #6e7681; margin-left: 8px; font-size: 12px;
 }
 .tool-section {
   border: 1px solid #30363d;
@@ -579,11 +596,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       </div>
       <div class="wizard-pane" data-wizard-step="2">
         <label class="field" for="model">Model</label>
-        <select id="model" class="text">
-          <option value="claude-opus-4-6">Opus 4.6</option>
-          <option value="claude-sonnet-4-6">Sonnet 4.6</option>
-          <option value="claude-haiku-4-5">Haiku 4.5</option>
-        </select>
+        <select id="model" class="text"></select>
         <p class="wizard-hint">Opus is best for long-form coding and reasoning. Sonnet is the balanced default. Haiku is fast and cheap for simple Q&amp;A.</p>
       </div>
       <div class="wizard-pane" data-wizard-step="3">
@@ -626,11 +639,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         <span class="icon-hint">Leave empty to use the archetype icon.</span>
       </div>
       <label class="field" for="edit-model">Model</label>
-      <select id="edit-model" class="text">
-        <option value="claude-opus-4-6">Opus 4.6</option>
-        <option value="claude-sonnet-4-6">Sonnet 4.6</option>
-        <option value="claude-haiku-4-5">Haiku 4.5</option>
-      </select>
+      <select id="edit-model" class="text"></select>
       <label class="field" for="edit-system">System prompt</label>
       <textarea id="edit-system" class="text" maxlength="100000" style="min-height:60px;font-family:inherit;"></textarea>
       <label class="field" style="display:flex;align-items:flex-start;gap:8px;margin-top:12px;">
@@ -673,10 +682,10 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       <div id="resume-empty" style="display:none;font-size:13px;color:#8b949e;">No sessions found in the last 5 days.</div>
       <div id="resume-error" style="display:none;font-size:13px;color:#f85149;" role="alert"></div>
       <div id="resume-list" style="display:none" role="listbox" aria-label="Recent sessions"></div>
-      <div style="display:flex;gap:8px;margin-top:16px;">
-        <button type="button" id="resume-cancel" class="btn btn-back">Cancel</button>
-        <button type="button" id="resume-attach" class="btn btn-create" disabled>Attach</button>
-      </div>
+    </div>
+    <div class="actions">
+      <button type="button" id="resume-cancel" class="btn btn-back">Cancel</button>
+      <button type="button" id="resume-attach" class="btn btn-create" disabled>Attach</button>
     </div>
   </div>
 </div>
@@ -712,7 +721,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.50;
+var APP_VERSION = 1.55;
 var draft = null;
 var existingAgents = [];
 var templateList = [];
@@ -733,11 +742,36 @@ var pendingAction = null;
 var resumeRequestId = 0;
 var selectedResumeSessionId = null;
 
-var MODEL_LABELS = {
-  'claude-opus-4-6': 'opus',
-  'claude-sonnet-4-6': 'sonnet',
-  'claude-haiku-4-5': 'haiku'
-};
+// Populated from the init/edit payload's availableModels list.
+// Keys are model IDs; values are tier strings ('opus'/'sonnet'/'haiku').
+var MODEL_TIERS = {};
+var DEFAULT_MODEL_ID = 'claude-sonnet-4-6';
+
+function populateModelDropdowns(availableModels, defaultModel) {
+  if (!Array.isArray(availableModels) || availableModels.length === 0) return;
+  MODEL_TIERS = {};
+  for (var i = 0; i < availableModels.length; i++) {
+    var m = availableModels[i];
+    if (m && m.id && m.tier) MODEL_TIERS[m.id] = m.tier;
+  }
+  if (defaultModel) DEFAULT_MODEL_ID = defaultModel;
+  var ids = ['model', 'edit-model'];
+  for (var j = 0; j < ids.length; j++) {
+    var sel = document.getElementById(ids[j]);
+    if (!sel) continue;
+    var prev = sel.value;
+    sel.textContent = '';
+    for (var k = 0; k < availableModels.length; k++) {
+      var mm = availableModels[k];
+      if (!mm || !mm.id) continue;
+      var opt = document.createElement('option');
+      opt.value = mm.id;
+      opt.textContent = mm.label || mm.id;
+      sel.appendChild(opt);
+    }
+    if (prev) sel.value = prev;
+  }
+}
 
 function show(id) {
   var ids = ['loading', 'step0', 'new-chat', 'manage', 'step2', 'step3', 'outdated', 'resume-import'];
@@ -842,7 +876,7 @@ function renderManageList() {
     label.appendChild(nameText);
     var badge = document.createElement('span');
     badge.className = 'badge';
-    badge.textContent = MODEL_LABELS[a.model] || a.model;
+    badge.textContent = MODEL_TIERS[a.model] || a.model;
     label.appendChild(badge);
     var countBadge = document.createElement('span');
     countBadge.className = 'badge badge-count';
@@ -908,7 +942,7 @@ function renderPickList() {
     meta.className = 'pick-meta';
     var mb = document.createElement('span');
     mb.className = 'badge';
-    mb.textContent = MODEL_LABELS[a.model] || a.model;
+    mb.textContent = MODEL_TIERS[a.model] || a.model;
     meta.appendChild(mb);
     var cb = document.createElement('span');
     cb.className = 'badge badge-count';
@@ -1258,7 +1292,7 @@ function pickExisting(agentId) {
 function populateForm() {
   if (!draft) return;
   document.getElementById('name').value = draft.name || '';
-  document.getElementById('model').value = draft.model || 'claude-sonnet-4-6';
+  document.getElementById('model').value = draft.model || DEFAULT_MODEL_ID;
   document.getElementById('system').value = draft.system || '';
   document.getElementById('skip-permissions').checked = !!draft.skipPermissions;
   document.getElementById('icon').value = '';
@@ -1351,7 +1385,7 @@ function backFromCreate() {
 function populateEditForm() {
   if (!draft) return;
   document.getElementById('edit-name').value = draft.name || '';
-  document.getElementById('edit-model').value = draft.model || 'claude-sonnet-4-6';
+  document.getElementById('edit-model').value = draft.model || DEFAULT_MODEL_ID;
   document.getElementById('edit-system').value = draft.system || '';
   document.getElementById('edit-skip-permissions').checked = !!draft.skipPermissions;
   var mirrorValue = draft.iconMirror ? 'true' : 'false';
@@ -1552,68 +1586,112 @@ function renderResumeList(candidates) {
   if (!list) return;
   while (list.firstChild) list.removeChild(list.firstChild);
   list.style.display = 'block';
+
+  // Group by cwd; preserve the server's mtime-desc order within each group.
+  // Then sort groups by their most recent session (i.e., the first entry).
+  var groups = {};
+  var groupOrder = [];
   candidates.forEach(function(c) {
-    var row = document.createElement('button');
-    row.type = 'button';
-    row.className = 'resume-row';
-    row.setAttribute('role', 'option');
-    row.setAttribute('aria-pressed', 'false');
-    row.dataset.sessionId = c.sessionId;
-
-    // Header line: name on left (session name + short UUID in parens, or full
-    // UUID if unnamed), timestamp on right.
-    var header = document.createElement('div');
-    header.className = 'resume-header';
-
-    var name = document.createElement('div');
-    name.className = 'resume-name';
-    var shortId = (c.sessionId || '').slice(0, 8);
-    name.textContent = c.sessionName
-      ? c.sessionName + ' (' + shortId + ')'
-      : (c.sessionId || '');
-
-    var ts = document.createElement('div');
-    ts.className = 'resume-ts';
-    if (c.isProbablyLive) {
-      ts.classList.add('live');
-      ts.textContent = 'active now';
-    } else {
-      ts.textContent = relativeTime(c.mtimeMs);
+    var key = c.cwd || '(unknown)';
+    if (!groups[key]) {
+      groups[key] = { cwd: key, items: [], latestMtime: c.mtimeMs };
+      groupOrder.push(key);
     }
+    groups[key].items.push(c);
+    if (c.mtimeMs > groups[key].latestMtime) groups[key].latestMtime = c.mtimeMs;
+  });
+  groupOrder.sort(function(a, b) { return groups[b].latestMtime - groups[a].latestMtime; });
 
-    header.appendChild(name);
-    header.appendChild(ts);
+  function selectRow(row, sessionId) {
+    selectedResumeSessionId = sessionId;
+    var all = list.querySelectorAll('.resume-row');
+    for (var i = 0; i < all.length; i++) {
+      all[i].classList.remove('selected');
+      all[i].setAttribute('aria-pressed', 'false');
+    }
+    row.classList.add('selected');
+    row.setAttribute('aria-pressed', 'true');
+    var attachBtn = document.getElementById('resume-attach');
+    if (attachBtn) attachBtn.disabled = false;
+  }
 
-    var meta = document.createElement('div');
-    meta.className = 'resume-meta';
-    var metaParts = [];
-    metaParts.push(shortCwd(c.cwd || ''));
-    if (typeof c.messageCount === 'number') metaParts.push('~' + c.messageCount + ' lines');
-    meta.textContent = metaParts.join(' \u00b7 ');
+  groupOrder.forEach(function(key) {
+    var g = groups[key];
+    var hdr = document.createElement('div');
+    hdr.className = 'resume-group-header';
+    var base = document.createElement('span');
+    base.textContent = dirBasename(g.cwd);
+    hdr.appendChild(base);
+    var path = dirParentPath(g.cwd);
+    if (path) {
+      var pathSpan = document.createElement('span');
+      pathSpan.className = 'resume-group-path';
+      pathSpan.textContent = path;
+      hdr.appendChild(pathSpan);
+    }
+    list.appendChild(hdr);
 
-    row.appendChild(header);
-    row.appendChild(meta);
-    row.addEventListener('click', function() {
-      selectedResumeSessionId = c.sessionId;
-      var all = list.querySelectorAll('.resume-row');
-      for (var i = 0; i < all.length; i++) {
-        all[i].classList.remove('selected');
-        all[i].setAttribute('aria-pressed', 'false');
+    g.items.forEach(function(c) {
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'resume-row';
+      row.setAttribute('role', 'option');
+      row.setAttribute('aria-pressed', 'false');
+      row.dataset.sessionId = c.sessionId;
+
+      var header = document.createElement('div');
+      header.className = 'resume-header';
+
+      var name = document.createElement('div');
+      name.className = 'resume-name';
+      var shortId = (c.sessionId || '').slice(0, 8);
+      if (c.sessionName) {
+        name.textContent = c.sessionName + ' (' + shortId + ')';
+      } else {
+        name.classList.add('unnamed');
+        name.textContent = c.sessionId || '';
       }
-      row.classList.add('selected');
-      row.setAttribute('aria-pressed', 'true');
-      var attachBtn = document.getElementById('resume-attach');
-      if (attachBtn) attachBtn.disabled = false;
+
+      var ts = document.createElement('div');
+      ts.className = 'resume-ts';
+      if (c.isProbablyLive) {
+        ts.classList.add('live');
+        ts.textContent = 'active now';
+      } else {
+        ts.textContent = relativeTime(c.mtimeMs);
+      }
+
+      header.appendChild(name);
+      header.appendChild(ts);
+      row.appendChild(header);
+
+      if (typeof c.messageCount === 'number') {
+        var meta = document.createElement('div');
+        meta.className = 'resume-meta';
+        meta.textContent = '~' + c.messageCount + ' lines';
+        row.appendChild(meta);
+      }
+
+      row.addEventListener('click', function() { selectRow(row, c.sessionId); });
+      list.appendChild(row);
     });
-    list.appendChild(row);
   });
 }
 
-function shortCwd(cwd) {
+function dirBasename(cwd) {
   if (!cwd) return '(unknown)';
-  var parts = cwd.split('/');
-  if (parts.length <= 3) return cwd;
-  return '\u2026/' + parts.slice(-2).join('/');
+  var parts = cwd.split('/').filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : cwd;
+}
+
+function dirParentPath(cwd) {
+  if (!cwd) return '';
+  var parts = cwd.split('/').filter(Boolean);
+  if (parts.length <= 1) return '';
+  // Show the last two ancestors for context, abbreviated with leading ellipsis.
+  var ancestors = parts.slice(0, -1);
+  if (ancestors.length <= 2) return '/' + ancestors.join('/');
+  return '\u2026/' + ancestors.slice(-2).join('/');
 }
 
 function relativeTime(ms) {
@@ -1646,6 +1724,7 @@ window.webxdc.setUpdateListener(function(update) {
     creating = false;
     editingAgentId = null;
     dismissModal();
+    populateModelDropdowns(d.availableModels, d.defaultModel);
     if (draft) populateForm();
     availableBuiltinTools = d.availableBuiltinTools || [];
     availableMcpServers = d.availableMcpServers || [];
@@ -1661,6 +1740,7 @@ window.webxdc.setUpdateListener(function(update) {
   if (d.type === 'edit') {
     editingAgentId = d.draft.id || null;
     draft = d.draft || null;
+    populateModelDropdowns(d.availableModels, d.defaultModel);
     if (draft) populateEditForm();
     availableBuiltinTools = d.availableBuiltinTools || [];
     availableMcpServers = d.availableMcpServers || [];
@@ -1727,7 +1807,8 @@ window.webxdc.setUpdateListener(function(update) {
   if (d.type === 'resume_attach_ok') {
     if (d.requestId !== resumeRequestId) return;
     if (!isOnResumePane()) return;
-    showModal('Session attached', 'Your next message in this chat will continue session ' + (d.sessionId || '').slice(0, 8) + '\u2026');
+    var chatName = d.chatName ? '"' + d.chatName + '"' : 'A new chat';
+    showModal('Session resumed', chatName + ' is ready in your chat list. Open it and send a message to continue.');
   }
 
   if (d.type === 'resume_attach_err') {

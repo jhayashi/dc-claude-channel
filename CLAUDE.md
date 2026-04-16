@@ -113,10 +113,22 @@ agent-setup card's "Resume a conversation" pane — reached from the home
 screen of the agent settings app — lets the user pick a recent session
 from the last 5 days (terminal-origin or orphan DC-origin, as long as it
 isn't currently bound) and attach it to a new DC chat (terminal → DC).
-Implementation in `plugin/resume.ts`; CWD is resolved via `import.meta.url`
-(not `process.cwd()`) so the dispatcher can be launched from anywhere.
-Same-machine only; no Anthropic round-trip. Historically called "teleport"
-— the model still recognizes that word and routes it here.
+Implementation in `plugin/resume.ts`. Same-machine only; no Anthropic
+round-trip. Historically called "teleport" — the model still recognizes
+that word and routes it here.
+
+**Per-chat working directory.** Each binding records a `workingDir` field
+that is both the cwd the subagent spawns in and the cwd used when emitting
+a `cd … && claude --resume` command. Terminal-origin sessions keep the
+project dir they came from; DC-native chats adopt the dispatcher's
+`process.cwd()` at first spawn and persist it for stability across
+dispatcher restarts. Because claude resolves `--resume <uuid>` against
+`<projects-root>/<cwd-hash>/<uuid>.jsonl`, having a single consistent cwd
+per chat means there is one on-disk `.jsonl` per session — terminal and
+DC read/write the same file, and no copy/sync is needed when moving a
+session between the two. The single-writer constraint still applies
+(don't `--resume` from two terminals at once); the picker's `fuser`-based
+"live" indicator flags sessions currently held open.
 
 Sample files on disk:
 
@@ -138,6 +150,7 @@ x-dc-createdAt: 2026-04-09T12:34:56.000Z
   "agentId": "marketing-agent",
   "sessionId": "550e8400-e29b-41d4-a716-446655440000",
   "inheritClaudeMd": false,
+  "workingDir": "/home/user/src/myproject",
   "createdAt": "2026-04-09T12:34:56.000Z"
 }
 ```
