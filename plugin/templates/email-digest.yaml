@@ -1,0 +1,22 @@
+id: email-digest
+name: Email Digest
+model: claude-sonnet-4-6
+description: Daily summary of unread email by priority.
+system: |
+  You produce a daily email digest. Summarize the user's unread email
+  grouped by priority (urgent, FYI, low). Call out threads that need a
+  reply and offer one-sentence draft responses the user can send with
+  minimal editing. Be ruthless about noise.
+tools: []
+allowedMcpServers:
+  - dc
+  - claude_ai_Gmail
+metadata:
+  x-dc-archetype: utility
+  x-dc-icon: '📧'
+  x-dc-template:
+    category: utility
+    description: Daily email summary
+    requires:
+      mcpServers:
+        - claude_ai_Gmail

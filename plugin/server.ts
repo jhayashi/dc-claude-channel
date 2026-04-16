@@ -172,6 +172,68 @@ const SUBAGENT_TOOL_BLOCKLIST = new Set([
   'dc_access_revoke',
 ])
 
+/**
+ * Read ~/.claude/mcp-needs-auth-cache.json and return the set of display
+ * names that currently need auth (i.e. are NOT connected). Best-effort —
+ * returns empty set if the file is missing or unparseable.
+ */
+function readMcpNeedsAuthDisplayNames(): Set<string> {
+  const path = join(homedir(), '.claude', 'mcp-needs-auth-cache.json')
+  try {
+    const raw = readFileSync(path, 'utf-8')
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object') return new Set(Object.keys(parsed))
+  } catch {
+    // Missing file or bad JSON — treat as nothing needs auth.
+  }
+  return new Set()
+}
+
+/**
+ * Convert a KNOWN_MCP_SERVERS prefix (e.g. `claude_ai_Gmail`) to the
+ * display name that Claude Code uses in its `mcp-needs-auth-cache.json`
+ * (e.g. `claude.ai Gmail`). Returns null if the prefix isn't a
+ * claude_ai_* server.
+ */
+export function mcpPrefixToAuthCacheKey(prefix: string): string | null {
+  if (!prefix.startsWith('claude_ai_')) return null
+  const rest = prefix.slice('claude_ai_'.length).replace(/_/g, ' ')
+  return `claude.ai ${rest}`
+}
+
+/**
+ * Pure helper — given the set of display names that need auth, return
+ * the list of prefixes that are considered "connected". Extracted for
+ * unit testing; production callers should use `getConnectedMcpServers()`.
+ */
+export function filterConnectedPrefixes(needsAuth: ReadonlySet<string>): string[] {
+  const out: string[] = []
+  for (const prefix of Object.keys(KNOWN_MCP_SERVERS)) {
+    if (prefix === 'dc') {
+      out.push(prefix)
+      continue
+    }
+    const cacheKey = mcpPrefixToAuthCacheKey(prefix)
+    if (cacheKey && needsAuth.has(cacheKey)) continue
+    out.push(prefix)
+  }
+  return out
+}
+
+/**
+ * Return the list of MCP server prefixes considered "connected" (i.e.
+ * usable without further auth). The `dc` server is always connected.
+ * For `claude_ai_*` servers, we consult `mcp-needs-auth-cache.json` as
+ * a best-effort signal — servers listed there need auth and are
+ * treated as NOT connected. Other known servers are assumed connected.
+ *
+ * This is surfaced in the agent-setup WebXDC snapshot so the create
+ * flow can warn when a template depends on an unconnected service.
+ */
+export function getConnectedMcpServers(): string[] {
+  return filterConnectedPrefixes(readMcpNeedsAuthDisplayNames())
+}
+
 /** Available MCP servers for the agent-setup tool picker. */
 export function getAvailableMcpServers(): Array<{ prefix: string; label: string; toolCount: number }> {
   const dcTools = [

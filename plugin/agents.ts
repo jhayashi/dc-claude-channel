@@ -237,6 +237,69 @@ export function updateAgentModel(id: string, model: AllowedModel): boolean {
   return true
 }
 
+/** The three agent archetypes. Cosmetic — drives the default icon glyph. */
+export const ARCHETYPES = ['role', 'utility', 'project'] as const
+export type Archetype = typeof ARCHETYPES[number]
+
+/** Metadata key for an agent's archetype (role/utility/project). */
+export const ARCHETYPE_META_KEY = 'x-dc-archetype'
+
+/** Metadata key for an agent's icon glyph (single emoji or short string). */
+export const ICON_META_KEY = 'x-dc-icon'
+
+/** Default icon glyph for each archetype. Used when no explicit icon is set. */
+export const ARCHETYPE_DEFAULT_ICON: Record<Archetype, string> = {
+  role: '👤',
+  utility: '⚙️',
+  project: '📋',
+}
+
+/** Read an agent's archetype. Defaults to 'role' when unset or invalid. */
+export function getArchetype(def: AgentDef): Archetype {
+  const raw = def.metadata?.[ARCHETYPE_META_KEY]
+  return (ARCHETYPES as readonly string[]).includes(raw as string)
+    ? (raw as Archetype)
+    : 'role'
+}
+
+/**
+ * Write the archetype to an agent's metadata bag in place. Setting the
+ * default ('role') clears the key so exports stay minimal. Does not
+ * persist — callers must follow with saveAgent.
+ */
+export function setArchetype(def: AgentDef, value: Archetype): void {
+  if (value === 'role') {
+    if (def.metadata) delete def.metadata[ARCHETYPE_META_KEY]
+    return
+  }
+  if (!def.metadata) def.metadata = {}
+  def.metadata[ARCHETYPE_META_KEY] = value
+}
+
+/**
+ * Return the icon glyph for an agent — explicit x-dc-icon if set,
+ * otherwise the default glyph for the archetype.
+ */
+export function iconForAgent(def: AgentDef): string {
+  const explicit = def.metadata?.[ICON_META_KEY]
+  if (typeof explicit === 'string' && explicit.length > 0) return explicit
+  return ARCHETYPE_DEFAULT_ICON[getArchetype(def)]
+}
+
+/**
+ * Write an icon glyph to an agent's metadata bag. Passing null or an
+ * empty string clears the explicit icon (reverts to archetype default).
+ * Does not persist — callers must follow with saveAgent.
+ */
+export function setIcon(def: AgentDef, value: string | null): void {
+  if (!value) {
+    if (def.metadata) delete def.metadata[ICON_META_KEY]
+    return
+  }
+  if (!def.metadata) def.metadata = {}
+  def.metadata[ICON_META_KEY] = value
+}
+
 /** Metadata key used to store the skipPermissions flag inside an agent's metadata bag. */
 export const SKIP_PERMISSIONS_META_KEY = 'x-dc-skipPermissions'
 

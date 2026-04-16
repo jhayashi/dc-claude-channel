@@ -233,6 +233,82 @@ describe('draftAgentFromDescription', () => {
   })
 })
 
+describe('archetype helpers', () => {
+  test('getArchetype defaults to role when metadata is absent', () => {
+    expect(agents.getArchetype(makeDef())).toBe('role')
+  })
+
+  test('getArchetype defaults to role when value is invalid', () => {
+    const def = makeDef({ metadata: { 'x-dc-archetype': 'bogus' } })
+    expect(agents.getArchetype(def)).toBe('role')
+  })
+
+  test('getArchetype returns the stored value for utility/project', () => {
+    expect(agents.getArchetype(makeDef({ metadata: { 'x-dc-archetype': 'utility' } }))).toBe('utility')
+    expect(agents.getArchetype(makeDef({ metadata: { 'x-dc-archetype': 'project' } }))).toBe('project')
+  })
+
+  test('setArchetype writes utility/project into metadata', () => {
+    const def = makeDef()
+    agents.setArchetype(def, 'utility')
+    expect(def.metadata!['x-dc-archetype']).toBe('utility')
+    agents.setArchetype(def, 'project')
+    expect(def.metadata!['x-dc-archetype']).toBe('project')
+  })
+
+  test('setArchetype("role") clears the key while preserving other metadata', () => {
+    const def = makeDef({
+      metadata: {
+        'x-dc-archetype': 'utility',
+        'x-dc-createdAt': '2026-04-10T00:00:00.000Z',
+      },
+    })
+    agents.setArchetype(def, 'role')
+    expect(def.metadata!['x-dc-archetype']).toBeUndefined()
+    expect(def.metadata!['x-dc-createdAt']).toBe('2026-04-10T00:00:00.000Z')
+    expect(agents.getArchetype(def)).toBe('role')
+  })
+})
+
+describe('icon helpers', () => {
+  test('iconForAgent returns archetype default when icon is unset', () => {
+    expect(agents.iconForAgent(makeDef())).toBe('👤')
+    expect(agents.iconForAgent(makeDef({ metadata: { 'x-dc-archetype': 'utility' } }))).toBe('⚙️')
+    expect(agents.iconForAgent(makeDef({ metadata: { 'x-dc-archetype': 'project' } }))).toBe('📋')
+  })
+
+  test('iconForAgent returns explicit x-dc-icon when set', () => {
+    const def = makeDef({ metadata: { 'x-dc-icon': '📧' } })
+    expect(agents.iconForAgent(def)).toBe('📧')
+  })
+
+  test('explicit icon overrides archetype default', () => {
+    const def = makeDef({
+      metadata: { 'x-dc-archetype': 'utility', 'x-dc-icon': '🏝️' },
+    })
+    expect(agents.iconForAgent(def)).toBe('🏝️')
+  })
+
+  test('setIcon writes, setIcon(null) clears', () => {
+    const def = makeDef()
+    agents.setIcon(def, '🌮')
+    expect(def.metadata!['x-dc-icon']).toBe('🌮')
+    agents.setIcon(def, null)
+    expect(def.metadata!['x-dc-icon']).toBeUndefined()
+  })
+
+  test('archetype + icon round-trip through YAML', () => {
+    const def = makeDef({ id: 'arch-yaml' })
+    agents.setArchetype(def, 'project')
+    agents.setIcon(def, '🏖️')
+    agents.saveAgent(def)
+    const loaded = agents.getAgent('arch-yaml')
+    expect(loaded).not.toBeNull()
+    expect(agents.getArchetype(loaded!)).toBe('project')
+    expect(agents.iconForAgent(loaded!)).toBe('🏖️')
+  })
+})
+
 describe('skipPermissions helpers', () => {
   test('getSkipPermissions defaults to false when metadata is absent', () => {
     expect(agents.getSkipPermissions(makeDef())).toBe(false)

@@ -1,0 +1,24 @@
+id: exec-assistant
+name: Exec Assistant
+model: claude-sonnet-4-6
+description: Handles email triage and calendar scheduling.
+system: |
+  You are an executive assistant. Triage email, schedule meetings, and
+  surface what matters. Be concise in summaries and proactive about
+  flagging conflicts. Always confirm destructive actions (declining
+  meetings, archiving threads) before acting.
+tools: []
+allowedMcpServers:
+  - dc
+  - claude_ai_Gmail
+  - claude_ai_Google_Calendar
+metadata:
+  x-dc-archetype: role
+  x-dc-icon: '📨'
+  x-dc-template:
+    category: role
+    description: Email triage + calendar
+    requires:
+      mcpServers:
+        - claude_ai_Gmail
+        - claude_ai_Google_Calendar

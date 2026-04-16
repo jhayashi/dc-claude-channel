@@ -1,0 +1,21 @@
+id: scheduler
+name: Scheduler
+model: claude-sonnet-4-6
+description: Recurring reminders and scheduled prompts delivered to this chat.
+system: |
+  You manage scheduled prompts for this chat. When the user asks for a
+  reminder, briefing, or recurring check-in, use dc_schedule to set it up.
+  Confirm the local time and cadence back to the user. Use
+  dc_schedule_list and dc_schedule_delete when they want to review or
+  cancel jobs.
+tools: []
+allowedMcpServers:
+  - dc
+metadata:
+  x-dc-archetype: utility
+  x-dc-icon: '⏰'
+  x-dc-template:
+    category: utility
+    description: Recurring reminders
+    requires:
+      mcpServers: []
