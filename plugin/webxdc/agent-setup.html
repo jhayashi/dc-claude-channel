@@ -145,6 +145,19 @@ input.icon-input {
   color: #6e7681;
   font-style: italic;
 }
+.icon-preview {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  line-height: 1;
+  flex-shrink: 0;
+  background: #2e4158;
+  color: #c9d1d9;
+}
 .wizard-progress {
   display: flex;
   align-items: baseline;
@@ -469,7 +482,8 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         </div>
         <label class="field" for="icon">Icon (optional)</label>
         <div class="icon-row">
-          <input id="icon" class="text icon-input" type="text" maxlength="8" placeholder="">
+          <input id="icon" class="text icon-input" type="text" maxlength="8" placeholder="" oninput="refreshIconPreview('create')">
+          <div class="icon-preview" id="create-icon-preview" aria-hidden="true"></div>
           <span class="icon-hint">Leave empty to use the archetype icon.</span>
         </div>
       </div>
@@ -517,7 +531,8 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       </div>
       <label class="field" for="edit-icon">Icon (optional)</label>
       <div class="icon-row">
-        <input id="edit-icon" class="text icon-input" type="text" maxlength="8" placeholder="">
+        <input id="edit-icon" class="text icon-input" type="text" maxlength="8" placeholder="" oninput="refreshIconPreview('edit')">
+        <div class="icon-preview" id="edit-icon-preview" aria-hidden="true"></div>
         <span class="icon-hint">Leave empty to use the archetype icon.</span>
       </div>
       <label class="field" for="edit-model">Model</label>
@@ -1095,6 +1110,22 @@ function selectArchetype(which, value) {
   if (which === 'edit') editArchetype = value;
   else createArchetype = value;
   refreshArchetypeRow(which);
+  refreshIconPreview(which);
+}
+
+var ARCHETYPE_BG = { role: '#4a3b6e', utility: '#2e4158', project: '#3f5a35' };
+var ARCHETYPE_GLYPH = { role: '\u{1F464}', utility: '\u2699\uFE0F', project: '\u{1F4CB}' };
+
+function refreshIconPreview(which) {
+  var previewId = which === 'edit' ? 'edit-icon-preview' : 'create-icon-preview';
+  var inputId = which === 'edit' ? 'edit-icon' : 'icon';
+  var archetype = which === 'edit' ? editArchetype : createArchetype;
+  var preview = document.getElementById(previewId);
+  var input = document.getElementById(inputId);
+  if (!preview || !input) return;
+  var glyph = (input.value || '').trim() || ARCHETYPE_GLYPH[archetype] || ARCHETYPE_GLYPH.role;
+  preview.textContent = glyph;
+  preview.style.background = ARCHETYPE_BG[archetype] || ARCHETYPE_BG.role;
 }
 
 function backFromCreate() {
