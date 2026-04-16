@@ -295,6 +295,18 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   text-align: right;
 }
 .tool-name.disabled { color: #6e7681; }
+.tool-auth {
+  display: inline-block;
+  font-size: 10px;
+  color: #d29922;
+  background: #d2992222;
+  border: 1px solid #d2992266;
+  border-radius: 5px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+  font-style: italic;
+}
 </style>
 </head>
 <body>
@@ -428,7 +440,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.39;
+var APP_VERSION = 1.40;
 var draft = null;
 var existingAgents = [];
 var templateList = [];
@@ -620,6 +632,7 @@ function instantiateTemplate(templateId) {
 
 var availableBuiltinTools = [];
 var availableMcpServers = [];
+var connectedMcpServers = [];
 
 function renderToolPicker(containerId, allowedBuiltinTools, allowedMcpServers) {
   var container = document.getElementById(containerId);
@@ -761,6 +774,13 @@ function renderMcpServersSection(container, allowedMcpServers) {
     var nameSpan = document.createElement('span');
     nameSpan.className = 'tool-name' + (cb.checked ? '' : ' disabled');
     nameSpan.textContent = srv.label;
+    var needsAuth = connectedMcpServers.indexOf(srv.prefix) < 0;
+    if (needsAuth) {
+      var authBadge = document.createElement('span');
+      authBadge.className = 'tool-auth';
+      authBadge.textContent = 'needs auth';
+      nameSpan.appendChild(authBadge);
+    }
     var descSpan = document.createElement('span');
     descSpan.className = 'tool-desc';
     descSpan.textContent = srv.toolCount > 0 ? srv.toolCount + ' tools' : '';
@@ -1148,6 +1168,7 @@ window.webxdc.setUpdateListener(function(update) {
     if (draft) populateForm();
     availableBuiltinTools = d.availableBuiltinTools || [];
     availableMcpServers = d.availableMcpServers || [];
+    connectedMcpServers = d.connectedMcpServers || [];
     renderToolPicker('create-tool-picker', null, null);
     renderExistingList();
     renderTemplates();
@@ -1172,6 +1193,7 @@ window.webxdc.setUpdateListener(function(update) {
     if (draft) populateEditForm();
     availableBuiltinTools = d.availableBuiltinTools || [];
     availableMcpServers = d.availableMcpServers || [];
+    connectedMcpServers = d.connectedMcpServers || [];
     renderToolPicker('edit-tool-picker',
       d.draft.allowedBuiltinTools !== undefined ? d.draft.allowedBuiltinTools : null,
       d.draft.allowedMcpServers !== undefined ? d.draft.allowedMcpServers : null,

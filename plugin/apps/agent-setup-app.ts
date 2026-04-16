@@ -22,6 +22,7 @@ function availableToolsPayload(ctx: AppContext) {
       description: BUILTIN_TOOL_DESCRIPTIONS[name] ?? '',
     })),
     availableMcpServers: ctx.getAvailableMcpServers(),
+    connectedMcpServers: ctx.getConnectedMcpServers(),
   }
 }
 
