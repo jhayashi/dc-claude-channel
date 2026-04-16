@@ -177,18 +177,34 @@ export interface DecorateContext {
   logf: (format: string, ...args: unknown[]) => void
 }
 
-/** Set the chat profile image to the model/permission/orientation icon. */
+/**
+ * Set the chat profile image. If the agent has an explicit icon override
+ * (emoji glyph in metadata), render it to a PNG and use that. Otherwise
+ * fall back to the pre-baked model/permission/orientation PNG.
+ */
 export async function setAgentIcon(
   ctx: DecorateContext,
   chatId: number,
-  model: string,
-  skipPermissions: boolean,
-  mirror: boolean,
+  agent: agents.AgentDef,
 ): Promise<void> {
-  const iconName = iconFilenameFor(model, skipPermissions, mirror)
-  const iconPath = new URL(`../assets/agent-icons/${iconName}`, import.meta.url).pathname
+  const explicit = agents.getExplicitIcon(agent)
+  let iconPath: string
+  let label: string
+  if (explicit) {
+    const { renderAgentIconPNG } = await import('../agent-icon-render.js')
+    iconPath = await renderAgentIconPNG(explicit, agents.getArchetype(agent))
+    label = `custom ${explicit}`
+  } else {
+    const iconName = iconFilenameFor(
+      agent.model,
+      agents.getSkipPermissions(agent),
+      agents.getIconMirror(agent),
+    )
+    iconPath = new URL(`../assets/agent-icons/${iconName}`, import.meta.url).pathname
+    label = iconName
+  }
   await ctx.client.setChatProfileImage(chatId, iconPath)
-  ctx.logf('agent-setup: set agent icon to %s for chat %d', iconName, chatId)
+  ctx.logf('agent-setup: set agent icon to %s for chat %d', label, chatId)
 }
 
 /** Apply icon + intro message after a chat has been bound to an agent. */
@@ -198,13 +214,7 @@ export async function decorateAgentChat(
   agent: agents.AgentDef,
 ): Promise<void> {
   try {
-    await setAgentIcon(
-      ctx,
-      chatId,
-      agent.model,
-      agents.getSkipPermissions(agent),
-      agents.getIconMirror(agent),
-    )
+    await setAgentIcon(ctx, chatId, agent)
   } catch (err) {
     ctx.logf('agent-setup: set icon failed: %v', err)
   }
@@ -765,6 +775,8 @@ export const agentSetupApp: WebXDCApp = {
         const prevSystem = agent.system
         const prevSkip = agents.getSkipPermissions(agent)
         const prevMirror = agents.getIconMirror(agent)
+        const prevArchetype = agents.getArchetype(agent)
+        const prevExplicitIcon = agents.getExplicitIcon(agent)
         try {
           // Preserve existing metadata (e.g. x-dc-createdAt) across edits, then
           // apply the new skipPermissions / iconMirror flags. Clone to avoid
@@ -804,6 +816,9 @@ export const agentSetupApp: WebXDCApp = {
           const systemChanged = prevSystem !== draft.system
           const skipPermsChanged = prevSkip !== skipPerms
           const mirrorChanged = prevMirror !== iconMirror
+          const archetypeChanged = archetype != null && prevArchetype !== archetype
+          const newExplicitIcon = agents.getExplicitIcon(updated)
+          const explicitIconChanged = prevExplicitIcon !== newExplicitIcon
           const prevBuiltinTools = JSON.stringify(agent.allowedBuiltinTools ?? null)
           const newBuiltinTools = JSON.stringify(allowedBuiltinTools ?? null)
           const prevMcpServersList = JSON.stringify(agent.allowedMcpServers ?? null)
@@ -815,7 +830,9 @@ export const agentSetupApp: WebXDCApp = {
           // changes (name, icon orientation) and skipPermissions — which the
           // dispatcher re-reads on every hook call — don't need a restart.
           const needsRestart = modelChanged || systemChanged || toolsChanged
-          const iconChanged = modelChanged || skipPermsChanged || mirrorChanged
+          const iconChanged =
+            modelChanged || skipPermsChanged || mirrorChanged ||
+            archetypeChanged || explicitIconChanged
           const affected = bindings.listBindings().filter(b => b.agentId === agentId)
           const newInherit = agents.inheritClaudeMdForModel(draft.model)
 
@@ -841,7 +858,7 @@ export const agentSetupApp: WebXDCApp = {
                 bindings.clearSessionId(b.chatId)
               }
               if (iconChanged) {
-                await setAgentIcon(ctx, b.chatId, draft.model, skipPerms, iconMirror).catch(err =>
+                await setAgentIcon(ctx, b.chatId, updated).catch(err =>
                   ctx.logf('agent-setup: icon update failed chat=%d: %v', b.chatId, err),
                 )
               }
