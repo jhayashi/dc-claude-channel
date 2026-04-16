@@ -467,7 +467,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.40;
+var APP_VERSION = 1.41;
 var draft = null;
 var existingAgents = [];
 var templateList = [];
@@ -938,6 +938,7 @@ function populateEditForm() {
   }
   editArchetype = draft.archetype || 'role';
   refreshArchetypeRow('edit');
+  document.getElementById('edit-icon').value = draft.explicitIcon || '';
 }
 
 function backFromStep3() {
@@ -973,6 +974,7 @@ function saveEdit() {
       skipPermissions: skipPermissions,
       iconMirror: iconMirror,
       archetype: editArchetype,
+      icon: document.getElementById('edit-icon').value,
       allowedBuiltinTools: toolState.allowedBuiltinTools,
       allowedMcpServers: toolState.allowedMcpServers,
       senderAddr: window.webxdc.selfAddr
@@ -1009,6 +1011,7 @@ function create() {
       config: cfg,
       skipPermissions: skipPermissions,
       archetype: createArchetype,
+      icon: document.getElementById('icon').value,
       allowedBuiltinTools: toolState.allowedBuiltinTools,
       allowedMcpServers: toolState.allowedMcpServers,
       senderAddr: window.webxdc.selfAddr
