@@ -177,6 +177,64 @@ input.icon-input {
   margin-top: 8px;
   line-height: 1.5;
 }
+.home-heading {
+  font-size: 16px;
+  font-weight: 500;
+  margin: 4px 0 14px;
+  color: #c9d1d9;
+}
+.home-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.home-action {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #c9d1d9;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+.home-action:hover, .home-action:focus-visible {
+  background: #1c2128;
+  border-color: #58a6ff66;
+  outline: none;
+}
+.home-action-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.home-action-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.home-action-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #c9d1d9;
+}
+.home-action-desc {
+  font-size: 12px;
+  color: #8b949e;
+  line-height: 1.4;
+}
+.home-action code {
+  background: transparent;
+  color: #c9d1d9;
+  font-size: 11px;
+}
 .section-label {
   font-size: 11px;
   text-transform: uppercase;
@@ -366,13 +424,29 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 
   <div id="step0">
     <div class="body">
-      <button class="create-new-btn" onclick="gotoCreate()">+ Create a new agent</button>
+      <h2 class="home-heading">What would you like to do?</h2>
+      <div class="home-actions">
+        <button class="home-action" onclick="gotoCreate()">
+          <span class="home-action-icon">&#x2728;</span>
+          <span class="home-action-body">
+            <span class="home-action-label">Create a new agent</span>
+            <span class="home-action-desc">Set up a fresh agent with its own prompt and tools.</span>
+          </span>
+        </button>
+        <button class="home-action" onclick="gotoResume()">
+          <span class="home-action-icon">&#x1F504;</span>
+          <span class="home-action-body">
+            <span class="home-action-label">Resume a conversation</span>
+            <span class="home-action-desc">Pick up a terminal <code>claude</code> session here.</span>
+          </span>
+        </button>
+      </div>
       <div id="templates-section" style="display:none;">
         <div class="section-label">Start from a template</div>
         <div id="templates-list" class="template-grid"></div>
       </div>
       <div id="existing-section" style="display:none;">
-        <div class="section-label">Or reuse an existing agent</div>
+        <div class="section-label">Manage existing agents</div>
         <div id="existing-list"></div>
       </div>
     </div>
@@ -514,7 +588,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.43;
+var APP_VERSION = 1.44;
 var draft = null;
 var existingAgents = [];
 var templateList = [];
@@ -933,6 +1007,14 @@ function gotoCreate() {
   show('step2');
 }
 
+function gotoResume() {
+  show('teleport-import');
+  if (!teleportListRequested) {
+    teleportListRequested = true;
+    requestTeleportList();
+  }
+}
+
 function pickExisting(agentId) {
   if (creating) return;
   creating = true;
@@ -1016,7 +1098,7 @@ function selectArchetype(which, value) {
 }
 
 function backFromCreate() {
-  if (existingAgents.length > 0) show('step0');
+  show('step0');
 }
 
 function populateEditForm() {
@@ -1305,10 +1387,8 @@ window.webxdc.setUpdateListener(function(update) {
         teleportListRequested = true;
         requestTeleportList();
       }
-    } else if (existingAgents.length > 0 || templateList.length > 0) {
-      show('step0');
     } else {
-      gotoCreate();
+      show('step0');
     }
   }
 
@@ -1396,7 +1476,7 @@ window.webxdc.setUpdateListener(function(update) {
 document.addEventListener('DOMContentLoaded', function() {
   var _teleportCancelBtn = document.getElementById('teleport-cancel');
   if (_teleportCancelBtn) _teleportCancelBtn.addEventListener('click', function() {
-    if (existingAgents.length > 0) show('step0'); else gotoCreate();
+    show('step0');
   });
   var _teleportAttachBtn = document.getElementById('teleport-attach');
   if (_teleportAttachBtn) _teleportAttachBtn.addEventListener('click', function() {
