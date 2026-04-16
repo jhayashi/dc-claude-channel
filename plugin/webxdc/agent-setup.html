@@ -145,6 +145,38 @@ input.icon-input {
   color: #6e7681;
   font-style: italic;
 }
+.wizard-progress {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 16px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  font-size: 12px;
+}
+.wizard-step-num {
+  color: #6e7681;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+.wizard-step-title {
+  color: #c9d1d9;
+  font-size: 14px;
+  font-weight: 500;
+}
+.wizard-pane {
+  display: none;
+}
+.wizard-pane.active {
+  display: block;
+}
+.wizard-hint {
+  font-size: 12px;
+  color: #8b949e;
+  margin-top: 8px;
+  line-height: 1.5;
+}
 .section-label {
   font-size: 11px;
   text-transform: uppercase;
@@ -347,40 +379,55 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   </div>
 
   <div id="step2">
+    <div class="wizard-progress" id="create-wizard-progress" aria-live="polite">
+      <span class="wizard-step-num">Step <span id="create-step-num">1</span> of 4</span>
+      <span class="wizard-step-title" id="create-step-title">Name</span>
+    </div>
     <div class="body">
-      <label class="field" for="name">Agent name</label>
-      <input id="name" class="text" type="text" maxlength="256">
-      <label class="field">Archetype</label>
-      <div class="archetype-row" id="create-archetype-row">
-        <button type="button" class="archetype-btn" data-archetype="role" onclick="selectArchetype('create', 'role')"><span class="icon">&#x1F464;</span>Role</button>
-        <button type="button" class="archetype-btn" data-archetype="utility" onclick="selectArchetype('create', 'utility')"><span class="icon">&#x2699;&#xFE0F;</span>Utility</button>
-        <button type="button" class="archetype-btn" data-archetype="project" onclick="selectArchetype('create', 'project')"><span class="icon">&#x1F4CB;</span>Project</button>
+      <div class="wizard-pane" data-wizard-step="1">
+        <label class="field" for="name">Agent name</label>
+        <input id="name" class="text" type="text" maxlength="256">
+        <label class="field">Archetype</label>
+        <div class="archetype-row" id="create-archetype-row">
+          <button type="button" class="archetype-btn" data-archetype="role" onclick="selectArchetype('create', 'role')"><span class="icon">&#x1F464;</span>Role</button>
+          <button type="button" class="archetype-btn" data-archetype="utility" onclick="selectArchetype('create', 'utility')"><span class="icon">&#x2699;&#xFE0F;</span>Utility</button>
+          <button type="button" class="archetype-btn" data-archetype="project" onclick="selectArchetype('create', 'project')"><span class="icon">&#x1F4CB;</span>Project</button>
+        </div>
+        <label class="field" for="icon">Icon (optional)</label>
+        <div class="icon-row">
+          <input id="icon" class="text icon-input" type="text" maxlength="8" placeholder="">
+          <span class="icon-hint">Leave empty to use the archetype icon.</span>
+        </div>
       </div>
-      <label class="field" for="icon">Icon (optional)</label>
-      <div class="icon-row">
-        <input id="icon" class="text icon-input" type="text" maxlength="8" placeholder="">
-        <span class="icon-hint">Leave empty to use the archetype icon.</span>
+      <div class="wizard-pane" data-wizard-step="2">
+        <label class="field" for="model">Model</label>
+        <select id="model" class="text">
+          <option value="claude-opus-4-6">Opus 4.6</option>
+          <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+          <option value="claude-haiku-4-5">Haiku 4.5</option>
+        </select>
+        <p class="wizard-hint">Opus is best for long-form coding and reasoning. Sonnet is the balanced default. Haiku is fast and cheap for simple Q&amp;A.</p>
       </div>
-      <label class="field" for="model">Model</label>
-      <select id="model" class="text">
-        <option value="claude-opus-4-6">Opus 4.6</option>
-        <option value="claude-sonnet-4-6">Sonnet 4.6</option>
-        <option value="claude-haiku-4-5">Haiku 4.5</option>
-      </select>
-      <label class="field" for="system">System prompt</label>
-      <textarea id="system" class="text" maxlength="100000" style="min-height:60px;font-family:inherit;"></textarea>
-      <label class="field" style="display:flex;align-items:flex-start;gap:8px;margin-top:12px;">
-        <input id="skip-permissions" type="checkbox" style="margin-top:3px;flex-shrink:0;">
-        <span style="font-weight:400;font-size:12px;line-height:1.4;">Trusted agent — tool calls auto-approve instead of asking you first. Actions are recorded in an audit log you can pull up by asking the agent to show it.</span>
-      </label>
-      <div style="margin-top:16px;">
-        <div class="section-label">Tools</div>
-        <div id="create-tool-picker"></div>
+      <div class="wizard-pane" data-wizard-step="3">
+        <label class="field" for="system">System prompt</label>
+        <textarea id="system" class="text" maxlength="100000" style="min-height:180px;font-family:inherit;"></textarea>
+        <p class="wizard-hint">Sets the agent's personality and instructions. Leave as-is to start from the archetype default.</p>
+      </div>
+      <div class="wizard-pane" data-wizard-step="4">
+        <label class="field" style="display:flex;align-items:flex-start;gap:8px;margin-top:0;">
+          <input id="skip-permissions" type="checkbox" style="margin-top:3px;flex-shrink:0;">
+          <span style="font-weight:400;font-size:12px;line-height:1.4;">Trusted agent — tool calls auto-approve instead of asking you first. Actions are recorded in an audit log you can pull up by asking the agent to show it.</span>
+        </label>
+        <div style="margin-top:16px;">
+          <div class="section-label">Tools</div>
+          <div id="create-tool-picker"></div>
+        </div>
       </div>
     </div>
     <div class="actions">
-      <button class="btn btn-back" onclick="backFromCreate()">Back</button>
-      <button class="btn btn-create" id="create-btn" onclick="create()">Create agent</button>
+      <button class="btn btn-back" id="create-back-btn" onclick="wizardBack()">Back</button>
+      <button class="btn btn-create" id="create-next-btn" onclick="wizardNext()">Next</button>
+      <button class="btn btn-create" id="create-btn" onclick="create()" style="display:none;">Create agent</button>
     </div>
   </div>
 
@@ -467,7 +514,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.42;
+var APP_VERSION = 1.43;
 var draft = null;
 var existingAgents = [];
 var templateList = [];
@@ -904,6 +951,47 @@ function populateForm() {
   document.getElementById('icon').value = '';
   createArchetype = draft.archetype || 'role';
   refreshArchetypeRow('create');
+  wizardGoto(1);
+}
+
+var WIZARD_TITLES = ['Name', 'Model', 'Prompt', 'Trust & Tools'];
+var wizardStep = 1;
+
+function wizardGoto(n) {
+  if (n < 1) n = 1;
+  if (n > 4) n = 4;
+  wizardStep = n;
+  var panes = document.querySelectorAll('#step2 .wizard-pane');
+  for (var i = 0; i < panes.length; i++) {
+    var stepNum = parseInt(panes[i].getAttribute('data-wizard-step'), 10);
+    if (stepNum === n) panes[i].classList.add('active');
+    else panes[i].classList.remove('active');
+  }
+  document.getElementById('create-step-num').textContent = String(n);
+  document.getElementById('create-step-title').textContent = WIZARD_TITLES[n - 1];
+  document.getElementById('create-back-btn').textContent = n === 1 ? 'Back' : 'Previous';
+  var isLast = n === 4;
+  document.getElementById('create-next-btn').style.display = isLast ? 'none' : '';
+  document.getElementById('create-btn').style.display = isLast ? '' : 'none';
+}
+
+function wizardNext() {
+  if (wizardStep === 1) {
+    var nameVal = document.getElementById('name').value.trim();
+    if (!nameVal) {
+      document.getElementById('name').focus();
+      return;
+    }
+  }
+  wizardGoto(wizardStep + 1);
+}
+
+function wizardBack() {
+  if (wizardStep === 1) {
+    backFromCreate();
+    return;
+  }
+  wizardGoto(wizardStep - 1);
 }
 
 function refreshArchetypeRow(which) {
