@@ -509,6 +509,7 @@ ctx = {
     )
   },
   getAvailableMcpServers,
+  getConnectedMcpServers,
   async dispatchAndCollect(chatId: number, text: string): Promise<string> {
     const result = await subagentCache.dispatch(chatId, text)
     return result.text ?? ''

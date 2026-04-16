@@ -68,6 +68,66 @@ body {
 .card-action-btn:disabled:hover { background: #30363d; }
 .card-action-btn:disabled:active { transform: none; }
 .card-hint { font-size: 11px; color: #8b949e; margin-top: 4px; font-style: italic; }
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.template-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+  text-align: left;
+  transition: border-color 0.15s, transform 0.1s, opacity 0.15s;
+}
+.template-card:hover { border-color: #58a6ff; }
+.template-card:active { transform: scale(0.97); }
+.template-card.unavailable { opacity: 0.45; cursor: not-allowed; }
+.template-card.unavailable:hover { border-color: #30363d; }
+.template-card.unavailable:active { transform: none; }
+.template-card .icon { font-size: 22px; line-height: 1; margin-bottom: 4px; }
+.template-card .name { font-size: 13px; font-weight: 600; color: #e6edf3; }
+.template-card .desc { font-size: 11px; color: #8b949e; line-height: 1.3; margin-top: 2px; }
+.template-card .warn { font-size: 10px; color: #d29922; line-height: 1.3; margin-top: 4px; font-style: italic; }
+.archetype-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.archetype-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 6px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  color: #c9d1d9;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  transition: border-color 0.15s, background 0.15s;
+}
+.archetype-btn .icon { font-size: 20px; line-height: 1; }
+.archetype-btn.selected { border-color: #58a6ff; background: #1f6feb22; color: #58a6ff; }
+.archetype-btn:active { transform: scale(0.97); }
+.existing-card .archetype-badge {
+  display: inline-block;
+  font-size: 13px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
 .section-label {
   font-size: 11px;
   text-transform: uppercase;
@@ -246,8 +306,14 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   <div id="step0">
     <div class="body">
       <button class="create-new-btn" onclick="gotoCreate()">+ Create a new agent</button>
-      <div class="section-label">Or reuse an existing agent</div>
-      <div id="existing-list"></div>
+      <div id="templates-section" style="display:none;">
+        <div class="section-label">Start from a template</div>
+        <div id="templates-list" class="template-grid"></div>
+      </div>
+      <div id="existing-section" style="display:none;">
+        <div class="section-label">Or reuse an existing agent</div>
+        <div id="existing-list"></div>
+      </div>
     </div>
   </div>
 
@@ -255,6 +321,12 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     <div class="body">
       <label class="field" for="name">Agent name</label>
       <input id="name" class="text" type="text" maxlength="256">
+      <label class="field">Archetype</label>
+      <div class="archetype-row" id="create-archetype-row">
+        <button type="button" class="archetype-btn" data-archetype="role" onclick="selectArchetype('create', 'role')"><span class="icon">&#x1F464;</span>Role</button>
+        <button type="button" class="archetype-btn" data-archetype="utility" onclick="selectArchetype('create', 'utility')"><span class="icon">&#x2699;&#xFE0F;</span>Utility</button>
+        <button type="button" class="archetype-btn" data-archetype="project" onclick="selectArchetype('create', 'project')"><span class="icon">&#x1F4CB;</span>Project</button>
+      </div>
       <label class="field" for="model">Model</label>
       <select id="model" class="text">
         <option value="claude-opus-4-6">Opus 4.6</option>
@@ -282,6 +354,12 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     <div class="body">
       <label class="field" for="edit-name">Agent name</label>
       <input id="edit-name" class="text" type="text" maxlength="256">
+      <label class="field">Archetype</label>
+      <div class="archetype-row" id="edit-archetype-row">
+        <button type="button" class="archetype-btn" data-archetype="role" onclick="selectArchetype('edit', 'role')"><span class="icon">&#x1F464;</span>Role</button>
+        <button type="button" class="archetype-btn" data-archetype="utility" onclick="selectArchetype('edit', 'utility')"><span class="icon">&#x2699;&#xFE0F;</span>Utility</button>
+        <button type="button" class="archetype-btn" data-archetype="project" onclick="selectArchetype('edit', 'project')"><span class="icon">&#x1F4CB;</span>Project</button>
+      </div>
       <label class="field" for="edit-model">Model</label>
       <select id="edit-model" class="text">
         <option value="claude-opus-4-6">Opus 4.6</option>
@@ -350,9 +428,12 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.37;
+var APP_VERSION = 1.39;
 var draft = null;
 var existingAgents = [];
+var templateList = [];
+var createArchetype = 'role';
+var editArchetype = 'role';
 var creating = false;
 var versionMismatchSent = false;
 var editingAgentId = null;
@@ -425,7 +506,14 @@ function renderExistingList() {
     btn.onclick = (function(id){ return function(){ pickExisting(id); }; })(a.id);
     var label = document.createElement('div');
     label.className = 'label';
-    label.textContent = a.name + ' ';
+    if (a.icon) {
+      var iconSpan = document.createElement('span');
+      iconSpan.className = 'archetype-badge';
+      iconSpan.textContent = a.icon;
+      label.appendChild(iconSpan);
+    }
+    var nameText = document.createTextNode(a.name + ' ');
+    label.appendChild(nameText);
     var badge = document.createElement('span');
     badge.className = 'badge';
     badge.textContent = MODEL_LABELS[a.model] || a.model;
@@ -466,6 +554,68 @@ function renderExistingList() {
     }
     container.appendChild(btn);
   }
+  var section = document.getElementById('existing-section');
+  if (section) section.style.display = existingAgents.length > 0 ? '' : 'none';
+}
+
+function renderTemplates() {
+  var container = document.getElementById('templates-list');
+  var section = document.getElementById('templates-section');
+  if (!container || !section) return;
+  container.textContent = '';
+  if (!templateList || templateList.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = '';
+  for (var i = 0; i < templateList.length; i++) {
+    var t = templateList[i];
+    var btn = document.createElement('button');
+    btn.className = 'template-card';
+    if (!t.available) {
+      btn.classList.add('unavailable');
+      btn.disabled = true;
+    } else {
+      btn.onclick = (function(id){ return function(){ instantiateTemplate(id); }; })(t.id);
+    }
+    var icon = document.createElement('div');
+    icon.className = 'icon';
+    icon.textContent = t.icon || '';
+    btn.appendChild(icon);
+    var name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = t.name;
+    btn.appendChild(name);
+    if (t.description) {
+      var desc = document.createElement('div');
+      desc.className = 'desc';
+      desc.textContent = t.description;
+      btn.appendChild(desc);
+    }
+    if (!t.available && t.requiresMcpServers && t.requiresMcpServers.length > 0) {
+      var warn = document.createElement('div');
+      warn.className = 'warn';
+      warn.textContent = 'Needs: ' + t.requiresMcpServers.join(', ');
+      btn.appendChild(warn);
+    }
+    container.appendChild(btn);
+  }
+}
+
+function instantiateTemplate(templateId) {
+  if (creating) return;
+  creating = true;
+  pendingAction = 'create';
+  window.webxdc.sendUpdate({
+    payload: { type: 'instantiateTemplate', templateId: templateId, senderAddr: window.webxdc.selfAddr },
+    summary: 'Creating agent from template'
+  }, 'Create from template');
+  createTimeout = setTimeout(function() {
+    if (creating) {
+      creating = false;
+      showModal('No response', 'The server did not respond. This app may not be connected — ask Claude to send you the agent settings card.');
+    }
+  }, 15000);
 }
 
 var availableBuiltinTools = [];
@@ -698,6 +848,29 @@ function populateForm() {
   document.getElementById('model').value = draft.model || 'claude-sonnet-4-6';
   document.getElementById('system').value = draft.system || '';
   document.getElementById('skip-permissions').checked = !!draft.skipPermissions;
+  createArchetype = draft.archetype || 'role';
+  refreshArchetypeRow('create');
+}
+
+function refreshArchetypeRow(which) {
+  var rowId = which === 'edit' ? 'edit-archetype-row' : 'create-archetype-row';
+  var current = which === 'edit' ? editArchetype : createArchetype;
+  var row = document.getElementById(rowId);
+  if (!row) return;
+  var btns = row.querySelectorAll('.archetype-btn');
+  for (var i = 0; i < btns.length; i++) {
+    if (btns[i].getAttribute('data-archetype') === current) {
+      btns[i].classList.add('selected');
+    } else {
+      btns[i].classList.remove('selected');
+    }
+  }
+}
+
+function selectArchetype(which, value) {
+  if (which === 'edit') editArchetype = value;
+  else createArchetype = value;
+  refreshArchetypeRow(which);
 }
 
 function backFromCreate() {
@@ -715,6 +888,8 @@ function populateEditForm() {
   for (var i = 0; i < radios.length; i++) {
     radios[i].checked = (radios[i].value === mirrorValue);
   }
+  editArchetype = draft.archetype || 'role';
+  refreshArchetypeRow('edit');
 }
 
 function backFromStep3() {
@@ -749,6 +924,7 @@ function saveEdit() {
       config: cfg,
       skipPermissions: skipPermissions,
       iconMirror: iconMirror,
+      archetype: editArchetype,
       allowedBuiltinTools: toolState.allowedBuiltinTools,
       allowedMcpServers: toolState.allowedMcpServers,
       senderAddr: window.webxdc.selfAddr
@@ -784,6 +960,7 @@ function create() {
       type: 'create',
       config: cfg,
       skipPermissions: skipPermissions,
+      archetype: createArchetype,
       allowedBuiltinTools: toolState.allowedBuiltinTools,
       allowedMcpServers: toolState.allowedMcpServers,
       senderAddr: window.webxdc.selfAddr
@@ -964,6 +1141,7 @@ window.webxdc.setUpdateListener(function(update) {
     }
     draft = d.draft || null;
     existingAgents = d.existingAgents || [];
+    templateList = d.templates || [];
     creating = false;
     editingAgentId = null;
     dismissModal();
@@ -972,6 +1150,7 @@ window.webxdc.setUpdateListener(function(update) {
     availableMcpServers = d.availableMcpServers || [];
     renderToolPicker('create-tool-picker', null, null);
     renderExistingList();
+    renderTemplates();
     if (d.startScreen === 'create') {
       gotoCreate();
     } else if (d.startScreen === 'teleport-import') {
@@ -980,7 +1159,7 @@ window.webxdc.setUpdateListener(function(update) {
         teleportListRequested = true;
         requestTeleportList();
       }
-    } else if (existingAgents.length > 0) {
+    } else if (existingAgents.length > 0 || templateList.length > 0) {
       show('step0');
     } else {
       gotoCreate();

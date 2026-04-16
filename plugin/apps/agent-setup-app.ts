@@ -12,6 +12,7 @@ import * as agents from '../agents.js'
 import * as bindings from '../bindings.js'
 import * as access from '../access.js'
 import * as teleport from '../teleport.js'
+import * as templates from '../templates.js'
 import { ALL_BUILTIN_TOOLS, BUILTIN_TOOL_DESCRIPTIONS } from '../dispatcher/subagent-process.js'
 
 function availableToolsPayload(ctx: AppContext) {
@@ -22,6 +23,39 @@ function availableToolsPayload(ctx: AppContext) {
     })),
     availableMcpServers: ctx.getAvailableMcpServers(),
   }
+}
+
+/**
+ * Snapshot the template library for the init payload. Each template is
+ * marked `available: true` when every MCP server it requires is currently
+ * connected — the setup card shows unavailable templates greyed out with
+ * the missing service listed.
+ */
+function templatesPayload(ctx: AppContext): Array<{
+  id: string
+  name: string
+  archetype: string
+  icon: string
+  description: string
+  model: string
+  requiresMcpServers: string[]
+  available: boolean
+}> {
+  const connected = new Set(ctx.getConnectedMcpServers())
+  return templates.listTemplates().map(t => {
+    const required = t.requires.mcpServers ?? []
+    const available = required.every(s => connected.has(s))
+    return {
+      id: t.id,
+      name: t.name,
+      archetype: t.archetype,
+      icon: t.icon,
+      description: t.description,
+      model: t.model,
+      requiresMcpServers: required,
+      available,
+    }
+  })
 }
 
 interface Session {
@@ -35,12 +69,14 @@ interface Session {
 const sessions = new Map<number, Session>()
 
 /** Summarize agents for the picker screen. */
-function listExistingForPicker(sourceChatId: number): Array<{ id: string; name: string; model: string; bindingCount: number; isCurrentAgent: boolean; isUndeletable: boolean }> {
+function listExistingForPicker(sourceChatId: number): Array<{ id: string; name: string; model: string; archetype: string; icon: string; bindingCount: number; isCurrentAgent: boolean; isUndeletable: boolean }> {
   const sourceBinding = bindings.getBinding(sourceChatId)
   return agents.listAgents().map(a => ({
     id: a.id,
     name: a.name,
     model: a.model,
+    archetype: agents.getArchetype(a),
+    icon: agents.iconForAgent(a),
     bindingCount: bindings.countByAgentId(a.id),
     isCurrentAgent: sourceBinding?.agentId === a.id,
     isUndeletable: agents.isUndeletableAgent(a.id),
@@ -80,6 +116,7 @@ async function sendInit(
     existingAgents: listExistingForPicker(sourceChatId),
     startScreen,
     senderAddr: 'server',
+    templates: templatesPayload(ctx),
     ...availableToolsPayload(ctx),
   }
   // Info text MUST be unique per call — DC dedupes consecutive identical
@@ -356,6 +393,8 @@ export const agentSetupApp: WebXDCApp = {
           tools: agent.tools ?? [],
           skipPermissions: agents.getSkipPermissions(agent),
           iconMirror: agents.getIconMirror(agent),
+          archetype: agents.getArchetype(agent),
+          icon: agents.iconForAgent(agent),
           allowedBuiltinTools: agent.allowedBuiltinTools ?? null,
           allowedMcpServers: agent.allowedMcpServers ?? null,
         }
@@ -641,6 +680,57 @@ export const agentSetupApp: WebXDCApp = {
         continue
       }
 
+      if (payload.type === 'instantiateTemplate') {
+        const templateId = typeof (payload as { templateId?: unknown }).templateId === 'string'
+          ? (payload as { templateId: string }).templateId : ''
+        if (!templateId) {
+          ctx.logf('agent-setup: instantiateTemplate missing templateId')
+          continue
+        }
+        const draft = templates.instantiate(templateId)
+        if (!draft) {
+          ctx.logf('agent-setup: template %s not found', templateId)
+          continue
+        }
+        const ownerContactId = await resolveOwner()
+        if (!ownerContactId) continue
+
+        // Synthesize a fresh id so multiple instantiations of the same
+        // template don't collide (the template yaml uses a fixed id).
+        const newAgentId = agents.synthesizeAgentId(draft.name)
+        try {
+          const newChatId = await ctx.client.createGroup(draft.name)
+          await ctx.client.addContactToChat(newChatId, ownerContactId)
+          access.addChat(newChatId, ownerContactId)
+          const newAgent: agents.AgentDef = { ...draft, id: newAgentId }
+          // Roll a random orientation so same-model agents are visually
+          // differentiable (matches `create` path).
+          agents.setIconMirror(newAgent, Math.random() < 0.5)
+          agents.saveAgent(newAgent)
+          bindings.bindAgent(newChatId, newAgentId, {
+            inheritClaudeMd: agents.inheritClaudeMdForModel(newAgent.model),
+          })
+          const savedAgent = agents.getAgent(newAgentId)
+          if (savedAgent) await decorateAgentChat(ctx, newChatId, savedAgent)
+          ctx.logf(
+            'agent-setup: instantiated template %s as agent %s for chat %d (owner %d)',
+            templateId, newAgentId, newChatId, ownerContactId,
+          )
+
+          const update = JSON.stringify({
+            payload: { type: 'created', chatId: newChatId, name: draft.name },
+            summary: 'Agent created',
+          })
+          await ctx.client.sendWebXDCUpdate(session.msgId, update)
+          ctx.unregisterWebXDCMsg(msgId)
+          sessions.delete(session.sourceChatId)
+        } catch (err) {
+          ctx.logf('agent-setup: instantiateTemplate failed: %v', err)
+          try { agents.deleteAgent(newAgentId) } catch {}
+        }
+        continue
+      }
+
       if (payload.type === 'saveEdit') {
         const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
         if (!agentId) {
@@ -660,6 +750,9 @@ export const agentSetupApp: WebXDCApp = {
         const draft = parsed.data
         const skipPerms = (payload as { skipPermissions?: boolean }).skipPermissions === true
         const iconMirror = (payload as { iconMirror?: boolean }).iconMirror === true
+        const rawArchetype = (payload as { archetype?: unknown }).archetype
+        const archetype = (typeof rawArchetype === 'string' && (agents.ARCHETYPES as readonly string[]).includes(rawArchetype))
+          ? rawArchetype as agents.Archetype : null
         const allowedBuiltinTools = (payload as { allowedBuiltinTools?: string[] | null }).allowedBuiltinTools ?? undefined
         const allowedMcpServers = (payload as { allowedMcpServers?: string[] | null }).allowedMcpServers ?? undefined
         // Snapshot the pre-edit state BEFORE mutating metadata below. We
@@ -683,10 +776,11 @@ export const agentSetupApp: WebXDCApp = {
           }
           agents.setSkipPermissions(updated, skipPerms)
           agents.setIconMirror(updated, iconMirror)
+          if (archetype) agents.setArchetype(updated, archetype)
           agents.saveAgent(updated)
           ctx.logf(
-            'agent-setup: edited agent %s (model=%s skip=%s mirror=%s)',
-            agentId, draft.model, skipPerms, iconMirror,
+            'agent-setup: edited agent %s (model=%s skip=%s mirror=%s archetype=%s)',
+            agentId, draft.model, skipPerms, iconMirror, archetype ?? 'unchanged',
           )
 
           // Evict all cached subagents bound to this agent so they respawn
@@ -821,6 +915,9 @@ export const agentSetupApp: WebXDCApp = {
         }
         const draft = parsed.data
         const skipPerms = (payload as { skipPermissions?: boolean }).skipPermissions === true
+        const rawArchetype = (payload as { archetype?: unknown }).archetype
+        const archetype = (typeof rawArchetype === 'string' && (agents.ARCHETYPES as readonly string[]).includes(rawArchetype))
+          ? rawArchetype as agents.Archetype : null
         const allowedBuiltinTools = (payload as { allowedBuiltinTools?: string[] | null }).allowedBuiltinTools ?? undefined
         const allowedMcpServers = (payload as { allowedMcpServers?: string[] | null }).allowedMcpServers ?? undefined
         const inheritClaudeMd = agents.inheritClaudeMdForModel(draft.model)
@@ -834,6 +931,7 @@ export const agentSetupApp: WebXDCApp = {
           access.addChat(newChatId, ownerContactId)
           const newAgent: agents.AgentDef = { ...draft, id: agentId, allowedBuiltinTools, allowedMcpServers }
           agents.setSkipPermissions(newAgent, skipPerms)
+          if (archetype) agents.setArchetype(newAgent, archetype)
           // Roll a random orientation once at creation so same-model agents
           // are visually differentiable. Edits can override via the setup card.
           agents.setIconMirror(newAgent, Math.random() < 0.5)
