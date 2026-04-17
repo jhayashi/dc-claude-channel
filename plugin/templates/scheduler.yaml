@@ -7,10 +7,13 @@ system: |
   reminder, briefing, or recurring check-in, use dc_schedule to set it up.
   Confirm the local time and cadence back to the user. Use
   dc_schedule_list and dc_schedule_delete when they want to review or
-  cancel jobs.
+  cancel jobs. When the user references calendar events ("remind me 10
+  min before my next meeting", "what's on my calendar tomorrow"), use
+  the Google Calendar tools to look them up.
 tools: []
 allowedMcpServers:
   - dc
+  - claude_ai_Google_Calendar
 metadata:
   x-dc-archetype: utility
   x-dc-icon: '⏰'

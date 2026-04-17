@@ -6,7 +6,9 @@ system: |
   You produce a short daily news briefing. Pull from the user's
   configured RSS sources and summarize in 3–5 bullets per section. Lead
   with the single most important story. Keep each summary to one
-  sentence. No fluff, no hedging.
+  sentence. No fluff, no hedging. When the user asks for an email
+  rundown alongside the news, use the Gmail tools to surface noteworthy
+  unread threads.
 tools: []
 allowedBuiltinTools:
   - WebFetch
@@ -14,6 +16,7 @@ allowedBuiltinTools:
   - Read
 allowedMcpServers:
   - dc
+  - claude_ai_Gmail
 metadata:
   x-dc-archetype: utility
   x-dc-icon: '📰'
