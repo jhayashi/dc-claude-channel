@@ -718,6 +718,96 @@ export const agentSetupApp: WebXDCApp = {
         continue
       }
 
+      if (payload.type === 'teleport_out_commit') {
+        const requestId = typeof (payload as { requestId?: unknown }).requestId === 'number'
+          ? (payload as { requestId: number }).requestId : 0
+        const chatId = typeof (payload as { chatId?: unknown }).chatId === 'number'
+          ? (payload as { chatId: number }).chatId : NaN
+        const jobDisposition = (payload as { jobDisposition?: unknown }).jobDisposition
+
+        const sendErr = async (step: string, message: string) => {
+          await ctx.client.sendWebXDCUpdate(session.msgId, JSON.stringify({
+            payload: {
+              type: 'teleport_out_error', requestId, step, message,
+              version: agentSetup.getAgentSetupVersion(), senderAddr: 'server',
+            },
+            summary: 'Teleport-out error',
+          })).catch(() => {})
+        }
+        const emit = async (step: string, status: 'start' | 'done', detail?: string) => {
+          await ctx.client.sendWebXDCUpdate(session.msgId, JSON.stringify({
+            payload: {
+              type: 'teleport_out_progress', requestId, step, status,
+              detail: detail ?? null,
+              version: agentSetup.getAgentSetupVersion(), senderAddr: 'server',
+            },
+            summary: `Teleport-out: ${step} ${status}`,
+          })).catch(() => {})
+        }
+
+        if (!Number.isFinite(chatId) || !access.isAllowed(chatId)) {
+          await sendErr('validate', 'Invalid chat')
+          continue
+        }
+
+        try {
+          let chatName: string | undefined
+          try { chatName = await ctx.client.getChatName(chatId) || undefined } catch { /* best effort */ }
+
+          // Build command FIRST — if binding is bad, bail out before mutating.
+          const cmdResult = resume.buildResumeCommand(chatId, { chatName })
+          if ('error' in cmdResult) {
+            await sendErr('build-command', cmdResult.error)
+            continue
+          }
+
+          await emit('evict', 'start')
+          await ctx.subagentCache.evictChat(chatId).catch(() => {})
+          await emit('evict', 'done')
+
+          await emit('jobs', 'start')
+          if (jobDisposition && typeof jobDisposition === 'object' &&
+              (jobDisposition as { kind?: string }).kind === 'move' &&
+              typeof (jobDisposition as { toChatId?: unknown }).toChatId === 'number') {
+            const to = (jobDisposition as { toChatId: number }).toChatId
+            const moved = ctx.scheduleStore.moveForChat(chatId, to)
+            await emit('jobs', 'done', `moved ${moved} jobs to chat ${to}`)
+          } else {
+            const deleted = ctx.scheduleStore.deleteForChat(chatId)
+            await emit('jobs', 'done', `deleted ${deleted} jobs`)
+          }
+
+          await emit('state', 'start')
+          await ctx.cleanupChatState(chatId, { chatAction: 'leave', reason: 'teleport-out-gui' })
+          await emit('state', 'done')
+
+          await emit('command', 'start')
+          try {
+            await ctx.client.send(chatId, '```\n' + cmdResult.command + '\n```')
+          } catch (err) {
+            ctx.logf('agent-setup: teleport-out command send failed: %v', err)
+          }
+          await emit('command', 'done')
+
+          await ctx.client.sendWebXDCUpdate(session.msgId, JSON.stringify({
+            payload: {
+              type: 'teleport_out_done',
+              requestId,
+              command: cmdResult.command,
+              sessionId: cmdResult.sessionId,
+              chatName: chatName ?? null,
+              version: agentSetup.getAgentSetupVersion(),
+              senderAddr: 'server',
+            },
+            summary: 'Teleport-out done',
+          })).catch(() => {})
+        } catch (err) {
+          ctx.logf('agent-setup: teleport_out_commit failed: %v', err)
+          await sendErr('unexpected', (err as Error).message || 'unexpected error')
+        }
+        continue
+      }
+
       if (payload.type === 'teleport_out_list_request') {
         const requestId = typeof (payload as { requestId?: unknown }).requestId === 'number'
           ? (payload as { requestId: number }).requestId : 0

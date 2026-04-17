@@ -535,6 +535,12 @@ ctx = {
     const result = await subagentCache.dispatch(chatId, text)
     return result.text ?? ''
   },
+  // scheduleStore / scheduler are `let` at module scope and not assigned
+  // until inside main(). ctx is built at module top-level, so expose the
+  // store via a getter that reads the current binding when called.
+  get scheduleStore() { return scheduleStore },
+  subagentCache,
+  cleanupChatState,
 }
 
 // App tool dispatch map — O(1) lookup, rebuilds on cache miss.

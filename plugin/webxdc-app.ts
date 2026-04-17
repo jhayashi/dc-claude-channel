@@ -43,6 +43,16 @@ export interface AppContext {
   getConnectedMcpServers: () => string[]
   /** Dispatch a synthetic user message to a chat's subagent and return the response text. */
   dispatchAndCollect?: (chatId: number, text: string) => Promise<string>
+  /** Per-chat scheduled-job store. Populated by server.ts at startup. */
+  scheduleStore: import('./dispatcher/schedule-store.js').ScheduleStore
+  /** Subagent cache — used by teleport-out to evict before the command prints. */
+  subagentCache: { evictChat(chatId: number): Promise<void> }
+  /**
+   * Shared chat-cleanup helper (file-reviewer, familiar, tutorial, schedules,
+   * binding, access, optionally leave/delete the DC chat). Wraps the
+   * module-level helper in server.ts.
+   */
+  cleanupChatState: (chatId: number, opts: { chatAction: 'delete' | 'leave' | 'none'; reason: string }) => Promise<void>
 }
 
 export interface WebXDCApp {
