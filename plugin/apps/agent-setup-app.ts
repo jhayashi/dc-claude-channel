@@ -859,9 +859,7 @@ export const agentSetupApp: WebXDCApp = {
           const ownerContactId = await resolveOwner()
           if (!ownerContactId) continue
 
-          const candidates = resume.listResumeCandidates()
-          const candidate = candidates.find(c => c.sessionId === sessionId)
-          if (candidate?.isProbablyLive) {
+          if (resume.isSessionLive(sessionId)) {
             ctx.logf('agent-setup: session %s appears active in terminal, warning user', sessionId)
             await ctx.client.sendWebXDCUpdate(session.msgId, JSON.stringify({
               payload: {
@@ -875,6 +873,8 @@ export const agentSetupApp: WebXDCApp = {
             }))
             continue
           }
+          const candidates = resume.listResumeCandidates()
+          const candidate = candidates.find(c => c.sessionId === sessionId)
 
           const sourceBinding = bindings.getBinding(session.sourceChatId)
           const agentId = sourceBinding?.agentId ?? 'claude-code'

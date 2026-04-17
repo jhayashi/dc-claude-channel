@@ -251,7 +251,7 @@ describe('listResumeCandidates', () => {
     expect(out[0]!.sessionName).toBeNull()
   })
 
-  it('flags isProbablyLive when a process has the file open', () => {
+  it('excludes sessions with a live fd (single-writer guard)', () => {
     writeSession('-p', 'live0000-0000-0000-0000-000000000000', 60 * 1000, {})
     writeSession('-p', 'idle0000-0000-0000-0000-000000000000', 60 * 1000, {})
     // Hold the "live" file open so fuser detects it.
@@ -260,10 +260,8 @@ describe('listResumeCandidates', () => {
     const fd = openSync(livePath, 'r')
     try {
       const out = resume.listResumeCandidates({ limit: 10 })
-      const live = out.find(c => c.sessionId.startsWith('live'))
-      const idle = out.find(c => c.sessionId.startsWith('idle'))
-      expect(live!.isProbablyLive).toBe(true)
-      expect(idle!.isProbablyLive).toBe(false)
+      expect(out.find(c => c.sessionId.startsWith('live'))).toBeUndefined()
+      expect(out.find(c => c.sessionId.startsWith('idle'))).toBeDefined()
     } finally {
       closeSync(fd)
     }

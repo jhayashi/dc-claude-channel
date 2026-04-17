@@ -416,7 +416,6 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   font-size: 13px;
 }
 .resume-ts { font-size: 13px; font-weight: 600; color: #79c0ff; white-space: nowrap; }
-.resume-ts.live { color: #ff7b72; }
 .resume-meta {
   font-size: 12px; color: #8b949e; margin-top: 3px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -865,7 +864,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.58;
+var APP_VERSION = 1.59;
 var draft = null;
 var existingAgents = [];
 var templateList = [];
@@ -2141,12 +2140,7 @@ function renderResumeList(candidates) {
 
       var ts = document.createElement('div');
       ts.className = 'resume-ts';
-      if (c.isProbablyLive) {
-        ts.classList.add('live');
-        ts.textContent = 'active now';
-      } else {
-        ts.textContent = relativeTime(c.mtimeMs);
-      }
+      ts.textContent = relativeTime(c.mtimeMs);
 
       header.appendChild(name);
       header.appendChild(ts);

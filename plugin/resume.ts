@@ -110,8 +110,6 @@ export interface Candidate {
   sessionName: string | null
   /** Size-based estimate (not exact line count) to avoid scanning large files. */
   messageCount: number | null
-  /** True when a process has the session file open (checked via fuser). */
-  isProbablyLive: boolean
 }
 
 export interface ListOptions {
@@ -135,13 +133,30 @@ function isFileInUse(path: string): boolean {
 }
 
 /**
+ * Return true when a session's `.jsonl` is currently held open by any
+ * process (via fuser). Used at attach time to guard against a session
+ * going live between listResumeCandidates() and the attach click.
+ * Returns false if the session file can't be found.
+ */
+export function isSessionLive(sessionId: string): boolean {
+  const path = findSessionFile(sessionId)
+  if (!path) return false
+  return isFileInUse(path)
+}
+
+/**
  * Scan ~/.claude/projects/STAR/STAR.jsonl and return recent claude
- * sessions eligible for resume — excludes only sessions already bound
- * to a DC chat. Orphan DC-born sessions (cwd no longer bound) are
- * included so they can be rescued into a new chat. With the per-chat
- * cwd model each session has exactly one on-disk copy, so no dedup is
- * needed — duplicate-copy entries left over from the old copy-based
- * model will age out of the 5-day window naturally.
+ * sessions eligible for resume. Excludes:
+ *   - sessions already bound to a DC chat
+ *   - sessions whose `.jsonl` is currently held open by any process
+ *     (single-writer guard — includes the terminal Claude running this
+ *     very dispatcher, which would deadlock if you attached its own
+ *     session into a DC chat).
+ * Orphan DC-born sessions (cwd no longer bound) are included so they
+ * can be rescued into a new chat. With the per-chat cwd model each
+ * session has exactly one on-disk copy, so no dedup is needed —
+ * duplicate-copy entries left over from the old copy-based model will
+ * age out of the 5-day window naturally.
  */
 export function listResumeCandidates(opts: ListOptions = {}): Candidate[] {
   const limit = opts.limit ?? 25
@@ -175,6 +190,8 @@ export function listResumeCandidates(opts: ListOptions = {}): Candidate[] {
       try { fstat = statSync(sessionPath) } catch { continue }
       if (fstat.mtimeMs < cutoff) continue
 
+      if (isFileInUse(sessionPath)) continue
+
       const { summary, sessionName, messageCount } = readSessionMeta(sessionPath, fstat.size)
       candidates.push({
         sessionId,
@@ -184,7 +201,6 @@ export function listResumeCandidates(opts: ListOptions = {}): Candidate[] {
         summary,
         sessionName,
         messageCount,
-        isProbablyLive: isFileInUse(sessionPath),
       })
     }
   }
