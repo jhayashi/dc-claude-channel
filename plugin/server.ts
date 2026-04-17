@@ -1481,6 +1481,78 @@ for (const app of apps) {
   app.registerNotifications?.(ctx)
 }
 
+/**
+ * Tear down all bot state bound to a chat, then either leave or delete the
+ * DC chat. Callable from module scope so both the ChatModified / system-
+ * message unpair paths AND the dc_resume_in_terminal tool share one code
+ * path — previously the tool had a partial copy that leaked scheduled
+ * jobs, familiar apps, tutorial state, and file-reviewer state.
+ *
+ * `chatAction`:
+ *   - 'delete' — fully remove the chat (unpair default)
+ *   - 'leave'  — leave the group but don't delete locally (resume-out)
+ *   - 'none'   — bot stays; caller already handled the chat-side action
+ *
+ * Depends on module-level singletons initialized in main(): scheduleStore,
+ * scheduler. Safe to call only after main() has set those up.
+ */
+async function cleanupChatState(
+  chatId: number,
+  opts: { chatAction: 'delete' | 'leave' | 'none'; reason: string },
+): Promise<void> {
+  logf('dc channel: cleanup chat %d (%s, chatAction=%s)', chatId, opts.reason, opts.chatAction)
+
+  for (const [mid, entry] of webxdcAppRegistry.entries()) {
+    if (entry.chatId === chatId) {
+      webxdcAppRegistry.delete(mid)
+      webxdcLastSerial.delete(mid)
+    }
+  }
+  try {
+    const fileReviewer = await import('./file-reviewer.js')
+    fileReviewer.deleteViewer(chatId)
+  } catch (err) {
+    logf('dc channel: cleanup file-reviewer error: %v', err)
+  }
+  try {
+    for (const inst of familiarRuntime.listInstances(chatId)) {
+      familiarRuntime.deleteInstance(inst.appId)
+      if (inst.persistent) familiarRuntime.deletePersistedInstance(inst.appId)
+      webxdcAppRegistry.delete(inst.msgId)
+      webxdcLastSerial.delete(inst.msgId)
+    }
+  } catch (err) {
+    logf('dc channel: cleanup familiar error: %v', err)
+  }
+  tutorial.clearTutorial(chatId)
+  try {
+    const n = scheduleStore.deleteForChat(chatId)
+    if (n > 0) logf('dc channel: cleanup deleted %d schedules for chat %d', n, chatId)
+    scheduler.refresh()
+  } catch (err) {
+    logf('dc channel: cleanup schedules error: %v', err)
+  }
+  await subagentCache.evictChat(chatId).catch(err =>
+    logf('dc channel: cleanup evict failed chat=%d: %v', chatId, err),
+  )
+  bindings.deleteBinding(chatId)
+  access.removeChat(chatId)
+
+  if (opts.chatAction === 'delete') {
+    try {
+      await client.deleteChat(chatId)
+    } catch (err) {
+      logf('dc channel: cleanup deleteChat error: %v', err)
+    }
+  } else if (opts.chatAction === 'leave') {
+    try {
+      await client.leaveChat(chatId)
+    } catch (err) {
+      logf('dc channel: cleanup leaveChat error: %v', err)
+    }
+  }
+}
+
 // ── Startup ─────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -1529,67 +1601,8 @@ async function main(): Promise<void> {
 
   // Register event handlers BEFORE starting IO to avoid missing queued messages.
 
-  /**
-   * Tear down all bot state bound to a chat and delete the chat from DC core.
-   * Used by both the IncomingMsg system-message path and the ChatModified path.
-   * Safe to call even if some state doesn't exist — each step handles its own errors.
-   */
-  const cleanupChat = async (chatId: number, reason: string): Promise<void> => {
-    logf('dc channel: cleanup chat %d (%s)', chatId, reason)
-    // Drop any WebXDC session bindings for this chat.
-    for (const [mid, entry] of webxdcAppRegistry.entries()) {
-      if (entry.chatId === chatId) {
-        webxdcAppRegistry.delete(mid)
-        webxdcLastSerial.delete(mid)
-      }
-    }
-    // Drop file-reviewer session state.
-    try {
-      const fileReviewer = await import('./file-reviewer.js')
-      fileReviewer.deleteViewer(chatId)
-    } catch (err) {
-      logf('dc channel: cleanup file-reviewer error: %v', err)
-    }
-    // Drop familiar instances (in-memory + persisted) so they don't revive
-    // against a deleted chat on next startup.
-    try {
-      for (const inst of familiarRuntime.listInstances(chatId)) {
-        familiarRuntime.deleteInstance(inst.appId)
-        if (inst.persistent) familiarRuntime.deletePersistedInstance(inst.appId)
-        webxdcAppRegistry.delete(inst.msgId)
-        webxdcLastSerial.delete(inst.msgId)
-      }
-    } catch (err) {
-      logf('dc channel: cleanup familiar error: %v', err)
-    }
-    // Clear any in-flight tutorial state.
-    tutorial.clearTutorial(chatId)
-    // Drop any scheduled jobs for this chat and rearm the scheduler in
-    // case the deleted chat held the nearest upcoming fire.
-    try {
-      const n = scheduleStore.deleteForChat(chatId)
-      if (n > 0) logf('dc channel: cleanup deleted %d schedules for chat %d', n, chatId)
-      scheduler.refresh()
-    } catch (err) {
-      logf('dc channel: cleanup schedules error: %v', err)
-    }
-    // Evict the subagent process if one is running for this chat.
-    await subagentCache.evictChat(chatId).catch(err =>
-      logf('dc channel: cleanup evict failed chat=%d: %v', chatId, err),
-    )
-    // Drop the binding (session uuid + agent link) so the next pairing
-    // starts fresh. Agent definitions are reusable and intentionally
-    // left on disk — only the user deletes agents (via the manage screen).
-    bindings.deleteBinding(chatId)
-    // Remove from the allowlist.
-    access.removeChat(chatId)
-    // Delete the chat from DC core last — after this, the chatId may be invalid.
-    try {
-      await client.deleteChat(chatId)
-    } catch (err) {
-      logf('dc channel: cleanup deleteChat error: %v', err)
-    }
-  }
+  const cleanupChat = (chatId: number, reason: string): Promise<void> =>
+    cleanupChatState(chatId, { chatAction: 'delete', reason })
 
   // Extracted helpers so the router can call them.
 
