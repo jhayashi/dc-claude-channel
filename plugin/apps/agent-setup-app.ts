@@ -71,6 +71,63 @@ interface Session {
   needsSerialSeed?: boolean
 }
 
+/**
+ * Row list for the "Send chat to terminal" picker. One row per paired
+ * binding in the access list. Metadata sourced at call time — the
+ * handler re-runs every time the pane is opened.
+ *
+ * `ctx` takes function deps rather than the full AppContext so the
+ * helper is trivially unit-testable without a live DC connection.
+ */
+export interface TeleportOutListCtx {
+  jobCountForChat(chatId: number): number
+  sessionLive(sessionPath: string): boolean
+  chatNameForId(chatId: number): string | null
+}
+
+export interface TeleportOutChat {
+  chatId: number
+  chatName: string
+  agentId: string | null
+  agentName: string | null
+  lastActiveMs: number | null
+  jobCount: number
+  isTrusted: boolean
+  isLive: boolean
+  sessionId: string | null
+  workingDir: string | null
+}
+
+export function buildTeleportOutList(ctx: TeleportOutListCtx): TeleportOutChat[] {
+  const rows: TeleportOutChat[] = []
+  for (const b of bindings.listBindings()) {
+    if (!access.isAllowed(b.chatId)) continue
+    const agent = b.agentId ? agents.getAgent(b.agentId) : null
+    const chatName = ctx.chatNameForId(b.chatId) ?? `Chat ${b.chatId}`
+    const jobCount = ctx.jobCountForChat(b.chatId)
+    let isLive = false
+    if (b.sessionId && b.workingDir) {
+      const hash = resume.projectHashForCwd(b.workingDir)
+      const path = join(homedir(), '.claude', 'projects', hash, `${b.sessionId}.jsonl`)
+      isLive = ctx.sessionLive(path)
+    }
+    rows.push({
+      chatId: b.chatId,
+      chatName,
+      agentId: b.agentId ?? null,
+      agentName: agent?.name ?? null,
+      lastActiveMs: null,
+      jobCount,
+      isTrusted: !!agent && agents.getSkipPermissions(agent) === true,
+      isLive,
+      sessionId: b.sessionId ?? null,
+      workingDir: b.workingDir ?? null,
+    })
+  }
+  rows.sort((a, b) => (b.lastActiveMs ?? 0) - (a.lastActiveMs ?? 0) || a.chatId - b.chatId)
+  return rows
+}
+
 // Per-chat msgId pointer: "has this chat seen the setup card yet, and if so,
 // which msgId?" First dc_open_agent_settings call sends a new xdc; later calls
 // send a status update to the same msgId so the card returns to the top via
@@ -657,6 +714,44 @@ export const agentSetupApp: WebXDCApp = {
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
         } catch (err) {
           ctx.logf('agent-setup: resume_list send failed: %v', err)
+        }
+        continue
+      }
+
+      if (payload.type === 'teleport_out_list_request') {
+        const requestId = typeof (payload as { requestId?: unknown }).requestId === 'number'
+          ? (payload as { requestId: number }).requestId : 0
+        try {
+          const { spawnSync } = await import('node:child_process')
+          const liveChecker = (p: string) => {
+            try {
+              const res = spawnSync('fuser', [p], { timeout: 3000, stdio: 'pipe' })
+              return res.status === 0
+            } catch { return false }
+          }
+          const list = buildTeleportOutList({
+            jobCountForChat: (cid) => ctx.scheduleStore.countForChat(cid),
+            sessionLive: liveChecker,
+            chatNameForId: () => null,
+          })
+          for (const row of list) {
+            try {
+              const name = await ctx.client.getChatName(row.chatId)
+              if (name) row.chatName = name
+            } catch { /* keep fallback */ }
+          }
+          await ctx.client.sendWebXDCUpdate(session.msgId, JSON.stringify({
+            payload: {
+              type: 'teleport_out_list',
+              requestId,
+              chats: list,
+              version: agentSetup.getAgentSetupVersion(),
+              senderAddr: 'server',
+            },
+            summary: 'Teleport-out list',
+          }))
+        } catch (err) {
+          ctx.logf('agent-setup: teleport_out_list_request failed: %v', err)
         }
         continue
       }
