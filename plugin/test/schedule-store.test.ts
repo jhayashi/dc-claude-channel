@@ -127,3 +127,37 @@ describe('ScheduleStore robustness', () => {
     expect(loaded[0].prompt).toBe('v2')
   })
 })
+
+describe('ScheduleStore.moveForChat', () => {
+  test('moves all jobs from one chat to another', () => {
+    store.save(fixture({ chatId: 22, jobId: 'aaa111' }))
+    store.save(fixture({ chatId: 22, jobId: 'bbb222' }))
+    store.save(fixture({ chatId: 87, jobId: 'ccc333' }))
+
+    const moved = store.moveForChat(22, 99)
+    expect(moved).toBe(2)
+    expect(store.countForChat(22)).toBe(0)
+    expect(store.countForChat(87)).toBe(1)
+    expect(store.countForChat(99)).toBe(2)
+    for (const j of store.loadForChat(99)) expect(j.chatId).toBe(99)
+  })
+
+  test('no-op when source chat has no jobs', () => {
+    expect(store.moveForChat(22, 99)).toBe(0)
+  })
+
+  test('no-op when source == destination', () => {
+    store.save(fixture({ chatId: 22, jobId: 'aaa111' }))
+    expect(store.moveForChat(22, 22)).toBe(0)
+    expect(store.countForChat(22)).toBe(1)
+  })
+
+  test('throws on job-id collision at destination', () => {
+    store.save(fixture({ chatId: 22, jobId: 'shared' }))
+    store.save(fixture({ chatId: 99, jobId: 'shared' }))
+    expect(() => store.moveForChat(22, 99)).toThrow(/collision/i)
+    // Source should be untouched — no partial move
+    expect(store.countForChat(22)).toBe(1)
+    expect(store.countForChat(99)).toBe(1)
+  })
+})

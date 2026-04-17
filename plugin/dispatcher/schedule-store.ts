@@ -86,4 +86,47 @@ export class ScheduleStore {
     }
     return n
   }
+
+  /**
+   * Rename every job file from `${fromChatId}-*.json` to
+   * `${toChatId}-*.json`, rewriting the `chatId` field inside each
+   * file. Used by the send-to-terminal flow when the user opts to
+   * preserve scheduled jobs on another chat.
+   *
+   * Returns the number of files moved. No-op when from === to or
+   * when the source chat has no jobs.
+   *
+   * Throws (before touching disk) if any destination path already
+   * exists — refuse to clobber a jobId collision so no schedule
+   * silently disappears.
+   */
+  moveForChat(fromChatId: number, toChatId: number): number {
+    if (fromChatId === toChatId) return 0
+    if (!existsSync(this.dir)) return 0
+
+    const srcPrefix = `${fromChatId}-`
+    const pending: Array<{ src: string; dst: string }> = []
+    for (const name of readdirSync(this.dir)) {
+      if (!name.startsWith(srcPrefix) || !name.endsWith('.json')) continue
+      const jobId = name.slice(srcPrefix.length, -'.json'.length)
+      const src = join(this.dir, name)
+      const dst = this.filename(toChatId, jobId)
+      if (existsSync(dst)) {
+        throw new Error(`moveForChat: job-id collision at ${dst} (source ${src})`)
+      }
+      pending.push({ src, dst })
+    }
+    if (pending.length === 0) return 0
+
+    for (const { src, dst } of pending) {
+      const raw = readFileSync(src, 'utf-8')
+      const job = JSON.parse(raw) as ScheduledJob
+      job.chatId = toChatId
+      const tmp = `${dst}.tmp`
+      writeFileSync(tmp, JSON.stringify(job, null, 2))
+      renameSync(tmp, dst)
+      unlinkSync(src)
+    }
+    return pending.length
+  }
 }
