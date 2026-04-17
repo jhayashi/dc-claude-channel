@@ -606,6 +606,14 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
           </span>
           <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
         </button>
+        <button class="home-action" data-variant="resume" onclick="gotoTeleportOut()">
+          <span class="home-action-icon">&#x2B06;&#xFE0F;</span>
+          <span class="home-action-body">
+            <span class="home-action-label">Send chat to terminal</span>
+            <span class="home-action-desc">Continue a DC conversation in your local <code>claude</code> terminal.</span>
+          </span>
+          <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
+        </button>
       </div>
     </div>
   </div>
@@ -914,7 +922,7 @@ function populateModelDropdowns(availableModels, defaultModel) {
 }
 
 function show(id) {
-  var ids = ['loading', 'step0', 'new-chat', 'manage', 'step2', 'step3', 'outdated', 'resume-import'];
+  var ids = ['loading', 'step0', 'new-chat', 'manage', 'step2', 'step3', 'outdated', 'resume-import', 'teleport-out'];
   for (var i = 0; i < ids.length; i++) {
     var el = document.getElementById(ids[i]);
     if (ids[i] === id) el.classList.add('visible'); else el.classList.remove('visible');
@@ -1419,6 +1427,346 @@ function resetResumePane() {
   if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
   var attachBtn = document.getElementById('resume-attach');
   if (attachBtn) attachBtn.disabled = true;
+}
+
+// ── Send chat to terminal ───────────────────────────────────────────────
+var toState = {
+  screen: 'pick',
+  chats: [],
+  selectedChat: null,
+  jobDisposition: 'delete',
+  moveTarget: null,
+  requestId: 0,
+  progress: {},
+  progressDetails: {},
+  command: null,
+};
+
+var TO_PROGRESS_STEPS = [
+  { id: 'evict',   label: 'Pausing chat subagent' },
+  { id: 'jobs',    label: 'Handling scheduled jobs' },
+  { id: 'state',   label: 'Cleaning up chat state' },
+  { id: 'command', label: 'Generating terminal command' },
+];
+
+function gotoTeleportOut() {
+  toState = {
+    screen: 'pick', chats: [], selectedChat: null, jobDisposition: 'delete',
+    moveTarget: null, requestId: ++resumeRequestId, progress: {}, progressDetails: {}, command: null,
+  };
+  toShow('pick');
+  show('teleport-out');
+  var errBox = document.getElementById('to-error');
+  if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+  var list = document.getElementById('to-list');
+  list.replaceChildren();
+  var loading = document.createElement('div');
+  loading.style.cssText = 'color:#8b949e;font-size:13px;';
+  loading.textContent = 'Loading chats…';
+  list.appendChild(loading);
+  window.webxdc.sendUpdate({
+    payload: {
+      type: 'teleport_out_list_request',
+      requestId: toState.requestId,
+      senderAddr: window.webxdc.selfAddr,
+    },
+    summary: 'teleport-out list',
+  }, '');
+}
+
+function toShow(screen) {
+  toState.screen = screen;
+  var panes = document.querySelectorAll('#teleport-out .to-screen');
+  for (var i = 0; i < panes.length; i++) {
+    panes[i].style.display = panes[i].getAttribute('data-to-screen') === screen ? 'block' : 'none';
+  }
+  var back = document.getElementById('to-back');
+  var next = document.getElementById('to-next');
+  back.style.display = '';
+  next.style.display = '';
+  back.disabled = false;
+  if (screen === 'pick') {
+    back.textContent = 'Cancel'; back.onclick = function() { show('step0'); };
+    next.textContent = 'Next';   next.onclick = toAdvanceFromPick;
+    next.disabled = !toState.selectedChat;
+  } else if (screen === 'jobs') {
+    back.textContent = 'Back'; back.onclick = function() { toShow('pick'); };
+    next.textContent = 'Next'; next.onclick = toAdvanceFromJobs;
+    next.disabled = toState.jobDisposition === 'move' && !toState.moveTarget;
+  } else if (screen === 'confirm') {
+    back.textContent = 'Back';
+    back.onclick = function() {
+      toShow(toState.selectedChat && toState.selectedChat.jobCount > 0 ? 'jobs' : 'pick');
+    };
+    next.textContent = 'Send to terminal';
+    next.onclick = toCommit;
+    next.disabled = false;
+  } else if (screen === 'progress') {
+    back.disabled = true; next.disabled = true;
+    back.textContent = 'Processing…'; back.onclick = null;
+    next.style.display = 'none';
+  } else if (screen === 'done') {
+    back.style.display = 'none';
+    next.textContent = 'Done'; next.onclick = function() { show('step0'); };
+    next.disabled = false;
+  }
+}
+
+function toRenderPickList(chats) {
+  toState.chats = chats || [];
+  var list = document.getElementById('to-list');
+  var empty = document.getElementById('to-empty');
+  list.replaceChildren();
+  if (!toState.chats.length) { empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+
+  for (var i = 0; i < toState.chats.length; i++) {
+    (function(chat) {
+      var row = document.createElement('div');
+      row.className = 'to-row';
+      if (chat.isLive) row.setAttribute('aria-disabled', 'true');
+
+      var avatar = document.createElement('div');
+      avatar.className = 'avatar';
+      avatar.textContent = (chat.chatName || '?').charAt(0).toUpperCase();
+
+      var body = document.createElement('div');
+      body.className = 'row-body';
+
+      var nameDiv = document.createElement('div');
+      nameDiv.className = 'row-name';
+      nameDiv.appendChild(document.createTextNode(chat.chatName || ('Chat ' + chat.chatId)));
+      if (chat.isTrusted) nameDiv.appendChild(toBadge('trusted', 'to-badge-trusted'));
+      if (chat.jobCount > 0) nameDiv.appendChild(toBadge(chat.jobCount + ' job' + (chat.jobCount === 1 ? '' : 's'), 'to-badge-jobs'));
+      if (chat.isLive) nameDiv.appendChild(toBadge('live in terminal', 'to-badge-live'));
+
+      var meta = document.createElement('div');
+      meta.className = 'row-meta';
+      meta.textContent = (chat.agentName || chat.agentId || 'no agent') + (chat.isLive ? ' · already open in a terminal' : '');
+
+      body.appendChild(nameDiv);
+      body.appendChild(meta);
+
+      var arrow = document.createElement('div');
+      arrow.className = 'arrow';
+      arrow.textContent = '›';
+
+      row.appendChild(avatar);
+      row.appendChild(body);
+      row.appendChild(arrow);
+
+      if (!chat.isLive) {
+        row.onclick = function() {
+          var rows = document.querySelectorAll('#to-list .to-row');
+          for (var k = 0; k < rows.length; k++) rows[k].classList.remove('selected');
+          row.classList.add('selected');
+          toState.selectedChat = chat;
+          document.getElementById('to-next').disabled = false;
+        };
+      }
+      list.appendChild(row);
+    })(toState.chats[i]);
+  }
+}
+
+function toBadge(text, cls) {
+  var span = document.createElement('span');
+  span.className = 'to-badge ' + cls;
+  span.style.marginLeft = '4px';
+  span.textContent = text;
+  return span;
+}
+
+function toAdvanceFromPick() {
+  if (!toState.selectedChat) return;
+  if (toState.selectedChat.jobCount > 0) {
+    toRenderJobs();
+    toShow('jobs');
+  } else {
+    toRenderConfirm();
+    toShow('confirm');
+  }
+}
+
+function toRenderJobs() {
+  var c = toState.selectedChat;
+  var sub = document.getElementById('to-jobs-sub');
+  sub.replaceChildren(document.createTextNode(
+    c.chatName + ' has ' + c.jobCount + ' scheduled job' +
+    (c.jobCount === 1 ? '' : 's') +
+    '. Terminal sessions don\u2019t run schedules \u2014 choose what to do with them.'
+  ));
+
+  var optDel = document.getElementById('to-opt-delete');
+  var optMov = document.getElementById('to-opt-move');
+  optDel.classList.toggle('selected', toState.jobDisposition === 'delete');
+  optMov.classList.toggle('selected', toState.jobDisposition === 'move');
+  optDel.onclick = function() {
+    toState.jobDisposition = 'delete';
+    toRenderJobs();
+    document.getElementById('to-next').disabled = false;
+  };
+  optMov.onclick = function() {
+    toState.jobDisposition = 'move';
+    toRenderJobs();
+    document.getElementById('to-next').disabled = !toState.moveTarget;
+  };
+
+  var sel = document.getElementById('to-move-target');
+  sel.replaceChildren();
+  var placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = '— Pick a destination chat —';
+  sel.appendChild(placeholder);
+  for (var i = 0; i < toState.chats.length; i++) {
+    var other = toState.chats[i];
+    if (other.chatId === c.chatId) continue;
+    var o = document.createElement('option');
+    o.value = String(other.chatId);
+    o.textContent = other.chatName + ' (' + (other.agentName || 'no agent') + ')';
+    if (toState.moveTarget === other.chatId) o.selected = true;
+    sel.appendChild(o);
+  }
+  sel.disabled = toState.jobDisposition !== 'move';
+  sel.onchange = function() {
+    toState.moveTarget = sel.value ? parseInt(sel.value, 10) : null;
+    document.getElementById('to-next').disabled = !toState.moveTarget;
+  };
+}
+
+function toAdvanceFromJobs() {
+  if (toState.jobDisposition === 'move' && !toState.moveTarget) return;
+  toRenderConfirm();
+  toShow('confirm');
+}
+
+function toRenderConfirm() {
+  var c = toState.selectedChat;
+  var jobsLine;
+  if (c.jobCount === 0) jobsLine = '0';
+  else if (toState.jobDisposition === 'move') {
+    var target = null;
+    for (var i = 0; i < toState.chats.length; i++) if (toState.chats[i].chatId === toState.moveTarget) target = toState.chats[i];
+    jobsLine = c.jobCount + ' → moved to ' + (target ? target.chatName : ('chat ' + toState.moveTarget));
+  } else {
+    jobsLine = c.jobCount + ' → deleted';
+  }
+
+  var summary = document.getElementById('to-summary');
+  summary.replaceChildren();
+  var addRow = function(key, val, mono) {
+    var row = document.createElement('div'); row.className = 'sum-row';
+    var k = document.createElement('span'); k.className = 'sum-key'; k.textContent = key;
+    var v = document.createElement('span'); v.className = 'sum-val' + (mono ? ' mono' : ''); v.textContent = val;
+    row.appendChild(k); row.appendChild(v); summary.appendChild(row);
+  };
+  addRow('Chat', c.chatName || ('Chat ' + c.chatId), false);
+  addRow('Agent definition', 'Kept (reusable)', false);
+  addRow('Session UUID', (c.sessionId || '—').slice(0, 20) + (c.sessionId && c.sessionId.length > 20 ? '…' : ''), true);
+  addRow('Working dir', c.workingDir || '—', true);
+  addRow('Scheduled jobs', jobsLine, false);
+  addRow('DC chat', 'Left', false);
+}
+
+function toCommit() {
+  toShow('progress');
+  toState.progress = {};
+  toState.progressDetails = {};
+  for (var i = 0; i < TO_PROGRESS_STEPS.length; i++) toState.progress[TO_PROGRESS_STEPS[i].id] = 'pending';
+  toRenderProgress();
+  var payload = {
+    type: 'teleport_out_commit',
+    requestId: toState.requestId,
+    chatId: toState.selectedChat.chatId,
+    jobDisposition: toState.jobDisposition === 'move'
+      ? { kind: 'move', toChatId: toState.moveTarget }
+      : { kind: 'delete' },
+    senderAddr: window.webxdc.selfAddr,
+  };
+  window.webxdc.sendUpdate({ payload: payload, summary: 'teleport-out commit' }, '');
+}
+
+function toRenderProgress() {
+  var ul = document.getElementById('to-progress');
+  ul.replaceChildren();
+  for (var i = 0; i < TO_PROGRESS_STEPS.length; i++) {
+    var s = TO_PROGRESS_STEPS[i];
+    var status = toState.progress[s.id] || 'pending';
+    var li = document.createElement('li');
+
+    var icon = document.createElement('span');
+    icon.className = 'ti ' + status;
+    icon.textContent = status === 'done' ? '✓' : (status === 'active' ? '' : '·');
+
+    var wrap = document.createElement('div');
+    var label = document.createElement('div');
+    label.className = 'label' + (status === 'pending' ? ' pending' : '');
+    label.textContent = s.label;
+    wrap.appendChild(label);
+
+    var detail = toState.progressDetails[s.id];
+    if (detail) {
+      var det = document.createElement('div');
+      det.className = 'detail';
+      det.textContent = detail;
+      wrap.appendChild(det);
+    }
+
+    li.appendChild(icon);
+    li.appendChild(wrap);
+    ul.appendChild(li);
+  }
+}
+
+function toHandleProgress(payload) {
+  if (payload.requestId !== toState.requestId) return;
+  if (!payload.step) return;
+  toState.progress[payload.step] = payload.status === 'done' ? 'done' : 'active';
+  if (payload.detail) toState.progressDetails[payload.step] = payload.detail;
+  toRenderProgress();
+}
+
+function toHandleDone(payload) {
+  if (payload.requestId !== toState.requestId) return;
+  toState.command = payload.command;
+  document.getElementById('to-cmd-text').textContent = payload.command;
+  var c = toState.selectedChat;
+  var jobsLine;
+  if (!c || c.jobCount === 0) jobsLine = '0 jobs';
+  else if (toState.jobDisposition === 'move') jobsLine = c.jobCount + ' jobs moved';
+  else jobsLine = c.jobCount + ' jobs deleted';
+
+  var summary = document.getElementById('to-done-summary');
+  summary.replaceChildren();
+  var addRow = function(key, val) {
+    var row = document.createElement('div'); row.className = 'sum-row';
+    var k = document.createElement('span'); k.className = 'sum-key'; k.textContent = key;
+    var v = document.createElement('span'); v.className = 'sum-val'; v.textContent = val;
+    row.appendChild(k); row.appendChild(v); summary.appendChild(row);
+  };
+  addRow('DC chat', 'Left ✓');
+  addRow('Jobs', jobsLine);
+  addRow('Agent definition', 'Preserved' + (c && c.agentName ? ' (' + c.agentName + ')' : ''));
+  toShow('done');
+}
+
+function toHandleError(payload) {
+  if (payload.requestId !== toState.requestId) return;
+  var errBox = document.getElementById('to-error');
+  errBox.style.display = 'block';
+  errBox.textContent = 'Step "' + payload.step + '" failed: ' + payload.message;
+  toShow('pick');
+}
+
+function toCopyCommand() {
+  var text = (toState.command || '').toString();
+  try {
+    navigator.clipboard.writeText(text);
+    var btn = document.getElementById('to-copy');
+    var prev = btn.textContent;
+    btn.textContent = 'Copied ✓';
+    setTimeout(function() { btn.textContent = prev; }, 1200);
+  } catch (_) { /* ignore */ }
 }
 
 function pickExisting(agentId) {
@@ -1967,6 +2315,23 @@ window.webxdc.setUpdateListener(function(update) {
     if (errEl) { errEl.style.display = 'block'; errEl.textContent = d.message || 'Attach failed.'; }
     var attachBtn = document.getElementById('resume-attach');
     if (attachBtn) attachBtn.disabled = false;
+  }
+
+  if (d.type === 'teleport_out_list') {
+    toRenderPickList(d.chats || []);
+    return;
+  }
+  if (d.type === 'teleport_out_progress') {
+    toHandleProgress(d);
+    return;
+  }
+  if (d.type === 'teleport_out_done') {
+    toHandleDone(d);
+    return;
+  }
+  if (d.type === 'teleport_out_error') {
+    toHandleError(d);
+    return;
   }
 }, 0);
 
