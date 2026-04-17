@@ -1430,16 +1430,16 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         // Keeping it around inflates countByAgentId and blocks
         // auto-delete of otherwise-unused agents.
         setTimeout(async () => {
-          try { await client.send(chatId, 'Session resumed in your terminal. You can delete this chat — it\'s no longer connected.') }
-          catch (err) { logf('dc_resume_in_terminal: goodbye send failed chat=%d: %v', chatId, err) }
-          try { await subagentCache.evictChat(chatId) }
-          catch (err) { logf('dc_resume_in_terminal: evict failed chat=%d: %v', chatId, err) }
-          try { bindings.deleteBinding(chatId) }
-          catch (err) { logf('dc_resume_in_terminal: binding delete failed chat=%d: %v', chatId, err) }
-          try { access.removeChat(chatId) }
-          catch (err) { logf('dc_resume_in_terminal: access remove failed chat=%d: %v', chatId, err) }
-          try { await client.leaveChat(chatId) }
-          catch (err) { logf('dc_resume_in_terminal: leaveChat failed chat=%d: %v', chatId, err) }
+          try {
+            await client.send(chatId, 'Session resumed in your terminal. You can delete this chat — it\'s no longer connected.')
+          } catch (err) {
+            logf('dc_resume_in_terminal: goodbye send failed chat=%d: %v', chatId, err)
+          }
+          try {
+            await cleanupChatState(chatId, { chatAction: 'leave', reason: 'resume-out' })
+          } catch (err) {
+            logf('dc_resume_in_terminal: cleanup failed chat=%d: %v', chatId, err)
+          }
           logf('dc_resume_in_terminal: cleaned up chat %d after resume-out', chatId)
         }, 5000)
 
