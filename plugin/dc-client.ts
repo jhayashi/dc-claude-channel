@@ -481,6 +481,32 @@ export class DCClient {
     return await rpc.getChatContacts(accountId, chatId);
   }
 
+  async getFullChat(chatId: number): Promise<{
+    id: number
+    name: string
+    chatType: string
+    contactIds: number[]
+    pastContactIds: number[]
+    selfInGroup: boolean
+    canSend: boolean
+    archived: boolean
+    freshMessageCounter: number
+  }> {
+    const { rpc, accountId } = this.ensureAccount();
+    const fc = await rpc.getFullChatById(accountId, chatId);
+    return {
+      id: fc.id,
+      name: fc.name,
+      chatType: fc.chatType,
+      contactIds: fc.contactIds,
+      pastContactIds: fc.pastContactIds,
+      selfInGroup: fc.selfInGroup,
+      canSend: fc.canSend,
+      archived: fc.archived,
+      freshMessageCounter: fc.freshMessageCounter,
+    }
+  }
+
   /** True if chatId is a 1:1 ("Single") chat, false for groups/mailinglists/broadcasts. */
   async isSingleChat(chatId: number): Promise<boolean> {
     const { rpc, accountId } = this.ensureAccount();

@@ -30,8 +30,9 @@ export interface AppContext {
   allowedChats: () => number[]
   logf: (format: string, ...args: unknown[]) => void
   safeName: (s: string) => string
-  /** Register a WebXDC msgId for event-driven update dispatch to the given app. */
-  registerWebXDCMsg: (msgId: number, app: WebXDCApp, chatId: number) => void
+  /** Register a WebXDC msgId for event-driven update dispatch to the given app.
+   *  Optional lastSerial seeds the serial tracker so restarts don't replay old updates. */
+  registerWebXDCMsg: (msgId: number, app: WebXDCApp, chatId: number, lastSerial?: number) => void
   /** Unregister a WebXDC msgId (e.g. on session clear). */
   unregisterWebXDCMsg: (msgId: number) => void
   /** Evict a cached subagent for a chat so the next message triggers a respawn (e.g. after model change). */

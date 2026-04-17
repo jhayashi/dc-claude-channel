@@ -194,11 +194,6 @@ export function saveAgent(def: AgentDef): void {
   renameSync(tmpPath, finalPath)
 }
 
-/** Check whether an agent has zero bindings (not used by any chat). */
-export function isOrphaned(agentId: string): boolean {
-  return bindings.countByAgentId(agentId) === 0
-}
-
 /**
  * Delete an agent. Returns true if a file was removed.
  * Throws if `id` is the built-in undeletable default agent — that

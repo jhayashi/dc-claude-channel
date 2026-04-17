@@ -14,6 +14,7 @@ import * as bindings from '../bindings.js'
 import * as access from '../access.js'
 import * as resume from '../resume.js'
 import * as templates from '../templates.js'
+import { decideCleanup, CONTACT_SELF } from '../cleanup.js'
 import { ALL_BUILTIN_TOOLS, BUILTIN_TOOL_DESCRIPTIONS } from '../dispatcher/subagent-process.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -66,6 +67,8 @@ function templatesPayload(ctx: AppContext): Array<{
 interface Session {
   msgId: number
   sourceChatId: number
+  lastSerial?: number
+  needsSerialSeed?: boolean
 }
 
 // Per-chat msgId pointer: "has this chat seen the setup card yet, and if so,
@@ -109,6 +112,7 @@ function loadSessions(): Session[] {
         out.push({
           msgId: (entry as Session).msgId,
           sourceChatId: (entry as Session).sourceChatId,
+          lastSerial: typeof (entry as any).lastSerial === 'number' ? (entry as any).lastSerial : undefined,
         })
       }
     }
@@ -145,15 +149,42 @@ function listExistingForPicker(sourceChatId: number): Array<{ id: string; name: 
   }))
 }
 
-/** Delete the agent if it has no remaining bindings and is deletable. */
-async function removeBindingIfOrphaned(ctx: AppContext, agentId: string): Promise<void> {
-  if (agents.isUndeletableAgent(agentId)) return
-  if (agents.isOrphaned(agentId)) {
+/**
+ * Proactively detect dead chats (owner left or chat deleted locally)
+ * that the event-based cleanup missed. Uses getFullChat to check
+ * contactIds (current members) and pastContactIds (former members).
+ *
+ * A chat is swept if:
+ *   1. The bot is no longer a member (bot-removed), OR
+ *   2. The bot is the only current member (bot-alone), OR
+ *   3. The chat can no longer send (canSend=false).
+ *
+ * Called before building the manage-screen payload so binding counts
+ * are accurate.
+ */
+async function sweepDeadChats(ctx: AppContext): Promise<void> {
+  for (const b of bindings.listBindings()) {
+    if (!access.isAllowed(b.chatId)) continue
     try {
-      agents.deleteAgent(agentId)
-      ctx.logf('agent-setup: auto-deleted orphaned agent %s', agentId)
+      const fc = await ctx.client.getFullChat(b.chatId)
+      const decision = decideCleanup('ChatModified', fc.contactIds)
+      if (decision.cleanup) {
+        bindings.deleteBinding(b.chatId)
+        access.removeChat(b.chatId)
+        ctx.logf('agent-setup: swept dead chat %d (%s) contacts=%v past=%v',
+          b.chatId, decision.reason, fc.contactIds, fc.pastContactIds)
+        continue
+      }
+      if (!fc.canSend) {
+        bindings.deleteBinding(b.chatId)
+        access.removeChat(b.chatId)
+        ctx.logf('agent-setup: swept unsendable chat %d canSend=false', b.chatId)
+        continue
+      }
+      ctx.logf('agent-setup: sweep kept chat %d agent=%s contacts=%v past=%v canSend=%v selfInGroup=%v',
+        b.chatId, b.agentId ?? 'none', fc.contactIds, fc.pastContactIds, fc.canSend, fc.selfInGroup)
     } catch (err) {
-      ctx.logf('agent-setup: auto-delete failed for %s: %v', agentId, err)
+      ctx.logf('agent-setup: sweep check failed chat %d: %v', b.chatId, err)
     }
   }
 }
@@ -163,6 +194,7 @@ async function sendInit(
   app: WebXDCApp,
   sourceChatId: number,
 ): Promise<Session> {
+  await sweepDeadChats(ctx)
   const existing = sessions.get(sourceChatId)
   const draft = blankDraft()
   const payload = {
@@ -283,11 +315,13 @@ export const agentSetupApp: WebXDCApp = {
   start(ctx: AppContext): void {
     const saved = loadSessions()
     for (const s of saved) {
+      if (s.lastSerial == null) s.needsSerialSeed = true
       sessions.set(s.sourceChatId, s)
-      ctx.registerWebXDCMsg(s.msgId, agentSetupApp, s.sourceChatId)
+      ctx.registerWebXDCMsg(s.msgId, agentSetupApp, s.sourceChatId, s.lastSerial)
     }
     if (saved.length > 0) {
-      ctx.logf('agent-setup: rehydrated %d session(s) from disk', saved.length)
+      ctx.logf('agent-setup: rehydrated %d session(s) from disk (%d need serial seed)',
+        saved.length, saved.filter(s => s.needsSerialSeed).length)
     }
   },
 
@@ -365,6 +399,19 @@ export const agentSetupApp: WebXDCApp = {
       if (s.msgId === msgId) { session = s; break }
     }
     if (!session) return
+
+    // Migration guard: sessions loaded from disk without a persisted
+    // lastSerial (pre-fix) would replay every old create/bind action on
+    // the first update batch. Instead, seed the serial from the batch
+    // and skip processing — the next batch will be new updates only.
+    if (session.needsSerialSeed) {
+      const maxSerial = updates.reduce((m, u) => Math.max(m, u.serial ?? 0), 0)
+      session.lastSerial = maxSerial
+      delete session.needsSerialSeed
+      persistSessions()
+      ctx.logf('agent-setup: seeded serial %d for chat %d (migration)', maxSerial, session.sourceChatId)
+      return
+    }
 
     for (const u of updates) {
       const payload = u.payload as {
@@ -1016,6 +1063,14 @@ export const agentSetupApp: WebXDCApp = {
           try { agents.deleteAgent(agentId) } catch {}
         }
       }
+    }
+
+    // Persist the high-water serial so a dispatcher restart doesn't
+    // replay old create/bind/edit actions and create duplicate chats.
+    const maxSerial = updates.reduce((m, u) => Math.max(m, u.serial ?? 0), 0)
+    if (session && maxSerial > (session.lastSerial ?? 0)) {
+      session.lastSerial = maxSerial
+      persistSessions()
     }
   },
 }

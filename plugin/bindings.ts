@@ -20,6 +20,8 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import * as agents from './agents.js'
 import type { AgentDef } from './agents.js'
+import * as access from './access.js'
+import * as sessionAgents from './session-agents.js'
 
 let BINDINGS_DIR = join(homedir(), '.claude', 'channels', 'deltachat', 'bindings')
 
@@ -65,9 +67,29 @@ export function listBindings(): Binding[] {
   return out.sort((a, b) => a.chatId - b.chatId)
 }
 
-/** Count how many bindings reference the given agentId. */
+/**
+ * Count how many *live* bindings reference the given agentId — i.e.,
+ * bindings whose chat is still approved (in the access list). Orphan
+ * binding files (chat left/deleted without cleanup) are excluded so
+ * the manage-agents UI sees the true chat count, not stale disk state.
+ */
 export function countByAgentId(agentId: string): number {
-  return listBindings().filter((b) => b.agentId === agentId).length
+  return listBindings().filter((b) => b.agentId === agentId && access.isAllowed(b.chatId)).length
+}
+
+/**
+ * Delete binding files whose chat is no longer in the access list.
+ * Called once at dispatcher startup. Returns the number of files
+ * removed (for logging).
+ */
+export function sweepOrphans(): number {
+  let removed = 0
+  for (const b of listBindings()) {
+    if (!access.isAllowed(b.chatId)) {
+      if (deleteBinding(b.chatId)) removed++
+    }
+  }
+  return removed
 }
 
 /** Get a single binding by chatId. Returns null if missing or invalid. */
@@ -92,6 +114,9 @@ export function saveBinding(binding: Binding): void {
   const tmpPath = `${finalPath}.tmp.${process.pid}`
   writeFileSync(tmpPath, JSON.stringify(validated, null, 2), { mode: 0o600 })
   renameSync(tmpPath, finalPath)
+  if (validated.sessionId && validated.agentId) {
+    sessionAgents.setAgentForSession(validated.sessionId, validated.agentId)
+  }
 }
 
 /** Delete a binding. Returns true if a file was removed. */

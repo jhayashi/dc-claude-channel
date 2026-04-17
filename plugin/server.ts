@@ -516,8 +516,9 @@ ctx = {
   allowedChats: access.allowedChats,
   logf,
   safeName,
-  registerWebXDCMsg(msgId: number, app: WebXDCApp, chatId: number) {
+  registerWebXDCMsg(msgId: number, app: WebXDCApp, chatId: number, lastSerial?: number) {
     webxdcAppRegistry.set(msgId, { app, chatId })
+    if (lastSerial != null) webxdcLastSerial.set(msgId, lastSerial)
   },
   unregisterWebXDCMsg(msgId: number) {
     webxdcAppRegistry.delete(msgId)
@@ -1417,21 +1418,29 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           logf('dc_resume_in_terminal: failed to send command to chat %d: %v', chatId, err)
         }
 
-        // Schedule post-turn cleanup: goodbye message, unbind session, leave chat.
+        // Schedule post-turn cleanup: goodbye, fully unpair, leave chat.
+        // Each step is independently try/caught — a failure in one
+        // (e.g. goodbye send losing a race against the session lock)
+        // must not block the rest, especially the binding delete, or
+        // the session stays filtered from the resume list and the
+        // chat stays paired forever.
+        //
+        // Delete the binding outright (don't just clear sessionId):
+        // the chat is about to be left, so the binding has no owner.
+        // Keeping it around inflates countByAgentId and blocks
+        // auto-delete of otherwise-unused agents.
         setTimeout(async () => {
-          try {
-            await client.send(chatId, 'Session resumed in your terminal. You can delete this chat — it\'s no longer connected.')
-            const binding = bindings.getBinding(chatId)
-            if (binding) {
-              bindings.saveBinding({ ...binding, sessionId: undefined })
-            }
-            await subagentCache.evictChat(chatId).catch(() => {})
-            access.removeChat(chatId)
-            await client.leaveChat(chatId)
-            logf('dc_resume_in_terminal: cleaned up chat %d after resume-out', chatId)
-          } catch (err) {
-            logf('dc_resume_in_terminal: post-resume cleanup failed for chat %d: %v', chatId, err)
-          }
+          try { await client.send(chatId, 'Session resumed in your terminal. You can delete this chat — it\'s no longer connected.') }
+          catch (err) { logf('dc_resume_in_terminal: goodbye send failed chat=%d: %v', chatId, err) }
+          try { await subagentCache.evictChat(chatId) }
+          catch (err) { logf('dc_resume_in_terminal: evict failed chat=%d: %v', chatId, err) }
+          try { bindings.deleteBinding(chatId) }
+          catch (err) { logf('dc_resume_in_terminal: binding delete failed chat=%d: %v', chatId, err) }
+          try { access.removeChat(chatId) }
+          catch (err) { logf('dc_resume_in_terminal: access remove failed chat=%d: %v', chatId, err) }
+          try { await client.leaveChat(chatId) }
+          catch (err) { logf('dc_resume_in_terminal: leaveChat failed chat=%d: %v', chatId, err) }
+          logf('dc_resume_in_terminal: cleaned up chat %d after resume-out', chatId)
         }, 5000)
 
         return { content: [{ type: 'text' as const, text:
@@ -1505,6 +1514,19 @@ async function main(): Promise<void> {
 
   await mcp.connect(new StdioServerTransport())
 
+  // One-time orphan-binding sweep: deletes binding files whose chat is
+  // no longer in the access list. These accumulate when a chat is left
+  // via a partial-cleanup path (e.g. dc_resume_in_terminal) or when a
+  // DC-side chat deletion races the dispatcher's own cleanupChat.
+  // Inflated bindings confuse the manage-agents "N chats" badge and
+  // block the manage-agents "N chats" badge from inflating.
+  try {
+    const removed = bindings.sweepOrphans()
+    if (removed > 0) logf('dc channel: swept %d orphan binding(s) at startup', removed)
+  } catch (err) {
+    logf('dc channel: orphan sweep failed: %v', err)
+  }
+
   // Register event handlers BEFORE starting IO to avoid missing queued messages.
 
   /**
@@ -1557,21 +1579,8 @@ async function main(): Promise<void> {
     )
     // Drop the binding (session uuid + agent link) so the next pairing
     // starts fresh. Agent definitions are reusable and intentionally
-    // left on disk — a user may want to rebind them to a later chat.
-    const binding = bindings.getBinding(chatId)
+    // left on disk — only the user deletes agents (via the manage screen).
     bindings.deleteBinding(chatId)
-    // Auto-delete the agent if this was its last binding.
-    if (binding) {
-      const agents = await import('./agents.js')
-      if (agents.isOrphaned(binding.agentId)) {
-        try {
-          agents.deleteAgent(binding.agentId)
-          logf('dc channel: auto-deleted orphaned agent %s', binding.agentId)
-        } catch (err) {
-          logf('dc channel: auto-delete failed for %s: %v', binding.agentId, err)
-        }
-      }
-    }
     // Remove from the allowlist.
     access.removeChat(chatId)
     // Delete the chat from DC core last — after this, the chatId may be invalid.

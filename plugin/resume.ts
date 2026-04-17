@@ -199,29 +199,74 @@ function cwdFromProjectHash(hash: string): string {
 }
 
 /**
- * Read the first ~8 KB of a session file and parse early lines for metadata.
- * Looks for: summary (line 1), custom-title or agent-name entries (session name).
- * Estimates message count from file size (~400 bytes/line) instead of
- * counting newlines — avoids scanning multi-MB session files.
+ * Read metadata from a session file: summary from the head (line 1-ish),
+ * session name from the tail. Claude writes `custom-title` entries
+ * throughout the session (name set via `--name`, `/name`, or UI), so the
+ * latest one closest to EOF is authoritative. For long sessions the
+ * entries can live millions of bytes past the 8 KB header, and a fixed
+ * tail window can miss them if the name was set once and then not
+ * rewritten. The tail scan expands in 64 KB chunks from EOF backwards
+ * until a match is found or we've read the whole file.
+ * Estimates message count from file size instead of counting newlines.
  */
 function readSessionMeta(path: string, sizeBytes: number): { summary: string | null; sessionName: string | null; messageCount: number | null } {
+  const HEAD = 8192
+  const TAIL_CHUNK = 65536
   let summary: string | null = null
   let sessionName: string | null = null
   try {
     const fd = openSync(path, 'r')
     try {
-      const buf = Buffer.alloc(8192)
-      const n = readSync(fd, buf, 0, 8192, 0)
-      const head = buf.slice(0, n).toString('utf-8')
-      const lines = head.split('\n')
-      for (const line of lines) {
+      const headBuf = Buffer.alloc(HEAD)
+      const headN = readSync(fd, headBuf, 0, HEAD, 0)
+      for (const line of headBuf.slice(0, headN).toString('utf-8').split('\n')) {
         if (!line.trim()) continue
         try {
           const obj = JSON.parse(line) as { type?: string; summary?: string; customTitle?: string; agentName?: string }
           if (typeof obj.summary === 'string' && !summary) summary = obj.summary
           if (obj.type === 'custom-title' && typeof obj.customTitle === 'string') sessionName = obj.customTitle
-          if (obj.type === 'agent-name' && typeof obj.agentName === 'string' && !sessionName) sessionName = obj.agentName
+          else if (obj.type === 'agent-name' && typeof obj.agentName === 'string' && !sessionName) sessionName = obj.agentName
         } catch { /* skip non-JSON lines */ }
+      }
+
+      // Scan tail in 64 KB chunks from EOF backwards until we find a
+      // custom-title / agent-name or exhaust the file. Each chunk is
+      // parsed bottom-to-top so the latest entry wins — as soon as the
+      // first match appears we stop. Stops early on the common case
+      // (claude rewrites the title frequently); in the pathological
+      // case where the name was set once at resume and never touched
+      // again, we may end up reading the whole file.
+      let windowEnd = sizeBytes
+      let carry = '' // partial line from the previous (higher-offset) chunk
+      while (windowEnd > 0 && !sessionName) {
+        const chunkSize = Math.min(TAIL_CHUNK, windowEnd)
+        const chunkStart = windowEnd - chunkSize
+        const buf = Buffer.alloc(chunkSize)
+        readSync(fd, buf, 0, chunkSize, chunkStart)
+        const text = buf.toString('utf-8') + carry
+        const nl = text.indexOf('\n')
+        // If this isn't the first chunk from the top, the head of `text`
+        // is likely a truncated line — defer it to the next iteration.
+        const head = chunkStart > 0 && nl >= 0 ? text.slice(0, nl) : ''
+        const body = chunkStart > 0 && nl >= 0 ? text.slice(nl + 1) : text
+        const lines = body.split('\n')
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const line = lines[i]
+          if (!line.trim()) continue
+          try {
+            const obj = JSON.parse(line) as { type?: string; customTitle?: string; agentName?: string }
+            if (obj.type === 'custom-title' && typeof obj.customTitle === 'string') {
+              sessionName = obj.customTitle
+              break
+            }
+            if (obj.type === 'agent-name' && typeof obj.agentName === 'string') {
+              sessionName = obj.agentName
+              break
+            }
+          } catch { /* skip non-JSON lines */ }
+        }
+        carry = head
+        windowEnd = chunkStart
       }
     } finally {
       closeSync(fd)

@@ -703,8 +703,8 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 <div id="loading-modal" class="modal-overlay">
   <div class="modal-box" onclick="event.stopPropagation()">
     <div class="spinner"></div>
-    <div class="modal-heading" style="color:#e6edf3;">Loading sessions</div>
-    <div class="modal-sub">Scanning the last 5 days of claude sessions&hellip;</div>
+    <div class="modal-heading" id="loading-modal-heading" style="color:#e6edf3;">Loading sessions</div>
+    <div class="modal-sub" id="loading-modal-sub">Scanning the last 5 days of claude sessions&hellip;</div>
   </div>
 </div>
 
@@ -721,7 +721,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.55;
+var APP_VERSION = 1.57;
 var draft = null;
 var existingAgents = [];
 var templateList = [];
@@ -741,6 +741,10 @@ var pendingAction = null;
 
 var resumeRequestId = 0;
 var selectedResumeSessionId = null;
+// Separate counter for attach so a list-requery (which bumps
+// resumeRequestId) doesn't invalidate an in-flight attach response.
+var attachRequestId = 0;
+var attachTimeout = null;
 
 // Populated from the init/edit payload's availableModels list.
 // Keys are model IDs; values are tier strings ('opus'/'sonnet'/'haiku').
@@ -794,6 +798,7 @@ function resetTransientState() {
   if (createTimeout) { clearTimeout(createTimeout); createTimeout = null; }
   if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
   if (deleteTimeout) { clearTimeout(deleteTimeout); deleteTimeout = null; }
+  if (attachTimeout) { clearTimeout(attachTimeout); attachTimeout = null; }
   var lm = document.getElementById('loading-modal');
   if (lm) lm.classList.remove('visible');
   var saveBtn = document.getElementById('save-btn');
@@ -1533,15 +1538,6 @@ function refreshList() {
   renderManageList();
   renderPickList();
   renderHomeCount();
-  if (existingAgents.length === 0) {
-    show('step0');
-    return;
-  }
-  var step2 = document.getElementById('step2');
-  var step3 = document.getElementById('step3');
-  if ((step2 && step2.classList.contains('visible')) || (step3 && step3.classList.contains('visible'))) {
-    show('manage');
-  }
 }
 
 function isOnResumePane() {
@@ -1549,7 +1545,14 @@ function isOnResumePane() {
   return el && el.classList.contains('visible');
 }
 
-function showLoadingModal() {
+// The loading modal is shared across flows (list-load, attach). Callers
+// pass heading/sub so the copy matches what they triggered; defaults
+// cover the list-load case.
+function showLoadingModal(heading, sub) {
+  var h = document.getElementById('loading-modal-heading');
+  var s = document.getElementById('loading-modal-sub');
+  if (h) h.textContent = heading || 'Loading sessions';
+  if (s) s.textContent = sub || 'Scanning the last 5 days of claude sessions\u2026';
   document.getElementById('loading-modal').classList.add('visible');
 }
 function hideLoadingModal() {
@@ -1771,6 +1774,7 @@ window.webxdc.setUpdateListener(function(update) {
     refreshList();
     if (pendingAction === 'delete') {
       pendingAction = null;
+      show('manage');
       showModal('Agent deleted', '"' + (d.name || 'Agent') + '" has been removed.');
     }
   }
@@ -1783,6 +1787,7 @@ window.webxdc.setUpdateListener(function(update) {
     refreshList();
     if (pendingAction === 'edit') {
       pendingAction = null;
+      show('manage');
       showModal('Agent updated', 'Changes to "' + (d.name || 'Agent') + '" take effect on the next message.');
     }
   }
@@ -1805,15 +1810,23 @@ window.webxdc.setUpdateListener(function(update) {
   }
 
   if (d.type === 'resume_attach_ok') {
-    if (d.requestId !== resumeRequestId) return;
-    if (!isOnResumePane()) return;
+    // Replay-safe: attachRequestId resets to 0 on each open, so old
+    // replayed updates (with a real id) won't match. Don't gate on
+    // isOnResumePane — the success modal is an overlay and should fire
+    // whether or not the user is still looking at the resume list.
+    if (d.requestId !== attachRequestId) return;
+    if (attachTimeout) { clearTimeout(attachTimeout); attachTimeout = null; }
+    hideLoadingModal();
+    var attachBtnOk = document.getElementById('resume-attach');
+    if (attachBtnOk) attachBtnOk.disabled = false;
     var chatName = d.chatName ? '"' + d.chatName + '"' : 'A new chat';
     showModal('Session resumed', chatName + ' is ready in your chat list. Open it and send a message to continue.');
   }
 
   if (d.type === 'resume_attach_err') {
-    if (d.requestId !== resumeRequestId) return;
-    if (!isOnResumePane()) return;
+    if (d.requestId !== attachRequestId) return;
+    if (attachTimeout) { clearTimeout(attachTimeout); attachTimeout = null; }
+    hideLoadingModal();
     var errEl = document.getElementById('resume-error');
     if (errEl) { errEl.style.display = 'block'; errEl.textContent = d.message || 'Attach failed.'; }
     var attachBtn = document.getElementById('resume-attach');
@@ -1830,8 +1843,18 @@ document.addEventListener('DOMContentLoaded', function() {
   if (_resumeAttachBtn) _resumeAttachBtn.addEventListener('click', function() {
     if (!selectedResumeSessionId) return;
     _resumeAttachBtn.disabled = true;
-    resumeRequestId++;
-    var myReq = resumeRequestId;
+    attachRequestId++;
+    var myReq = attachRequestId;
+    showLoadingModal('Attaching session', 'Creating your new chat and hooking up the terminal session\u2026');
+    if (attachTimeout) clearTimeout(attachTimeout);
+    attachTimeout = setTimeout(function() {
+      attachTimeout = null;
+      if (myReq === attachRequestId) {
+        hideLoadingModal();
+        _resumeAttachBtn.disabled = false;
+        showModal('No response', 'The server did not respond. This card may be outdated \u2014 ask Claude to send you the agent settings card again.');
+      }
+    }, 15000);
     window.webxdc.sendUpdate({
       payload: {
         type: 'resume_attach',

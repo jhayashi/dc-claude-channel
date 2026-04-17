@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import * as agents from '../agents'
 import * as bindings from '../bindings'
+import * as sessionAgents from '../session-agents'
 
 const agentsDir = mkdtempSync(join(tmpdir(), 'dc-bindings-agents-'))
 const bindingsDir = mkdtempSync(join(tmpdir(), 'dc-bindings-test-'))
@@ -18,6 +19,7 @@ const bindingsDir = mkdtempSync(join(tmpdir(), 'dc-bindings-test-'))
 beforeAll(() => {
   agents.setAgentsDir(agentsDir)
   bindings.setBindingsDir(bindingsDir)
+  sessionAgents.setIndexDir(bindingsDir)
 })
 
 beforeEach(() => {
@@ -261,5 +263,40 @@ describe('bindAgent', () => {
     agents.saveAgent(makeAgent('m'))
     const b = bindings.bindAgent(42, 'm', { inheritClaudeMd: true })
     expect(b.workingDir).toBe('/home/user/src/terminal-project')
+  })
+
+  test('saveBinding writes sessionId→agentId to session-agents index', () => {
+    bindings.saveBinding({
+      chatId: 10,
+      agentId: 'marketing-agent',
+      sessionId: 'sess-abc',
+      createdAt: new Date().toISOString(),
+    })
+    expect(sessionAgents.getAgentForSession('sess-abc')).toBe('marketing-agent')
+  })
+
+  test('saveBinding skips index write when sessionId or agentId is missing', () => {
+    bindings.saveBinding({
+      chatId: 11,
+      agentId: 'some-agent',
+      createdAt: new Date().toISOString(),
+    })
+    bindings.saveBinding({
+      chatId: 12,
+      sessionId: 'sess-xyz',
+      createdAt: new Date().toISOString(),
+    })
+    expect(sessionAgents.getAgentForSession('sess-xyz')).toBeNull()
+  })
+
+  test('bindAgent writes to session-agents index when sessionId exists', () => {
+    bindings.saveBinding({
+      chatId: 13,
+      sessionId: 'sess-pre',
+      createdAt: new Date().toISOString(),
+    })
+    agents.saveAgent(makeAgent('coach'))
+    bindings.bindAgent(13, 'coach', { inheritClaudeMd: true })
+    expect(sessionAgents.getAgentForSession('sess-pre')).toBe('coach')
   })
 })
