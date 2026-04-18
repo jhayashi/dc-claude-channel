@@ -906,6 +906,35 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 <script>
 var APP_VERSION = 1.61;
 var GLYPHS = /*__GLYPHS__*/{};
+var PREVIEW_PALETTE = {
+  haiku:  { solid: '#3DA85A', checker: '#65C081' },
+  sonnet: { solid: '#B4862A', checker: '#D9B25B' },
+  opus:   { solid: '#D97757', checker: '#F2A778' },
+};
+
+function renderPreviewSvg(modelFamily, trust, glyph) {
+  var p = PREVIEW_PALETTE[modelFamily] || PREVIEW_PALETTE.sonnet;
+  var inner = GLYPHS[glyph] || GLYPHS['user-round'] || '';
+  var defsPattern = trust
+    ? '<pattern id="c" patternUnits="userSpaceOnUse" width="128" height="128">'
+      + '<rect width="64" height="64" fill="' + p.solid + '"/>'
+      + '<rect x="64" width="64" height="64" fill="' + p.checker + '"/>'
+      + '<rect y="64" width="64" height="64" fill="' + p.checker + '"/>'
+      + '<rect x="64" y="64" width="64" height="64" fill="' + p.solid + '"/>'
+      + '</pattern>'
+    : '';
+  var bg = trust ? 'url(#c)' : p.solid;
+  return '<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">'
+    + '<defs>' + defsPattern + '<clipPath id="k"><circle cx="128" cy="128" r="128"/></clipPath></defs>'
+    + '<g clip-path="url(#k)">'
+      + '<rect width="256" height="256" fill="' + bg + '"/>'
+      + '<g transform="translate(64,64) scale(5.333)" stroke="#FAF9F5" stroke-width="3" '
+        + 'fill="none" stroke-linecap="round" stroke-linejoin="round">' + inner + '</g>'
+    + '</g>'
+    + '<circle cx="128" cy="128" r="127.5" fill="none" stroke="rgba(11,15,23,0.12)"/>'
+  + '</svg>';
+}
+
 var draft = null;
 var existingAgents = [];
 var templateList = [];
