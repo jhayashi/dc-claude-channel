@@ -848,6 +848,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   margin: 0 -16px -14px;
 }
 .footer-bar .btn { flex: 1; }
+#resume-import .footer-bar .btn-primary { flex: 2; }
 
 /* Edit-screen overflow menu */
 .overflow { position: absolute; right: 12px; top: 10px; }
@@ -1137,7 +1138,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       <div id="resume-list" style="display:none" role="listbox" aria-label="Recent sessions"></div>
       <div class="footer-bar">
         <button type="button" id="resume-cancel" class="btn btn-ghost">Cancel</button>
-        <button type="button" id="resume-attach" class="btn btn-primary" disabled>Attach</button>
+        <button type="button" id="resume-attach" class="btn btn-primary" disabled>Attach to new chat</button>
       </div>
     </div>
   </div>
@@ -1275,7 +1276,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.70;
+var APP_VERSION = 1.71;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#3DA85A', checker: '#65C081' },
