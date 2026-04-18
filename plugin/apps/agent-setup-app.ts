@@ -520,6 +520,7 @@ export const agentSetupApp: WebXDCApp = {
           archetype: agents.getArchetype(agent),
           icon: agents.iconForAgent(agent),
           explicitIcon: agents.getExplicitIcon(agent),
+          glyph: agents.glyphForAgent(agent),
           allowedBuiltinTools: agent.allowedBuiltinTools ?? null,
           allowedMcpServers: agent.allowedMcpServers ?? null,
         }

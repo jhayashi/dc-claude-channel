@@ -645,6 +645,26 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .seg .dot.haiku  { background: var(--green); }
 .seg .dot.sonnet { background: var(--amber); }
 .seg .dot.opus   { background: var(--orange); }
+.preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+}
+.preview-bar .badge {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.preview-bar .badge svg { width: 100%; height: 100%; display: block; }
+.preview-bar .meta { min-width: 0; flex: 1; }
+.preview-bar .meta .name { font: 600 15px/1.2 inherit; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.preview-bar .meta .info { font: 500 11px/1.3 inherit; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -745,6 +765,13 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         </div>
       </div>
       <div class="wizard-pane" data-wizard-step="2">
+        <div class="preview-bar" id="create-preview-bar">
+          <div class="badge" id="create-preview-badge"></div>
+          <div class="meta">
+            <div class="name" id="create-preview-name">Agent</div>
+            <div class="info" id="create-preview-info">Sonnet</div>
+          </div>
+        </div>
         <label class="field">Model</label>
         <div class="seg" id="create-model-seg" role="group" aria-label="Model">
           <button type="button" data-tier="haiku"  aria-pressed="false"><span class="dot haiku"></span>Haiku</button>
@@ -778,6 +805,13 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 
   <div id="step3">
     <div class="body">
+      <div class="preview-bar" id="edit-preview-bar">
+        <div class="badge" id="edit-preview-badge"></div>
+        <div class="meta">
+          <div class="name" id="edit-preview-name">Agent</div>
+          <div class="info" id="edit-preview-info">Sonnet</div>
+        </div>
+      </div>
       <label class="field" for="edit-name">Agent name</label>
       <input id="edit-name" class="text" type="text" maxlength="256">
       <label class="field">Archetype</label>
@@ -949,7 +983,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.61;
+var APP_VERSION = 1.62;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#3DA85A', checker: '#65C081' },
@@ -978,6 +1012,60 @@ function renderPreviewSvg(modelFamily, trust, glyph) {
     + '</g>'
     + '<circle cx="128" cy="128" r="127.5" fill="none" stroke="rgba(11,15,23,0.12)"/>'
   + '</svg>';
+}
+
+// Lucide-glyph defaults by archetype, mirrors palettes.ts ARCHETYPE_DEFAULT_GLYPH.
+var ARCHETYPE_DEFAULT_GLYPH = {
+  role: 'user-round',
+  utility: 'cog',
+  project: 'folder-kanban',
+};
+
+var TIER_LABEL = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus' };
+
+function setBadgeSvg(el, svgString) {
+  var doc = new DOMParser().parseFromString(svgString, 'image/svg+xml');
+  var node = doc.documentElement;
+  if (!node || node.tagName === 'parsererror') return;
+  el.replaceChildren(document.importNode(node, true));
+}
+
+function wirePreviewInputs(scope) {
+  var prefix = scope === 'edit' ? 'edit-' : 'create-';
+  var bar = document.getElementById(prefix + 'preview-bar');
+  if (!bar || bar.dataset.wired === 'true') return;
+  bar.dataset.wired = 'true';
+  var nameInputId = scope === 'edit' ? 'edit-name' : 'name';
+  var trustId = scope === 'edit' ? 'edit-skip-permissions' : 'skip-permissions';
+  var nameInput = document.getElementById(nameInputId);
+  var trustInput = document.getElementById(trustId);
+  if (nameInput) nameInput.addEventListener('input', function () { refreshLivePreview(scope); });
+  if (trustInput) trustInput.addEventListener('change', function () { refreshLivePreview(scope); });
+}
+
+function refreshLivePreview(scope) {
+  var prefix = scope === 'edit' ? 'edit-' : 'create-';
+  var badge = document.getElementById(prefix + 'preview-badge');
+  var nameEl = document.getElementById(prefix + 'preview-name');
+  var infoEl = document.getElementById(prefix + 'preview-info');
+  if (!badge || !nameEl || !infoEl) return;
+  var seg = document.getElementById(prefix + 'model-seg');
+  var tier = segGetValue(seg);
+  var nameInputId = scope === 'edit' ? 'edit-name' : 'name';
+  var trustId = scope === 'edit' ? 'edit-skip-permissions' : 'skip-permissions';
+  var nameInput = document.getElementById(nameInputId);
+  var trustInput = document.getElementById(trustId);
+  var name = (nameInput && nameInput.value.trim()) || 'Agent';
+  var trust = !!(trustInput && trustInput.checked);
+  var glyph;
+  if (scope === 'edit') {
+    glyph = (draft && draft.glyph) || ARCHETYPE_DEFAULT_GLYPH[editArchetype] || 'user-round';
+  } else {
+    glyph = ARCHETYPE_DEFAULT_GLYPH[createArchetype] || 'user-round';
+  }
+  setBadgeSvg(badge, renderPreviewSvg(tier, trust, glyph));
+  nameEl.textContent = name;
+  infoEl.textContent = (TIER_LABEL[tier] || 'Sonnet') + (trust ? ' \u2022 Trusted' : '');
 }
 
 var draft = null;
@@ -1955,13 +2043,15 @@ function populateForm() {
   if (!draft) return;
   document.getElementById('name').value = draft.name || '';
   var createSeg = document.getElementById('create-model-seg');
-  wireSeg(createSeg);
+  wireSeg(createSeg, function () { refreshLivePreview('create'); });
   segSetValue(createSeg, tierForModel(draft.model || DEFAULT_MODEL_ID));
   document.getElementById('system').value = draft.system || '';
   document.getElementById('skip-permissions').checked = !!draft.skipPermissions;
   document.getElementById('icon').value = '';
   createArchetype = draft.archetype || 'role';
   refreshArchetypeRow('create');
+  wirePreviewInputs('create');
+  refreshLivePreview('create');
   wizardGoto(1);
 }
 
@@ -2025,6 +2115,7 @@ function selectArchetype(which, value) {
   else createArchetype = value;
   refreshArchetypeRow(which);
   refreshIconPreview(which);
+  refreshLivePreview(which);
 }
 
 var ARCHETYPE_BG = { role: '#4a3b6e', utility: '#2e4158', project: '#3f5a35' };
@@ -2050,7 +2141,7 @@ function populateEditForm() {
   if (!draft) return;
   document.getElementById('edit-name').value = draft.name || '';
   var editSeg = document.getElementById('edit-model-seg');
-  wireSeg(editSeg);
+  wireSeg(editSeg, function () { refreshLivePreview('edit'); });
   segSetValue(editSeg, tierForModel(draft.model || DEFAULT_MODEL_ID));
   document.getElementById('edit-system').value = draft.system || '';
   document.getElementById('edit-skip-permissions').checked = !!draft.skipPermissions;
@@ -2062,6 +2153,8 @@ function populateEditForm() {
   editArchetype = draft.archetype || 'role';
   refreshArchetypeRow('edit');
   document.getElementById('edit-icon').value = draft.explicitIcon || '';
+  wirePreviewInputs('edit');
+  refreshLivePreview('edit');
 }
 
 function backFromStep3() {
