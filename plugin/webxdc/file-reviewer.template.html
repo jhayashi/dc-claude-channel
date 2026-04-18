@@ -40,8 +40,8 @@ body {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: #161b22;
-  border-bottom: 1px solid #30363d;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line-soft);
   padding: 8px;
   display: flex;
   gap: 6px;
@@ -51,10 +51,10 @@ body {
 .sidebar:empty { display: none; }
 .doc-tab {
   padding: 6px 8px 6px 12px;
-  background: #21262d;
-  border: 1px solid #30363d;
-  border-radius: 8px;
-  color: #8b949e;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink-faint);
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
@@ -64,10 +64,10 @@ body {
   gap: 6px;
 }
 .doc-tab.active {
-  background: #1f6feb33;
-  border-color: #1f6feb;
-  color: #58a6ff;
-  text-decoration: underline;
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--orange);
 }
 .doc-tab .tab-title { display: inline-block; }
 .doc-tab .tab-close {
@@ -77,15 +77,15 @@ body {
   width: 18px;
   height: 18px;
   border-radius: 4px;
-  color: #6e7681;
+  color: var(--ink-faint);
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
   flex-shrink: 0;
+  transition: color 120ms ease;
 }
 .doc-tab .tab-close:hover, .doc-tab .tab-close:active {
-  background: #30363d;
-  color: #f85149;
+  color: var(--danger);
 }
 /* Confirm dialog */
 .dialog-overlay {
