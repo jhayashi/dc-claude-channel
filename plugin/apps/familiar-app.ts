@@ -242,6 +242,12 @@ export const familiarApp: WebXDCApp = {
   start(ctx: AppContext): void {
     const persisted = loadPersistedInstances()
     for (const inst of persisted) {
+      try {
+        validateHtmlSenderAddr(inst.html)
+      } catch (err) {
+        ctx.logf('familiar: skipping persisted instance %s — invalid HTML: %s', inst.appId, err)
+        continue
+      }
       registerInstance(inst)
       ctx.registerWebXDCMsg(inst.msgId, this, inst.chatId)
       ctx.logf('familiar: restored persistent app %s in chat %d', inst.appId, inst.chatId)
