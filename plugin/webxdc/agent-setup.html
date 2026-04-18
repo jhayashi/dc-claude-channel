@@ -702,7 +702,6 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   cursor: pointer;
   flex-shrink: 0;
   transition: background .15s;
-  margin: 2px 0 0;
 }
 .switch::after {
   content: '';
@@ -716,7 +715,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .switch:checked { background: var(--green); border-color: var(--green); }
 .switch:checked::after { left: 17px; background: var(--paper); }
 .trust-card .body { flex: 1; }
-.trust-card .heading { font: 600 13px/1.2 inherit; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+.trust-card .heading { font: 600 13px/1.2 inherit; color: var(--ink); display: flex; align-items: center; gap: 6px; min-height: 20px; }
 .trust-card .caveat { font: 400 12px/1.4 inherit; color: var(--ink-mute); margin-top: 4px; }
 .trust-card .shield { width: 14px; height: 14px; color: var(--ink-mute); flex-shrink: 0; }
 .trust-card.on .shield { color: var(--green); }
@@ -1043,7 +1042,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         </span>
       </label>
       <label class="field-label" style="margin-top:12px;">Tools</label>
-      <details class="tool-group" id="edit-tool-group-builtin" open>
+      <details class="tool-group" id="edit-tool-group-builtin">
         <summary>
           <span>Built-in</span>
           <span class="count" id="edit-count-builtin">0 of 0</span>
@@ -1195,7 +1194,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.64;
+var APP_VERSION = 1.65;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#3DA85A', checker: '#65C081' },
@@ -1834,6 +1833,12 @@ function populateEditToolPicker(allowedBuiltinTools, allowedMcpServers) {
   if (!grid || !mcp) return;
   grid.textContent = '';
   mcp.textContent  = '';
+  // Always re-enter collapsed — <details> persists its open attribute across
+  // openings otherwise.
+  var gb = document.getElementById('edit-tool-group-builtin');
+  var gm = document.getElementById('edit-tool-group-mcp');
+  if (gb) gb.open = false;
+  if (gm) gm.open = false;
 
   var allBuiltin = allowedBuiltinTools === null || allowedBuiltinTools === undefined;
   availableBuiltinTools.forEach(function (tool) {
