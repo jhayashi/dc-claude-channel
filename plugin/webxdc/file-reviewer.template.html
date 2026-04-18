@@ -5,11 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="webxdc.js"></script>
 <style>
+:root {
+  --bg:        #0B0F17;
+  --surface:   #131826;
+  --surface-2: #1A2030;
+  --surface-3: #232A3C;
+  --line:      #2C3447;
+  --line-soft: #1F2536;
+  --ink:       #E8ECF5;
+  --ink-mute:  #99A2B8;
+  --ink-faint: #6C748A;
+  --paper:     #FAF9F5;
+  --orange:    #D97757;
+  --green:     #3DA85A;
+  --amber:     #C99A35;
+  --danger:    #E5694C;
+  --orange-soft: rgba(217,119,87,0.14);
+  --danger-soft: rgba(229,105,76,0.14);
+  --radius:    14px;
+  --radius-sm: 10px;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, Inter, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-  font-family: system-ui, -apple-system, sans-serif;
-  background: #0e1117;
-  color: #e6edf3;
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--ink-mute);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
