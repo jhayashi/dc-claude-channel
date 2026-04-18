@@ -2,6 +2,46 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
+## [1.0.2] — 2026-04-18
+
+### Agent settings redesign (Technical Precision)
+
+- Re-skinned the agent-setup WebXDC card in the Technical Precision design
+  system: dark slate ramp, Anthropic Orange accent, Lucide line glyphs,
+  live badge preview, grouped tool picker, sticky bottom action bar.
+- **Segmented model picker** — three-tier choice (Haiku / Sonnet / Opus)
+  with coloured dots; the concrete model id is resolved client-side from
+  the tier (kept pinned if the original id still matches the new tier,
+  otherwise upgraded to the latest id for that tier via
+  `latestModelForTier`).
+- **Live badge preview** — a tile at the top of the edit form and wizard
+  step 2 rebuilds on every tier, trust, name, or archetype change so the
+  user sees the runtime badge composition before saving.
+- **Trust switch** — replaces the tiny checkbox with a pill toggle plus a
+  shield that turns green when enabled; caveat text is kept alongside.
+- **Grouped tool picker** — native `<details>` collapsibles for Built-in
+  tools (2-col checkbox grid) and Connected services (MCP server list),
+  each with a "N of M" count badge that updates live.
+- **Edit form trim** — archetype, explicit glyph, and orientation controls
+  are removed from the edit flow (still configurable in the create
+  wizard). Values are preserved on save so the server doesn't wipe them.
+  Edit focuses on what changes per iteration; initial identity stays set
+  at create time.
+- **Model palette swap** — **Haiku is now green** (`#3DA85A`), **Opus is
+  now orange** (`#D97757`). Sonnet stays amber. The Slate family is
+  removed (reserved for Mythos when it lands).
+
+### Manual step
+
+- **Wipe the badge PNG cache** after upgrade so Haiku/Opus agents
+  re-render with the new colours:
+
+  ```
+  rm -rf ~/.claude/channels/deltachat/agent-badges/
+  ```
+
+---
+
 ## [1.0.1] — 2026-04-14
 
 Feature release: adds **session teleport** — seamlessly move conversations between Delta Chat and a local terminal `claude` session in either direction.
