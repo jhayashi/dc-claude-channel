@@ -1136,9 +1136,9 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       <div id="resume-error" style="display:none;font-size:13px;color:var(--danger);" role="alert"></div>
       <div id="resume-list" style="display:none" role="listbox" aria-label="Recent sessions"></div>
     </div>
-    <div class="actions">
-      <button type="button" id="resume-cancel" class="btn btn-back">Cancel</button>
-      <button type="button" id="resume-attach" class="btn btn-create" disabled>Attach</button>
+    <div class="footer-bar">
+      <button type="button" id="resume-cancel" class="btn btn-ghost">Cancel</button>
+      <button type="button" id="resume-attach" class="btn btn-primary" disabled>Attach</button>
     </div>
   </div>
 
@@ -1275,7 +1275,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.68;
+var APP_VERSION = 1.69;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#3DA85A', checker: '#65C081' },
