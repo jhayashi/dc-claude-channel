@@ -127,6 +127,14 @@ export function _resetSttWorker(): void {
   _pending.clear()
 }
 
+/** Test-only: register a pending entry so _resetSttWorker has something to reject. */
+export function _seedPendingForTest(): Promise<TranscriptionResult> {
+  const id = ++_nextReqId
+  return new Promise<TranscriptionResult>((resolve, reject) => {
+    _pending.set(id, { resolve, reject })
+  })
+}
+
 // ── Config ───────────────────────────────────────────────────────────
 
 const VALID_ECHO_MODES: EchoMode[] = ['quoted', 'silent']

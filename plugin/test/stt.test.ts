@@ -9,6 +9,7 @@ import {
   ensureModel,
   transcribe,
   _resetSttWorker,
+  _seedPendingForTest,
 } from '../stt'
 
 describe('parseSTTConfig', () => {
@@ -106,6 +107,14 @@ describe('_resetSttWorker', () => {
   test('is idempotent and safe to call with no worker', () => {
     expect(() => _resetSttWorker()).not.toThrow()
     expect(() => _resetSttWorker()).not.toThrow()  // second call
+  })
+
+  test('rejects pending transcriptions', async () => {
+    const p1 = _seedPendingForTest()
+    const p2 = _seedPendingForTest()
+    _resetSttWorker()
+    await expect(p1).rejects.toThrow(/terminated/)
+    await expect(p2).rejects.toThrow(/terminated/)
   })
 })
 
