@@ -56,7 +56,7 @@ describe('renderAgentBadge', () => {
 
   test('renders all 24 (archetype × family × trust) combinations with default glyph', async () => {
     const archetypes = ['role', 'utility', 'project'] as const
-    const families = ['haiku', 'sonnet', 'opus', 'slate'] as const
+    const families = ['haiku', 'sonnet', 'opus'] as const
     const defaults = { role: 'user-round', utility: 'cog', project: 'folder-kanban' }
     for (const a of archetypes) {
       for (const f of families) {
@@ -80,7 +80,7 @@ describe('renderAgentBadge', () => {
 
   test('center pixel of a solid orange badge is roughly orange', async () => {
     const path = await renderAgentBadge({
-      archetype: 'role', modelFamily: 'haiku', trust: false, glyph: 'briefcase',
+      archetype: 'role', modelFamily: 'opus', trust: false, glyph: 'briefcase',
     })
     const { data } = await sharp(path).raw().toBuffer({ resolveWithObject: true })
     const offset = (128 * 256 + 16) * 4

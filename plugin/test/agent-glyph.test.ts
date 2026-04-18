@@ -27,7 +27,7 @@ function makeDef(overrides: Partial<agents.AgentDef> = {}): agents.AgentDef {
 
 describe('palettes', () => {
   test('every model family has solid + checker colors', () => {
-    const families: ModelFamily[] = ['haiku', 'sonnet', 'opus', 'slate']
+    const families: ModelFamily[] = ['haiku', 'sonnet', 'opus']
     for (const f of families) {
       expect(MODEL_COLORS[f].solid).toMatch(/^#[0-9A-F]{6}$/)
       expect(MODEL_COLORS[f].checker).toMatch(/^#[0-9A-F]{6}$/)

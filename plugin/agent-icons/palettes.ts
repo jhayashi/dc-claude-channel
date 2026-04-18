@@ -10,7 +10,7 @@
  * may also need an update if the new family should be auto-detected.
  */
 
-export type ModelFamily = 'haiku' | 'sonnet' | 'opus' | 'slate'
+export type ModelFamily = 'haiku' | 'sonnet' | 'opus'
 
 export interface ModelPalette {
   /** Solid background hex color. */
@@ -20,10 +20,9 @@ export interface ModelPalette {
 }
 
 export const MODEL_COLORS: Record<ModelFamily, ModelPalette> = {
-  haiku: { solid: '#D97757', checker: '#F2A778' },
+  haiku: { solid: '#3DA85A', checker: '#65C081' },
   sonnet: { solid: '#B4862A', checker: '#D9B25B' },
-  opus: { solid: '#2E9147', checker: '#5BB273' },
-  slate: { solid: '#343C4D', checker: '#6B7689' },
+  opus: { solid: '#D97757', checker: '#F2A778' },
 }
 
 export const ARCHETYPE_PALETTES = {
