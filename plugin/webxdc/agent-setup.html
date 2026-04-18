@@ -566,7 +566,8 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .to-progress .detail { font-size: 11px; color: #8b949e; margin-top: 2px; }
 @keyframes to-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
 
-.to-cmd { position: relative; background: #000; border: 1px solid #30363d; border-radius: 10px; padding: 14px; margin: 12px 0 8px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; line-height: 1.5; color: #a5d6ff; word-break: break-all; white-space: pre-wrap; }
+.to-cmd { position: relative; background: #000; border: 1px solid #30363d; border-radius: 10px; padding: 14px; padding-right: 70px; margin: 12px 0 8px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; line-height: 1.5; color: #a5d6ff; word-break: break-all; }
+.to-cmd code { white-space: normal; }
 .to-copy-btn { position: absolute; top: 8px; right: 8px; background: #161b22; border: 1px solid #30363d; color: #e6edf3; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-family: inherit; }
 </style>
 </head>
@@ -864,7 +865,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.59;
+var APP_VERSION = 1.60;
 var draft = null;
 var existingAgents = [];
 var templateList = [];
@@ -1759,13 +1760,41 @@ function toHandleError(payload) {
 
 function toCopyCommand() {
   var text = (toState.command || '').toString();
-  try {
-    navigator.clipboard.writeText(text);
-    var btn = document.getElementById('to-copy');
-    var prev = btn.textContent;
-    btn.textContent = 'Copied ✓';
+  if (!text) return;
+  var btn = document.getElementById('to-copy');
+  var prev = btn ? btn.textContent : 'Copy';
+
+  function flash(label) {
+    if (!btn) return;
+    btn.textContent = label;
     setTimeout(function() { btn.textContent = prev; }, 1200);
-  } catch (_) { /* ignore */ }
+  }
+
+  function fallback() {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+    document.body.removeChild(ta);
+    flash(ok ? 'Copied ✓' : 'Copy failed');
+  }
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(
+      function() { flash('Copied ✓'); },
+      function() { fallback(); }
+    );
+  } else {
+    fallback();
+  }
 }
 
 function pickExisting(agentId) {
