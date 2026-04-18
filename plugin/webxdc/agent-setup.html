@@ -320,6 +320,25 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   text-transform: uppercase;
 }
 .center { text-align: center; padding: 50px 20px; color: #8b949e; }
+.outdated-icon {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  margin: 0 auto 14px;
+}
+.outdated-icon svg {
+  width: 22px; height: 22px;
+  stroke: var(--ink-mute);
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.outdated-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+.outdated-sub { font-size: 12px; color: var(--ink-mute); margin-top: 6px; line-height: 1.5; }
 .spinner { width: 28px; height: 28px; border: 3px solid #30363d; border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 14px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -1097,13 +1116,12 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     </div>
   </div>
 
-  <div id="outdated">
-    <div class="center">
-      <div style="font-size:48px;margin-bottom:12px;">&#x2B06;&#xFE0F;</div>
-      <div style="font-size:16px;font-weight:600;color:#3fb950;">New version available</div>
-      <div style="font-size:12px;color:#8b949e;margin-top:6px;">A newer setup card has been sent to this chat.</div>
-      <div style="font-size:14px;font-weight:600;color:#58a6ff;margin-top:18px;">&#x2190; Swipe or tap back to return to chat</div>
+  <div id="outdated" style="text-align:center;padding:44px 22px;">
+    <div class="outdated-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
     </div>
+    <div class="outdated-title">New version available</div>
+    <div class="outdated-sub">A newer agent settings card was sent to this chat. Swipe back and open the latest one.</div>
   </div>
 
   <div id="resume-import">
