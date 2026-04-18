@@ -17,26 +17,31 @@ import { tmpdir } from 'node:os'
 import { zipSync, strToU8 } from 'fflate'
 
 export interface XDCAppConfig {
-  /** Path to the HTML file */
-  htmlPath: string
+  /** Path to the HTML file. Ignored when `htmlOverride` is set. */
+  htmlPath?: string
+  /** Inline HTML string. When set, used in place of reading `htmlPath`. */
+  htmlOverride?: string
   /** Path to the manifest.toml file */
   manifestPath: string
   /** Path to the icon PNG file (optional) */
   iconPath?: string
 }
 
-/** Parse APP_VERSION from an HTML file. Throws if not found. */
-export function getAppVersion(htmlPath: string): number {
-  const html = readFileSync(htmlPath, 'utf-8')
+function parseAppVersion(html: string, source: string): number {
   const m = html.match(/var\s+APP_VERSION\s*=\s*([\d.]+)/)
   if (!m) {
     throw new Error(
-      `APP_VERSION not found in ${htmlPath}. ` +
+      `APP_VERSION not found in ${source}. ` +
       `All server-coupled WebXDC apps must include 'var APP_VERSION = <number>;' in their script. ` +
       `This is required for the auto-upgrade protocol.`
     )
   }
   return Number(m[1])
+}
+
+/** Parse APP_VERSION from an HTML file. Throws if not found. */
+export function getAppVersion(htmlPath: string): number {
+  return parseAppVersion(readFileSync(htmlPath, 'utf-8'), htmlPath)
 }
 
 /**
@@ -46,10 +51,15 @@ export function getAppVersion(htmlPath: string): number {
  * Returns the path to the temp .xdc file and the version.
  */
 export async function buildXDC(config: XDCAppConfig): Promise<{ xdcPath: string; version: number }> {
-  const { htmlPath, manifestPath, iconPath } = config
+  const { htmlPath, htmlOverride, manifestPath, iconPath } = config
 
-  const version = getAppVersion(htmlPath)
-  const html = readFileSync(htmlPath)
+  if (!htmlOverride && !htmlPath) {
+    throw new Error('buildXDC: one of htmlPath or htmlOverride is required')
+  }
+
+  const htmlText = htmlOverride ?? readFileSync(htmlPath!, 'utf-8')
+  const version = parseAppVersion(htmlText, htmlOverride ? '<htmlOverride>' : htmlPath!)
+  const html = Buffer.from(htmlText, 'utf-8')
 
   // Read manifest and append version to the name
   const rawManifest = readFileSync(manifestPath, 'utf-8')
