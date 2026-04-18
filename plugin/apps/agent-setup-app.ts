@@ -296,6 +296,15 @@ async function sendInit(
   return session
 }
 
+/**
+ * Public entry point for other apps (e.g. permissions) that want to
+ * summon the agent settings card into a chat. Equivalent to the subagent
+ * calling `dc_open_agent_settings` but callable from the dispatcher side.
+ */
+export async function summonAgentSettings(ctx: AppContext, chatId: number): Promise<void> {
+  await sendInit(ctx, agentSetupApp, chatId)
+}
+
 /** Minimal context for decorating agent chats (icon + welcome). */
 export interface DecorateContext {
   client: Pick<import('../dc-client.js').DCClient, 'setChatProfileImage' | 'send'>

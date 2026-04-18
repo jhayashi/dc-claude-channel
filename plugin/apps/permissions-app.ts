@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { WebXDCApp, ToolDef, ToolResult, AppContext } from '../webxdc-app.js'
 import type { WebXDCUpdate } from '../dc-client.js'
 import * as permissions from '../permissions.js'
+import { summonAgentSettings } from './agent-setup-app.js'
 
 // Module-scoped state — shared between registerNotifications and onWebXDCUpdate.
 let pendingPermissionRequestId: string | null = null
@@ -177,14 +178,28 @@ export const permissionsApp: WebXDCApp = {
   },
 
   async onWebXDCUpdate(msgId: number, updates: WebXDCUpdate[], ctx: AppContext): Promise<void> {
-    if (!pendingPermissionRequestId) return
-
-    // Find which chat owns this msgId
+    // Find which chat owns this msgId (open_agent_settings arrives post-respond
+    // with no pending request, so resolve ownership before the early return).
     let ownerChatId: number | null = null
     for (const [chatId, session] of permissionsSessions) {
       if (session.msgId === msgId) { ownerChatId = chatId; break }
     }
     if (ownerChatId === null) return
+
+    // open_agent_settings has no pending-request precondition — handle first.
+    for (const u of updates) {
+      const payload = u.payload as { type?: string } | null
+      if (payload?.type === 'open_agent_settings') {
+        ctx.logf('permission: open_agent_settings from chat %d — summoning card', ownerChatId)
+        try {
+          await summonAgentSettings(ctx, ownerChatId)
+        } catch (err) {
+          ctx.logf('permission: summonAgentSettings failed: %v', err)
+        }
+      }
+    }
+
+    if (!pendingPermissionRequestId) return
 
     const session = permissionsSessions.get(ownerChatId)!
     for (const u of updates) {

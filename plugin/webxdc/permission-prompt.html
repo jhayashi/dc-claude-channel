@@ -343,7 +343,16 @@ body {
   width: 100%;
 }
 .result-hint b { color: var(--ink); font-weight: 600; }
-.result-hint a { color: var(--orange); text-decoration: none; }
+.result-hint a {
+  color: var(--orange);
+  text-decoration: none;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 1px dashed color-mix(in oklch, var(--orange) 55%, transparent);
+}
+.result-hint a:active { opacity: 0.7; }
+.result-hint a.summoning { color: var(--ink-faint); border-bottom-color: transparent; cursor: default; }
+.result-hint a.summoned { color: var(--green); border-bottom-color: transparent; cursor: default; }
 .back-hint {
   margin-top: 14px;
   font-size: 12px;
@@ -412,7 +421,7 @@ body {
   </div>
 </div>
 <script>
-var APP_VERSION = 2.00;
+var APP_VERSION = 2.01;
 // Map of requestId -> {data, resolved}
 var requests = {};
 // Whether initial replay has finished
@@ -611,6 +620,28 @@ function toggleDesc() {
   toggleEl.textContent = expanded ? 'Show less' : 'Show more';
 }
 
+function summonAgentSettings(e) {
+  var a = e.currentTarget;
+  if (a.classList.contains('summoning') || a.classList.contains('summoned')) return;
+  a.classList.add('summoning');
+  a.textContent = 'Sending card\u2026';
+  window.webxdc.sendUpdate({
+    payload: {
+      type: 'open_agent_settings',
+      senderAddr: window.webxdc.selfAddr,
+      senderName: window.webxdc.selfName
+    },
+    summary: 'Open Agent settings'
+  }, 'Agent settings requested');
+  // Flip to a confirmed state shortly — the dispatcher will send a card
+  // into the chat; the user swipes back to see it. This is fire-and-forget.
+  setTimeout(function() {
+    a.classList.remove('summoning');
+    a.classList.add('summoned');
+    a.textContent = 'Card sent \u2014 check chat';
+  }, 600);
+}
+
 function respond(granted) {
   if (responding) return;
   var requestId = document.getElementById('prompt').dataset.requestId;
@@ -650,6 +681,9 @@ function respond(granted) {
     hint.appendChild(document.createTextNode('Mark this agent as trusted in the '));
     var a = document.createElement('a');
     a.textContent = 'Agent settings app';
+    a.setAttribute('role', 'button');
+    a.setAttribute('tabindex', '0');
+    a.addEventListener('click', summonAgentSettings);
     hint.appendChild(a);
     hint.appendChild(document.createTextNode('. Trusted agents auto-approve tools and log every decision to an audit trail.'));
     r.appendChild(hint);
