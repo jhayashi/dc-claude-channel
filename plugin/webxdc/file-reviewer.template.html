@@ -334,7 +334,9 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
   align-items: center;
   justify-content: center;
   height: 100vh;
-  color: #8b949e;
+  color: var(--ink-faint);
+  font-size: 12px;
+  letter-spacing: 0.02em;
   gap: 12px;
 }
 .spinner {
@@ -345,15 +347,44 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
   animation: spin 0.9s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-#outdated {
+#outdated, #empty {
   display: none;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
-  padding: 60px 20px;
-  color: #8b949e;
+  padding: 44px 22px;
+  margin: auto;
+  flex: 1;
+  justify-content: center;
 }
-#outdated .icon { font-size: 48px; margin-bottom: 12px; }
-#outdated .title { font-size: 18px; color: #58a6ff; margin-bottom: 8px; }
-#outdated .hint { font-size: 14px; margin-top: 16px; }
+.outdated-icon, .empty-icon {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  margin-bottom: 14px;
+}
+.outdated-icon svg, .empty-icon svg {
+  width: 22px; height: 22px;
+  stroke: var(--ink-mute);
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.outdated-title, .empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.outdated-sub, .empty-sub {
+  font-size: 12px;
+  color: var(--ink-mute);
+  margin-top: 6px;
+  line-height: 1.5;
+}
 /* Bottom bar */
 #bottombar {
   position: fixed;
@@ -505,20 +536,21 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
 <body>
 <div id="loading">
   <div class="spinner"></div>
-  Waiting for content...
+  <div>Loading document\u2026</div>
 </div>
-<div id="empty" style="display:none">
-  <div style="text-align:center; padding:60px 20px; color:#8b949e;">
-    <div style="font-size:48px; margin-bottom:12px;">&#x1F4C4;</div>
-    <div style="font-size:16px; margin-bottom:8px;">No files</div>
-    <div style="font-size:14px;">&#x2190; Swipe back to exit</div>
+<div id="empty">
+  <div class="empty-icon">
+    <svg viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h5"/><path d="M8 17h4"/></svg>
   </div>
+  <div class="empty-title">No files open.</div>
+  <div class="empty-sub">Ask Claude to send a file to review it here.</div>
 </div>
 <div id="outdated">
-  <div class="icon">&#x2B06;&#xFE0F;</div>
-  <div class="title">New version available</div>
-  <div>A newer app has been sent to this chat.</div>
-  <div class="hint">&#x2190; Swipe or tap back to return to chat</div>
+  <div class="outdated-icon">
+    <svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+  </div>
+  <div class="outdated-title">New version available</div>
+  <div class="outdated-sub">A newer file reviewer was sent to this chat. Swipe back and open the latest one.</div>
 </div>
 <div id="sidebar" class="sidebar"></div>
 <div id="content" class="content" style="display:none"></div>
@@ -1042,7 +1074,7 @@ function sendComments() {
     activeIndex = -1;
     document.getElementById('content').style.display = 'none';
     document.getElementById('loading').style.display = 'none';
-    document.getElementById('empty').style.display = 'block';
+    document.getElementById('empty').style.display = 'flex';
     document.getElementById('bottombar').style.display = 'none';
     rebuildSidebar();
   } else {
@@ -1159,7 +1191,7 @@ function confirmCloseTab() {
     activeIndex = -1;
     document.getElementById('content').replaceChildren();
     document.getElementById('content').style.display = 'none';
-    document.getElementById('empty').style.display = 'block';
+    document.getElementById('empty').style.display = 'flex';
   } else {
     var newIndex = Math.min(index, documents.length - 1);
     activeIndex = newIndex;
@@ -1186,7 +1218,7 @@ window.webxdc.setUpdateListener(function(update) {
     document.getElementById('content').style.display = 'none';
     document.getElementById('sidebar').style.display = 'none';
     document.getElementById('bottombar').style.display = 'none';
-    document.getElementById('outdated').style.display = 'block';
+    document.getElementById('outdated').style.display = 'flex';
     return;
   }
 
