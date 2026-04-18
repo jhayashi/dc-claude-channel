@@ -159,6 +159,31 @@ body {
   vertical-align: middle;
 }
 .home-heading { display: none; }
+.app-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 4px 2px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  margin: -4px 0 14px;
+}
+.app-header-logo {
+  width: 36px; height: 36px;
+  border-radius: 9px;
+  background: var(--orange);
+  display: grid; place-items: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+.app-header-logo svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.app-header-title {
+  flex: 1;
+  font: 600 17px/1.2 inherit;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.app-header-version {
+  font: 500 11px/1 inherit;
+  color: var(--ink-faint);
+}
 .home-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .home-action {
   display: flex; align-items: center; gap: 12px;
@@ -190,8 +215,8 @@ body {
 }
 .home-action-icon svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .home-action-body { flex: 1; min-width: 0; }
-.home-action-label { font: 600 14px/1.2 inherit; color: var(--ink); }
-.home-action-desc { font: 400 12px/1.4 inherit; color: var(--ink-faint); margin-top: 3px; }
+.home-action-label { display: block; font: 600 14px/1.2 inherit; color: var(--ink); }
+.home-action-desc { display: block; font: 400 12px/1.4 inherit; color: var(--ink-faint); margin-top: 3px; }
 .home-action-chev { color: var(--ink-faint); font-size: 18px; }
 .home-action code { font-family: 'SF Mono', Menlo, monospace; font-size: 11px; color: var(--ink-mute); }
 .section-label {
@@ -898,16 +923,22 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 
   <div id="step0">
     <div class="body">
-      <h2 class="home-heading">What would you like to do?</h2>
-      <div id="home-count" class="home-count"></div>
+      <div class="app-header">
+        <span class="app-header-logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="5.64" y1="5.64" x2="18.36" y2="18.36"/><line x1="5.64" y1="18.36" x2="18.36" y2="5.64"/></svg>
+        </span>
+        <span class="app-header-title">Agent settings</span>
+        <span class="app-header-version" id="home-version"></span>
+      </div>
+      <div class="section-label">What would you like to do?</div>
       <div class="home-actions">
         <button class="home-action" onclick="gotoNewChat()">
           <span class="home-action-icon">
             <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           </span>
           <span class="home-action-body">
-            <span class="home-action-label">New chat</span>
-            <span class="home-action-desc">Pick an agent and start a new conversation.</span>
+            <span class="home-action-label">Start a new chat</span>
+            <span class="home-action-desc">Pick an agent or create a new one.</span>
           </span>
           <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
         </button>
@@ -1276,7 +1307,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.71;
+var APP_VERSION = 1.72;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#3DA85A', checker: '#65C081' },
@@ -1668,14 +1699,10 @@ function renderPickList() {
 }
 
 function renderHomeCount() {
-  var el = document.getElementById('home-count');
-  if (!el) return;
-  var chats = 0;
-  for (var i = 0; i < existingAgents.length; i++) chats += existingAgents[i].bindingCount || 0;
-  var agentCount = existingAgents.length;
-  el.textContent = 'You have ' + agentCount + ' agent' + (agentCount === 1 ? '' : 's') + ' and ' + chats + ' chat' + (chats === 1 ? '' : 's') + '.';
+  var ver = document.getElementById('home-version');
+  if (ver) ver.textContent = 'v' + APP_VERSION.toFixed(2);
   var manageBtn = document.getElementById('home-manage-btn');
-  if (manageBtn) manageBtn.disabled = agentCount === 0;
+  if (manageBtn) manageBtn.disabled = existingAgents.length === 0;
 }
 
 function renderTemplates() {
