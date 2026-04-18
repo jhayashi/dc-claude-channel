@@ -42,7 +42,7 @@ body {
   z-index: 10;
   background: var(--surface);
   border-bottom: 1px solid var(--line-soft);
-  padding: 8px;
+  padding: 8px 8px 0;
   display: flex;
   gap: 6px;
   overflow-x: auto;
@@ -50,39 +50,59 @@ body {
 }
 .sidebar:empty { display: none; }
 .doc-tab {
-  padding: 6px 8px 6px 12px;
+  position: relative;
+  padding: 8px 10px 10px 12px;
   background: var(--surface-2);
   border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
   color: var(--ink-faint);
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  margin-bottom: -1px;
 }
 .doc-tab.active {
-  background: var(--surface);
-  border-color: var(--line);
+  background: var(--bg);
   color: var(--ink);
-  box-shadow: inset 0 -2px 0 var(--orange);
+  font-weight: 500;
 }
-.doc-tab .tab-title { display: inline-block; }
+.doc-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 12px; right: 12px; bottom: 0;
+  height: 2px;
+  background: var(--orange);
+  border-radius: 1px;
+}
+.doc-tab .tab-title {
+  display: inline-block;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .doc-tab .tab-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
+  width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
   color: var(--ink-faint);
-  font-size: 14px;
-  line-height: 1;
-  cursor: pointer;
   flex-shrink: 0;
+  cursor: pointer;
   transition: color 120ms ease;
+}
+.doc-tab .tab-close svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .doc-tab .tab-close:hover, .doc-tab .tab-close:active {
   color: var(--danger);
@@ -739,7 +759,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.18;
+var APP_VERSION = 1.19;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -1282,7 +1302,15 @@ function rebuildSidebar() {
     var closeEl = document.createElement('span');
     closeEl.className = 'tab-close';
     closeEl.setAttribute('aria-label', 'Close tab');
-    closeEl.textContent = '\u2716';
+    var closeSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    closeSvg.setAttribute('viewBox', '0 0 24 24');
+    var p1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p1.setAttribute('d', 'M18 6 6 18');
+    var p2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p2.setAttribute('d', 'm6 6 12 12');
+    closeSvg.appendChild(p1);
+    closeSvg.appendChild(p2);
+    closeEl.appendChild(closeSvg);
     closeEl.addEventListener('click', function(e) {
       e.stopPropagation();
       var idx = Number(this.parentNode.getAttribute('data-index'));
