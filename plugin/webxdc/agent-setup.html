@@ -1135,10 +1135,10 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       <div id="resume-empty" style="display:none;font-size:13px;color:var(--ink-mute);">No sessions found in the last 5 days.</div>
       <div id="resume-error" style="display:none;font-size:13px;color:var(--danger);" role="alert"></div>
       <div id="resume-list" style="display:none" role="listbox" aria-label="Recent sessions"></div>
-    </div>
-    <div class="footer-bar">
-      <button type="button" id="resume-cancel" class="btn btn-ghost">Cancel</button>
-      <button type="button" id="resume-attach" class="btn btn-primary" disabled>Attach</button>
+      <div class="footer-bar">
+        <button type="button" id="resume-cancel" class="btn btn-ghost">Cancel</button>
+        <button type="button" id="resume-attach" class="btn btn-primary" disabled>Attach</button>
+      </div>
     </div>
   </div>
 
@@ -1236,10 +1236,10 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         </div>
         <div id="to-done-summary" class="to-summary" style="margin-top:14px;"></div>
       </div>
-    </div>
-    <div class="footer-bar">
-      <button type="button" id="to-back" class="btn btn-ghost">Back</button>
-      <button type="button" id="to-next" class="btn btn-primary">Next</button>
+      <div class="footer-bar">
+        <button type="button" id="to-back" class="btn btn-ghost">Back</button>
+        <button type="button" id="to-next" class="btn btn-primary">Next</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1275,7 +1275,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.69;
+var APP_VERSION = 1.70;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#3DA85A', checker: '#65C081' },
