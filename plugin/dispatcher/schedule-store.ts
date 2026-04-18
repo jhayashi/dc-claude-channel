@@ -39,7 +39,9 @@ export class ScheduleStore {
   save(job: ScheduledJob): void {
     this.ensureDir()
     const path = this.filename(job.chatId, job.jobId)
-    const tmp = `${path}.tmp`
+    // Include a PID + UUID suffix so concurrent writes don't collide on
+    // the tmp path (previously: last writer silently clobbered the first).
+    const tmp = `${path}.tmp.${process.pid}.${crypto.randomUUID().slice(0, 8)}`
     writeFileSync(tmp, JSON.stringify(job, null, 2))
     renameSync(tmp, path)
   }
