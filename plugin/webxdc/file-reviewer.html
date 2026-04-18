@@ -65,9 +65,8 @@ body {
 }
 .doc-tab.active {
   background: var(--surface);
-  border-color: var(--line);
+  border-color: var(--orange);
   color: var(--ink);
-  box-shadow: inset 0 -2px 0 var(--orange);
 }
 .doc-tab .tab-title { display: inline-block; }
 .doc-tab .tab-close {
@@ -739,7 +738,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.16;
+var APP_VERSION = 1.17;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
