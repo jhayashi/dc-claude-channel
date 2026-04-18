@@ -1435,9 +1435,12 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         // the chat is about to be left, so the binding has no owner.
         // Keeping it around inflates countByAgentId and blocks
         // auto-delete of otherwise-unused agents.
+        const goodbye = result.kind === 'resume'
+          ? 'Session resumed in your terminal. You can delete this chat — it\'s no longer connected.'
+          : 'Fresh terminal session ready. You can delete this chat — it\'s no longer connected.'
         setTimeout(async () => {
           try {
-            await client.send(chatId, 'Session resumed in your terminal. You can delete this chat — it\'s no longer connected.')
+            await client.send(chatId, goodbye)
           } catch (err) {
             logf('dc_resume_in_terminal: goodbye send failed chat=%d: %v', chatId, err)
           }
@@ -1449,8 +1452,11 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           logf('dc_resume_in_terminal: cleaned up chat %d after resume-out', chatId)
         }, 5000)
 
+        const detail = result.kind === 'resume'
+          ? `(session ${result.sessionId})`
+          : '(no prior session — fresh terminal claude)'
         return { content: [{ type: 'text' as const, text:
-          `Resume command already sent to chat ${chatId} (session ${result.sessionId}).\n\n` +
+          `Resume command already sent to chat ${chatId} ${detail}.\n\n` +
           `Do NOT repeat the command in your reply. Send a brief one-line message telling the user to wait for your turn to end, then paste the command in their terminal.`
         }] }
       }

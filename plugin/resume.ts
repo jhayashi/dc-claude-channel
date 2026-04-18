@@ -48,9 +48,13 @@ export function projectHashForCwd(cwd: string): string {
 }
 
 export interface ResumeCommand {
+  /** 'resume' = `claude --resume <uuid>`; 'fresh' = bare `claude` (no session to resume). */
+  kind: 'resume' | 'fresh'
   command: string
-  sessionId: string
-  sessionPath: string
+  /** Null when kind === 'fresh'. */
+  sessionId: string | null
+  /** Null when kind === 'fresh' (no .jsonl file to point at). */
+  sessionPath: string | null
   sessionName: string | null
 }
 
@@ -59,13 +63,24 @@ export interface ResumeError {
 }
 
 /**
- * Build a `cd <cwd> && claude --resume <uuid>` command for a chat's
- * bound session. Returns ResumeError if no binding, no sessionId,
- * or the session file is missing.
+ * Build a terminal command for taking a DC chat to the local terminal.
+ *
+ * Best case (`kind: 'resume'`): the binding has a sessionId AND the
+ * `.jsonl` exists on disk → emit `cd <cwd> && claude --resume <uuid>`.
+ *
+ * Fallback (`kind: 'fresh'`): the binding exists but there's nothing to
+ * resume (no sessionId yet, or the session file was deleted) → emit
+ * `cd <cwd> && claude [--name '<chatName>']`. The user still gets a
+ * terminal in the right working dir; they just start a fresh claude
+ * session instead of resuming. This is preferable to forcing the user
+ * to send a throwaway message just to materialize a session.
+ *
+ * Only errors when there's no binding at all — there's nothing to
+ * teleport in that case.
  *
  * cwd comes from the binding's workingDir — the same dir the subagent
  * was spawned in, so claude's `--resume` finds the .jsonl on the first
- * try. Terminal and DC now share the exact same file on disk; no copy,
+ * try. Terminal and DC share the exact same file on disk; no copy,
  * no sync. Falls back to PLUGIN_DIR only for legacy bindings from before
  * workingDir was tracked — those sessions were written under PLUGIN_DIR's
  * project hash by the old spawn path.
@@ -75,23 +90,31 @@ export function buildResumeCommand(
   opts: { cwd?: string; chatName?: string } = {},
 ): ResumeCommand | ResumeError {
   const binding = bindings.getBinding(chatId)
-  if (!binding?.sessionId) {
-    return { error: 'No session yet. Send a message in this chat to initialize, then try again.' }
+  if (!binding) {
+    return { error: 'No agent paired with this chat.' }
   }
-  const sessionId = binding.sessionId
 
   const cwd = opts.cwd ?? binding.workingDir ?? PLUGIN_DIR
-  const sessionPath = join(PROJECTS_ROOT, projectHashForCwd(cwd), `${sessionId}.jsonl`)
+  const nameFlag = opts.chatName ? ` --name ${shellQuote(opts.chatName)}` : ''
 
-  if (!existsSync(sessionPath)) {
-    return { error: `Session file not found for ${sessionId}. The session may have been deleted; clear the binding and start a new chat.` }
+  if (binding.sessionId) {
+    const sessionPath = join(PROJECTS_ROOT, projectHashForCwd(cwd), `${binding.sessionId}.jsonl`)
+    if (existsSync(sessionPath)) {
+      return {
+        kind: 'resume',
+        command: `cd ${cwd} && claude --resume ${binding.sessionId}${nameFlag}`,
+        sessionId: binding.sessionId,
+        sessionPath,
+        sessionName: opts.chatName ?? null,
+      }
+    }
   }
 
-  const nameFlag = opts.chatName ? ` --name ${shellQuote(opts.chatName)}` : ''
   return {
-    command: `cd ${cwd} && claude --resume ${sessionId}${nameFlag}`,
-    sessionId,
-    sessionPath,
+    kind: 'fresh',
+    command: `cd ${cwd} && claude${nameFlag}`,
+    sessionId: null,
+    sessionPath: null,
     sessionName: opts.chatName ?? null,
   }
 }

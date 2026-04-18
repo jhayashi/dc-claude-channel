@@ -66,6 +66,7 @@ describe('buildResumeCommand', () => {
 
     const result = resume.buildResumeCommand(42)
     if ('error' in result) throw new Error(`expected success: ${result.error}`)
+    expect(result.kind).toBe('resume')
     expect(result.sessionId).toBe(sessionId)
     expect(result.command).toBe(`cd ${workingDir} && claude --resume ${sessionId}`)
     expect(result.sessionPath).toBe(join(projectsRoot, resume.projectHashForCwd(workingDir), `${sessionId}.jsonl`))
@@ -124,16 +125,20 @@ describe('buildResumeCommand', () => {
   it('errors when the chat has no binding', () => {
     const result = resume.buildResumeCommand(99)
     expect('error' in result).toBe(true)
-    if ('error' in result) expect(result.error).toMatch(/no session/i)
+    if ('error' in result) expect(result.error).toMatch(/no agent paired/i)
   })
 
-  it('errors when the binding has no sessionId', () => {
-    bindings.saveBinding({ chatId: 42, createdAt: new Date().toISOString() })
-    const result = resume.buildResumeCommand(42)
-    expect('error' in result).toBe(true)
+  it('falls back to a fresh terminal session when binding has no sessionId', () => {
+    const workingDir = '/home/user/src/myproject'
+    bindings.saveBinding({ chatId: 42, workingDir, createdAt: new Date().toISOString() })
+    const result = resume.buildResumeCommand(42, { chatName: 'My Agent' })
+    if ('error' in result) throw new Error(`expected success: ${result.error}`)
+    expect(result.kind).toBe('fresh')
+    expect(result.sessionId).toBeNull()
+    expect(result.command).toBe(`cd ${workingDir} && claude --name 'My Agent'`)
   })
 
-  it('errors when the session file is missing on disk', () => {
+  it('falls back to a fresh terminal session when the session file is missing', () => {
     bindings.saveBinding({
       chatId: 42,
       sessionId: 'deadbeef-aaaa-bbbb-cccc-dddddddddddd',
@@ -141,8 +146,10 @@ describe('buildResumeCommand', () => {
       createdAt: new Date().toISOString(),
     })
     const result = resume.buildResumeCommand(42)
-    expect('error' in result).toBe(true)
-    if ('error' in result) expect(result.error).toMatch(/session file not found/i)
+    if ('error' in result) throw new Error(`expected success: ${result.error}`)
+    expect(result.kind).toBe('fresh')
+    expect(result.sessionId).toBeNull()
+    expect(result.command).toBe('cd /home/user/src/myproject && claude')
   })
 })
 
