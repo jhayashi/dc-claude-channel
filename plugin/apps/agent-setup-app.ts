@@ -296,18 +296,6 @@ async function sendInit(
   return session
 }
 
-/** Icon filename per model, derived from tier with -skip/-mirror variants. */
-export function iconFilenameFor(
-  model: string,
-  skipPermissions: boolean,
-  mirror: boolean,
-): string {
-  const base = `agent-${models.tierForModel(model)}`
-  const skipPart = skipPermissions ? '-skip' : ''
-  const mirrorPart = mirror ? '-mirror' : ''
-  return `${base}${skipPart}${mirrorPart}.png`
-}
-
 /** Minimal context for decorating agent chats (icon + welcome). */
 export interface DecorateContext {
   client: Pick<import('../dc-client.js').DCClient, 'setChatProfileImage' | 'send'>
@@ -315,33 +303,27 @@ export interface DecorateContext {
 }
 
 /**
- * Set the chat profile image. If the agent has an explicit icon override
- * (emoji glyph in metadata), render it to a PNG and use that. Otherwise
- * fall back to the pre-baked model/permission/orientation PNG.
+ * Render the agent's badge PNG and install it as the chat profile image.
+ * Inputs are derived from the agent's archetype, model family, trust
+ * flag (skip-permissions), and resolved glyph (explicit override if in
+ * the archetype's palette, otherwise the archetype default).
  */
 export async function setAgentIcon(
   ctx: DecorateContext,
   chatId: number,
   agent: agents.AgentDef,
 ): Promise<void> {
-  const explicit = agents.getExplicitIcon(agent)
-  let iconPath: string
-  let label: string
-  if (explicit) {
-    const { renderAgentIconPNG } = await import('../agent-icon-render.js')
-    iconPath = await renderAgentIconPNG(explicit, agents.getArchetype(agent))
-    label = `custom ${explicit}`
-  } else {
-    const iconName = iconFilenameFor(
-      agent.model,
-      agents.getSkipPermissions(agent),
-      agents.getIconMirror(agent),
-    )
-    iconPath = new URL(`../assets/agent-icons/${iconName}`, import.meta.url).pathname
-    label = iconName
-  }
+  const { renderAgentBadge } = await import('../agent-icon-render.js')
+  const archetype = agents.getArchetype(agent)
+  const modelFamily = models.tierForModel(agent.model)
+  const trust = agents.getSkipPermissions(agent)
+  const glyph = agents.glyphForAgent(agent)
+  const iconPath = await renderAgentBadge({ archetype, modelFamily, trust, glyph })
   await ctx.client.setChatProfileImage(chatId, iconPath)
-  ctx.logf('agent-setup: set agent icon to %s for chat %d', label, chatId)
+  ctx.logf(
+    'agent-setup: set agent badge %s/%s/%s/%s for chat %d',
+    archetype, modelFamily, trust ? 'trust' : 'plain', glyph, chatId,
+  )
 }
 
 /** Apply icon + intro message after a chat has been bound to an agent. */
