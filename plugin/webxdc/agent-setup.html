@@ -498,66 +498,146 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 
 .to-row {
   display: flex; align-items: center; gap: 10px;
-  padding: 12px; border: 1px solid #30363d; border-radius: 10px;
-  margin-bottom: 8px; cursor: pointer; transition: background 0.1s;
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--ink);
+  text-align: left;
 }
-.to-row:hover { background: #1c2230; }
-.to-row.selected { border-color: #2f81f7; background: rgba(47,129,247,0.08); }
+.to-row:hover { background: var(--surface-3); }
+.to-row.selected { border-color: var(--orange); background: rgba(217,119,87,0.08); }
 .to-row[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
-.to-row .avatar {
-  width: 32px; height: 32px; border-radius: 50%;
-  background: linear-gradient(135deg,#6e7dea,#9753c9);
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 600; font-size: 13px; flex-shrink: 0;
-}
+.to-row .avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; background: var(--surface-3); display: grid; place-items: center; color: var(--ink-mute); font-weight: 600; font-size: 11px; }
 .to-row .row-body { flex: 1; min-width: 0; }
-.to-row .row-name { font-weight: 600; font-size: 14px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.to-row .row-meta { font-size: 12px; color: #8b949e; }
-.to-row .arrow { color: #8b949e; font-size: 18px; }
+.to-row .row-name { font: 600 13px/1.2 inherit; color: var(--ink); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.to-row .row-meta { font: 400 11px/1.3 inherit; color: var(--ink-faint); margin-top: 2px; }
+.to-row .arrow { color: var(--ink-faint); font-size: 16px; }
 
-.to-badge { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-.to-badge-jobs    { background: rgba(210,153,34,0.15); color: #d29922; }
-.to-badge-trusted { background: rgba(63,185,80,0.15); color: #3fb950; }
-.to-badge-live    { background: rgba(248,81,73,0.15); color: #f85149; }
+.to-badge { display: inline-block; padding: 1px 6px; border-radius: var(--radius-pill); font: 600 9px/1.2 inherit; text-transform: uppercase; letter-spacing: 0.04em; }
+.to-badge-jobs    { background: rgba(201,154,53,0.14); color: var(--amber); }
+.to-badge-trusted { background: rgba(61,168,90,0.14); color: var(--green); }
+.to-badge-live    { background: rgba(229,105,76,0.14); color: var(--danger); }
 
-.to-opt { border: 1px solid #30363d; border-radius: 10px; padding: 12px; margin-bottom: 10px; cursor: pointer; }
-.to-opt.selected { border-color: #2f81f7; background: rgba(47,129,247,0.06); }
-.to-opt-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
-.to-radio { width: 16px; height: 16px; border: 2px solid #8b949e; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
-.to-opt.selected .to-radio { border-color: #2f81f7; }
-.to-opt.selected .to-radio::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #2f81f7; }
-.to-opt-title { font-weight: 600; font-size: 14px; }
-.to-opt-desc { font-size: 12px; color: #8b949e; margin-left: 26px; line-height: 1.4; }
-.to-select {
-  margin-top: 8px; margin-left: 26px; width: calc(100% - 26px);
-  background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
-  color: #e6edf3; padding: 6px 10px; font-family: inherit; font-size: 13px;
+.to-opt {
+  display: block;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
 }
-
-.to-summary { background: #1c2230; border: 1px solid #30363d; border-radius: 10px; padding: 14px; }
-.to-summary .sum-row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid #30363d; font-size: 13px; }
+.to-opt.selected { border-color: var(--orange); background: rgba(217,119,87,0.06); }
+.to-opt-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.to-radio {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.to-opt.selected .to-radio { border-color: var(--orange); }
+.to-opt.selected .to-radio::after { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--orange); }
+.to-opt-title { font: 600 13px/1.2 inherit; color: var(--ink); }
+.to-opt-desc { font: 400 12px/1.45 inherit; color: var(--ink-faint); margin-left: 26px; }
+.to-select {
+  margin-top: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  width: 100%;
+}
+.to-summary {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 4px 12px;
+}
+.to-summary .sum-row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px;
+}
 .to-summary .sum-row:last-child { border-bottom: none; }
-.to-summary .sum-key { color: #8b949e; }
-.to-summary .sum-val { text-align: right; font-weight: 500; }
-.to-summary .sum-val.mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; word-break: break-all; }
+.to-summary .sum-key { color: var(--ink-faint); }
+.to-summary .sum-val { text-align: right; font-weight: 500; color: var(--ink); }
+.to-summary .sum-val.mono { font-family: 'SF Mono', Menlo, monospace; font-size: 11px; word-break: break-all; }
 
-.to-note { font-size: 12px; color: #8b949e; line-height: 1.5; margin-top: 10px; padding: 10px 12px; background: #1c2230; border-left: 3px solid #2f81f7; border-radius: 0 6px 6px 0; }
-.to-note-warn { border-left-color: #d29922; }
+.to-note {
+  font-size: 12px; color: var(--ink-mute); line-height: 1.5;
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-left: 3px solid var(--surface-3);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.to-note-warn { border-left-color: var(--amber); }
 
 .to-progress { list-style: none; padding: 0; margin: 0; }
-.to-progress li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid #30363d; font-size: 14px; }
+.to-progress li {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+  color: var(--ink);
+}
 .to-progress li:last-child { border-bottom: none; }
-.to-progress .ti { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
-.to-progress .ti.done    { background: #3fb950; color: white; }
-.to-progress .ti.active  { background: transparent; border: 2px solid #2f81f7; color: #2f81f7; animation: to-spin 1s linear infinite; }
-.to-progress .ti.pending { background: #30363d; color: #8b949e; }
-.to-progress .label.pending { color: #8b949e; }
-.to-progress .detail { font-size: 11px; color: #8b949e; margin-top: 2px; }
-@keyframes to-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+.to-progress .ti {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font: 700 12px/1 inherit;
+  flex-shrink: 0;
+}
+.to-progress .ti.done { background: var(--green); color: var(--paper); }
+.to-progress .ti.active {
+  background: transparent;
+  border: 2px solid var(--orange);
+  color: var(--orange);
+  animation: to-spin 1s linear infinite;
+}
+.to-progress .ti.pending { background: var(--surface-3); color: var(--ink-faint); }
+.to-progress .label.pending { color: var(--ink-faint); }
+.to-progress code { font-family: 'SF Mono', Menlo, monospace; font-size: 11px; color: var(--ink-mute); }
+@keyframes to-spin { to { transform: rotate(360deg); } }
 
-.to-cmd { position: relative; background: #000; border: 1px solid #30363d; border-radius: 10px; padding: 14px; padding-right: 70px; margin: 12px 0 8px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; line-height: 1.5; color: #a5d6ff; word-break: break-all; }
+.to-cmd {
+  position: relative;
+  background: #0a0d15;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  padding-right: 70px;
+  margin: 12px 0 8px;
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #a5d6e6;
+  word-break: break-all;
+}
 .to-cmd code { white-space: normal; }
-.to-copy-btn { position: absolute; top: 8px; right: 8px; background: #161b22; border: 1px solid #30363d; color: #e6edf3; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-family: inherit; }
+.to-copy-btn {
+  position: absolute;
+  top: 8px; right: 8px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
 .seg {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1052,22 +1132,33 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     <div class="body">
       <!-- Sub-screen 1: pick a chat -->
       <div data-to-screen="pick" class="to-screen">
-        <h2 style="font-size:18px;margin-bottom:4px;">Send a chat to terminal</h2>
-        <p style="font-size:13px;color:#8b949e;margin-bottom:14px;">
-          Continue one of your DC conversations inside your local Claude Code terminal.
-          This DC chat will wind down once the terminal session is ready.
+        <div class="title-bar">
+          <button class="crumb" type="button" onclick="show('step0')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Home
+          </button>
+          <div class="title">Send chat to terminal</div>
+        </div>
+        <p style="font-size:13px;color:var(--ink-mute);margin: 4px 0 14px;line-height:1.5;">
+          Continue one of your DC conversations inside your local Claude Code terminal. This DC chat will wind down once the terminal session is ready.
         </p>
-        <div id="to-empty" style="display:none;font-size:13px;color:#8b949e;">
+        <div id="to-empty" style="display:none;font-size:13px;color:var(--ink-mute);">
           No paired chats available.
         </div>
-        <div id="to-error" style="display:none;font-size:13px;color:#f85149;" role="alert"></div>
+        <div id="to-error" style="display:none;font-size:13px;color:var(--danger);" role="alert"></div>
         <div id="to-list" role="listbox" aria-label="Paired chats"></div>
       </div>
 
       <!-- Sub-screen 2: scheduled jobs -->
       <div data-to-screen="jobs" class="to-screen" style="display:none;">
-        <h2 style="font-size:18px;margin-bottom:4px;">Scheduled jobs</h2>
-        <p id="to-jobs-sub" style="font-size:13px;color:#8b949e;margin-bottom:14px;"></p>
+        <div class="title-bar">
+          <button class="crumb" type="button" onclick="toShow('pick')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Back
+          </button>
+          <div class="title">Scheduled jobs</div>
+        </div>
+        <p id="to-jobs-sub" style="font-size:13px;color:var(--ink-mute);margin: 4px 0 14px;line-height:1.5;"></p>
         <div class="to-opt" id="to-opt-delete">
           <div class="to-opt-head"><span class="to-radio"></span><span class="to-opt-title">Delete the jobs</span></div>
           <div class="to-opt-desc">Remove them along with the DC chat. You can recreate them later from terminal or another chat.</div>
@@ -1083,25 +1174,45 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 
       <!-- Sub-screen 3: confirm -->
       <div data-to-screen="confirm" class="to-screen" style="display:none;">
-        <h2 style="font-size:18px;margin-bottom:4px;">Review and confirm</h2>
-        <p style="font-size:13px;color:#8b949e;margin-bottom:14px;">Here's what will happen when you tap "Send to terminal."</p>
+        <div class="title-bar">
+          <button class="crumb" type="button" onclick="toShow('jobs')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Back
+          </button>
+          <div class="title">Review and confirm</div>
+        </div>
+        <p style="font-size:13px;color:var(--ink-mute);margin: 4px 0 14px;line-height:1.5;">
+          Here's what will happen when you tap "Send to terminal."
+        </p>
         <div id="to-summary" class="to-summary"></div>
         <div class="to-note to-note-warn">
-          &#x26A0; Don't send messages to this DC chat while the terminal session is active &mdash; single-writer lock.
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-2px;margin-right:4px;"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Don't send messages to this DC chat while the terminal session is active &mdash; single-writer lock.
         </div>
       </div>
 
       <!-- Sub-screen 4: processing -->
       <div data-to-screen="progress" class="to-screen" style="display:none;">
-        <h2 style="font-size:18px;margin-bottom:4px;">Transferring to terminal&hellip;</h2>
-        <p style="font-size:13px;color:#8b949e;margin-bottom:14px;">This takes a few seconds. Don't close the app.</p>
+        <div class="title-bar">
+          <div class="title">Transferring to terminal&hellip;</div>
+        </div>
+        <p style="font-size:13px;color:var(--ink-mute);margin: 4px 0 14px;line-height:1.5;">
+          This takes a few seconds. Don't close the app.
+        </p>
         <ul id="to-progress" class="to-progress"></ul>
       </div>
 
       <!-- Sub-screen 5: done -->
       <div data-to-screen="done" class="to-screen" style="display:none;">
-        <h2 style="font-size:18px;margin-bottom:4px;color:#3fb950;">&#x2713; Ready for terminal</h2>
-        <p style="font-size:13px;color:#8b949e;margin-bottom:14px;">Paste this command into your local Claude Code terminal.</p>
+        <div class="title-bar">
+          <div class="title" style="color: var(--green);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;vertical-align:-1px;margin-right:4px;"><polyline points="20 6 9 17 4 12"/></svg>
+            Ready for terminal
+          </div>
+        </div>
+        <p style="font-size:13px;color:var(--ink-mute);margin: 4px 0 14px;line-height:1.5;">
+          Paste this command into your local Claude Code terminal.
+        </p>
         <div id="to-cmd" class="to-cmd">
           <button type="button" id="to-copy" class="to-copy-btn" onclick="toCopyCommand()">Copy</button>
           <code id="to-cmd-text"></code>
@@ -1112,9 +1223,9 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         <div id="to-done-summary" class="to-summary" style="margin-top:14px;"></div>
       </div>
     </div>
-    <div class="actions">
-      <button type="button" id="to-back" class="btn btn-back">Back</button>
-      <button type="button" id="to-next" class="btn btn-create">Next</button>
+    <div class="footer-bar">
+      <button type="button" id="to-back" class="btn btn-ghost">Back</button>
+      <button type="button" id="to-next" class="btn btn-primary">Next</button>
     </div>
   </div>
 </div>
