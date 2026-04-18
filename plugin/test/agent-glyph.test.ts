@@ -1,10 +1,29 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, beforeAll } from 'bun:test'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   MODEL_COLORS,
   ARCHETYPE_PALETTES,
   ARCHETYPE_DEFAULT_GLYPH,
   type ModelFamily,
 } from '../agent-icons/palettes'
+import * as agents from '../agents'
+
+const testDir = mkdtempSync(join(tmpdir(), 'dc-glyph-helpers-'))
+beforeAll(() => agents.setAgentsDir(testDir))
+
+function makeDef(overrides: Partial<agents.AgentDef> = {}): agents.AgentDef {
+  return {
+    id: 'glyph-test',
+    name: 'Glyph Test',
+    model: 'claude-sonnet-4-6',
+    description: '',
+    system: 'you are helpful',
+    tools: [],
+    ...overrides,
+  }
+}
 
 describe('palettes', () => {
   test('every model family has solid + checker colors', () => {
@@ -35,5 +54,64 @@ describe('palettes', () => {
       'folder-kanban', 'target', 'list-checks', 'route',
       'flag', 'clipboard-list', 'git-branch', 'package',
     ])
+  })
+})
+
+describe('glyph helpers', () => {
+  test('getGlyph returns null when not set', () => {
+    expect(agents.getGlyph(makeDef())).toBeNull()
+  })
+
+  test('setGlyph writes, setGlyph(null) clears', () => {
+    const def = makeDef()
+    agents.setGlyph(def, 'calendar')
+    expect(def.metadata!['x-dc-glyph']).toBe('calendar')
+    agents.setGlyph(def, null)
+    expect(def.metadata!['x-dc-glyph']).toBeUndefined()
+  })
+
+  test('setGlyph(empty string) clears', () => {
+    const def = makeDef({ metadata: { 'x-dc-glyph': 'cog' } })
+    agents.setGlyph(def, '')
+    expect(def.metadata!['x-dc-glyph']).toBeUndefined()
+  })
+
+  test('glyphForAgent falls back to archetype default when unset', () => {
+    const role = makeDef()
+    agents.setArchetype(role, 'role')
+    expect(agents.glyphForAgent(role)).toBe('user-round')
+
+    const util = makeDef()
+    agents.setArchetype(util, 'utility')
+    expect(agents.glyphForAgent(util)).toBe('cog')
+
+    const proj = makeDef()
+    agents.setArchetype(proj, 'project')
+    expect(agents.glyphForAgent(proj)).toBe('folder-kanban')
+  })
+
+  test('glyphForAgent uses explicit glyph when in archetype palette', () => {
+    const def = makeDef()
+    agents.setArchetype(def, 'utility')
+    agents.setGlyph(def, 'calendar')
+    expect(agents.glyphForAgent(def)).toBe('calendar')
+  })
+
+  test('glyphForAgent ignores explicit glyph not in archetype palette and falls back', () => {
+    const def = makeDef()
+    agents.setArchetype(def, 'utility')
+    agents.setGlyph(def, 'crown')
+    expect(agents.glyphForAgent(def)).toBe('cog')
+  })
+
+  test('glyph round-trips through YAML', () => {
+    const def = makeDef({ id: 'glyph-yaml' })
+    agents.setArchetype(def, 'project')
+    agents.setGlyph(def, 'route')
+    agents.saveAgent(def)
+    const loaded = agents.getAgent('glyph-yaml')
+    expect(loaded).not.toBeNull()
+    expect(agents.getGlyph(loaded!)).toBe('route')
+    expect(agents.glyphForAgent(loaded!)).toBe('route')
   })
 })

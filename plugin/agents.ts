@@ -24,6 +24,7 @@ import YAML from 'yaml'
 import { z } from 'zod'
 import * as bindings from './bindings.js'
 import * as models from './models.js'
+import { ARCHETYPE_PALETTES, ARCHETYPE_DEFAULT_GLYPH } from './agent-icons/palettes.js'
 
 let AGENTS_DIR = join(homedir(), '.claude', 'channels', 'deltachat', 'agents')
 
@@ -305,6 +306,49 @@ export function setIcon(def: AgentDef, value: string | null): void {
   }
   if (!def.metadata) def.metadata = {}
   def.metadata[ICON_META_KEY] = value
+}
+
+/** Metadata key for an agent's Lucide glyph name (e.g. "cog", "calendar"). */
+export const GLYPH_META_KEY = 'x-dc-glyph'
+
+/**
+ * Read the explicit Lucide glyph name set on an agent. Returns null if
+ * unset. The caller decides whether to validate against the archetype's
+ * palette — see glyphForAgent for the validated lookup.
+ */
+export function getGlyph(def: AgentDef): string | null {
+  const v = def.metadata?.[GLYPH_META_KEY]
+  return typeof v === 'string' && v.length > 0 ? v : null
+}
+
+/**
+ * Write a Lucide glyph name to an agent's metadata bag. Passing null or
+ * an empty string clears the override (renderer falls back to archetype
+ * default). Does not persist — caller must follow with saveAgent.
+ */
+export function setGlyph(def: AgentDef, value: string | null): void {
+  if (!value) {
+    if (def.metadata) delete def.metadata[GLYPH_META_KEY]
+    return
+  }
+  if (!def.metadata) def.metadata = {}
+  def.metadata[GLYPH_META_KEY] = value
+}
+
+/**
+ * Return the resolved Lucide glyph name for an agent: the explicit
+ * x-dc-glyph if set AND in the archetype's curated palette, otherwise
+ * the archetype default. A glyph from a different archetype's palette
+ * is treated as unset (falls back to default).
+ */
+export function glyphForAgent(def: AgentDef): string {
+  const archetype = getArchetype(def)
+  const explicit = getGlyph(def)
+  if (explicit) {
+    const palette = ARCHETYPE_PALETTES[archetype] as readonly string[]
+    if (palette.includes(explicit)) return explicit
+  }
+  return ARCHETYPE_DEFAULT_GLYPH[archetype]
 }
 
 /** Metadata key used to store the skipPermissions flag inside an agent's metadata bag. */
