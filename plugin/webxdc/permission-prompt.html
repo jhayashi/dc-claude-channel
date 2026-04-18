@@ -5,245 +5,414 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="webxdc.js"></script>
 <style>
+:root {
+  --bg:        #0B0F17;
+  --surface:   #131826;
+  --surface-2: #1A2030;
+  --surface-3: #232A3C;
+  --line:      #2C3447;
+  --line-soft: #1F2536;
+  --ink:       #E8ECF5;
+  --ink-mute:  #99A2B8;
+  --ink-faint: #6C748A;
+  --paper:     #FAF9F5;
+  --orange:    #D97757;
+  --green:     #3DA85A;
+  --amber:     #C99A35;
+  --amber-soft: rgba(201,154,53,0.14);
+  --danger:    #E5694C;
+  --danger-soft: rgba(229,105,76,0.14);
+  --green-soft: rgba(61,168,90,0.14);
+  --radius:    14px;
+  --radius-sm: 10px;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
 body {
-  font-family: system-ui, -apple-system, sans-serif;
-  background: #0e1117;
-  color: #e6edf3;
+  font: 14px/1.45 var(--font-sans);
+  letter-spacing: 0.005em;
+  background: var(--bg);
+  color: var(--ink);
   display: flex;
   align-items: stretch;
   justify-content: center;
-  padding: 20px 16px;
+  padding: 20px 14px;
+  -webkit-font-smoothing: antialiased;
 }
 .card {
   width: 100%;
-  max-width: 400px;
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 16px;
+  max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
 }
-.header {
-  background: linear-gradient(135deg, #1a1f2b 0%, #161b22 100%);
-  padding: 20px;
-  border-bottom: 1px solid #30363d;
+.card-head {
+  padding: 18px 18px 16px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 14px;
-}
-.shield {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: #000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  border-bottom: 1px solid var(--line-soft);
   flex-shrink: 0;
 }
-.shield svg { width: 28px; height: 28px; display: block; }
-.header-text h1 {
-  font-size: 15px;
+.gate-chip {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  background: var(--amber-soft);
+  border: 1px solid color-mix(in oklch, var(--amber) 40%, transparent);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.gate-chip svg {
+  width: 20px; height: 20px;
+  stroke: var(--amber);
+  stroke-width: 1.75;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.head-text { flex: 1; min-width: 0; }
+.head-meta {
+  font-size: 10px;
   font-weight: 600;
-  color: #e6edf3;
-  margin-bottom: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--amber);
 }
-.header-text .subtitle {
-  font-size: 12px;
-  color: #8b949e;
-  font-weight: 400;
+.head-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--ink);
+  margin-top: 4px;
+  word-break: break-word;
 }
-.tool-badge {
-  display: inline-block;
-  font-family: 'SF Mono', 'Cascadia Code', monospace;
-  background: #1f6feb22;
-  color: #58a6ff;
+.head-title .tool {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  background: var(--surface-3);
+  color: var(--ink);
   padding: 2px 8px;
   border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  border: 1px solid #1f6feb44;
+  border: 1px solid var(--line);
+  margin-left: 2px;
+  letter-spacing: 0;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: baseline;
 }
-.body { padding: 16px 20px; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.card-body {
+  padding: 16px 18px 8px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.field-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
+  margin-bottom: 7px;
+  flex-shrink: 0;
+}
 .description {
   font-size: 13px;
-  color: #8b949e;
-  line-height: 1.5;
-  margin-bottom: 12px;
+  line-height: 1.55;
+  color: var(--ink-mute);
   flex-shrink: 0;
   max-height: 4.5em;
   overflow: hidden;
   position: relative;
 }
 .description.expanded {
-  max-height: none;
   max-height: 200px;
   overflow-y: auto;
 }
-.description:not(.expanded).truncated::after {
+.description.truncated:not(.expanded)::after {
   content: '';
   position: absolute;
-  bottom: 0;
-  right: 0;
-  left: 0;
+  left: 0; right: 0; bottom: 0;
   height: 1.5em;
-  background: linear-gradient(transparent, #161b22);
+  background: linear-gradient(transparent, var(--surface));
   pointer-events: none;
 }
-.desc-toggle {
+.show-toggle {
   display: none;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--orange);
   background: none;
   border: none;
-  color: #58a6ff;
-  font-size: 12px;
-  font-family: inherit;
   cursor: pointer;
-  padding: 0 0 12px 0;
-  margin-top: -8px;
+  font-family: inherit;
+  padding: 0 0 4px;
+  flex-shrink: 0;
 }
-.desc-toggle.visible { display: block; }
-.preview-box {
-  background: #0d1117;
-  border: 1px solid #30363d;
-  border-radius: 10px;
-  padding: 14px;
-  font-family: 'SF Mono', 'Cascadia Code', monospace;
-  font-size: 11px;
-  line-height: 1.5;
-  color: #c9d1d9;
+.show-toggle.visible { display: inline-block; }
+.preview {
+  margin-top: 16px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--paper);
   white-space: pre-wrap;
   word-break: break-all;
   flex: 1;
-  min-height: 160px;
+  min-height: 120px;
   overflow-y: auto;
 }
-.actions {
+.preview .k { color: var(--orange); }
+.preview .s { color: #A9C5F0; }
+.preview .n { color: var(--amber); }
+.card-actions {
   display: flex;
   gap: 10px;
-  padding: 16px 20px 20px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid var(--line-soft);
   margin-top: auto;
+  flex-shrink: 0;
 }
 .btn {
   flex: 1;
-  padding: 13px 16px;
-  border: none;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  transition: opacity 0.15s, transform 0.1s;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font: 500 14px/1 var(--font-sans);
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.08s, opacity 0.15s;
 }
-.btn:active { transform: scale(0.97); }
-.btn:disabled { opacity: 0.3; cursor: default; transform: none; }
-.btn-allow {
-  background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
-  color: white;
+.btn:active { transform: scale(0.98); }
+.btn:disabled { opacity: 0.35; cursor: default; transform: none; }
+.btn svg {
+  width: 16px; height: 16px;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .btn-deny {
-  background: linear-gradient(135deg, #da3633 0%, #f85149 100%);
-  color: white;
+  background: var(--surface-2);
+  color: var(--ink);
 }
-.result-card {
-  display: none;
-  text-align: center;
-  padding: 32px 20px;
+.btn-deny:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: color-mix(in oklch, var(--danger) 50%, transparent);
+  color: var(--danger);
 }
-.result-icon { font-size: 48px; margin-bottom: 12px; }
-.result-text {
-  font-size: 16px;
+.btn-allow {
+  background: var(--orange);
+  color: var(--paper);
+  border-color: color-mix(in oklch, var(--orange) 65%, #000);
   font-weight: 600;
 }
-.result-text.allowed { color: #3fb950; }
-.result-text.denied { color: #f85149; }
-.result-sub {
-  font-size: 12px;
-  color: #8b949e;
-  margin-top: 6px;
+.btn-allow:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--orange) 92%, #000);
 }
-.back-hint {
-  font-size: 16px;
-  font-weight: 600;
-  color: #58a6ff;
-  margin-top: 20px;
-}
-.docs-hint {
-  font-size: 11px;
-  color: #8b949e;
-  margin-top: 16px;
-  line-height: 1.5;
-  user-select: all;
-}
+
 #loading {
-  text-align: center;
-  color: #8b949e;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
   padding: 60px 20px;
-  font-size: 14px;
+  color: var(--ink-faint);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  margin: auto;
 }
 .spinner {
-  width: 28px;
-  height: 28px;
-  border: 3px solid #30363d;
-  border-top-color: #58a6ff;
+  width: 22px; height: 22px;
+  border: 2px solid var(--line);
+  border-top-color: var(--amber);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin: 0 auto 14px;
+  animation: spin 0.9s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-#prompt { display: none; }
-#prompt.visible { display: flex; }
+
 #outdated {
   display: none;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
-  padding: 60px 20px;
+  padding: 44px 22px;
+  margin: auto;
 }
+.outdated-icon {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  margin-bottom: 14px;
+}
+.outdated-icon svg {
+  width: 22px; height: 22px;
+  stroke: var(--ink-mute);
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.outdated-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.outdated-sub {
+  font-size: 12px;
+  color: var(--ink-mute);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+#result {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 32px 22px 22px;
+}
+.result-dot {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+}
+.result-dot svg {
+  width: 22px; height: 22px;
+  fill: none;
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#result.ok .result-dot {
+  background: var(--green-soft);
+  border: 1px solid color-mix(in oklch, var(--green) 50%, transparent);
+}
+#result.ok .result-dot svg { stroke: var(--green); }
+#result.no .result-dot {
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in oklch, var(--danger) 50%, transparent);
+}
+#result.no .result-dot svg { stroke: var(--danger); }
+.result-title {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.result-sub {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-mute);
+  margin-top: 4px;
+  word-break: break-word;
+}
+.result-hint {
+  margin-top: 18px;
+  padding: 10px 12px;
+  font-size: 11px;
+  color: var(--ink-mute);
+  background: var(--surface-2);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  line-height: 1.55;
+  text-align: left;
+  width: 100%;
+}
+.result-hint b { color: var(--ink); font-weight: 600; }
+.result-hint a { color: var(--orange); text-decoration: none; }
+.back-hint {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+#prompt { display: none; }
+#prompt.visible { display: flex; }
+#outdated.visible { display: flex; }
+#result.visible { display: flex; }
+.check-icon,
+.x-icon { display: none; }
+#result.ok .check-icon { display: block; }
+#result.no .x-icon { display: block; }
 </style>
 </head>
 <body>
 <div id="loading">
   <div class="spinner"></div>
-  Waiting for permission details...
+  <div>Waiting for permission details&hellip;</div>
 </div>
 <div id="outdated">
-  <div class="result-icon">&#x2B06;&#xFE0F;</div>
-  <div class="result-text allowed">New version available</div>
-  <div class="result-sub">A newer app has been sent to this chat.</div>
-  <div class="back-hint">&#x2190; Swipe or tap back to return to chat</div>
+  <div class="outdated-icon">
+    <svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+  </div>
+  <div class="outdated-title">New version available</div>
+  <div class="outdated-sub">A newer permission card was sent to this chat. Swipe back and open the latest one.</div>
 </div>
 <div id="prompt" class="card">
-  <div class="header">
-    <div class="shield"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L4 5v6c0 5 3.5 9.5 8 11 4.5-1.5 8-6 8-11V5l-8-3z" fill="#fff"/><path d="M9 12l2 2 4-4" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div>
-    <div class="header-text">
-      <h1>Permission Request</h1>
-      <div class="subtitle">Claude wants to use <span id="tool" class="tool-badge"></span></div>
+  <div class="card-head">
+    <div class="gate-chip" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+    </div>
+    <div class="head-text">
+      <div class="head-meta">Permission gate</div>
+      <div class="head-title">Claude is about to run <span id="tool" class="tool"></span></div>
     </div>
   </div>
-  <div class="body">
+  <div class="card-body">
+    <div class="field-label">What it&rsquo;ll do</div>
     <div id="desc" class="description"></div>
-    <button id="desc-toggle" class="desc-toggle" onclick="toggleDesc()">Show more</button>
-    <div id="preview" class="preview-box"></div>
+    <button id="desc-toggle" class="show-toggle" onclick="toggleDesc()">Show more</button>
+    <div class="field-label" style="margin-top:16px">Parameters</div>
+    <div id="preview" class="preview"></div>
   </div>
-  <div id="actions" class="actions">
-    <button class="btn btn-deny" onclick="respond(false)">&#x2716; Deny</button>
-    <button class="btn btn-allow" onclick="respond(true)">&#x2714; Allow</button>
+  <div id="actions" class="card-actions">
+    <button class="btn btn-deny" onclick="respond(false)">
+      <svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      Deny
+    </button>
+    <button class="btn btn-allow" onclick="respond(true)">
+      <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+      Allow
+    </button>
   </div>
-  <div id="result" class="result-card">
-    <div id="result-icon" class="result-icon"></div>
-    <div id="result-text" class="result-text"></div>
+  <div id="result">
+    <div class="result-dot">
+      <svg class="check-icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+      <svg class="x-icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+    </div>
+    <div id="result-text" class="result-title"></div>
     <div id="result-sub" class="result-sub"></div>
   </div>
 </div>
 <script>
-var APP_VERSION = 1.07;
+var APP_VERSION = 2.00;
 // Map of requestId -> {data, resolved}
 var requests = {};
 // Whether initial replay has finished
@@ -255,6 +424,77 @@ var versionMismatchSent = false;
 
 var previewBox = document.getElementById('preview');
 
+// Render pretty-printed JSON into previewBox using DOM nodes (no innerHTML).
+// Tokenizes the raw text so HTML never has to be escaped.
+function renderPreview(raw) {
+  while (previewBox.firstChild) previewBox.removeChild(previewBox.firstChild);
+
+  var text;
+  try {
+    text = JSON.stringify(JSON.parse(raw), null, 2);
+  } catch (e) {
+    previewBox.appendChild(document.createTextNode(String(raw)));
+    return;
+  }
+
+  function span(cls, value) {
+    var s = document.createElement('span');
+    s.className = cls;
+    s.textContent = value;
+    return s;
+  }
+  function flush(buf) {
+    if (buf.length) previewBox.appendChild(document.createTextNode(buf));
+  }
+
+  var i = 0;
+  var n = text.length;
+  var buf = '';
+  while (i < n) {
+    var c = text[i];
+    if (c === '"') {
+      var j = i + 1;
+      while (j < n) {
+        if (text[j] === '\\') { j += 2; continue; }
+        if (text[j] === '"') { j++; break; }
+        j++;
+      }
+      var k = j;
+      while (k < n && (text[k] === ' ' || text[k] === '\t')) k++;
+      var cls = text[k] === ':' ? 'k' : 's';
+      flush(buf); buf = '';
+      previewBox.appendChild(span(cls, text.slice(i, j)));
+      i = j;
+      continue;
+    }
+    if ((c === '-' || (c >= '0' && c <= '9')) &&
+        (i === 0 || ' \t\n:,[{'.indexOf(text[i-1]) !== -1)) {
+      var j = i;
+      if (text[j] === '-') j++;
+      while (j < n && '0123456789.eE+-'.indexOf(text[j]) !== -1) j++;
+      flush(buf); buf = '';
+      previewBox.appendChild(span('n', text.slice(i, j)));
+      i = j;
+      continue;
+    }
+    if (text.substr(i, 4) === 'true' || text.substr(i, 4) === 'null') {
+      flush(buf); buf = '';
+      previewBox.appendChild(span('n', text.substr(i, 4)));
+      i += 4;
+      continue;
+    }
+    if (text.substr(i, 5) === 'false') {
+      flush(buf); buf = '';
+      previewBox.appendChild(span('n', 'false'));
+      i += 5;
+      continue;
+    }
+    buf += c;
+    i++;
+  }
+  flush(buf);
+}
+
 function showRequest(data) {
   responding = false;
 
@@ -264,8 +504,9 @@ function showRequest(data) {
 
   // Drop hint divs appended by a prior respond() so they don't accumulate
   var r = document.getElementById('result');
-  var hints = r.querySelectorAll('.back-hint, .docs-hint');
+  var hints = r.querySelectorAll('.back-hint, .result-hint');
   for (var j = 0; j < hints.length; j++) r.removeChild(hints[j]);
+  r.classList.remove('ok', 'no', 'visible');
 
   document.getElementById('tool').textContent = data.toolName || 'unknown';
   var descEl = document.getElementById('desc');
@@ -283,13 +524,11 @@ function showRequest(data) {
       toggleEl.classList.remove('visible');
     }
   }, 0);
-  var preview = data.inputPreview || '';
-  try { preview = JSON.stringify(JSON.parse(preview), null, 2); } catch(e) {}
-  previewBox.textContent = preview;
+
+  renderPreview(data.inputPreview || '');
 
   document.getElementById('loading').style.display = 'none';
-  document.getElementById('outdated').style.display = 'none';
-  document.getElementById('result').style.display = 'none';
+  document.getElementById('outdated').classList.remove('visible');
   document.getElementById('actions').style.display = 'flex';
   document.getElementById('prompt').classList.add('visible');
 
@@ -298,8 +537,8 @@ function showRequest(data) {
 }
 
 function showLoading() {
-  document.getElementById('outdated').style.display = 'none';
-  document.getElementById('loading').style.display = 'block';
+  document.getElementById('outdated').classList.remove('visible');
+  document.getElementById('loading').style.display = 'flex';
   document.getElementById('prompt').classList.remove('visible');
 }
 
@@ -322,7 +561,7 @@ function resolveInitialView() {
     }
   }
 
-  // Nothing pending — keep the loading screen (or show a clear state)
+  // Nothing pending — keep the loading screen
   showLoading();
 }
 
@@ -341,7 +580,7 @@ window.webxdc.setUpdateListener(function(update) {
       }, 'Version mismatch — requesting update');
       document.getElementById('loading').style.display = 'none';
       document.getElementById('prompt').classList.remove('visible');
-      document.getElementById('outdated').style.display = 'block';
+      document.getElementById('outdated').classList.add('visible');
       return;
     }
 
@@ -396,22 +635,30 @@ function respond(granted) {
 
   document.getElementById('actions').style.display = 'none';
   var r = document.getElementById('result');
-  r.style.display = 'block';
-  document.getElementById('result-icon').textContent = granted ? '\u2705' : '\u274c';
-  var rt = document.getElementById('result-text');
-  rt.textContent = granted ? 'Permission Granted' : 'Permission Denied';
-  rt.className = 'result-text ' + (granted ? 'allowed' : 'denied');
+  r.classList.add('visible');
+  r.classList.add(granted ? 'ok' : 'no');
+  document.getElementById('result-text').textContent = granted ? 'Allowed' : 'Denied';
   document.getElementById('result-sub').textContent = requests[requestId].data.toolName || '';
 
-  var hint = document.createElement('div');
-  hint.className = 'back-hint';
-  hint.textContent = '\u2190 Swipe or tap back to return to chat';
-  r.appendChild(hint);
+  // Trusted-agent hint — only on Allow (the one next-step action)
+  if (granted) {
+    var hint = document.createElement('div');
+    hint.className = 'result-hint';
+    var b = document.createElement('b');
+    b.textContent = 'Want to skip this next time? ';
+    hint.appendChild(b);
+    hint.appendChild(document.createTextNode('Mark this agent as trusted in the '));
+    var a = document.createElement('a');
+    a.textContent = 'Agent settings app';
+    hint.appendChild(a);
+    hint.appendChild(document.createTextNode('. Trusted agents auto-approve tools and log every decision to an audit trail.'));
+    r.appendChild(hint);
+  }
 
-  var docs = document.createElement('div');
-  docs.className = 'docs-hint';
-  docs.textContent = 'To auto-allow this tool, configure permission rules: code.claude.com/docs/en/permissions';
-  r.appendChild(docs);
+  var back = document.createElement('div');
+  back.className = 'back-hint';
+  back.textContent = '\u2190 Swipe back to return to chat';
+  r.appendChild(back);
 }
 </script>
 </body>
