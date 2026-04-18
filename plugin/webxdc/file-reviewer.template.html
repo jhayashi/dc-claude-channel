@@ -208,8 +208,8 @@ body {
   border-radius: 0;
 }
 .source-view code {
-  font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace;
-  font-size: 13px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
   line-height: 1.5;
   background: none;
   border: none;
@@ -227,6 +227,9 @@ body {
   flex-shrink: 0;
   width: 14px;
   text-align: center;
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-family: var(--font-mono);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -236,11 +239,25 @@ body {
   overflow-x: visible;
 }
 .source-line.commented {
-  background: rgba(88, 166, 255, 0.08);
+  box-shadow: inset 2px 0 0 var(--orange);
 }
 .source-line.commented .line-gutter {
-  color: #58a6ff;
-  font-size: 10px;
+  position: relative;
+  color: transparent;
+}
+.source-line.commented .line-gutter::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 12px;
+  margin: 0 auto;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23D97757' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'><path d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/></svg>");
+  background-size: contain;
+  background-repeat: no-repeat;
 }
 /* Markdown block commenting */
 .md-block {
@@ -289,10 +306,12 @@ body {
   background: var(--orange-soft) !important;
   box-shadow: inset 3px 0 0 var(--orange);
 }
-/* Prism theme overrides for our dark bg */
+/* Prism theme overrides for our dark bg
+ * The shipped Prism palette (injected at %%PRISM_CSS%%) is preserved as-is;
+ * only the enclosing canvas moves from #0e1117 to --bg. */
 /* %%PRISM_CSS%% */
-pre[class*="language-"] { background: #0e1117; }
-:not(pre) > code[class*="language-"], pre[class*="language-"] { background: #0e1117; }
+pre[class*="language-"] { background: var(--bg); }
+:not(pre) > code[class*="language-"], pre[class*="language-"] { background: var(--bg); }
 code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
 /* Loading */
 #loading {
