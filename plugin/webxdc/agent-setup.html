@@ -366,6 +366,23 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .btn:disabled { opacity: 0.4; cursor: default; }
 .btn-create { background: linear-gradient(135deg, #238636 0%, #2ea043 100%); color: white; }
 .btn-back { background: #30363d; color: #e6edf3; }
+
+/* TP button variants — used by redesigned screens (edit form today; the
+   whole app as the TP rollout progresses). Legacy .btn-create / .btn-back
+   stay in place until each screen is reskinned. */
+.btn-primary {
+  background: var(--orange);
+  color: var(--paper);
+  border: 1px solid var(--orange);
+}
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-primary:disabled { opacity: 0.45; }
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.btn-ghost:hover { background: var(--surface-2); }
 #step0, #new-chat, #manage, #step2, #step3, #outdated, #loading, #resume-import { display: none; }
 #step0.visible, #new-chat.visible, #manage.visible, #step2.visible, #step3.visible, #outdated.visible, #loading.visible, #resume-import.visible { display: block; }
 #resume-import.visible { display: flex; flex-direction: column; max-height: calc(100vh - 40px); }
@@ -803,7 +820,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   margin: 0 -16px -14px;
 }
 .footer-bar .btn { flex: 1; }
-.footer-bar .btn-create { flex: 2; }
+.footer-bar .btn-primary { flex: 2; }
 
 /* Edit-screen overflow menu */
 .overflow { position: absolute; right: 12px; top: 10px; }
@@ -1047,8 +1064,8 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         </div>
       </details>
       <div class="footer-bar">
-        <button class="btn btn-back" type="button" onclick="backFromStep3()">Cancel</button>
-        <button class="btn btn-create" type="button" id="save-btn" onclick="saveEdit()">Save changes</button>
+        <button class="btn btn-ghost" type="button" onclick="backFromStep3()">Cancel</button>
+        <button class="btn btn-primary" type="button" id="save-btn" onclick="saveEdit()">Save changes</button>
       </div>
     </div>
   </div>
@@ -1178,7 +1195,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.63;
+var APP_VERSION = 1.64;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#3DA85A', checker: '#65C081' },
