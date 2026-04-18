@@ -51,16 +51,9 @@ export function setBadgeCacheDir(dir: string): void {
   CACHE_DIR = dir
 }
 
-/**
- * Bumped any time the SVG composition changes (stroke weight, ring,
- * pattern, etc.). Embedded in the cache key so a recipe change
- * invalidates all old PNGs without manual cache wipes.
- */
-const RECIPE_VERSION = 2
-
 function cacheKey(i: BadgeInputs): string {
   const trust = i.trust ? 'trust' : 'plain'
-  return `v${RECIPE_VERSION}-${i.archetype}-${i.modelFamily}-${trust}-${i.glyph}.png`
+  return `${i.archetype}-${i.modelFamily}-${trust}-${i.glyph}.png`
 }
 
 const SVG_BODY_RE = /<svg[^>]*>([\s\S]*)<\/svg>/
