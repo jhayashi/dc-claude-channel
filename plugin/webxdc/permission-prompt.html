@@ -175,9 +175,24 @@ body {
   min-height: 120px;
   overflow-y: auto;
 }
-.preview .k { color: var(--orange); }
+.preview .k {
+  color: var(--orange);
+  font-weight: 500;
+}
 .preview .s { color: #A9C5F0; }
 .preview .n { color: var(--amber); }
+.preview .row { margin-bottom: 10px; }
+.preview .row:last-child { margin-bottom: 0; }
+.preview .block {
+  display: block;
+  margin-top: 6px;
+  padding: 9px 11px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  color: var(--paper);
+  word-break: break-word;
+}
 .card-actions {
   display: flex;
   gap: 10px;
@@ -421,7 +436,7 @@ body {
   </div>
 </div>
 <script>
-var APP_VERSION = 2.01;
+var APP_VERSION = 2.02;
 // Map of requestId -> {data, resolved}
 var requests = {};
 // Whether initial replay has finished
@@ -433,16 +448,22 @@ var versionMismatchSent = false;
 
 var previewBox = document.getElementById('preview');
 
-// Render pretty-printed JSON into previewBox using DOM nodes (no innerHTML).
-// Tokenizes the raw text so HTML never has to be escaped.
+// Render tool params as "key: value" rows, dropping outer braces and
+// unescaping \n in string values. Multi-line strings become indented
+// blocks. Nested objects/arrays fall back to pretty JSON.
 function renderPreview(raw) {
   while (previewBox.firstChild) previewBox.removeChild(previewBox.firstChild);
 
-  var text;
+  var parsed;
   try {
-    text = JSON.stringify(JSON.parse(raw), null, 2);
+    parsed = JSON.parse(raw);
   } catch (e) {
     previewBox.appendChild(document.createTextNode(String(raw)));
+    return;
+  }
+
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    previewBox.appendChild(document.createTextNode(JSON.stringify(parsed, null, 2)));
     return;
   }
 
@@ -452,56 +473,37 @@ function renderPreview(raw) {
     s.textContent = value;
     return s;
   }
-  function flush(buf) {
-    if (buf.length) previewBox.appendChild(document.createTextNode(buf));
-  }
 
-  var i = 0;
-  var n = text.length;
-  var buf = '';
-  while (i < n) {
-    var c = text[i];
-    if (c === '"') {
-      var j = i + 1;
-      while (j < n) {
-        if (text[j] === '\\') { j += 2; continue; }
-        if (text[j] === '"') { j++; break; }
-        j++;
+  var keys = Object.keys(parsed);
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    var v = parsed[k];
+    var row = document.createElement('div');
+    row.className = 'row';
+    row.appendChild(span('k', k));
+
+    if (typeof v === 'string') {
+      if (v.indexOf('\n') !== -1) {
+        var block = document.createElement('div');
+        block.className = 'block';
+        block.textContent = v;
+        row.appendChild(block);
+      } else {
+        row.appendChild(document.createTextNode(': '));
+        row.appendChild(span('s', v));
       }
-      var k = j;
-      while (k < n && (text[k] === ' ' || text[k] === '\t')) k++;
-      var cls = text[k] === ':' ? 'k' : 's';
-      flush(buf); buf = '';
-      previewBox.appendChild(span(cls, text.slice(i, j)));
-      i = j;
-      continue;
+    } else if (typeof v === 'number' || typeof v === 'boolean' || v === null) {
+      row.appendChild(document.createTextNode(': '));
+      row.appendChild(span('n', String(v)));
+    } else {
+      var block = document.createElement('div');
+      block.className = 'block';
+      block.textContent = JSON.stringify(v, null, 2);
+      row.appendChild(block);
     }
-    if ((c === '-' || (c >= '0' && c <= '9')) &&
-        (i === 0 || ' \t\n:,[{'.indexOf(text[i-1]) !== -1)) {
-      var j = i;
-      if (text[j] === '-') j++;
-      while (j < n && '0123456789.eE+-'.indexOf(text[j]) !== -1) j++;
-      flush(buf); buf = '';
-      previewBox.appendChild(span('n', text.slice(i, j)));
-      i = j;
-      continue;
-    }
-    if (text.substr(i, 4) === 'true' || text.substr(i, 4) === 'null') {
-      flush(buf); buf = '';
-      previewBox.appendChild(span('n', text.substr(i, 4)));
-      i += 4;
-      continue;
-    }
-    if (text.substr(i, 5) === 'false') {
-      flush(buf); buf = '';
-      previewBox.appendChild(span('n', 'false'));
-      i += 5;
-      continue;
-    }
-    buf += c;
-    i++;
+
+    previewBox.appendChild(row);
   }
-  flush(buf);
 }
 
 function showRequest(data) {
