@@ -92,7 +92,7 @@ body {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0,0,0,0.65);
   z-index: 100;
   align-items: center;
   justify-content: center;
@@ -100,28 +100,42 @@ body {
 }
 .dialog-overlay.visible { display: flex; }
 .dialog {
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   padding: 20px;
   max-width: 320px;
   width: 100%;
-  color: #e6edf3;
+  color: var(--ink);
 }
-.dialog-title { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
-.dialog-body { font-size: 13px; color: #8b949e; margin-bottom: 16px; word-break: break-word; }
+.dialog-title { font-size: 15px; font-weight: 600; margin-bottom: 8px; color: var(--ink); }
+.dialog-body { font-size: 13px; color: var(--ink-mute); margin-bottom: 16px; word-break: break-word; line-height: 1.5; }
 .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .dialog-btn {
   padding: 8px 14px;
-  border: none;
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   font-family: inherit;
   cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
-.dialog-btn.cancel { background: #21262d; color: #c9d1d9; }
-.dialog-btn.confirm { background: linear-gradient(135deg, #da3633 0%, #f85149 100%); color: #fff; }
+.dialog-btn.cancel {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line);
+}
+.dialog-btn.cancel:hover { border-color: color-mix(in oklch, var(--ink) 25%, var(--line)); }
+.dialog-btn.confirm {
+  background: var(--surface-2);
+  color: var(--ink-mute);
+  border-color: var(--line);
+}
+.dialog-btn.confirm:hover {
+  color: var(--danger);
+  border-color: color-mix(in oklch, var(--danger) 40%, var(--line));
+}
 .content {
   flex: 1;
   overflow-y: auto;
@@ -324,11 +338,11 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
   gap: 12px;
 }
 .spinner {
-  width: 28px; height: 28px;
-  border: 3px solid #30363d;
-  border-top-color: #58a6ff;
+  width: 22px; height: 22px;
+  border: 2px solid var(--line);
+  border-top-color: var(--amber);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin 0.9s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 #outdated {
@@ -346,8 +360,8 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
   bottom: 0;
   left: 0;
   right: 0;
-  background: #161b22;
-  border-top: 1px solid #30363d;
+  background: var(--surface);
+  border-top: 1px solid var(--line-soft);
   padding: 10px 16px;
   display: none;
   align-items: center;
@@ -356,23 +370,48 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
   z-index: 100;
 }
 #bottombar .hint {
-  color: #8b949e;
-  font-size: 13px;
+  color: var(--ink-faint);
+  font-size: 12px;
 }
 #bottombar .comment-count {
-  color: #c9d1d9;
+  color: var(--ink);
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+#bottombar .comment-count::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23D97757' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'><path d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/></svg>");
+  background-size: contain;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
 }
 #bottombar .send-btn {
-  background: #1f6feb;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 6px 16px;
-  font-size: 14px;
+  background: var(--orange);
+  color: var(--paper);
+  border: 1px solid var(--orange);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 120ms ease;
 }
-#bottombar .send-btn:active {
-  background: #1958c7;
+#bottombar .send-btn:active { opacity: 0.85; }
+#bottombar .send-btn::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FAF9F5' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'><path d='m3 3 3 9-3 9 19-9Z'/><path d='M6 12h16'/></svg>");
+  background-size: contain;
+  background-repeat: no-repeat;
 }
 /* Comment input card */
 #comment-card {
@@ -484,17 +523,17 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
 <div id="sidebar" class="sidebar"></div>
 <div id="content" class="content" style="display:none"></div>
 <div id="bottombar">
-  <span class="hint" id="bar-hint">Press and hold on text to add a comment</span>
+  <span class="hint" id="bar-hint">Long-press any line or paragraph to add a comment.</span>
   <span class="comment-count" id="bar-count" style="display:none"></span>
-  <button class="send-btn" id="bar-send" style="display:none">Send</button>
+  <button class="send-btn" id="bar-send" style="display:none">Send to chat</button>
 </div>
 <div id="close-dialog" class="dialog-overlay">
   <div class="dialog">
-    <div class="dialog-title">Remove from viewer?</div>
+    <div class="dialog-title">Close this file?</div>
     <div class="dialog-body" id="close-dialog-body"></div>
     <div class="dialog-actions">
       <button class="dialog-btn cancel" id="close-dialog-cancel">Cancel</button>
-      <button class="dialog-btn confirm" id="close-dialog-confirm">Remove</button>
+      <button class="dialog-btn confirm" id="close-dialog-confirm">Close</button>
     </div>
   </div>
 </div>
@@ -932,7 +971,7 @@ function updateBottomBar() {
   } else {
     hint.style.display = 'none';
     count.style.display = 'inline';
-    count.textContent = '\u{1F4AC} ' + n + ' comment' + (n === 1 ? '' : 's');
+    count.textContent = n + ' comment' + (n === 1 ? '' : 's');
     sendBtn.style.display = 'inline-block';
   }
 }
@@ -1079,7 +1118,7 @@ function promptCloseTab(index) {
   pendingCloseIndex = index;
   var title = documents[index].title || ('Doc ' + (index + 1));
   document.getElementById('close-dialog-body').textContent =
-    'Remove "' + title + '" from this viewer? The original file is not affected.';
+    'Any unsent comments on "' + title + '" will be discarded.';
   document.getElementById('close-dialog').classList.add('visible');
 }
 function hideCloseDialog() {
