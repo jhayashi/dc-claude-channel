@@ -608,6 +608,43 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .to-cmd { position: relative; background: #000; border: 1px solid #30363d; border-radius: 10px; padding: 14px; padding-right: 70px; margin: 12px 0 8px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; line-height: 1.5; color: #a5d6ff; word-break: break-all; }
 .to-cmd code { white-space: normal; }
 .to-copy-btn { position: absolute; top: 8px; right: 8px; background: #161b22; border: 1px solid #30363d; color: #e6edf3; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-family: inherit; }
+.seg {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-top: 6px;
+}
+.seg > button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--line-soft);
+  color: var(--ink-mute);
+  font: 500 13px/1 inherit;
+  padding: 10px 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.seg > button:last-child { border-right: 0; }
+.seg > button[aria-pressed=true] {
+  background: var(--surface-3);
+  color: var(--ink);
+  font-weight: 600;
+}
+.seg .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.seg .dot.haiku  { background: var(--green); }
+.seg .dot.sonnet { background: var(--amber); }
+.seg .dot.opus   { background: var(--orange); }
 </style>
 </head>
 <body>
@@ -708,8 +745,12 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         </div>
       </div>
       <div class="wizard-pane" data-wizard-step="2">
-        <label class="field" for="model">Model</label>
-        <select id="model" class="text"></select>
+        <label class="field">Model</label>
+        <div class="seg" id="create-model-seg" role="group" aria-label="Model">
+          <button type="button" data-tier="haiku"  aria-pressed="false"><span class="dot haiku"></span>Haiku</button>
+          <button type="button" data-tier="sonnet" aria-pressed="true"><span class="dot sonnet"></span>Sonnet</button>
+          <button type="button" data-tier="opus"   aria-pressed="false"><span class="dot opus"></span>Opus</button>
+        </div>
         <p class="wizard-hint">Opus is best for long-form coding and reasoning. Sonnet is the balanced default. Haiku is fast and cheap for simple Q&amp;A.</p>
       </div>
       <div class="wizard-pane" data-wizard-step="3">
@@ -751,8 +792,12 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         <div class="icon-preview" id="edit-icon-preview" aria-hidden="true"></div>
         <span class="icon-hint">Leave empty to use the archetype icon.</span>
       </div>
-      <label class="field" for="edit-model">Model</label>
-      <select id="edit-model" class="text"></select>
+      <label class="field">Model</label>
+      <div class="seg" id="edit-model-seg" role="group" aria-label="Model">
+        <button type="button" data-tier="haiku"  aria-pressed="false"><span class="dot haiku"></span>Haiku</button>
+        <button type="button" data-tier="sonnet" aria-pressed="true"><span class="dot sonnet"></span>Sonnet</button>
+        <button type="button" data-tier="opus"   aria-pressed="false"><span class="dot opus"></span>Opus</button>
+      </div>
       <label class="field" for="edit-system">System prompt</label>
       <textarea id="edit-system" class="text" maxlength="100000" style="min-height:60px;font-family:inherit;"></textarea>
       <label class="field" style="display:flex;align-items:flex-start;gap:8px;margin-top:12px;">
@@ -960,34 +1005,65 @@ var attachRequestId = 0;
 var attachTimeout = null;
 
 // Populated from the init/edit payload's availableModels list.
-// Keys are model IDs; values are tier strings ('opus'/'sonnet'/'haiku').
+// MODEL_TIERS: id -> tier. LATEST_PER_TIER: tier -> latest id (models.json
+// is ordered newest-first per tier, so the first occurrence per tier wins).
 var MODEL_TIERS = {};
+var LATEST_PER_TIER = {};
 var DEFAULT_MODEL_ID = 'claude-sonnet-4-6';
 
 function populateModelDropdowns(availableModels, defaultModel) {
   if (!Array.isArray(availableModels) || availableModels.length === 0) return;
   MODEL_TIERS = {};
+  LATEST_PER_TIER = {};
   for (var i = 0; i < availableModels.length; i++) {
     var m = availableModels[i];
-    if (m && m.id && m.tier) MODEL_TIERS[m.id] = m.tier;
+    if (!m || !m.id || !m.tier) continue;
+    MODEL_TIERS[m.id] = m.tier;
+    if (!LATEST_PER_TIER[m.tier]) LATEST_PER_TIER[m.tier] = m.id;
   }
   if (defaultModel) DEFAULT_MODEL_ID = defaultModel;
-  var ids = ['model', 'edit-model'];
-  for (var j = 0; j < ids.length; j++) {
-    var sel = document.getElementById(ids[j]);
-    if (!sel) continue;
-    var prev = sel.value;
-    sel.textContent = '';
-    for (var k = 0; k < availableModels.length; k++) {
-      var mm = availableModels[k];
-      if (!mm || !mm.id) continue;
-      var opt = document.createElement('option');
-      opt.value = mm.id;
-      opt.textContent = mm.label || mm.id;
-      sel.appendChild(opt);
-    }
-    if (prev) sel.value = prev;
+}
+
+// Infer a tier for an arbitrary model id. Falls back to substring match
+// so unknown ids still map sensibly.
+function tierForModel(id) {
+  if (!id) return 'sonnet';
+  if (MODEL_TIERS[id]) return MODEL_TIERS[id];
+  if (id.indexOf('opus')  >= 0) return 'opus';
+  if (id.indexOf('haiku') >= 0) return 'haiku';
+  return 'sonnet';
+}
+
+// Resolve the segmented control's tier choice to a concrete model id.
+// Keeps the pinned id if its tier still matches; otherwise picks the
+// latest known id for the new tier.
+function resolveModelFromTier(tier, currentPinnedId) {
+  if (currentPinnedId && tierForModel(currentPinnedId) === tier) return currentPinnedId;
+  return LATEST_PER_TIER[tier] || DEFAULT_MODEL_ID;
+}
+
+function segSetValue(segEl, value) {
+  if (!segEl) return;
+  var buttons = segEl.querySelectorAll('button[data-tier]');
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].setAttribute('aria-pressed', buttons[i].getAttribute('data-tier') === value ? 'true' : 'false');
   }
+  segEl.setAttribute('data-value', value);
+}
+
+function segGetValue(segEl) {
+  return (segEl && segEl.getAttribute('data-value')) || 'sonnet';
+}
+
+function wireSeg(segEl, onChange) {
+  if (!segEl || segEl.dataset.wired === 'true') return;
+  segEl.dataset.wired = 'true';
+  segEl.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('button[data-tier]') : null;
+    if (!b || !segEl.contains(b)) return;
+    segSetValue(segEl, b.getAttribute('data-tier'));
+    if (onChange) onChange(b.getAttribute('data-tier'));
+  });
 }
 
 function show(id) {
@@ -1878,7 +1954,9 @@ function pickExisting(agentId) {
 function populateForm() {
   if (!draft) return;
   document.getElementById('name').value = draft.name || '';
-  document.getElementById('model').value = draft.model || DEFAULT_MODEL_ID;
+  var createSeg = document.getElementById('create-model-seg');
+  wireSeg(createSeg);
+  segSetValue(createSeg, tierForModel(draft.model || DEFAULT_MODEL_ID));
   document.getElementById('system').value = draft.system || '';
   document.getElementById('skip-permissions').checked = !!draft.skipPermissions;
   document.getElementById('icon').value = '';
@@ -1971,7 +2049,9 @@ function backFromCreate() {
 function populateEditForm() {
   if (!draft) return;
   document.getElementById('edit-name').value = draft.name || '';
-  document.getElementById('edit-model').value = draft.model || DEFAULT_MODEL_ID;
+  var editSeg = document.getElementById('edit-model-seg');
+  wireSeg(editSeg);
+  segSetValue(editSeg, tierForModel(draft.model || DEFAULT_MODEL_ID));
   document.getElementById('edit-system').value = draft.system || '';
   document.getElementById('edit-skip-permissions').checked = !!draft.skipPermissions;
   var mirrorValue = draft.iconMirror ? 'true' : 'false';
@@ -1997,9 +2077,10 @@ function saveEdit() {
   creating = true;
   pendingAction = 'edit';
   document.getElementById('save-btn').disabled = true;
+  var editTier = segGetValue(document.getElementById('edit-model-seg'));
   var cfg = {
     name: document.getElementById('edit-name').value.trim() || draft.name,
-    model: document.getElementById('edit-model').value,
+    model: resolveModelFromTier(editTier, draft && draft.model),
     system: document.getElementById('edit-system').value,
     tools: [],
   };
@@ -2041,9 +2122,10 @@ function create() {
   creating = true;
   pendingAction = 'create';
   document.getElementById('create-btn').disabled = true;
+  var createTier = segGetValue(document.getElementById('create-model-seg'));
   var cfg = {
     name: document.getElementById('name').value.trim() || draft.name,
-    model: document.getElementById('model').value,
+    model: resolveModelFromTier(createTier, draft && draft.model),
     system: document.getElementById('system').value,
     tools: [],
   };
