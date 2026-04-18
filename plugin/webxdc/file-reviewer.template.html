@@ -65,8 +65,9 @@ body {
 }
 .doc-tab.active {
   background: var(--surface);
-  border-color: var(--orange);
+  border-color: var(--line);
   color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--orange);
 }
 .doc-tab .tab-title { display: inline-block; }
 .doc-tab .tab-close {
@@ -585,7 +586,7 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
 /* %%PRISM_JS%% */
 </script>
 <script>
-var APP_VERSION = 1.17;
+var APP_VERSION = 1.18;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
