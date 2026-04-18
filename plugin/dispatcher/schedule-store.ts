@@ -124,7 +124,7 @@ export class ScheduleStore {
       const raw = readFileSync(src, 'utf-8')
       const job = JSON.parse(raw) as ScheduledJob
       job.chatId = toChatId
-      const tmp = `${dst}.tmp`
+      const tmp = `${dst}.tmp.${process.pid}.${crypto.randomUUID().slice(0, 8)}`
       writeFileSync(tmp, JSON.stringify(job, null, 2))
       renameSync(tmp, dst)
       unlinkSync(src)
