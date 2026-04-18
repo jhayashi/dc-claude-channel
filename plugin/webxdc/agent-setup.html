@@ -204,11 +204,11 @@ body {
 .home-action-icon {
   width: 36px; height: 36px;
   border-radius: var(--radius-sm);
-  background: var(--orange);
+  background: rgba(217, 119, 87, 0.18);
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  color: #fff;
+  color: var(--orange);
 }
 .home-action-icon svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .home-action-body { flex: 1; min-width: 0; }
@@ -922,7 +922,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     <div class="body">
       <div class="app-header">
         <span class="app-header-logo" aria-hidden="true">
-          <img src="icon.png" alt="">
+          <img src="/*__ICON_DATA_URI__*/" alt="">
         </span>
         <span class="app-header-title">Agent settings</span>
         <span class="app-header-version" id="home-version"></span>
@@ -961,7 +961,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         </button>
         <button class="home-action" onclick="gotoTeleportOut()">
           <span class="home-action-icon">
-            <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            <svg viewBox="0 0 24 24"><polyline points="7 18 13 12 7 6"/><polyline points="13 18 19 12 13 6"/></svg>
           </span>
           <span class="home-action-body">
             <span class="home-action-label">Send chat to terminal</span>
@@ -1304,7 +1304,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.73;
+var APP_VERSION = 1.74;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#3DA85A', checker: '#65C081' },
