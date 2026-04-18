@@ -229,80 +229,42 @@ input.icon-input {
   margin-top: 8px;
   line-height: 1.5;
 }
-.home-heading {
-  font-size: 18px;
-  font-weight: 700;
-  margin: 4px 0 4px;
-  color: #e6edf3;
-}
-.home-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 20px;
-}
+.home-heading { display: none; }
+.home-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .home-action {
-  display: flex;
-  align-items: center;
-  gap: 14px;
+  display: flex; align-items: center; gap: 12px;
   width: 100%;
-  padding: 14px 16px;
-  background: #0d1117;
-  border: 1px solid #30363d;
-  border-radius: 12px;
-  color: #c9d1d9;
-  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
   cursor: pointer;
-  font: inherit;
-  transition: background 0.15s, border-color 0.15s;
+  font-family: inherit;
+  color: var(--ink);
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
 }
 .home-action:hover, .home-action:focus-visible {
-  background: #1c2128;
-  border-color: #58a6ff66;
+  border-color: var(--orange);
+  background: var(--surface-2);
   outline: none;
 }
 .home-action-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 22px;
-  line-height: 1;
+  width: 36px; height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
   flex-shrink: 0;
-  background: #1f6feb22;
+  color: var(--ink-mute);
 }
-.home-action[data-variant="manage"] .home-action-icon { background: #8957e533; }
-.home-action[data-variant="resume"] .home-action-icon { background: #23863633; }
-.home-action-body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-.home-action-label {
-  font-size: 15px;
-  font-weight: 600;
-  color: #e6edf3;
-}
-.home-action-desc {
-  font-size: 12px;
-  color: #8b949e;
-  line-height: 1.4;
-}
-.home-action-chev {
-  color: #6e7681;
-  font-size: 20px;
-  flex-shrink: 0;
-  margin-left: 8px;
-}
-.home-action code {
-  background: transparent;
-  color: #c9d1d9;
-  font-size: 11px;
-}
+.home-action-icon svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.home-action-body { flex: 1; min-width: 0; }
+.home-action-label { font: 600 14px/1.2 inherit; color: var(--ink); }
+.home-action-desc { font: 400 12px/1.4 inherit; color: var(--ink-faint); margin-top: 3px; }
+.home-action-chev { color: var(--ink-faint); font-size: 18px; }
+.home-action code { font-family: 'SF Mono', Menlo, monospace; font-size: 11px; color: var(--ink-mute); }
 .section-label {
   font-size: 11px;
   text-transform: uppercase;
@@ -872,35 +834,43 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       <h2 class="home-heading">What would you like to do?</h2>
       <div id="home-count" class="home-count"></div>
       <div class="home-actions">
-        <button class="home-action" data-variant="new" onclick="gotoNewChat()">
-          <span class="home-action-icon">&#x1F4AC;</span>
+        <button class="home-action" onclick="gotoNewChat()">
+          <span class="home-action-icon">
+            <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </span>
           <span class="home-action-body">
             <span class="home-action-label">New chat</span>
-            <span class="home-action-desc">Pick an agent or create one from a template.</span>
+            <span class="home-action-desc">Pick an agent and start a new conversation.</span>
           </span>
           <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
         </button>
-        <button class="home-action" data-variant="manage" id="home-manage-btn" onclick="gotoManage()">
-          <span class="home-action-icon">&#x2699;&#xFE0F;</span>
+        <button class="home-action" id="home-manage-btn" onclick="gotoManage()">
+          <span class="home-action-icon">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </span>
           <span class="home-action-body">
             <span class="home-action-label">Manage agents</span>
-            <span class="home-action-desc">Edit, export, or delete your agents.</span>
+            <span class="home-action-desc">Edit, export, or delete saved agents.</span>
           </span>
           <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
         </button>
-        <button class="home-action" data-variant="resume" onclick="gotoResume()">
-          <span class="home-action-icon">&#x1F4E5;</span>
+        <button class="home-action" onclick="gotoResume()">
+          <span class="home-action-icon">
+            <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
+          </span>
           <span class="home-action-body">
-            <span class="home-action-label">Resume a conversation</span>
-            <span class="home-action-desc">Continue a recent <code>claude</code> session in Delta Chat.</span>
+            <span class="home-action-label">Resume terminal session</span>
+            <span class="home-action-desc">Continue a recent Claude session as a chat.</span>
           </span>
           <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
         </button>
-        <button class="home-action" data-variant="resume" onclick="gotoTeleportOut()">
-          <span class="home-action-icon">&#x2B06;&#xFE0F;</span>
+        <button class="home-action" onclick="gotoTeleportOut()">
+          <span class="home-action-icon">
+            <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          </span>
           <span class="home-action-body">
             <span class="home-action-label">Send chat to terminal</span>
-            <span class="home-action-desc">Continue a DC conversation in your local <code>claude</code> terminal.</span>
+            <span class="home-action-desc">Continue this chat in your local terminal.</span>
           </span>
           <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
         </button>
