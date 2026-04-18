@@ -61,6 +61,17 @@ export function tierForModel(id: string): ModelTier {
   return getModel(id)?.tier ?? 'sonnet'
 }
 
+/**
+ * Latest (newest) model id for a tier. Relies on models.json being
+ * ordered newest-first per tier.
+ */
+export function latestModelForTier(tier: ModelTier): string {
+  for (const m of MODELS) {
+    if (m.tier === tier) return m.id
+  }
+  throw new Error(`no model found for tier ${tier}`)
+}
+
 export function labelForModel(id: string): string {
   return getModel(id)?.label ?? id
 }
