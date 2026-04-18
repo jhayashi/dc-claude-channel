@@ -51,9 +51,16 @@ export function setBadgeCacheDir(dir: string): void {
   CACHE_DIR = dir
 }
 
+/**
+ * Bumped any time the SVG composition changes (stroke weight, ring,
+ * pattern, etc.). Embedded in the cache key so a recipe change
+ * invalidates all old PNGs without manual cache wipes.
+ */
+const RECIPE_VERSION = 2
+
 function cacheKey(i: BadgeInputs): string {
   const trust = i.trust ? 'trust' : 'plain'
-  return `${i.archetype}-${i.modelFamily}-${trust}-${i.glyph}.png`
+  return `v${RECIPE_VERSION}-${i.archetype}-${i.modelFamily}-${trust}-${i.glyph}.png`
 }
 
 const SVG_BODY_RE = /<svg[^>]*>([\s\S]*)<\/svg>/
@@ -90,7 +97,7 @@ function buildBadgeSvg(inner: string, solid: string, checker: string | null): st
     ${defs}
     <g clip-path="url(#circle)">
       <rect width="256" height="256" fill="${fill}"/>
-      <g transform="translate(64,64) scale(5.333)" stroke="#FAF9F5" stroke-width="0.328" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <g transform="translate(64,64) scale(5.333)" stroke="#FAF9F5" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round">
         ${inner}
       </g>
     </g>
