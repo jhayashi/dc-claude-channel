@@ -5,13 +5,52 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="webxdc.js"></script>
 <style>
+:root {
+  --bg:        #0B0F17;
+  --surface:   #131826;
+  --surface-2: #1A2030;
+  --surface-3: #232A3C;
+  --line:      #2C3447;
+  --line-soft: #1F2536;
+  --ink:       #E8ECF5;
+  --ink-mute:  #99A2B8;
+  --ink-faint: #6C748A;
+  --paper:     #FAF9F5;
+  --orange:    #D97757;
+  --green:     #3DA85A;
+  --amber:     #C99A35;
+  --danger:    #E5694C;
+  --radius:    14px;
+  --radius-sm: 10px;
+  --radius-pill: 999px;
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
 body {
-  font-family: system-ui, -apple-system, sans-serif;
-  background: #0e1117;
-  color: #e6edf3;
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, sans-serif;
+  letter-spacing: 0.005em;
+  background: var(--bg);
+  color: var(--ink);
   padding: 20px 16px;
+}
+.app {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.app-body {
+  padding: 14px 16px 96px;
+  flex: 1;
+}
+.field-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+  margin-bottom: 6px;
 }
 .card {
   width: 100%;
@@ -865,7 +904,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.60;
+var APP_VERSION = 1.61;
 var GLYPHS = /*__GLYPHS__*/{};
 var draft = null;
 var existingAgents = [];
