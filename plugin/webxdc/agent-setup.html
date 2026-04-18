@@ -941,7 +941,10 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       <h2 class="screen-heading">Manage agents</h2>
       <p class="screen-sub">Edit, export, or delete your agents. Changes apply to every chat using the agent.</p>
       <div id="manage-list"></div>
-      <div id="manage-empty" style="display:none;font-size:13px;color:#8b949e;padding:8px 0;">No agents yet. Create one from <b>New chat</b>.</div>
+      <div id="manage-empty" style="display:none;font-size:13px;color:var(--ink-mute);padding:8px 0;">
+        No agents yet. Create one from
+        <a href="#" id="manage-empty-newchat" style="color:var(--orange);text-decoration:underline;font-weight:600;">New chat</a>.
+      </div>
     </div>
     <div class="actions">
       <button class="btn btn-back" onclick="show('step0')">Back</button>
@@ -3025,6 +3028,13 @@ document.addEventListener('DOMContentLoaded', function() {
       summary: 'Attaching session'
     }, 'resume attach ' + selectedResumeSessionId);
   });
+  var manageEmptyLink = document.getElementById('manage-empty-newchat');
+  if (manageEmptyLink) {
+    manageEmptyLink.addEventListener('click', function(e) {
+      e.preventDefault();
+      gotoNewChat();
+    });
+  }
 });
 </script>
 </body>
