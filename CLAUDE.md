@@ -48,6 +48,13 @@ mappings) are not exported — the user creates a new chat via the
 agent-setup card after importing. Round-trip compatible with Claude
 Managed Agents API YAML format.
 
+**Templates + archetypes (v1.0.2+):** agent creation opens on a template
+gallery (Scheduler, News Briefing, Personal Assistant, …). Each template
+seeds the system prompt, recommended model tier, and default tool
+allowlist. Every agent also carries the `x-dc-archetype` metadata field
+(`role` / `utility` / `project`) that drives its runtime badge palette —
+see "Agent badges" below. Library lives in `plugin/templates.ts`.
+
 **Per-agent tool access (v0.10+):** Each agent definition can restrict
 which built-in tools and MCP servers its subagent is allowed to use via
 two optional fields: `allowedBuiltinTools` (string array or null) and
@@ -65,6 +72,30 @@ Changes take effect on next subagent spawn (idle timeout or restart).
 **Forward compat:** the `tools: []` field is written on every agent as
 a no-op hook. Per-agent tool capability restrictions use the separate
 `allowedBuiltinTools` and `allowedMcpServers` fields instead.
+
+## Agent badges (v1.0.2+)
+
+Each agent's avatar is composed at render time from (1) a vendored
+Lucide line glyph and (2) an archetype-keyed colour palette, cached as
+PNG at `~/.claude/channels/deltachat/agent-badges/`.
+
+- **Archetype** — every agent carries a `x-dc-archetype` metadata key
+  (`role` / `utility` / `project`) that picks a curated glyph palette
+  and accent colour. Unset defaults to `role`. See `ARCHETYPE_META_KEY`
+  + `ARCHETYPE_PALETTES` in `plugin/agents.ts`.
+- **Explicit glyph override** — `x-dc-glyph` can pin a specific glyph
+  from the archetype's curated palette. Glyphs outside the palette are
+  ignored (renderer falls back to the archetype default).
+- **Cache key** — glyph + palette + orientation. Safe to blow away at
+  any time; the next `setAgentIcon` call will re-render.
+- **Manual wipe after 1.0.2 upgrade** —
+  `rm -rf ~/.claude/channels/deltachat/agent-badges/` so existing
+  agents re-render under the new palette (Haiku green, Sonnet amber,
+  Opus orange; Slate family removed).
+
+Files: `plugin/agent-icon-render.ts`, `plugin/agent-setup-glyphs.ts`
+(vendored SVGs + palette config), `plugin/agents.ts` (metadata
+helpers).
 
 ## Familiar Runtime (v1.0+)
 
@@ -129,6 +160,21 @@ DC read/write the same file, and no copy/sync is needed when moving a
 session between the two. The single-writer constraint still applies
 (don't `--resume` from two terminals at once); the picker's `fuser`-based
 "live" indicator flags sessions currently held open.
+
+**DC → terminal (resume-out).** The agent-setup card also has a "Send
+to terminal" screen: pick a DC chat, confirm, and the card emits the
+`cd … && claude --resume <uuid>` command for that session, migrates
+scheduled jobs to their new owner via `scheduleStore.moveForChat`, and
+tears down the DC chat via the shared `cleanupChat` helper (so scheduled
+jobs can't leak). The terminal then resumes the exact same `.jsonl`
+file the DC subagent was writing to. Implementation in
+`plugin/cleanup.ts` + `plugin/apps/agent-setup-app.ts`.
+
+**Persistent session index.** A separate
+`~/.claude/channels/deltachat/session-agents/<sessionId>.json` index
+records which agent a session was last attached to, so a resumed
+session can re-adopt its original identity even after the binding is
+gone. Managed by `plugin/session-agents.ts`.
 
 Sample files on disk:
 
@@ -257,7 +303,7 @@ version each time you send an updated revision.
 - `plugin/webxdc-app.ts` — `WebXDCApp` interface that all apps implement
 - `plugin/apps.ts` — App registry (explicit imports, no auto-discovery)
 - `plugin/apps/` — App implementations:
-  - `file-reviewer-app.ts` — File reviewer: rendered markdown + syntax-highlighted source + inline commenting (1 tool, event-driven updates)
+  - `file-reviewer-app.ts` — File reviewer: rendered markdown + syntax-highlighted source + inline commenting (1 tool, event-driven updates). Auto-detects Marp decks (YAML frontmatter `marp: true`, or a no-frontmatter doc that starts with `---\n` and splits into 2+ sections) and renders them as an interactive slide deck with slide-aware comment anchors. Detection in `plugin/marp-detect.ts`. `dc_send_slides` is a thin alias to `dc_send_file`.
   - `permissions-app.ts` — Permission prompt via WebXDC (notification handler + polling). Phase 2: requires explicit `chat_id` on every request.
   - `agent-setup-app.ts` — Agent setup card: pick an existing agent or create a new one; creates the DC chat + persists agent + binding on confirm.
 - `plugin/agents.ts` — Agent definition registry (YAML, reusable, matches Claude Managed Agents schema)

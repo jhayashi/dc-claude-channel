@@ -21,7 +21,7 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
 
 - **Scheduled actions** — D4C adds scheduling to Claude Code. Get pre-scheduled summaries of your email, news, or pipeline reports when you want, in any chat, even if the agent has been put to sleep.
 - **Multiple, customized agents** — D4C makes it easy to set up new chats with custom agents you control — one for marketing, one for research, one for email and calendar. Agents use the [Claude Managed Agents](https://docs.anthropic.com/en/docs/agents-and-tools/managed-agents) format and can be imported, exported, and shared with others.
-- **GUIs when you need them** — D4C comes with four helper apps: one for permissions, one for file review, one for agent and chat configuration, and one for showing markdown slides.
+- **GUIs when you need them** — D4C comes with three helper apps: one for permissions, one for file review (which also renders Marp slide decks inline), and one for agent and chat configuration.
 - **Files, screenshots, and more** — Delta Chat makes it easy to send files, screenshots, links, and voice recordings to specific agents for whatever action you can imagine — archive in Notion or Obsidian, process and summarize URLs, you name it.
 
 ### For everybody

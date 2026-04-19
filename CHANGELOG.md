@@ -4,41 +4,44 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## [1.0.2] — 2026-04-18
 
-### Agent settings redesign (Technical Precision)
+Feature release: visual refresh of the helper apps, runtime-composed agent badges, a real bidirectional session-resume model, a send-to-terminal flow, a templates gallery, and Marp slide rendering inside the Reviewer.
 
-- Re-skinned the agent-setup WebXDC card in the Technical Precision design
-  system: dark slate ramp, Anthropic Orange accent, Lucide line glyphs,
-  live badge preview, grouped tool picker, sticky bottom action bar.
-- **Segmented model picker** — three-tier choice (Haiku / Sonnet / Opus)
-  with coloured dots; the concrete model id is resolved client-side from
-  the tier (kept pinned if the original id still matches the new tier,
-  otherwise upgraded to the latest id for that tier via
-  `latestModelForTier`).
-- **Live badge preview** — a tile at the top of the edit form and wizard
-  step 2 rebuilds on every tier, trust, name, or archetype change so the
-  user sees the runtime badge composition before saving.
-- **Trust switch** — replaces the tiny checkbox with a pill toggle plus a
-  shield that turns green when enabled; caveat text is kept alongside.
-- **Grouped tool picker** — native `<details>` collapsibles for Built-in
-  tools (2-col checkbox grid) and Connected services (MCP server list),
-  each with a "N of M" count badge that updates live.
-- **Edit form trim** — archetype, explicit glyph, and orientation controls
-  are removed from the edit flow (still configurable in the create
-  wizard). Values are preserved on save so the server doesn't wipe them.
-  Edit focuses on what changes per iteration; initial identity stays set
-  at create time.
-- **Model palette swap** — **Haiku is now green** (`#3DA85A`), **Opus is
-  now orange** (`#D97757`). Sonnet stays amber. The Slate family is
-  removed (reserved for Mythos when it lands).
+### Visual refresh
 
-### Manual step
+- **Permissions**, **Agent & Chat Setup**, and **File Reviewer** apps all redesigned. New tokens, tighter spacing, consistent affordances across the three cards.
 
-- **Wipe the badge PNG cache** after upgrade so Haiku/Opus agents
-  re-render with the new colours:
+### Runtime agent badges
 
-  ```
-  rm -rf ~/.claude/channels/deltachat/agent-badges/
-  ```
+- Per-agent avatars are now composed at use time from a vendored Lucide glyph + an archetype/tier palette. No more pre-baked PNG set.
+- **Manual step after upgrade:** wipe the cache so existing agents re-render — `rm -rf ~/.claude/channels/deltachat/agent-badges/`.
+
+### Session resume
+
+- **Rename** — `teleport` → `resume` across commands, UI, and docs.
+- **Per-chat `workingDir`** on each binding. DC and terminal now share a single on-disk `.jsonl` per session — no copy/sync when moving a session between them.
+- **Persistent `sessionId → agentId` index** so resumed sessions re-attach to their original agent identity.
+- **Live-session filter** hides `.jsonl`s currently held open by another terminal.
+
+### Send-to-terminal
+
+- New agent-setup screen that atomically migrates a DC chat to a local terminal session: emits a `cd … && claude --resume <uuid>` command, migrates scheduled jobs, and tears down the DC chat. Complements the existing DC ↔ terminal resume path.
+
+### Templates + archetypes
+
+- New-agent creation opens on a template gallery (Scheduler, News Briefing, Personal Assistant, …). Each agent carries an archetype that drives its badge palette.
+- Tool picker flags MCP servers that still need authentication.
+
+### Slide mode in Reviewer
+
+- Marp decks auto-render as an interactive deck inside the file reviewer — arrow keys, space, swipe, dot indicators. Block-level commenting still works, with slide-aware anchors (`Slide N / Block M`).
+- The standalone slide-viewer app is retired; `dc_send_slides` remains as a thin alias to `dc_send_file`.
+
+### Platform fixes
+
+- Schedule-store atomic writes use a PID+UUID tmp suffix in both `save()` and `moveForChat()`.
+- Familiar apps re-validate `senderAddr` on persisted reload.
+- Send-to-terminal now runs full chat cleanup so scheduled jobs don't leak.
+- STT `_resetSttWorker` gets pending-rejection coverage.
 
 ---
 
