@@ -130,28 +130,76 @@ body {
 .template-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  margin: 8px 0 12px;
+  gap: 8px;
+  margin: 8px 0 18px;
 }
 .template-card {
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  padding: 8px 4px;
+  padding: 10px 6px 8px;
   text-align: center;
   cursor: pointer;
   font-family: inherit;
   color: var(--ink);
   transition: border-color 0.15s, background 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
 }
 .template-card:hover { border-color: var(--orange); background: var(--surface-3); }
 .template-card:active { transform: scale(0.97); }
 .template-card.unavailable { opacity: 0.45; cursor: not-allowed; }
 .template-card.unavailable:hover { border-color: var(--line); background: var(--surface-2); }
-.template-card .icon { font-size: 20px; line-height: 1; margin-bottom: 2px; }
+.template-card .glyph {
+  width: 22px;
+  height: 22px;
+  color: var(--orange);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.template-card .glyph svg {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .template-card .name { font: 600 11px/1.2 inherit; color: var(--ink); }
-.template-card .desc { font-size: 10px; color: var(--ink-faint); line-height: 1.3; margin-top: 2px; }
+.template-card .desc { display: none; }
 .template-card .warn { display: none; }
+
+.section-label {
+  font: 600 10px/1 inherit;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 4px 0 8px;
+}
+#pick-section { margin-top: 4px; }
+#pick-list .agent-row.current-agent {
+  background: var(--surface-2);
+  margin: 0 -12px;
+  padding-left: 12px;
+  padding-right: 12px;
+  border-left: 2px solid var(--orange);
+  padding-left: 10px;
+}
+#pick-list .agent-row .current-badge {
+  font: 600 9px/1 inherit;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--orange);
+  padding: 3px 6px;
+  border: 1px solid var(--orange);
+  border-radius: var(--radius-pill);
+  margin-left: 8px;
+  white-space: nowrap;
+}
 .existing-card .archetype-badge {
   display: inline-block;
   font-size: 13px;
@@ -910,6 +958,124 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 }
 .overflow .menu-item:hover { background: var(--surface-2); }
 .overflow .menu-item.danger { color: var(--danger); }
+
+/* Manage agents list — circular avatar row with pill tags */
+.agent-row {
+  display: grid;
+  grid-template-columns: 40px 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line-soft);
+  cursor: pointer;
+}
+.agent-row:last-child { border-bottom: 0; }
+.agent-row:hover { background: var(--surface-2); margin: 0 -12px; padding-left: 12px; padding-right: 12px; }
+.agent-row:hover + .agent-row { border-top-color: transparent; }
+.agent-row .avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.agent-row .avatar svg,
+.agent-row .avatar img { width: 100%; height: 100%; display: block; }
+.agent-row .info { min-width: 0; }
+.agent-row .name {
+  font: 600 14px/1.2 inherit;
+  color: var(--ink);
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-row .meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 9px/1 inherit;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent-row .meta .tier-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.agent-row .meta .tier-dot.haiku  { background: var(--green); }
+.agent-row .meta .tier-dot.sonnet { background: #B4862A; }
+.agent-row .meta .tier-dot.opus   { background: var(--orange); }
+.agent-row .meta .sep {
+  color: var(--ink-faint);
+  opacity: 0.6;
+}
+.agent-row .meta .trusted { color: var(--green); }
+.agent-row .meta .unused  { color: var(--ink-faint); }
+.row-icon-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--ink-mute);
+  cursor: pointer;
+  padding: 0;
+}
+.row-icon-btn:hover { background: var(--surface-3); color: var(--ink); }
+.row-icon-btn svg { width: 16px; height: 16px; }
+.row-overflow { position: relative; }
+.row-overflow summary {
+  list-style: none;
+  cursor: pointer;
+  width: 32px; height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--ink-mute);
+  font-size: 18px;
+  line-height: 1;
+}
+.row-overflow summary::-webkit-details-marker { display: none; }
+.row-overflow summary:hover { background: var(--surface-3); color: var(--ink); }
+.row-overflow[open] summary { background: var(--surface-3); color: var(--ink); }
+.row-overflow .menu {
+  position: absolute;
+  right: 0; top: 100%;
+  margin-top: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  min-width: 180px;
+  z-index: 10;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+}
+.row-overflow .menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  cursor: pointer;
+  font: 500 13px/1.2 inherit;
+}
+.row-overflow .menu-item:hover { background: var(--surface-2); }
+.row-overflow .menu-item.danger { color: var(--danger); }
+.row-overflow .menu-item[disabled] { color: var(--ink-faint); cursor: not-allowed; }
+.row-overflow .menu-item[disabled]:hover { background: transparent; }
 </style>
 </head>
 <body>
@@ -974,33 +1140,42 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   </div>
 
   <div id="new-chat">
+    <div class="title-bar">
+      <button class="crumb" type="button" onclick="show('step0')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Home
+      </button>
+      <div class="title">Pick an agent</div>
+    </div>
     <div class="body">
-      <h2 class="screen-heading">Pick an agent for your new chat</h2>
-      <div id="pick-list"></div>
       <div id="templates-section" style="display:none;">
-        <div class="or-divider"><span>or start from a template</span></div>
+        <div class="section-label">Templates</div>
         <div id="templates-list" class="template-grid"></div>
       </div>
-      <div class="or-divider"><span>or</span></div>
-      <button class="create-new-btn" onclick="gotoCreate()">+ Create from scratch</button>
-    </div>
-    <div class="actions">
-      <button class="btn btn-back" onclick="show('step0')">Back</button>
+      <div id="pick-section" style="display:none;">
+        <div class="section-label">Your agents</div>
+        <div id="pick-list"></div>
+      </div>
+      <div class="footer-bar">
+        <button class="btn btn-primary" onclick="gotoCreate()">+ Create from scratch</button>
+      </div>
     </div>
   </div>
 
   <div id="manage">
+    <div class="title-bar">
+      <button class="crumb" type="button" onclick="show('step0')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Home
+      </button>
+      <div class="title">Manage agents</div>
+    </div>
     <div class="body">
-      <h2 class="screen-heading">Manage agents</h2>
-      <p class="screen-sub">Edit, export, or delete your agents. Changes apply to every chat using the agent.</p>
       <div id="manage-list"></div>
       <div id="manage-empty" style="display:none;font-size:13px;color:var(--ink-mute);padding:8px 0;">
         No agents yet. Create one from
         <a href="#" id="manage-empty-newchat" style="color:var(--orange);text-decoration:underline;font-weight:600;">New chat</a>.
       </div>
-    </div>
-    <div class="actions">
-      <button class="btn btn-back" onclick="show('step0')">Back</button>
     </div>
   </div>
 
@@ -1304,7 +1479,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.78;
+var APP_VERSION = 1.83;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#3DA85A', checker: '#65C081' },
@@ -1575,74 +1750,112 @@ function renderManageList() {
   });
   for (var i = 0; i < sorted.length; i++) {
     var a = sorted[i];
-    var card = document.createElement('div');
-    card.className = 'existing-card';
-    if (a.isCurrentAgent) card.classList.add('current-agent');
-    var label = document.createElement('div');
-    label.className = 'label';
-    var nameEl = document.createElement('div');
-    nameEl.className = 'name';
-    if (a.icon) {
-      var iconSpan = document.createElement('span');
-      iconSpan.className = 'archetype-badge';
-      iconSpan.textContent = a.icon;
-      nameEl.appendChild(iconSpan);
+    var row = document.createElement('div');
+    row.className = 'agent-row';
+    row.onclick = (function(id){ return function(){ editAgent(id); }; })(a.id);
+
+    var avatar = document.createElement('div');
+    avatar.className = 'avatar';
+    if (a.iconDataUri) {
+      var img = document.createElement('img');
+      img.src = a.iconDataUri;
+      img.alt = '';
+      avatar.appendChild(img);
+    } else {
+      setBadgeSvg(avatar, renderPreviewSvg(a.tier || 'sonnet', !!a.isTrusted, a.glyph || 'user-round'));
     }
-    nameEl.appendChild(document.createTextNode(a.name));
-    label.appendChild(nameEl);
-    var metaEl = document.createElement('div');
-    metaEl.className = 'meta';
-    var badge = document.createElement('span');
-    badge.className = 'badge';
-    badge.textContent = MODEL_TIERS[a.model] || a.model;
-    metaEl.appendChild(badge);
-    if (a.isCurrentAgent) {
-      var mdot1 = document.createElement('span');
-      mdot1.className = 'dot';
-      metaEl.appendChild(mdot1);
-      var mpill = document.createElement('span');
-      mpill.className = 'current-pill';
-      mpill.textContent = 'Current chat';
-      metaEl.appendChild(mpill);
+    row.appendChild(avatar);
+
+    var info = document.createElement('div');
+    info.className = 'info';
+    var name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = a.name;
+    info.appendChild(name);
+
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    var tierDot = document.createElement('span');
+    tierDot.className = 'tier-dot ' + (a.tier || 'sonnet');
+    meta.appendChild(tierDot);
+    var modelText = document.createElement('span');
+    modelText.textContent = TIER_LABEL[a.tier] || (MODEL_TIERS[a.model] || a.model);
+    meta.appendChild(modelText);
+    if (a.isTrusted) {
+      var sep1 = document.createElement('span');
+      sep1.className = 'sep';
+      sep1.textContent = '\u2022';
+      meta.appendChild(sep1);
+      var trustText = document.createElement('span');
+      trustText.className = 'trusted';
+      trustText.textContent = 'Trusted';
+      meta.appendChild(trustText);
     }
-    var mdot2 = document.createElement('span');
-    mdot2.className = 'dot';
-    metaEl.appendChild(mdot2);
-    var countEl = document.createElement('span');
-    countEl.textContent = (a.bindingCount || 0) + ' chat' + ((a.bindingCount !== 1) ? 's' : '');
-    metaEl.appendChild(countEl);
-    label.appendChild(metaEl);
-    card.appendChild(label);
-    var actions = document.createElement('div');
-    actions.className = 'card-actions';
+    var sep2 = document.createElement('span');
+    sep2.className = 'sep';
+    sep2.textContent = '\u2022';
+    meta.appendChild(sep2);
+    var count = a.bindingCount || 0;
+    var usage = document.createElement('span');
+    if (count === 0) {
+      usage.className = 'unused';
+      usage.textContent = 'Unused';
+    } else {
+      usage.textContent = count + ' chat' + (count === 1 ? '' : 's');
+    }
+    meta.appendChild(usage);
+    info.appendChild(meta);
+    row.appendChild(info);
+
     var editBtn = document.createElement('button');
-    editBtn.className = 'card-action-btn';
-    editBtn.textContent = '\u270E Edit';
+    editBtn.className = 'row-icon-btn';
+    editBtn.type = 'button';
+    editBtn.setAttribute('aria-label', 'Edit agent');
+    editBtn.title = 'Edit';
+    editBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>';
     editBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); editAgent(id); }; })(a.id);
-    actions.appendChild(editBtn);
+    row.appendChild(editBtn);
+
+    var overflow = document.createElement('details');
+    overflow.className = 'row-overflow';
+    overflow.onclick = function(e){ e.stopPropagation(); };
+    var summary = document.createElement('summary');
+    summary.setAttribute('aria-label', 'More actions');
+    summary.innerHTML = '&#x22EF;';
+    overflow.appendChild(summary);
+    var menu = document.createElement('div');
+    menu.className = 'menu';
+
+    var startBtn = document.createElement('button');
+    startBtn.className = 'menu-item';
+    startBtn.type = 'button';
+    startBtn.textContent = 'Start a new chat';
+    startBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); overflow.open = false; pickExisting(id); }; })(a.id);
+    menu.appendChild(startBtn);
+
     var exportBtn = document.createElement('button');
-    exportBtn.className = 'card-action-btn';
-    exportBtn.textContent = '\u2B07 Export';
-    exportBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); exportAgent(id); }; })(a.id);
-    actions.appendChild(exportBtn);
+    exportBtn.className = 'menu-item';
+    exportBtn.type = 'button';
+    exportBtn.textContent = 'Export as YAML';
+    exportBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); overflow.open = false; exportAgent(id); }; })(a.id);
+    menu.appendChild(exportBtn);
+
     var deleteBtn = document.createElement('button');
-    deleteBtn.className = 'card-action-btn';
-    deleteBtn.textContent = '\u2715 Delete';
+    deleteBtn.className = 'menu-item danger';
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = 'Delete agent';
     if (a.isUndeletable) {
       deleteBtn.disabled = true;
-      deleteBtn.title = 'Built-in default agent — cannot be removed';
+      deleteBtn.title = 'Built-in default agent \u2014 cannot be removed';
     } else {
-      deleteBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); deleteAgent(id); }; })(a.id);
+      deleteBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); overflow.open = false; deleteAgent(id); }; })(a.id);
     }
-    actions.appendChild(deleteBtn);
-    card.appendChild(actions);
-    if (a.isUndeletable) {
-      var hint = document.createElement('div');
-      hint.className = 'card-hint';
-      hint.textContent = 'Default \u2014 can\u2019t be removed';
-      card.appendChild(hint);
-    }
-    container.appendChild(card);
+    menu.appendChild(deleteBtn);
+
+    overflow.appendChild(menu);
+    row.appendChild(overflow);
+
+    container.appendChild(row);
   }
   var empty = document.getElementById('manage-empty');
   if (empty) empty.style.display = existingAgents.length === 0 ? '' : 'none';
@@ -1650,48 +1863,84 @@ function renderManageList() {
 
 function renderPickList() {
   var container = document.getElementById('pick-list');
+  var section = document.getElementById('pick-section');
   if (!container) return;
   container.textContent = '';
+  if (section) section.style.display = existingAgents.length === 0 ? 'none' : '';
   for (var i = 0; i < existingAgents.length; i++) {
     var a = existingAgents[i];
-    var btn = document.createElement('button');
-    btn.className = 'pick-card';
-    if (a.isCurrentAgent) btn.classList.add('current-agent');
-    btn.onclick = (function(id){ return function(){ pickExisting(id); }; })(a.id);
-    var icon = document.createElement('span');
-    icon.className = 'pick-icon';
-    icon.textContent = a.icon || '\u{1F464}';
-    btn.appendChild(icon);
-    var body = document.createElement('span');
-    body.className = 'pick-body';
-    var name = document.createElement('div');
-    name.className = 'pick-name';
-    name.textContent = a.name;
-    body.appendChild(name);
-    var meta = document.createElement('div');
-    meta.className = 'pick-meta';
-    var mb = document.createElement('span');
-    mb.className = 'badge';
-    mb.textContent = MODEL_TIERS[a.model] || a.model;
-    meta.appendChild(mb);
-    if (a.isCurrentAgent) {
-      var dot1 = document.createElement('span');
-      dot1.className = 'dot';
-      meta.appendChild(dot1);
-      var pill = document.createElement('span');
-      pill.className = 'current-pill';
-      pill.textContent = 'Current chat';
-      meta.appendChild(pill);
+    var row = document.createElement('div');
+    row.className = 'agent-row';
+    if (a.isCurrentAgent) row.classList.add('current-agent');
+    row.onclick = (function(id){ return function(){ pickExisting(id); }; })(a.id);
+
+    var avatar = document.createElement('div');
+    avatar.className = 'avatar';
+    if (a.iconDataUri) {
+      var img = document.createElement('img');
+      img.src = a.iconDataUri;
+      img.alt = '';
+      avatar.appendChild(img);
+    } else {
+      setBadgeSvg(avatar, renderPreviewSvg(a.tier || 'sonnet', !!a.isTrusted, a.glyph || 'user-round'));
     }
-    var dot2 = document.createElement('span');
-    dot2.className = 'dot';
-    meta.appendChild(dot2);
-    var cb = document.createElement('span');
-    cb.textContent = (a.bindingCount || 0) + ' chat' + ((a.bindingCount !== 1) ? 's' : '');
-    meta.appendChild(cb);
-    body.appendChild(meta);
-    btn.appendChild(body);
-    container.appendChild(btn);
+    row.appendChild(avatar);
+
+    var info = document.createElement('div');
+    info.className = 'info';
+    var nameRow = document.createElement('div');
+    nameRow.className = 'name';
+    nameRow.style.display = 'flex';
+    nameRow.style.alignItems = 'center';
+    var nameText = document.createElement('span');
+    nameText.textContent = a.name;
+    nameText.style.overflow = 'hidden';
+    nameText.style.textOverflow = 'ellipsis';
+    nameText.style.whiteSpace = 'nowrap';
+    nameRow.appendChild(nameText);
+    if (a.isCurrentAgent) {
+      var badge = document.createElement('span');
+      badge.className = 'current-badge';
+      badge.textContent = 'Current chat';
+      nameRow.appendChild(badge);
+    }
+    info.appendChild(nameRow);
+
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    var tierDot = document.createElement('span');
+    tierDot.className = 'tier-dot ' + (a.tier || 'sonnet');
+    meta.appendChild(tierDot);
+    var modelText = document.createElement('span');
+    modelText.textContent = TIER_LABEL[a.tier] || (MODEL_TIERS[a.model] || a.model);
+    meta.appendChild(modelText);
+    if (a.isTrusted) {
+      var sep1 = document.createElement('span');
+      sep1.className = 'sep';
+      sep1.textContent = '\u2022';
+      meta.appendChild(sep1);
+      var trustText = document.createElement('span');
+      trustText.className = 'trusted';
+      trustText.textContent = 'Trusted';
+      meta.appendChild(trustText);
+    }
+    var sep2 = document.createElement('span');
+    sep2.className = 'sep';
+    sep2.textContent = '\u2022';
+    meta.appendChild(sep2);
+    var count = a.bindingCount || 0;
+    var usage = document.createElement('span');
+    if (count === 0) {
+      usage.className = 'unused';
+      usage.textContent = 'Unused';
+    } else {
+      usage.textContent = count + ' chat' + (count === 1 ? '' : 's');
+    }
+    meta.appendChild(usage);
+    info.appendChild(meta);
+    row.appendChild(info);
+
+    container.appendChild(row);
   }
 }
 
@@ -1722,10 +1971,12 @@ function renderTemplates() {
     } else {
       btn.onclick = (function(id){ return function(){ instantiateTemplate(id); }; })(t.id);
     }
-    var icon = document.createElement('div');
-    icon.className = 'icon';
-    icon.textContent = t.icon || '';
-    btn.appendChild(icon);
+    var glyph = document.createElement('div');
+    glyph.className = 'glyph';
+    var glyphName = t.glyph || 'cog';
+    var inner = GLYPHS[glyphName] || GLYPHS['cog'] || '';
+    glyph.innerHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' + inner + '</svg>';
+    btn.appendChild(glyph);
     var name = document.createElement('div');
     name.className = 'name';
     name.textContent = t.name;

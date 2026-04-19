@@ -21,6 +21,7 @@ import {
   type Archetype,
   type DraftAgent,
 } from './agents.js'
+import { ARCHETYPE_PALETTES, ARCHETYPE_DEFAULT_GLYPH } from './agent-icons/palettes.js'
 
 /**
  * The `x-dc-template` metadata block embedded in a template YAML file.
@@ -64,6 +65,7 @@ export interface Template {
   name: string
   archetype: Archetype
   icon: string
+  glyph: string
   model: string
   description: string
   requires: { mcpServers: string[] }
@@ -125,11 +127,17 @@ export function listTemplates(): Template[] {
       typeof meta['x-dc-icon'] === 'string' && (meta['x-dc-icon'] as string).length > 0
         ? (meta['x-dc-icon'] as string)
         : defaultIconForCategory(archetype)
+    const palette = ARCHETYPE_PALETTES[archetype] as readonly string[]
+    const explicitGlyph = typeof meta['x-dc-glyph'] === 'string' ? (meta['x-dc-glyph'] as string) : ''
+    const glyph = explicitGlyph && palette.includes(explicitGlyph)
+      ? explicitGlyph
+      : ARCHETYPE_DEFAULT_GLYPH[archetype]
     out.push({
       id: t.raw.id,
       name: t.raw.name,
       archetype,
       icon,
+      glyph,
       model: t.raw.model,
       description: t.meta.description,
       requires: { mcpServers: t.meta.requires.mcpServers },

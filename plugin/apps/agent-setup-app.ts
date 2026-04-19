@@ -42,6 +42,7 @@ function templatesPayload(ctx: AppContext): Array<{
   name: string
   archetype: string
   icon: string
+  glyph: string
   description: string
   model: string
   requiresMcpServers: string[]
@@ -56,6 +57,7 @@ function templatesPayload(ctx: AppContext): Array<{
       name: t.name,
       archetype: t.archetype,
       icon: t.icon,
+      glyph: t.glyph,
       description: t.description,
       model: t.model,
       requiresMcpServers: required,
@@ -192,17 +194,36 @@ function blankDraft(): agents.DraftAgent {
 }
 
 /** Summarize agents for the picker screen. */
-function listExistingForPicker(sourceChatId: number): Array<{ id: string; name: string; model: string; archetype: string; icon: string; bindingCount: number; isCurrentAgent: boolean; isUndeletable: boolean }> {
+async function listExistingForPicker(sourceChatId: number): Promise<Array<{ id: string; name: string; model: string; archetype: string; icon: string; glyph: string; tier: string; isTrusted: boolean; iconDataUri: string; bindingCount: number; isCurrentAgent: boolean; isUndeletable: boolean }>> {
+  const { renderAgentBadge } = await import('../agent-icon-render.js')
   const sourceBinding = bindings.getBinding(sourceChatId)
-  return agents.listAgents().map(a => ({
-    id: a.id,
-    name: a.name,
-    model: a.model,
-    archetype: agents.getArchetype(a),
-    icon: agents.iconForAgent(a),
-    bindingCount: bindings.countByAgentId(a.id),
-    isCurrentAgent: sourceBinding?.agentId === a.id,
-    isUndeletable: agents.isUndeletableAgent(a.id),
+  const { readFileSync } = await import('node:fs')
+  return Promise.all(agents.listAgents().map(async a => {
+    const archetype = agents.getArchetype(a) as 'role' | 'utility' | 'project'
+    const tier = models.tierForModel(a.model)
+    const trust = agents.getSkipPermissions(a)
+    const glyph = agents.glyphForAgent(a)
+    let iconDataUri = ''
+    try {
+      const pngPath = await renderAgentBadge({ archetype, modelFamily: tier, trust, glyph })
+      iconDataUri = `data:image/png;base64,${readFileSync(pngPath).toString('base64')}`
+    } catch {
+      /* fall back to empty — client renders a placeholder */
+    }
+    return {
+      id: a.id,
+      name: a.name,
+      model: a.model,
+      archetype,
+      icon: agents.iconForAgent(a),
+      glyph,
+      tier,
+      isTrusted: trust,
+      iconDataUri,
+      bindingCount: bindings.countByAgentId(a.id),
+      isCurrentAgent: sourceBinding?.agentId === a.id,
+      isUndeletable: agents.isUndeletableAgent(a.id),
+    }
   }))
 }
 
@@ -262,7 +283,7 @@ async function sendInit(
       skipPermissions: agents.getSkipPermissions(draft as agents.AgentDef),
       iconMirror: agents.getIconMirror(draft as agents.AgentDef),
     },
-    existingAgents: listExistingForPicker(sourceChatId),
+    existingAgents: await listExistingForPicker(sourceChatId),
     senderAddr: 'server',
     templates: templatesPayload(ctx),
     availableModels: models.MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier })),
@@ -610,7 +631,7 @@ export const agentSetupApp: WebXDCApp = {
             payload: {
               type: 'deleted',
               name: agent.name,
-              existingAgents: listExistingForPicker(session.sourceChatId),
+              existingAgents: await listExistingForPicker(session.sourceChatId),
               version: agentSetup.getAgentSetupVersion(),
               senderAddr: 'server',
             },
@@ -1139,7 +1160,7 @@ export const agentSetupApp: WebXDCApp = {
             payload: {
               type: 'editComplete',
               name: draft.name,
-              existingAgents: listExistingForPicker(session.sourceChatId),
+              existingAgents: await listExistingForPicker(session.sourceChatId),
               version: agentSetup.getAgentSetupVersion(),
               senderAddr: 'server',
             },
