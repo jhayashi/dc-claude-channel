@@ -241,6 +241,21 @@ export function deleteInstance(appId: string): void {
 }
 
 /**
+ * Remove every familiar instance bound to a chat, deleting both in-memory
+ * and persisted state. Returns the msgIds of the removed instances so the
+ * caller can clean up any external registries keyed by msgId.
+ */
+export function cleanupFamiliarForChat(chatId: number): number[] {
+  const msgIds: number[] = []
+  for (const inst of listInstances(chatId)) {
+    deleteInstance(inst.appId)
+    if (inst.persistent) deletePersistedInstance(inst.appId)
+    msgIds.push(inst.msgId)
+  }
+  return msgIds
+}
+
+/**
  * Get (or lazily compile) the handler function for an instance.
  * Returns undefined if the instance is not registered.
  */

@@ -1527,11 +1527,9 @@ async function cleanupChatState(
     logf('dc channel: cleanup file-reviewer error: %v', err)
   }
   try {
-    for (const inst of familiarRuntime.listInstances(chatId)) {
-      familiarRuntime.deleteInstance(inst.appId)
-      if (inst.persistent) familiarRuntime.deletePersistedInstance(inst.appId)
-      webxdcAppRegistry.delete(inst.msgId)
-      webxdcLastSerial.delete(inst.msgId)
+    for (const msgId of familiarRuntime.cleanupFamiliarForChat(chatId)) {
+      webxdcAppRegistry.delete(msgId)
+      webxdcLastSerial.delete(msgId)
     }
   } catch (err) {
     logf('dc channel: cleanup familiar error: %v', err)
