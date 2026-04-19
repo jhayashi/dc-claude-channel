@@ -159,8 +159,7 @@ body {
 .content {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
-  padding-bottom: 60px;
+  padding: 20px 20px 60px 36px;
   line-height: 1.6;
 }
 /* Source view gets a tighter wrapper — the gutter + source-line padding
@@ -275,42 +274,213 @@ body {
 .source-line.commented {
   box-shadow: inset 2px 0 0 var(--orange);
 }
-.source-line.commented .line-gutter {
+.source-line .line-gutter {
   position: relative;
-  color: transparent;
 }
-.source-line.commented .line-gutter::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
+.source-line .comment-bubble {
+  position: static;
+  width: 14px;
+  height: 14px;
+  margin: 3px auto 0;
+}
+.source-line .comment-bubble svg {
   width: 12px;
   height: 12px;
-  margin: 0 auto;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23D97757' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'><path d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/></svg>");
-  background-size: contain;
-  background-repeat: no-repeat;
+}
+/* Slide mode */
+.slides-container {
+  display: block;
+  position: relative;
+}
+.slide {
+  display: none;
+}
+.slide.active {
+  display: block;
+}
+.slide-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 0 10px;
+  margin-bottom: 8px;
+  background: linear-gradient(to bottom, var(--bg) 70%, transparent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-faint);
+  user-select: none;
+}
+.slide-nav-btn {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.slide-nav-btn:hover:not(:disabled) {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+.slide-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.slide-counter {
+  min-width: 52px;
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+.slide-dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+  max-width: 260px;
+  justify-content: center;
+}
+.slide-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--line);
+  cursor: pointer;
+  border: none;
+  padding: 0;
+}
+.slide-dot.active {
+  background: var(--orange);
 }
 /* Markdown block commenting */
 .md-block {
   position: relative;
 }
-.md-block.commented {
-  border-left: 2px solid var(--orange);
-  padding-left: 14px;
-}
-.md-block.commented::before {
+.md-block.commented::before,
+.md-block-table.commented::before,
+.md-block-list.commented::before,
+.md-block-code.commented::before {
   content: '';
   position: absolute;
-  left: -9px;
-  top: 3px;
+  left: -4px;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--orange);
+  border-radius: 1px;
+}
+.comment-bubble {
+  position: absolute;
+  left: -26px;
+  top: 2px;
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 120ms ease;
+  z-index: 2;
+  -webkit-tap-highlight-color: transparent;
+}
+.comment-bubble:hover, .comment-bubble:active {
+  background: var(--orange-soft);
+}
+.comment-bubble svg {
   width: 14px;
   height: 14px;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23D97757' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'><path d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/></svg>");
-  background-size: contain;
-  background-repeat: no-repeat;
+  stroke: var(--orange);
+  stroke-width: 1.75;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.comment-bubble .count-badge {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  min-width: 12px;
+  height: 12px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: 7px;
+  background: var(--orange);
+  color: var(--bg, #1f1f1f);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
+  text-align: center;
+  font-family: var(--font-mono);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  box-shadow: 0 0 0 1.5px var(--bg, #1f1f1f);
+  pointer-events: none;
+}
+.md-block-table > .comment-bubble {
+  top: 14px;
+}
+.md-block-list > .comment-bubble {
+  top: 4px;
+}
+.md-block-code > .comment-bubble {
+  top: 18px;
+}
+.code-line {
+  display: block;
+  min-height: 1em;
+  padding: 0;
+  border-radius: 2px;
+}
+.comment-popover {
+  position: fixed;
+  z-index: 20;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.45);
+  min-width: 220px;
+  max-width: 320px;
+  padding: 4px;
+}
+.comment-popover-item {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--ink);
+  font-family: var(--font-sans, inherit);
+  font-size: 13px;
+}
+.comment-popover-item:hover, .comment-popover-item:active {
+  background: var(--surface-2);
+}
+.comment-popover-item .row-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin-bottom: 2px;
+}
+.comment-popover-item .comment-preview {
+  color: var(--ink-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
 }
 /* Markdown tables */
 .table-wrap {
@@ -335,10 +505,6 @@ body {
 }
 .md-block tr:nth-child(even) td {
   background: rgba(255, 255, 255, 0.02);
-}
-.md-block table tr.commented td {
-  background: var(--orange-soft) !important;
-  box-shadow: inset 3px 0 0 var(--orange);
 }
 /* Prism theme overrides for our dark bg
  * The shipped Prism palette (injected at %%PRISM_CSS%%) is preserved as-is;
@@ -759,7 +925,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.19;
+var APP_VERSION = 1.30;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -789,6 +955,77 @@ function esc(s) {
   var d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+/**
+ * Parse a minimal subset of YAML: `key: value` pairs. Ignores blank lines
+ * and `#` comments. Strips surrounding single or double quotes.
+ * Mirrors plugin/marp-detect.ts.
+ */
+function parseYamlSubset(src) {
+  var out = {};
+  var lines = String(src || '').split(/\r?\n/);
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line || line.charAt(0) === '#') continue;
+    var colon = line.indexOf(':');
+    if (colon <= 0) continue;
+    var key = line.slice(0, colon).trim();
+    var val = line.slice(colon + 1).trim();
+    if ((val.charAt(0) === '"' && val.charAt(val.length - 1) === '"') ||
+        (val.charAt(0) === "'" && val.charAt(val.length - 1) === "'")) {
+      val = val.slice(1, -1);
+    }
+    if (key) out[key] = val;
+  }
+  return out;
+}
+
+/**
+ * Detect whether a document should be rendered in slide mode. Returns
+ * { isSlides, frontmatter, body }. Slide mode triggers when either:
+ *   (a) YAML frontmatter has `marp: true` (or yes), or
+ *   (b) no frontmatter, but doc starts with `---\n` and has 2+ sections
+ *       separated by `\n---\n` lines.
+ * Regular markdown docs with mid-body horizontal rules never trigger.
+ * Mirrors plugin/marp-detect.ts.
+ */
+function detectMarp(raw) {
+  var text = typeof raw === 'string' ? raw : '';
+  var fm = null;
+  var body = text;
+
+  if (/^---\r?\n/.test(text)) {
+    var firstNewline = text.indexOf('\n');
+    var sliceRest = text.slice(firstNewline + 1);
+    var closeMatch = sliceRest.match(/(^|\r?\n)---\r?\n/);
+    if (closeMatch && typeof closeMatch.index === 'number') {
+      var leadLen = (closeMatch[1] || '').length;
+      var fmStart = firstNewline + 1;
+      var fmEnd = firstNewline + 1 + closeMatch.index + leadLen;
+      var fmRaw = text.slice(fmStart, fmEnd);
+      var parsed = parseYamlSubset(fmRaw);
+      if (Object.keys(parsed).length > 0) {
+        fm = parsed;
+        var after = firstNewline + 1 + closeMatch.index + closeMatch[0].length;
+        body = text.slice(after);
+      }
+    }
+  }
+
+  var isSlides = false;
+  if (fm) {
+    var v = (fm.marp || '').toLowerCase();
+    isSlides = v === 'true' || v === 'yes';
+  } else if (/^---\r?\n/.test(text)) {
+    var stripped = text.replace(/^---\r?\n/, '');
+    var parts = stripped.split(/\r?\n---\r?\n/);
+    var nonEmpty = 0;
+    for (var j = 0; j < parts.length; j++) if (parts[j].trim()) nonEmpty++;
+    if (nonEmpty >= 2) isSlides = true;
+  }
+
+  return { isSlides: isSlides, frontmatter: fm, body: body };
 }
 
 /**
@@ -936,7 +1173,11 @@ function renderSource(content, language, docIndex) {
 
     var gutter = document.createElement('div');
     gutter.className = 'line-gutter';
-    gutter.textContent = comments[lineNum] ? '\u{1F4AC}' : '';
+    if (comments[lineNum]) {
+      (function(ln) {
+        gutter.appendChild(makeCommentBubble(function() { openCommentCard(ln); }));
+      })(lineNum);
+    }
 
     var lineContent = document.createElement('div');
     lineContent.className = 'line-content';
@@ -1006,19 +1247,11 @@ function splitHighlightedLines(html) {
 }
 
 /**
- * Render markdown with per-block wrappers for commenting.
+ * Render a list of parsed markdown block nodes into `container`, wrapping
+ * each with the appropriate .md-block wrapper and attaching long-press
+ * handlers + comment bubbles. Returns the next paraIdx.
  */
-function renderMarkdownWithBlocks(md, docIndex) {
-  var htmlStr = renderMarkdown(md);
-  var comments = getComments(docIndex);
-
-  // Parse into DOM, wrap each block element
-  var temp = document.createElement('div');
-  temp.innerHTML = htmlStr;  // eslint-disable-line
-
-  var container = document.createElement('div');
-  var paraIdx = 0;
-  var children = Array.prototype.slice.call(temp.childNodes);
+function renderBlocksInto(container, children, paraIdx, comments) {
   for (var i = 0; i < children.length; i++) {
     var child = children[i];
     if (child.nodeType !== 1) continue; // skip text nodes
@@ -1044,7 +1277,107 @@ function renderMarkdownWithBlocks(md, docIndex) {
         })(paraIdx, row);
         paraIdx++;
       }
+      // Collect commented rows for this table; attach one bubble on the wrapper.
+      var commentedRows = [];
+      var allRows = table.querySelectorAll('tr');
+      for (var rr = 0; rr < allRows.length; rr++) {
+        var tr = allRows[rr];
+        var tp = Number(tr.getAttribute('data-paragraph'));
+        if (comments[tp]) commentedRows.push({ para: tp, rowEl: tr, rowIndex: rr + 1, text: comments[tp] });
+      }
+      if (commentedRows.length > 0) {
+        tableBlock.classList.add('commented');
+        (function(cr) {
+          var bubble = makeCommentBubble(function() {
+            if (cr.length === 1) { openCommentCard(cr[0].para); }
+            else { showCommentPopover(bubble, cr, 'Row'); }
+          }, cr.length);
+          tableBlock.insertBefore(bubble, tableBlock.firstChild);
+        })(commentedRows);
+      }
       continue;
+    }
+
+    // Special case: lists → each <li> is its own commentable unit.
+    if (child.tagName === 'UL' || child.tagName === 'OL') {
+      var listBlock = document.createElement('div');
+      listBlock.className = 'md-block md-block-list';
+      listBlock.appendChild(child);
+      container.appendChild(listBlock);
+
+      var items = [];
+      for (var c = 0; c < child.children.length; c++) {
+        if (child.children[c].tagName === 'LI') items.push(child.children[c]);
+      }
+      var commentedItems = [];
+      for (var li = 0; li < items.length; li++) {
+        var item = items[li];
+        item.setAttribute('data-paragraph', String(paraIdx));
+        if (comments[paraIdx]) {
+          item.classList.add('commented');
+          commentedItems.push({ para: paraIdx, rowEl: item, rowIndex: li + 1, text: comments[paraIdx] });
+        }
+        (function(pi, el) {
+          attachLongPress(el, function() { openCommentCard(pi); });
+        })(paraIdx, item);
+        paraIdx++;
+      }
+      if (commentedItems.length > 0) {
+        listBlock.classList.add('commented');
+        (function(ci) {
+          var bubble = makeCommentBubble(function() {
+            if (ci.length === 1) { openCommentCard(ci[0].para); }
+            else { showCommentPopover(bubble, ci, 'Item'); }
+          }, ci.length);
+          listBlock.insertBefore(bubble, listBlock.firstChild);
+        })(commentedItems);
+      }
+      continue;
+    }
+
+    // Special case: fenced code blocks → each line is its own commentable unit.
+    if (child.tagName === 'PRE') {
+      var codeEl = child.querySelector('code');
+      if (codeEl) {
+        var preBlock = document.createElement('div');
+        preBlock.className = 'md-block md-block-code';
+        preBlock.appendChild(child);
+        container.appendChild(preBlock);
+
+        var codeHTML = codeEl.innerHTML;  // eslint-disable-line
+        var htmlLines = splitHighlightedLines(codeHTML);
+        while (codeEl.firstChild) codeEl.removeChild(codeEl.firstChild);
+
+        var commentedLines = [];
+        for (var k = 0; k < htmlLines.length; k++) {
+          var lineDiv = document.createElement('div');
+          lineDiv.className = 'code-line';
+          lineDiv.setAttribute('data-paragraph', String(paraIdx));
+          lineDiv.innerHTML = htmlLines[k] || '\u00a0';  // eslint-disable-line
+          if (comments[paraIdx]) {
+            lineDiv.classList.add('commented');
+            commentedLines.push({ para: paraIdx, rowEl: lineDiv, rowIndex: k + 1, text: comments[paraIdx] });
+          }
+          codeEl.appendChild(lineDiv);
+          (function(pi, el) {
+            attachLongPress(el, function() { openCommentCard(pi); });
+          })(paraIdx, lineDiv);
+          paraIdx++;
+        }
+
+        if (commentedLines.length > 0) {
+          preBlock.classList.add('commented');
+          (function(cl) {
+            var bubble = makeCommentBubble(function() {
+              if (cl.length === 1) { openCommentCard(cl[0].para); }
+              else { showCommentPopover(bubble, cl, 'Line'); }
+            }, cl.length);
+            preBlock.insertBefore(bubble, preBlock.firstChild);
+          })(commentedLines);
+        }
+        continue;
+      }
+      // No <code> child: fall through to default block handling.
     }
 
     var block = document.createElement('div');
@@ -1058,9 +1391,276 @@ function renderMarkdownWithBlocks(md, docIndex) {
       attachLongPress(block, function() { openCommentCard(pi); });
     })(paraIdx);
 
+    // Commented blocks get a tappable bubble in the left margin.
+    if (comments[paraIdx]) {
+      (function(pi) {
+        var bubble = makeCommentBubble(function() { openCommentCard(pi); });
+        block.insertBefore(bubble, block.firstChild);
+      })(paraIdx);
+    }
+
     paraIdx++;
   }
+  return paraIdx;
+}
+
+/**
+ * Render markdown with per-block wrappers for commenting. Auto-detects
+ * Marp slide mode and emits per-slide <section> wrappers when applicable.
+ * Writes slide metadata to documents[docIndex].slides/currentSlide/paraToSlide.
+ */
+function renderMarkdownWithBlocks(md, docIndex) {
+  var detection = detectMarp(md);
+  var doc = documents[docIndex];
+  var comments = getComments(docIndex);
+  var container = document.createElement('div');
+
+  if (!detection.isSlides) {
+    // Clear any stale slide state from a prior render
+    if (doc) {
+      doc.slides = null;
+      doc.currentSlide = 0;
+      doc.paraToSlide = null;
+    }
+    var temp = document.createElement('div');
+    temp.innerHTML = renderMarkdown(md);  // eslint-disable-line
+    var nodes = Array.prototype.slice.call(temp.childNodes);
+    renderBlocksInto(container, nodes, 0, comments);
+    return container;
+  }
+
+  // Slide mode: split body on --- and render each slide into its own section
+  container.classList.add('slides-container');
+  var slideTexts = detection.body.split(/\r?\n---\r?\n/);
+  var cleanSlides = [];
+  for (var s = 0; s < slideTexts.length; s++) {
+    var t = slideTexts[s].trim();
+    if (t) cleanSlides.push(t);
+  }
+  if (doc) {
+    doc.slides = cleanSlides;
+    if (typeof doc.currentSlide !== 'number' || doc.currentSlide >= cleanSlides.length || doc.currentSlide < 0) {
+      doc.currentSlide = 0;
+    }
+    doc.paraToSlide = {};
+  }
+
+  // Sticky nav bar at top of the container
+  var nav = buildSlideNav(cleanSlides.length, doc ? doc.currentSlide : 0);
+  container.appendChild(nav);
+
+  var paraIdx = 0;
+  for (var si = 0; si < cleanSlides.length; si++) {
+    var section = document.createElement('section');
+    section.className = 'slide' + (doc && si === doc.currentSlide ? ' active' : '');
+    section.setAttribute('data-slide-index', String(si));
+
+    var tempSlide = document.createElement('div');
+    tempSlide.innerHTML = renderMarkdown(cleanSlides[si]);  // eslint-disable-line
+    var slideNodes = Array.prototype.slice.call(tempSlide.childNodes);
+    var prevPara = paraIdx;
+    paraIdx = renderBlocksInto(section, slideNodes, paraIdx, comments);
+    if (doc) {
+      for (var p = prevPara; p < paraIdx; p++) doc.paraToSlide[p] = si;
+    }
+    container.appendChild(section);
+  }
   return container;
+}
+
+/**
+ * Build the slide navigation bar (prev, counter, next, dots). Returns the
+ * element. All interaction is routed through showSlide().
+ */
+function buildSlideNav(total, current) {
+  var nav = document.createElement('div');
+  nav.className = 'slide-nav';
+
+  var prev = document.createElement('button');
+  prev.className = 'slide-nav-btn';
+  prev.setAttribute('data-dir', 'prev');
+  prev.setAttribute('aria-label', 'Previous slide');
+  prev.textContent = '\u25C0';
+  prev.addEventListener('click', function() { showSlide((documents[activeIndex] && documents[activeIndex].currentSlide || 0) - 1); });
+  nav.appendChild(prev);
+
+  var counter = document.createElement('span');
+  counter.className = 'slide-counter';
+  counter.textContent = (current + 1) + ' / ' + total;
+  nav.appendChild(counter);
+
+  var next = document.createElement('button');
+  next.className = 'slide-nav-btn';
+  next.setAttribute('data-dir', 'next');
+  next.setAttribute('aria-label', 'Next slide');
+  next.textContent = '\u25B6';
+  next.addEventListener('click', function() { showSlide((documents[activeIndex] && documents[activeIndex].currentSlide || 0) + 1); });
+  nav.appendChild(next);
+
+  if (total <= 20) {
+    var dotsEl = document.createElement('div');
+    dotsEl.className = 'slide-dots';
+    for (var d = 0; d < total; d++) {
+      var dot = document.createElement('button');
+      dot.className = 'slide-dot' + (d === current ? ' active' : '');
+      dot.setAttribute('aria-label', 'Go to slide ' + (d + 1));
+      (function(idx) {
+        dot.addEventListener('click', function() { showSlide(idx); });
+      })(d);
+      dotsEl.appendChild(dot);
+    }
+    nav.appendChild(dotsEl);
+  }
+
+  updateSlideNavState(nav, current, total);
+  return nav;
+}
+
+/**
+ * Update disabled state + counter text + active dot on a slide-nav element.
+ */
+function updateSlideNavState(nav, current, total) {
+  if (!nav) return;
+  var prev = nav.querySelector('.slide-nav-btn[data-dir="prev"]');
+  var next = nav.querySelector('.slide-nav-btn[data-dir="next"]');
+  var counter = nav.querySelector('.slide-counter');
+  if (prev) prev.disabled = current <= 0;
+  if (next) next.disabled = current >= total - 1;
+  if (counter) counter.textContent = (current + 1) + ' / ' + total;
+  var dots = nav.querySelectorAll('.slide-dot');
+  for (var i = 0; i < dots.length; i++) {
+    dots[i].className = 'slide-dot' + (i === current ? ' active' : '');
+  }
+}
+
+/**
+ * Switch to slide `idx` on the currently active doc. Clamps bounds silently.
+ * No-op if the active doc isn't in slide mode.
+ */
+function showSlide(idx) {
+  var doc = documents[activeIndex];
+  if (!doc || !doc.slides) return;
+  var total = doc.slides.length;
+  if (idx < 0) idx = 0;
+  if (idx >= total) idx = total - 1;
+  if (idx === doc.currentSlide) return;
+  doc.currentSlide = idx;
+
+  var contentEl = document.getElementById('content');
+  var container = contentEl.querySelector('.slides-container');
+  if (!container) return;
+
+  var sections = container.querySelectorAll('.slide');
+  for (var i = 0; i < sections.length; i++) {
+    var si = Number(sections[i].getAttribute('data-slide-index'));
+    sections[i].classList.toggle('active', si === idx);
+  }
+
+  var nav = container.querySelector('.slide-nav');
+  updateSlideNavState(nav, idx, total);
+
+  // Scroll the container to top so the new slide starts at the top
+  contentEl.scrollTop = 0;
+}
+
+/**
+ * Build a tappable MessageSquare bubble. The onTap callback fires on click.
+ * Touch events are stopPropagation'd to avoid triggering long-press on parent.
+ */
+function makeCommentBubble(onTap, count) {
+  var bubble = document.createElement('span');
+  bubble.className = 'comment-bubble';
+  bubble.setAttribute('role', 'button');
+  var n = typeof count === 'number' ? count : 0;
+  bubble.setAttribute('aria-label', n > 1 ? ('Show ' + n + ' comments') : 'Show comment');
+  var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z');
+  svg.appendChild(path);
+  bubble.appendChild(svg);
+  if (n > 1) {
+    var badge = document.createElement('span');
+    badge.className = 'count-badge';
+    badge.textContent = n > 9 ? '9+' : String(n);
+    bubble.appendChild(badge);
+  }
+  bubble.addEventListener('click', function(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    onTap();
+  });
+  bubble.addEventListener('touchstart', function(e) { e.stopPropagation(); }, { passive: true });
+  bubble.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+  return bubble;
+}
+
+/**
+ * Show a popover near `anchor` listing `items` (commented rows/items/lines).
+ * Each item: { para, rowIndex, text }. Tap → scroll to row + open its card.
+ * `prefix` is the label noun ("Row", "Item", "Line"). Defaults to "Row".
+ */
+function showCommentPopover(anchor, items, prefix) {
+  prefix = prefix || 'Row';
+  closeCommentPopover();
+  var pop = document.createElement('div');
+  pop.className = 'comment-popover';
+  pop.id = 'comment-popover';
+  for (var i = 0; i < items.length; i++) {
+    (function(it) {
+      var btn = document.createElement('button');
+      btn.className = 'comment-popover-item';
+      btn.type = 'button';
+      var label = document.createElement('span');
+      label.className = 'row-label';
+      label.textContent = prefix + ' ' + it.rowIndex;
+      var preview = document.createElement('span');
+      preview.className = 'comment-preview';
+      preview.textContent = it.text;
+      btn.appendChild(label);
+      btn.appendChild(preview);
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        closeCommentPopover();
+        if (it.rowEl && it.rowEl.scrollIntoView) {
+          it.rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        openCommentCard(it.para);
+      });
+      pop.appendChild(btn);
+    })(items[i]);
+  }
+  document.body.appendChild(pop);
+  // Position after mounting so we can measure popover height.
+  var rect = anchor.getBoundingClientRect();
+  var popRect = pop.getBoundingClientRect();
+  var left = rect.right + 6;
+  var top = rect.top;
+  if (left + popRect.width > window.innerWidth - 8) {
+    left = Math.max(8, window.innerWidth - popRect.width - 8);
+  }
+  if (top + popRect.height > window.innerHeight - 8) {
+    top = Math.max(8, window.innerHeight - popRect.height - 8);
+  }
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
+  setTimeout(function() {
+    document.addEventListener('click', commentPopoverOutsideClick);
+    window.addEventListener('scroll', closeCommentPopover, true);
+    window.addEventListener('resize', closeCommentPopover);
+  }, 0);
+}
+function commentPopoverOutsideClick(e) {
+  var pop = document.getElementById('comment-popover');
+  if (!pop) return;
+  if (!pop.contains(e.target)) closeCommentPopover();
+}
+function closeCommentPopover() {
+  var pop = document.getElementById('comment-popover');
+  if (pop && pop.parentNode) pop.parentNode.removeChild(pop);
+  document.removeEventListener('click', commentPopoverOutsideClick);
+  window.removeEventListener('scroll', closeCommentPopover, true);
+  window.removeEventListener('resize', closeCommentPopover);
 }
 
 /**
@@ -1202,6 +1802,10 @@ function sendComments() {
     } else {
       // Markdown: anchor is paragraph index
       entry.paragraph = anchor;
+      // Slide-aware: tag which slide this block belongs to (0-indexed)
+      if (doc.paraToSlide && doc.paraToSlide[anchor] !== undefined) {
+        entry.slide = doc.paraToSlide[anchor];
+      }
       // Get paragraph text from the rendered content
       var blocks = document.querySelectorAll('[data-paragraph="' + anchor + '"]');
       entry.context = blocks.length > 0 ? blocks[0].textContent.substring(0, 200).trim().replace(/\s+/g, ' ') : '';
@@ -1222,7 +1826,9 @@ function sendComments() {
   };
   if (doc.language) payload.language = doc.language;
 
-  window.webxdc.sendUpdate({ payload: payload }, 'Review comments for ' + doc.title);
+  var n = commentList.length;
+  var infoText = (n === 1 ? '1 comment' : n + ' comments') + ' sent for ' + doc.title;
+  window.webxdc.sendUpdate({ payload: payload, info: infoText }, infoText);
 
   // Remove the file from the app
   var removedIndex = activeIndex;
@@ -1259,6 +1865,62 @@ function sendComments() {
 }
 
 document.getElementById('bar-send').addEventListener('click', sendComments);
+
+// ── Slide-mode keyboard + swipe navigation ──────────────────────────
+
+function isSlideModeActive() {
+  var doc = documents[activeIndex];
+  return !!(doc && doc.slides && doc.slides.length > 1);
+}
+
+document.addEventListener('keydown', function(e) {
+  if (!isSlideModeActive()) return;
+  // Don't hijack arrow keys while typing in the comment card
+  var tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'TEXTAREA' || tag === 'INPUT') return;
+  var doc = documents[activeIndex];
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    showSlide(doc.currentSlide - 1);
+    e.preventDefault();
+  } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+    showSlide(doc.currentSlide + 1);
+    e.preventDefault();
+  }
+});
+
+(function() {
+  var contentEl = document.getElementById('content');
+  if (!contentEl) return;
+  var startX = 0;
+  var startY = 0;
+  var tracking = false;
+  contentEl.addEventListener('touchstart', function(e) {
+    if (!isSlideModeActive()) return;
+    // Skip swipe if the touch started on a comment bubble or nav button
+    var t = e.target;
+    while (t && t !== contentEl) {
+      if (t.classList && (t.classList.contains('comment-bubble') ||
+          t.classList.contains('slide-nav-btn') || t.classList.contains('slide-dot'))) {
+        return;
+      }
+      t = t.parentNode;
+    }
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    tracking = true;
+  }, { passive: true });
+  contentEl.addEventListener('touchend', function(e) {
+    if (!tracking || !isSlideModeActive()) return;
+    tracking = false;
+    var dx = e.changedTouches[0].clientX - startX;
+    var dy = e.changedTouches[0].clientY - startY;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      var doc = documents[activeIndex];
+      if (dx < 0) showSlide(doc.currentSlide + 1);
+      else showSlide(doc.currentSlide - 1);
+    }
+  }, { passive: true });
+})();
 
 // ── Document display ────────────────────────────────────────────────
 

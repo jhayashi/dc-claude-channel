@@ -1,6 +1,7 @@
 import type { WebXDCApp, ToolDef, ToolResult, AppContext } from '../webxdc-app.js'
 import type { WebXDCUpdate } from '../dc-client.js'
 import * as fileReviewer from '../file-reviewer.js'
+import { getBinding } from '../bindings.js'
 
 const MAX_PAYLOAD_BYTES = 120_000
 
@@ -125,10 +126,32 @@ export const fileReviewerApp: WebXDCApp = {
           required: ['chat_id', 'title'],
         },
       },
+      {
+        name: 'dc_send_slides',
+        description: 'Send a Marp-format slide deck to a Delta Chat chat. Rendered by the file reviewer with auto-detected slide mode: use YAML frontmatter `marp: true` or structure the doc as `---`-separated sections with no pre-content. Commenting still works per-block within each slide.',
+        inputSchema: {
+          type: 'object' as const,
+          properties: {
+            chat_id: { type: 'string', description: 'Chat ID to send to' },
+            title: { type: 'string', description: 'Deck title (shown in the tab bar)' },
+            content: { type: 'string', description: 'Marp-format markdown: optional YAML frontmatter between --- fences, then slides separated by ---' },
+          },
+          required: ['chat_id', 'title', 'content'],
+        },
+      },
     ]
   },
 
   async callTool(name: string, args: Record<string, unknown>, ctx: AppContext): Promise<ToolResult | null> {
+    if (name === 'dc_send_slides') {
+      // Thin alias: reuse dc_send_file path. The viewer auto-detects Marp
+      // structure from the content and switches to slide mode.
+      return this.callTool('dc_send_file', {
+        chat_id: args.chat_id,
+        title: args.title,
+        content: args.content,
+      }, ctx)
+    }
     if (name !== 'dc_send_file') return null
 
     const chatId = Number(args.chat_id as string)
@@ -228,31 +251,48 @@ export const fileReviewerApp: WebXDCApp = {
           type: string
           fileTitle?: string
           language?: string
-          comments?: { line?: number; paragraph?: number; context?: string; comment?: string }[]
+          comments?: { line?: number; paragraph?: number; slide?: number; context?: string; comment?: string }[]
         }
         const comments = data.comments ?? []
         if (comments.length === 0) continue
 
         const langLabel = data.language ? ` (${data.language})` : ''
         const lines = comments.map(c => {
-          const anchor = c.line != null ? `Line ${c.line}` : `Paragraph ${c.paragraph}`
+          let anchor: string
+          if (c.line != null) {
+            anchor = `Line ${c.line}`
+          } else if (c.slide != null) {
+            anchor = `Slide ${c.slide + 1} / Block ${(c.paragraph ?? 0) + 1}`
+          } else {
+            anchor = `Paragraph ${c.paragraph}`
+          }
           const ctx_str = c.context ? `: \`${c.context}\`` : ''
           return `${anchor}${ctx_str}\n  \u2192 ${c.comment}`
         })
         const text = `File review comments for "${data.fileTitle ?? 'unknown'}"${langLabel}:\n\n${lines.join('\n\n')}\n\nPlease review these comments and send back an updated file using dc_send_file.`
 
         ctx.logf('file-reviewer: %d comments for "%s" from chat %d', comments.length, data.fileTitle, ownerChatId)
-        ctx.mcp.notification({
-          method: 'notifications/claude/channel',
-          params: {
-            content: text,
-            meta: {
-              chat_id: String(ownerChatId),
-              user: 'File Reviewer',
-              ts: new Date().toISOString(),
+
+        const binding = getBinding(ownerChatId)
+        if (binding && ctx.dispatchAndCollect) {
+          ctx.logf('file-reviewer: routing comments to subagent for chat %d', ownerChatId)
+          ctx.dispatchAndCollect(ownerChatId, text).catch(err =>
+            ctx.logf('file-reviewer: dispatch error chat=%d: %v', ownerChatId, err),
+          )
+        } else {
+          ctx.logf('file-reviewer: no binding for chat %d, falling back to terminal notification', ownerChatId)
+          ctx.mcp.notification({
+            method: 'notifications/claude/channel',
+            params: {
+              content: text,
+              meta: {
+                chat_id: String(ownerChatId),
+                user: 'File Reviewer',
+                ts: new Date().toISOString(),
+              },
             },
-          },
-        }).catch(err => ctx.logf('file-reviewer: notification error: %v', err))
+          }).catch(err => ctx.logf('file-reviewer: notification error: %v', err))
+        }
         continue
       }
 
