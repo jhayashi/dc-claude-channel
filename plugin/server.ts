@@ -171,6 +171,7 @@ const SUBAGENT_TOOL_BLOCKLIST = new Set([
   'dc_access_arm_pairing',
   'dc_access_list',
   'dc_access_revoke',
+  'dc_access_unpair',
 ])
 
 /**
@@ -727,6 +728,17 @@ const coreTools = [
     },
   },
   {
+    name: 'dc_access_unpair',
+    description: 'Terminal escape hatch for unpair. No args: list paired contacts (display name, address, chat count). With contact_id: unpair that contact — posts a farewell in each owned chat and either freezes (leaves the chat read-only) or deletes the chats. Mirrors the Paired devices screen in the agent-setup WebXDC card.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        contact_id: { type: 'string', description: 'Contact ID to unpair (optional — omit to list).' },
+        mode: { type: 'string', description: 'freeze (default, chats become read-only) or delete (chats removed).', enum: ['freeze', 'delete'] },
+      },
+    },
+  },
+  {
     name: 'dc_create_agent',
     description: 'Create a Delta Chat agent with a behavior prompt. The bot creates an encrypted group, adds the user, and stores the prompt. Future messages in this agent will be handled according to the prompt.',
     inputSchema: {
@@ -1010,6 +1022,65 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         }
         access.removeChat(chatId)
         return { content: [{ type: 'text' as const, text: `Revoked chat ${chatId}.` }] }
+      }
+
+      case 'dc_access_unpair': {
+        const contactIdStr = (args.contact_id as string | undefined)?.trim()
+        const rawMode = (args.mode as string | undefined)?.trim()
+        const mode: 'freeze' | 'delete' = rawMode === 'delete' ? 'delete' : 'freeze'
+
+        const devices = access.listPaired()
+
+        // No contact_id → list paired devices and exit.
+        if (!contactIdStr) {
+          if (devices.length === 0) {
+            return { content: [{ type: 'text' as const, text: 'No paired devices.' }] }
+          }
+          const rows: string[] = []
+          for (const d of devices) {
+            const info = await client.getContact(d.contactId).catch(() => null)
+            const display = info?.displayName || info?.name || info?.address || `contact ${d.contactId}`
+            const addr = info?.address ? ` <${info.address}>` : ''
+            const verified = info?.isVerified ? ' [verified]' : ''
+            const pairedAt = new Date(d.pairedAtMs).toISOString().slice(0, 10)
+            rows.push(`  ${d.contactId}: ${display}${addr}${verified} — ${d.chatIds.length} chat(s), paired ${pairedAt}`)
+          }
+          const help = '\n\nTo unpair: dc_access_unpair with contact_id=<id> [mode=freeze|delete]'
+          return { content: [{ type: 'text' as const, text: `Paired devices:\n${rows.join('\n')}${help}` }] }
+        }
+
+        const contactId = Number(contactIdStr)
+        if (!Number.isFinite(contactId) || contactId < 1) {
+          return { content: [{ type: 'text' as const, text: `invalid contact_id: ${contactIdStr}` }], isError: true }
+        }
+        const chatIds = access.chatsForOwner(contactId)
+        if (chatIds.length === 0) {
+          return { content: [{ type: 'text' as const, text: `No paired chats for contact ${contactId}.` }], isError: true }
+        }
+
+        const info = await client.getContact(contactId).catch(() => null)
+        const display = info?.displayName || info?.name || info?.address || `contact ${contactId}`
+
+        const farewell = mode === 'freeze'
+          ? 'You\'ve been unpaired from this Claude bot. This chat is now read-only — your history is preserved but no new messages will be processed.'
+          : null
+        const chatAction: 'delete' | 'leave' = mode === 'delete' ? 'delete' : 'leave'
+
+        for (const cid of chatIds) {
+          if (farewell) {
+            try { await client.send(cid, farewell) } catch (err) {
+              logf('dc channel: unpair farewell send failed chat=%d: %v', cid, err)
+            }
+          }
+          try {
+            await cleanupChatState(cid, { chatAction, reason: `unpair-${mode}` })
+          } catch (err) {
+            logf('dc channel: unpair cleanup failed chat=%d: %v', cid, err)
+          }
+        }
+        logf('dc channel: terminal-unpaired contact %d (%s, %d chat(s))', contactId, mode, chatIds.length)
+        const verb = mode === 'delete' ? 'deleted' : 'frozen (read-only)'
+        return { content: [{ type: 'text' as const, text: `Unpaired ${display} (contact ${contactId}): ${chatIds.length} chat(s) ${verb}.` }] }
       }
 
       case 'dc_create_agent': {

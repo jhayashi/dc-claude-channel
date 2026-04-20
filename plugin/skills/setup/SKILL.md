@@ -7,6 +7,7 @@ allowed-tools:
   - mcp__deltachat__dc_access_arm_pairing
   - mcp__deltachat__dc_access_pair
   - mcp__deltachat__dc_access_list
+  - mcp__deltachat__dc_access_unpair
   - Read
 ---
 
@@ -48,11 +49,25 @@ verb, start the pairing flow (no-args behavior below).
 Call `dc_access_pair` with the code. On success, the user is paired and
 can chat with Claude in the newly created `Claude` chat in Delta Chat.
 
-### `unpair` (terminal escape hatch)
+### `unpair [<contact_id>] [freeze|delete]`
 
-Not yet implemented in this phase — planned for a later phase. For now,
-tell the user unpairing is available from the agent-setup WebXDC card
-(Paired devices screen), reachable via the agent settings app.
+Terminal escape hatch for the Paired devices screen. Parse the
+remaining args after `unpair`:
+
+- **No further args** — call `dc_access_unpair` with no arguments to
+  list paired contacts (contact id, display name, address, chat count,
+  pair date). Show the list verbatim and tell the user to run
+  `/deltachat:setup unpair <contact_id>` to remove one.
+- **`<contact_id>`** (numeric) — call `dc_access_unpair` with
+  `contact_id=<id>`. The default mode is `freeze` (chats go read-only,
+  history preserved). If the user also passes `delete`, pass
+  `mode=delete` instead (chats are removed entirely).
+- **`freeze`** or **`delete`** alone — ask the user which contact id
+  before calling the tool.
+
+The tool posts a farewell in each owned chat (unless deleting) and
+cleans up bindings, schedules, and subagent state. Report back the
+display name + number of chats affected.
 
 ### `list` or `status`
 
