@@ -124,6 +124,29 @@ describe("access control", () => {
     expect(access.consumeArmedWindow(t0 + 20_000)).toBe(false);
   });
 
+  test("listPaired groups chats by owner and skips legacy (no-owner) entries", () => {
+    // Fresh IDs outside the shared test range.
+    const c1 = 990101, c2 = 990102, c3 = 990103, c4 = 990104;
+    access.addChat(c1, 77);    // owner 77
+    access.addChat(c2, 77);    // owner 77 (second chat)
+    access.addChat(c3, 88);    // owner 88
+    access.addChat(c4);        // legacy: no owner — should be excluded
+
+    const list = access.listPaired();
+    const byContact = new Map(list.map((p) => [p.contactId, p]));
+    expect(byContact.has(77)).toBe(true);
+    expect(byContact.has(88)).toBe(true);
+    expect(byContact.get(77)!.chatIds.sort()).toEqual([c1, c2].sort());
+    expect(byContact.get(88)!.chatIds).toEqual([c3]);
+    expect(list.find((p) => p.chatIds.includes(c4))).toBeUndefined();
+
+    expect(access.chatsForOwner(77).sort()).toEqual([c1, c2].sort());
+    expect(access.chatsForOwner(88)).toEqual([c3]);
+    expect(access.chatsForOwner(999)).toEqual([]);
+
+    for (const id of [c1, c2, c3, c4]) access.removeChat(id);
+  });
+
   test("max 3 pending pairings enforced", () => {
     // Clear any pending pairings from earlier tests by completing them.
     try { access.completePairing(access.startPairing(TEST_IDS[0], 100)); } catch {}

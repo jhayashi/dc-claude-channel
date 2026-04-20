@@ -632,6 +632,28 @@ export class DCClient {
     }
   }
 
+  /** Fetch a Delta Chat contact (display name, address, verification status). */
+  async getContact(contactId: number): Promise<{
+    displayName: string;
+    name: string;
+    address: string;
+    isVerified: boolean;
+  } | null> {
+    const { rpc, accountId } = this.ensureAccount();
+    try {
+      const c = await rpc.getContact(accountId, contactId);
+      if (!c) return null;
+      return {
+        displayName: c.displayName ?? '',
+        name: c.name ?? '',
+        address: c.address ?? '',
+        isVerified: !!c.isVerified,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async close(): Promise<void> {
     if (this.rpc && this.accountId !== 0) {
       await this.rpc.stopIo(this.accountId).catch(() => {});

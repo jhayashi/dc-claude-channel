@@ -7,7 +7,7 @@
  * Legacy empty files (pre-owner tracking) are treated as having no owner.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -140,6 +140,62 @@ export function hasAnyOwner(): boolean {
     if (getOwner(chatId) !== null) return true;
   }
   return false;
+}
+
+/** A paired device — a contact that owns at least one approved chat. */
+export interface PairedDevice {
+  contactId: number;
+  /** Chats this contact owns, sorted ascending. */
+  chatIds: number[];
+  /** Earliest approved-file mtime across owned chats (ms since epoch). */
+  pairedAtMs: number;
+}
+
+/**
+ * List all paired devices (unique owners across the allowlist) with their
+ * owned chats and the earliest pair timestamp (from approved-file mtime).
+ * Chats without an owner (legacy) are ignored — they pre-date the pair
+ * flow and have no contact to surface.
+ */
+export function listPaired(): PairedDevice[] {
+  const now = Date.now();
+  const map = new Map<number, { chatIds: number[]; pairedAtMs: number }>();
+  for (const chatId of allowedChats()) {
+    const ownerId = getOwner(chatId);
+    if (!ownerId) continue;
+    let mtimeMs = now;
+    try {
+      mtimeMs = statSync(join(_approvedDir, String(chatId))).mtimeMs;
+    } catch {
+      /* keep fallback */
+    }
+    const entry = map.get(ownerId);
+    if (entry) {
+      entry.chatIds.push(chatId);
+      if (mtimeMs < entry.pairedAtMs) entry.pairedAtMs = mtimeMs;
+    } else {
+      map.set(ownerId, { chatIds: [chatId], pairedAtMs: mtimeMs });
+    }
+  }
+  const out: PairedDevice[] = [];
+  for (const [contactId, v] of map) {
+    out.push({
+      contactId,
+      chatIds: v.chatIds.sort((a, b) => a - b),
+      pairedAtMs: v.pairedAtMs,
+    });
+  }
+  out.sort((a, b) => a.pairedAtMs - b.pairedAtMs || a.contactId - b.contactId);
+  return out;
+}
+
+/** Return chatIds owned by the given contact. */
+export function chatsForOwner(contactId: number): number[] {
+  const out: number[] = [];
+  for (const chatId of allowedChats()) {
+    if (getOwner(chatId) === contactId) out.push(chatId);
+  }
+  return out.sort((a, b) => a - b);
 }
 
 /** Revoke a chat ID. Silently ignores missing files. */

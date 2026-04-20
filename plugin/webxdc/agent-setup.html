@@ -581,6 +581,9 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 #teleport-out { display: none; }
 #teleport-out.visible { display: flex; flex-direction: column; max-height: calc(100vh - 40px); }
 #teleport-out .body { flex: 1; overflow-y: auto; min-height: 0; }
+#paired-devices { display: none; }
+#paired-devices.visible { display: flex; flex-direction: column; max-height: calc(100vh - 40px); }
+#paired-devices .body { flex: 1; overflow-y: auto; min-height: 0; }
 
 .to-row {
   display: flex; align-items: center; gap: 10px;
@@ -1135,6 +1138,16 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
           </span>
           <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
         </button>
+        <button class="home-action" onclick="gotoPairedDevices()">
+          <span class="home-action-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          </span>
+          <span class="home-action-body">
+            <span class="home-action-label">Paired devices</span>
+            <span class="home-action-desc">Review or unpair devices that can command this agent.</span>
+          </span>
+          <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
+        </button>
       </div>
     </div>
   </div>
@@ -1446,6 +1459,51 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       </div>
     </div>
   </div>
+
+  <div id="paired-devices">
+    <div class="title-bar">
+      <button class="crumb" type="button" onclick="show('step0')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Home
+      </button>
+      <div class="title">Paired devices</div>
+    </div>
+    <div class="body">
+      <p style="font-size:13px;color:var(--ink-mute);margin: 4px 0 14px;line-height:1.5;">
+        Devices allowed to command this agent. Unpairing removes a device's access and cleans up its chats.
+      </p>
+      <div id="paired-empty" style="display:none;font-size:13px;color:var(--ink-mute);">
+        No paired devices.
+      </div>
+      <div id="paired-loading" style="display:none;font-size:13px;color:var(--ink-mute);">
+        <span class="spinner" style="width:12px;height:12px;display:inline-block;vertical-align:-1px;margin-right:6px;"></span>
+        Loading paired devices&hellip;
+      </div>
+      <div id="paired-list" role="list"></div>
+    </div>
+  </div>
+</div>
+
+<div id="unpair-modal" class="modal-overlay">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-icon">&#x1F511;</div>
+    <div class="modal-heading">Unpair this device?</div>
+    <div class="modal-sub" id="unpair-sub"></div>
+    <div id="unpair-options" style="display:flex;flex-direction:column;gap:8px;margin-top:12px;text-align:left;">
+      <label class="to-opt" id="unpair-opt-freeze" style="cursor:pointer;">
+        <div class="to-opt-head"><span class="to-radio"></span><span class="to-opt-title">Keep chats read-only</span></div>
+        <div class="to-opt-desc">The bot leaves the chats but you keep the message history.</div>
+      </label>
+      <label class="to-opt" id="unpair-opt-delete" style="cursor:pointer;">
+        <div class="to-opt-head"><span class="to-radio"></span><span class="to-opt-title">Delete chats</span></div>
+        <div class="to-opt-desc">Fully remove the chats from this device.</div>
+      </label>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button class="modal-dismiss" id="unpair-cancel" onclick="unpairCancel()" style="flex:1; background:#444;">Cancel</button>
+      <button class="modal-dismiss" id="unpair-ok" onclick="unpairConfirm()" style="flex:1; background:#c23;">Unpair</button>
+    </div>
+  </div>
 </div>
 
 <div id="modal" class="modal-overlay" onclick="dismissModal(event)">
@@ -1479,7 +1537,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.83;
+var APP_VERSION = 1.84;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#3DA85A', checker: '#65C081' },
@@ -1659,7 +1717,7 @@ function wireSeg(segEl, onChange) {
 }
 
 function show(id) {
-  var ids = ['loading', 'step0', 'new-chat', 'manage', 'step2', 'step3', 'outdated', 'resume-import', 'teleport-out'];
+  var ids = ['loading', 'step0', 'new-chat', 'manage', 'step2', 'step3', 'outdated', 'resume-import', 'teleport-out', 'paired-devices'];
   for (var i = 0; i < ids.length; i++) {
     var el = document.getElementById(ids[i]);
     if (ids[i] === id) el.classList.add('visible'); else el.classList.remove('visible');
@@ -2848,6 +2906,179 @@ function toCopyCommand() {
   }
 }
 
+// ── Paired devices ──────────────────────────────────────────────────────
+var pairedState = {
+  requestId: 0,
+  devices: [],
+  pendingContactId: null,
+  mode: 'freeze',
+};
+
+function gotoPairedDevices() {
+  pairedState = {
+    requestId: ++resumeRequestId,
+    devices: [],
+    pendingContactId: null,
+    mode: 'freeze',
+  };
+  document.getElementById('paired-list').replaceChildren();
+  document.getElementById('paired-empty').style.display = 'none';
+  document.getElementById('paired-loading').style.display = 'block';
+  show('paired-devices');
+  window.webxdc.sendUpdate({
+    payload: {
+      type: 'paired_list_request',
+      requestId: pairedState.requestId,
+      senderAddr: window.webxdc.selfAddr,
+    },
+    summary: 'paired-list request',
+  }, '');
+}
+
+function formatPairedAt(ms) {
+  if (!ms || !isFinite(ms)) return '';
+  try {
+    var d = new Date(ms);
+    var now = new Date();
+    var sameYear = d.getFullYear() === now.getFullYear();
+    var opts = sameYear
+      ? { month: 'short', day: 'numeric' }
+      : { year: 'numeric', month: 'short', day: 'numeric' };
+    return d.toLocaleDateString(undefined, opts);
+  } catch (_) {
+    return '';
+  }
+}
+
+function renderPairedList(devices) {
+  document.getElementById('paired-loading').style.display = 'none';
+  pairedState.devices = devices || [];
+  var list = document.getElementById('paired-list');
+  var empty = document.getElementById('paired-empty');
+  list.replaceChildren();
+  if (!pairedState.devices.length) {
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  for (var i = 0; i < pairedState.devices.length; i++) {
+    (function(dev) {
+      var row = document.createElement('div');
+      row.className = 'to-row';
+      row.setAttribute('role', 'listitem');
+
+      var avatar = document.createElement('div');
+      avatar.className = 'avatar';
+      var initial = (dev.displayName || dev.address || '?').charAt(0).toUpperCase();
+      avatar.textContent = initial;
+
+      var body = document.createElement('div');
+      body.className = 'row-body';
+
+      // Name row. textContent everywhere — the display name is attacker-
+      // controlled (peer picks their own) and may contain HTML metacharacters.
+      var nameDiv = document.createElement('div');
+      nameDiv.className = 'row-name';
+      nameDiv.appendChild(document.createTextNode(dev.displayName || ('Contact ' + dev.contactId)));
+      if (dev.isVerified) {
+        var badge = document.createElement('span');
+        badge.className = 'to-badge to-badge-trusted';
+        badge.style.marginLeft = '4px';
+        badge.textContent = 'verified';
+        nameDiv.appendChild(badge);
+      }
+      if (dev.isSelf) {
+        var selfBadge = document.createElement('span');
+        selfBadge.className = 'to-badge';
+        selfBadge.style.marginLeft = '4px';
+        selfBadge.textContent = 'this device';
+        nameDiv.appendChild(selfBadge);
+      }
+
+      var meta = document.createElement('div');
+      meta.className = 'row-meta';
+      var metaParts = [];
+      if (dev.address) metaParts.push(dev.address);
+      var paired = formatPairedAt(dev.pairedAtMs);
+      if (paired) metaParts.push('paired ' + paired);
+      metaParts.push(dev.chatCount + ' chat' + (dev.chatCount === 1 ? '' : 's'));
+      meta.textContent = metaParts.join(' \u00b7 ');
+
+      body.appendChild(nameDiv);
+      body.appendChild(meta);
+
+      var btn = document.createElement('button');
+      btn.className = 'btn btn-ghost';
+      btn.type = 'button';
+      btn.style.marginLeft = '8px';
+      btn.textContent = 'Unpair';
+      btn.onclick = function() { openUnpairModal(dev); };
+
+      row.appendChild(avatar);
+      row.appendChild(body);
+      row.appendChild(btn);
+      list.appendChild(row);
+    })(pairedState.devices[i]);
+  }
+}
+
+function openUnpairModal(dev) {
+  pairedState.pendingContactId = dev.contactId;
+  pairedState.mode = 'freeze';
+  var sub = document.getElementById('unpair-sub');
+  sub.replaceChildren();
+  var line1 = document.createElement('div');
+  line1.appendChild(document.createTextNode('This will remove access for '));
+  var name = document.createElement('strong');
+  name.textContent = dev.displayName || dev.address || ('Contact ' + dev.contactId);
+  line1.appendChild(name);
+  line1.appendChild(document.createTextNode(' across ' + dev.chatCount + ' chat' + (dev.chatCount === 1 ? '' : 's') + '.'));
+  sub.appendChild(line1);
+  if (dev.isSelf) {
+    var warn = document.createElement('div');
+    warn.style.marginTop = '6px';
+    warn.style.color = 'var(--orange)';
+    warn.textContent = 'This is the device you\'re viewing from — the card will close once the unpair completes.';
+    sub.appendChild(warn);
+  }
+  setUnpairMode('freeze');
+  document.getElementById('unpair-opt-freeze').onclick = function() { setUnpairMode('freeze'); };
+  document.getElementById('unpair-opt-delete').onclick = function() { setUnpairMode('delete'); };
+  document.getElementById('unpair-modal').classList.add('visible');
+}
+
+function setUnpairMode(mode) {
+  pairedState.mode = mode;
+  var f = document.getElementById('unpair-opt-freeze');
+  var d = document.getElementById('unpair-opt-delete');
+  if (f) f.classList.toggle('selected', mode === 'freeze');
+  if (d) d.classList.toggle('selected', mode === 'delete');
+}
+
+function unpairCancel() {
+  pairedState.pendingContactId = null;
+  document.getElementById('unpair-modal').classList.remove('visible');
+}
+
+function unpairConfirm() {
+  var cid = pairedState.pendingContactId;
+  if (!cid) { unpairCancel(); return; }
+  document.getElementById('unpair-modal').classList.remove('visible');
+  document.getElementById('paired-loading').style.display = 'block';
+  document.getElementById('paired-list').replaceChildren();
+  window.webxdc.sendUpdate({
+    payload: {
+      type: 'unpair_commit',
+      requestId: ++resumeRequestId,
+      contactId: cid,
+      mode: pairedState.mode,
+      senderAddr: window.webxdc.selfAddr,
+    },
+    summary: 'unpair request',
+  }, '');
+}
+
 function pickExisting(agentId) {
   if (creating) return;
   creating = true;
@@ -3381,6 +3612,40 @@ window.webxdc.setUpdateListener(function(update) {
   }
   if (d.type === 'teleport_out_error') {
     toHandleError(d);
+    return;
+  }
+
+  if (d.type === 'paired_list') {
+    renderPairedList(d.devices || []);
+    return;
+  }
+  if (d.type === 'unpair_done') {
+    document.getElementById('paired-loading').style.display = 'none';
+    if (d.remainingDevices === 0) {
+      showModal('Unpaired', 'This agent is no longer paired with any device. Pair a new one via /deltachat:setup.');
+    } else {
+      showModal('Unpaired', 'Removed ' + (d.chatCount || 0) + ' chat' + (d.chatCount === 1 ? '' : 's') + '.');
+    }
+    // Refresh the list so the unpaired row disappears. If the source chat
+    // was among the ones we just tore down, this update may never arrive
+    // server-side, but the modal above is already visible.
+    window.webxdc.sendUpdate({
+      payload: {
+        type: 'paired_list_request',
+        requestId: ++resumeRequestId,
+        senderAddr: window.webxdc.selfAddr,
+      },
+      summary: 'paired-list refresh',
+    }, '');
+    return;
+  }
+  if (d.type === 'unpair_error') {
+    document.getElementById('paired-loading').style.display = 'none';
+    var errBox = document.getElementById('paired-empty');
+    if (errBox) {
+      errBox.textContent = d.message || 'Unpair failed.';
+      errBox.style.display = 'block';
+    }
     return;
   }
 }, 0);

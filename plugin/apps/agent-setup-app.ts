@@ -859,6 +859,143 @@ export const agentSetupApp: WebXDCApp = {
         continue
       }
 
+      if (payload.type === 'paired_list_request') {
+        const requestId = typeof (payload as { requestId?: unknown }).requestId === 'number'
+          ? (payload as { requestId: number }).requestId : 0
+        try {
+          const devices = access.listPaired()
+          const rows: Array<{
+            contactId: number
+            displayName: string
+            address: string
+            isVerified: boolean
+            chatCount: number
+            pairedAtMs: number
+            isSelf: boolean
+          }> = []
+          for (const d of devices) {
+            let displayName = `Contact ${d.contactId}`
+            let address = ''
+            let isVerified = false
+            try {
+              const contact = await ctx.client.getContact(d.contactId)
+              if (contact) {
+                displayName = contact.displayName || contact.name || displayName
+                address = contact.address ?? ''
+                isVerified = !!contact.isVerified
+              }
+            } catch (err) {
+              ctx.logf('agent-setup: paired_list getContact failed for %d: %v', d.contactId, err)
+            }
+            rows.push({
+              contactId: d.contactId,
+              displayName,
+              address,
+              isVerified,
+              chatCount: d.chatIds.length,
+              pairedAtMs: d.pairedAtMs,
+              isSelf: d.chatIds.includes(session.sourceChatId),
+            })
+          }
+          await ctx.client.sendWebXDCUpdate(session.msgId, JSON.stringify({
+            payload: {
+              type: 'paired_list',
+              requestId,
+              devices: rows,
+              version: agentSetup.getAgentSetupVersion(),
+              senderAddr: 'server',
+            },
+            summary: 'Paired devices',
+          }))
+        } catch (err) {
+          ctx.logf('agent-setup: paired_list_request failed: %v', err)
+        }
+        continue
+      }
+
+      if (payload.type === 'unpair_commit') {
+        const requestId = typeof (payload as { requestId?: unknown }).requestId === 'number'
+          ? (payload as { requestId: number }).requestId : 0
+        const contactId = typeof (payload as { contactId?: unknown }).contactId === 'number'
+          ? (payload as { contactId: number }).contactId : NaN
+        const rawMode = (payload as { mode?: unknown }).mode
+        const mode: 'freeze' | 'delete' = rawMode === 'delete' ? 'delete' : 'freeze'
+
+        const sendErr = async (message: string) => {
+          await ctx.client.sendWebXDCUpdate(session.msgId, JSON.stringify({
+            payload: {
+              type: 'unpair_error', requestId, message,
+              version: agentSetup.getAgentSetupVersion(), senderAddr: 'server',
+            },
+            summary: 'Unpair error',
+          })).catch(() => {})
+        }
+
+        if (!Number.isFinite(contactId) || contactId < 1) {
+          await sendErr('Invalid contact')
+          continue
+        }
+
+        const chatIds = access.chatsForOwner(contactId)
+        if (chatIds.length === 0) {
+          await sendErr('No paired chats for this contact')
+          continue
+        }
+
+        // Send the "done" response first so the card can update its UI before
+        // cleanup tears down the chats — if the source chat is among those
+        // owned by this contact, the app will stop receiving updates once
+        // `cleanupChatState` runs against it.
+        try {
+          const devicesAfter = access.listPaired().filter(d => d.contactId !== contactId)
+          await ctx.client.sendWebXDCUpdate(session.msgId, JSON.stringify({
+            payload: {
+              type: 'unpair_done',
+              requestId,
+              contactId,
+              mode,
+              chatCount: chatIds.length,
+              remainingDevices: devicesAfter.length,
+              version: agentSetup.getAgentSetupVersion(),
+              senderAddr: 'server',
+            },
+            summary: 'Unpaired',
+          }))
+        } catch (err) {
+          ctx.logf('agent-setup: unpair_done send failed: %v', err)
+        }
+
+        // Clean up each owned chat. Post a farewell message before leaving so
+        // the user sees context in the frozen chat; skip it on delete since
+        // the chat disappears.
+        const farewell = mode === 'freeze'
+          ? 'You\'ve been unpaired from this Claude bot. This chat is now read-only — your history is preserved but no new messages will be processed.'
+          : null
+        const chatAction: 'delete' | 'leave' = mode === 'delete' ? 'delete' : 'leave'
+        // Process non-source chats first, then the source chat last, so the
+        // user's WebXDC card stays responsive until the moment its host chat
+        // is torn down.
+        const ordered = chatIds.slice().sort((a, b) => {
+          if (a === session.sourceChatId) return 1
+          if (b === session.sourceChatId) return -1
+          return a - b
+        })
+        for (const cid of ordered) {
+          if (farewell) {
+            try { await ctx.client.send(cid, farewell) } catch (err) {
+              ctx.logf('agent-setup: unpair farewell send failed chat=%d: %v', cid, err)
+            }
+          }
+          try {
+            await ctx.cleanupChatState(cid, { chatAction, reason: `unpair-${mode}` })
+          } catch (err) {
+            ctx.logf('agent-setup: unpair cleanup failed chat=%d: %v', cid, err)
+          }
+        }
+        ctx.logf('agent-setup: unpaired contact %d (%s, %d chat(s))', contactId, mode, chatIds.length)
+        continue
+      }
+
       if (payload.type === 'resume_attach') {
         const requestId = typeof (payload as { requestId?: unknown }).requestId === 'number'
           ? (payload as { requestId: number }).requestId : 0
