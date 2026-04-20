@@ -1043,6 +1043,14 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           logf('dc channel: auto-bind failed for chat %d: %v', chatId, err)
         }
 
+        // Pre-warm the subagent while the user is switching from terminal
+        // to phone, so their first message hits a hot process. Fire-and-
+        // forget — failure just means the first turn pays the cold-spawn
+        // tax as before.
+        subagentCache.prewarm(chatId).catch((err) =>
+          logf('dc channel: prewarm failed for chat %d: %v', chatId, err),
+        )
+
         return { content: [{ type: 'text' as const, text: `Paired chat ${chatId} successfully.` }] }
       }
 

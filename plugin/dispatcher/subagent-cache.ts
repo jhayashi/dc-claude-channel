@@ -144,6 +144,16 @@ export class SubagentCache {
     return await this.runOrQueue(entry, chatId, text)
   }
 
+  /**
+   * Spawn (or reuse) a subagent for a chat without sending a turn. Used to
+   * pre-warm the subagent at pair time so the user's first message hits a
+   * hot process instead of paying the ~10-15s cold-spawn tax on the first
+   * chat turn.
+   */
+  async prewarm(chatId: number): Promise<void> {
+    await this.ensure(chatId)
+  }
+
   private runOrQueue(entry: CacheEntry, chatId: number, text: string): Promise<{ text: string; denials: Array<{ tool_name?: string; command?: string }> }> {
     if (entry.busy) {
       if (entry.queue.length >= this.queueMax) {
