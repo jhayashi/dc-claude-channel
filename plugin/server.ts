@@ -927,8 +927,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
 // ── Tool dispatch ───────────────────────────────────────────────────────
 
 /**
- * Start the onboarding tutorial for a paired chat. Sends the permission +
- * file-reviewer .xdc app cards, then the tutorial welcome message.
+ * Start the onboarding tutorial for a paired chat. Sends the permission,
+ * file-reviewer, and agent-setup .xdc app cards, then the tutorial welcome message.
  * Called from dc_access_pair (fresh pair), dc_start_tutorial (manual
  * restart via /deltachat:setup tour), and the /tour chat command.
  */
@@ -953,6 +953,9 @@ function startTutorialForChat(chatId: number): void {
       const fileApp = appToolMap.get('dc_send_file')
       if (fileApp) ctx.registerWebXDCMsg(viewerMsgId, fileApp, chatId)
       try { (await import('node:fs')).unlinkSync(viewerPath) } catch {}
+
+      const { summonAgentSettings } = await import('./apps/agent-setup-app.js')
+      await summonAgentSettings(ctx, chatId)
     } catch (err) {
       logf('dc channel: tutorial sendApps error: %v', err)
     }
