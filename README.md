@@ -63,10 +63,13 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
 
 ### Install via marketplace (recommended)
 
-In any Claude Code session:
+In any Claude Code session, run these one at a time:
 
 ```
 /plugin marketplace add jhayashi/dc-claude-channel
+```
+
+```
 /plugin install deltachat@dc-claude-channel
 ```
 
@@ -157,10 +160,13 @@ bun install
 bun test
 ```
 
-Then add your local clone as a marketplace and install from it so your edits take effect in place:
+Then add your local clone as a marketplace and install from it so your edits take effect in place — run these one at a time:
 
 ```
 /plugin marketplace add /absolute/path/to/dc-claude-channel
+```
+
+```
 /plugin install deltachat@dc-claude-channel
 ```
 
