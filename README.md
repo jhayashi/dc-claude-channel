@@ -35,9 +35,9 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
 ## Screenshots
 
 <p align="center">
-  <img src="screenshots/chat-list.jpg" width="250" alt="Chat list with agent chats">
+  <img src="screenshots/home-screen.jpg" width="250" alt="Chat list with agent chats">
   &nbsp;&nbsp;
-  <img src="screenshots/permission-prompt.jpg" width="250" alt="Permission prompt">
+  <img src="screenshots/permission-gate.jpg" width="250" alt="Permission prompt">
 </p>
 <p align="center">
   <em>One chat per agent, each with its own identity</em>
