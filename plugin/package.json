@@ -4,7 +4,8 @@
   "type": "module",
   "bin": "./server.ts",
   "scripts": {
-    "start": "bun server.ts"
+    "start": "bun server.ts",
+    "build:xdcs": "bun scripts/build-all-xdcs.ts"
   },
   "dependencies": {
     "@deltachat/jsonrpc-client": "*",
