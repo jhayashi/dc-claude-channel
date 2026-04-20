@@ -8,6 +8,7 @@ allowed-tools:
   - mcp__plugin_deltachat_deltachat__dc_access_pair
   - mcp__plugin_deltachat_deltachat__dc_access_list
   - mcp__plugin_deltachat_deltachat__dc_access_unpair
+  - mcp__plugin_deltachat_deltachat__dc_start_tutorial
   - Read
 ---
 
@@ -90,6 +91,21 @@ display name + number of chats affected.
 
 Call `dc_access_list` to show the chat IDs currently approved. Useful for
 debugging; not the primary UX.
+
+### `tour [<chat_id>]`
+
+Restart the getting-started tour in a paired chat.
+
+- **No chat_id** — call `dc_start_tutorial` with no arguments. If exactly
+  one paired chat exists, the dispatcher targets it automatically;
+  otherwise the tool returns the list of paired chats and asks the user
+  to rerun with `/deltachat:setup tour <chat_id>`.
+- **`<chat_id>`** (numeric) — call `dc_start_tutorial` with
+  `chat_id=<id>`.
+
+The dispatcher clears any prior tutorial state for that chat and kicks
+off the first step (offer + tap-to-start). Equivalent to sending `/tour`
+inside the DC chat itself.
 
 ---
 

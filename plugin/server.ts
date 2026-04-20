@@ -175,6 +175,7 @@ const SUBAGENT_TOOL_BLOCKLIST = new Set([
   'dc_access_list',
   'dc_access_revoke',
   'dc_access_unpair',
+  'dc_start_tutorial',
 ])
 
 /**
@@ -742,6 +743,16 @@ const coreTools = [
     },
   },
   {
+    name: 'dc_start_tutorial',
+    description: 'Manually (re)start the onboarding tour in a paired chat. Resets the tutorial state machine and re-sends the permission + file-reviewer app cards. Used by /deltachat:setup tour and the in-chat /tour command. With no chat_id, starts the tour in the only paired chat (errors if there are zero or multiple).',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        chat_id: { type: 'string', description: 'Chat ID to run the tour in. Optional; omit to auto-select when only one chat is paired.' },
+      },
+    },
+  },
+  {
     name: 'dc_create_agent',
     description: 'Create a Delta Chat agent with a behavior prompt. The bot creates an encrypted group, adds the user, and stores the prompt. Future messages in this agent will be handled according to the prompt.',
     inputSchema: {
@@ -914,6 +925,42 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 // ── Tool dispatch ───────────────────────────────────────────────────────
 
+/**
+ * Start the onboarding tutorial for a paired chat. Sends the permission +
+ * file-reviewer .xdc app cards, then the tutorial welcome message.
+ * Called from dc_access_pair (fresh pair), dc_start_tutorial (manual
+ * restart via /deltachat:setup tour), and the /tour chat command.
+ */
+function startTutorialForChat(chatId: number): void {
+  const action = tutorial.startTutorial(chatId)
+  if (!action.sendApps) return
+  ;(async () => {
+    try {
+      const permissions = await import('./permissions.js')
+      const { xdcPath: permPath } = await permissions.buildPermissionsXDC()
+      const permMsgId = await client.sendWebXDC(chatId, permPath)
+      const permApp = appToolMap.get('dc_test_permission')
+      if (permApp) ctx.registerWebXDCMsg(permMsgId, permApp, chatId)
+      const { registerPermissionsSession } = await import('./apps/permissions-app.js')
+      registerPermissionsSession(chatId, permMsgId)
+      try { (await import('node:fs')).unlinkSync(permPath) } catch {}
+
+      const fileReviewer = await import('./file-reviewer.js')
+      const { xdcPath: viewerPath } = await fileReviewer.buildViewerXDC()
+      const viewerMsgId = await client.sendWebXDC(chatId, viewerPath)
+      fileReviewer.setViewer(chatId, viewerMsgId)
+      const fileApp = appToolMap.get('dc_send_file')
+      if (fileApp) ctx.registerWebXDCMsg(viewerMsgId, fileApp, chatId)
+      try { (await import('node:fs')).unlinkSync(viewerPath) } catch {}
+    } catch (err) {
+      logf('dc channel: tutorial sendApps error: %v', err)
+    }
+    for (const msg of action.messages) {
+      client.send(chatId, msg).catch(() => {})
+    }
+  })()
+}
+
 async function callCoreTool(name: string, args: Record<string, unknown>, callerChatId?: number): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean } | null> {
   switch (name) {
       case 'reply': {
@@ -1049,40 +1096,8 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           logf('dc channel: prewarm failed for chat %d: %v', chatId, err),
         )
 
-        // Start onboarding tutorial — send bare apps first, then explanation
-        const action = tutorial.startTutorial(chatId)
-        if (action.sendApps) {
-          // Send bare .xdc apps (no content) so the app cards appear in the chat.
-          // Content is sent later during the guided walkthrough.
-          ;(async () => {
-            try {
-              const permissions = await import('./permissions.js')
-              const { xdcPath: permPath } = await permissions.buildPermissionsXDC()
-              const permMsgId = await client.sendWebXDC(chatId, permPath)
-              // Register for update dispatch and pre-register the session
-              // so dc_test_permission reuses this app instead of sending a new one
-              const permApp = appToolMap.get('dc_test_permission')
-              if (permApp) ctx.registerWebXDCMsg(permMsgId, permApp, chatId)
-              const { registerPermissionsSession } = await import('./apps/permissions-app.js')
-              registerPermissionsSession(chatId, permMsgId)
-              try { (await import('node:fs')).unlinkSync(permPath) } catch {}
-
-              const fileReviewer = await import('./file-reviewer.js')
-              const { xdcPath: viewerPath } = await fileReviewer.buildViewerXDC()
-              const viewerMsgId = await client.sendWebXDC(chatId, viewerPath)
-              fileReviewer.setViewer(chatId, viewerMsgId)
-              const fileApp = appToolMap.get('dc_send_file')
-              if (fileApp) ctx.registerWebXDCMsg(viewerMsgId, fileApp, chatId)
-              try { (await import('node:fs')).unlinkSync(viewerPath) } catch {}
-            } catch (err) {
-              logf('dc channel: tutorial sendApps error: %v', err)
-            }
-            // Send explanation after apps so apps appear first in the chat
-            for (const msg of action.messages) {
-              client.send(chatId, msg).catch(() => {})
-            }
-          })()
-        }
+        // Start onboarding tutorial — sends bare app cards + welcome.
+        startTutorialForChat(chatId)
 
         return { content: [{ type: 'text' as const, text: `Paired chat ${chatId} successfully.` }] }
       }
@@ -1165,6 +1180,33 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         logf('dc channel: terminal-unpaired contact %d (%s, %d chat(s))', contactId, mode, chatIds.length)
         const verb = mode === 'delete' ? 'deleted' : 'frozen (read-only)'
         return { content: [{ type: 'text' as const, text: `Unpaired ${display} (contact ${contactId}): ${chatIds.length} chat(s) ${verb}.` }] }
+      }
+
+      case 'dc_start_tutorial': {
+        const chatIdArg = (args.chat_id as string | undefined)?.trim()
+        let chatId: number
+        if (chatIdArg) {
+          const parsed = Number(chatIdArg)
+          if (!Number.isFinite(parsed) || parsed < 1) {
+            return { content: [{ type: 'text' as const, text: `dc_start_tutorial: invalid chat_id: ${chatIdArg}` }], isError: true }
+          }
+          if (!access.isAllowed(parsed)) {
+            return { content: [{ type: 'text' as const, text: `dc_start_tutorial: chat ${parsed} is not paired` }], isError: true }
+          }
+          chatId = parsed
+        } else {
+          const chats = access.allowedChats()
+          if (chats.length === 0) {
+            return { content: [{ type: 'text' as const, text: 'dc_start_tutorial: no paired chats. Run /deltachat:setup first.' }], isError: true }
+          }
+          if (chats.length > 1) {
+            return { content: [{ type: 'text' as const, text: `dc_start_tutorial: ${chats.length} paired chats — specify chat_id. Chats: ${chats.join(', ')}` }], isError: true }
+          }
+          chatId = chats[0]
+        }
+        logf('dc channel: manual tutorial restart chat=%d', chatId)
+        startTutorialForChat(chatId)
+        return { content: [{ type: 'text' as const, text: `Started tutorial in chat ${chatId}.` }] }
       }
 
       case 'dc_create_agent': {
@@ -2137,6 +2179,16 @@ async function main(): Promise<void> {
       return false
     },
     dispatchToSubagent: async (msg) => {
+      // Manual tour restart: `/tour` or `/tutorial` in any paired chat
+      // (re)starts the onboarding state machine. Clears prior state so
+      // users can restart mid-tour.
+      const trimmed = msg.text.trim().toLowerCase()
+      if (trimmed === '/tour' || trimmed === '/tutorial') {
+        logf('dispatch: chat=%d path=tour-command text=%s', msg.chatId, trimmed)
+        tutorial.clearTutorial(msg.chatId)
+        startTutorialForChat(msg.chatId)
+        return
+      }
       // Tutorial intercept runs in the dispatcher, not the subagent —
       // tutorial state lives here and the onboarding flow drives WebXDC
       // apps directly via appToolMap.
