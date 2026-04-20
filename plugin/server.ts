@@ -997,6 +997,12 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           logf('dc channel: createGroup failed: %v', err)
           return { content: [{ type: 'text' as const, text: `dc_access_arm_pairing: failed to create group: ${err}` }], isError: true }
         }
+        try {
+          const avatarPath = new URL('./assets/claude-avatar.png', import.meta.url).pathname
+          await client.setChatProfileImage(groupChatId, avatarPath)
+        } catch (err) {
+          logf('dc channel: setChatProfileImage for armed group %d failed: %v', groupChatId, err)
+        }
         access.armPairing(groupChatId)
         const expires = access.getArmedUntil()
         const iso = expires ? new Date(expires).toISOString() : 'unknown'
