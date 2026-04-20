@@ -23,6 +23,23 @@ Arguments passed: `$ARGUMENTS`
 
 ---
 
+## Before dispatching
+
+If the `mcp__deltachat__dc_access_arm_pairing` tool (or any other
+`mcp__deltachat__dc_*` tool) isn't registered in this session, the
+most common cause is launching Claude Code without the channel flag.
+Tell the user:
+
+> The Delta Chat channel flag is missing — quit Claude Code and
+> relaunch with:
+>
+>     claude --dangerously-load-development-channels plugin:deltachat@dc-claude-channel
+
+Do not attempt to proceed — there's nothing the skill can do without
+the MCP tools.
+
+---
+
 ## Dispatch on arguments
 
 Parse `$ARGUMENTS` (space-separated). If empty or unrecognized with no
