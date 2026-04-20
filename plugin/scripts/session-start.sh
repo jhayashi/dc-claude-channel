@@ -31,6 +31,8 @@ PKG="${PLUGIN_ROOT}/package.json"
 # the flag is present rather than false-positive.
 flag_found=0
 any_cmd_seen=0
+levels_walked=0
+last_cmd=""
 pid=$PPID
 i=0
 while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ] && [ "$i" -lt 8 ]; do
@@ -42,6 +44,7 @@ while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ] && [ "$i" -lt 8 ];
   fi
   if [ -n "$cmd" ]; then
     any_cmd_seen=1
+    last_cmd=$(echo "$cmd" | cut -c1-80)
     if echo "$cmd" | grep -q 'dangerously-load-development-channels'; then
       flag_found=1
       break
@@ -56,6 +59,7 @@ while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ] && [ "$i" -lt 8 ];
   [ -z "$next_pid" ] || [ "$next_pid" = "$pid" ] && break
   pid=$next_pid
   i=$((i + 1))
+  levels_walked=$i
 done
 # If we successfully read at least one ancestor and none had the flag,
 # declare it missing. If every read failed, assume the flag is present.
@@ -89,8 +93,10 @@ fi
 # --- State-based guidance. Priority: channel-flag missing > unpaired > silent.
 
 if [ "$channel_flag_present" = "0" ]; then
-  cat <<'JSON'
-{"systemMessage":"Delta Chat plugin is loaded, but the channel flag is MISSING — inbound Delta Chat messages will NOT reach this session.\n\nQuit Claude Code and relaunch with:\n\n    claude --dangerously-load-development-channels plugin:deltachat@dc-claude-channel"}
+  # Escape last_cmd for JSON (backslashes, quotes, newlines)
+  diag_cmd=$(printf '%s' "$last_cmd" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\n\r')
+  cat <<JSON
+{"systemMessage":"Delta Chat plugin is loaded, but the channel flag is MISSING — inbound Delta Chat messages will NOT reach this session.\n\nQuit Claude Code and relaunch with:\n\n    claude --dangerously-load-development-channels plugin:deltachat@dc-claude-channel\n\n(diag: walked ${levels_walked} ancestors, no flag found; last cmdline: ${diag_cmd})"}
 JSON
   exit 0
 fi
