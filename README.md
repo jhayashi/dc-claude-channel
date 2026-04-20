@@ -61,15 +61,9 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
 
 ## Installation
 
-### Install via marketplace (recommended)
+### A. Channel installation
 
-Open Claude Code in any project:
-
-```bash
-claude
-```
-
-At the Claude Code prompt, add the marketplace and install the plugin — run the commands one at a time:
+At the Claude Code prompt, run these commands one at a time:
 
 ```
 /plugin marketplace add jhayashi/dc-claude-channel
@@ -81,23 +75,24 @@ At the Claude Code prompt, add the marketplace and install the plugin — run th
 
 When prompted for install scope, pick **"install for you"** — the plugin's state (paired phone, agents, schedules) is user-global, so a project-level install gives you nothing extra.
 
+*Later, when a new version is out, run `/plugin marketplace update` followed by `/plugin reload-plugins` to pull and activate it — no Claude Code restart required for updates.*
+
+### B. Relaunch and install the mobile app
+
 Quit Claude Code, then relaunch with the channels flag:
 
 ```bash
 claude --dangerously-load-development-channels plugin:deltachat@dc-claude-channel
 ```
 
-The plugin installs its native dependencies in the background (~30–120s). Use that time to set up your phone.
+> **Why the `--dangerously-load-development-channels` flag?** During the Claude Code channels research preview, third-party channel plugins must be either on the official Anthropic allowlist or loaded with this flag. We're working toward allowlist approval — see [issue #8](https://github.com/jhayashi/dc-claude-channel/issues/8) for status. Team and Enterprise admins can alternatively add this plugin to their org's `allowedChannelPlugins` in managed settings to skip the flag.
 
-#### 1. Install Delta Chat on your phone
+The plugin installs its native dependencies in the background (~30–120s). Use that time to set up your phone:
 
-Get the official build from **[delta.chat/download](https://delta.chat/en/download)** — it links to Google Play, the App Store, F-Droid, and desktop downloads. First launch shows a welcome screen.
+1. **Install Delta Chat** — get the official build from **[delta.chat/download](https://delta.chat/en/download)** (links to Google Play, the App Store, F-Droid, and desktop downloads).
+2. **Create a chatmail account** — in the Delta Chat onboarding, choose to create a **chatmail** account. No email address, password, or signup form. Pick a display name and you'll land on an empty chat list.
 
-#### 2. Create a chatmail account
-
-Through the Delta Chat onboarding, choose to create a **chatmail** account. It's the fastest path — no email address, password, or signup form. Pick a display name when prompted and you'll land on an empty chat list.
-
-#### 3. Arm pairing in the terminal
+### C. Secure pairing
 
 Back in Claude Code, run:
 
@@ -105,23 +100,13 @@ Back in Claude Code, run:
 /deltachat:setup
 ```
 
-Claude Code prints a `http://localhost:…` link and opens a 5-minute pairing window. If the background install is still finishing, the command blocks silently until it's ready — that's expected; just wait.
-
-#### 4. Open the link and reveal the QR
+Claude Code prints a `https://i.delta.chat/…` link and opens a 5-minute pairing window. (If the background install is still finishing, the command blocks silently until it's ready — just wait.)
 
 Open the printed link in any browser on the same machine as the terminal. The page shows a **play button (▶)** in the middle — tap it to reveal the QR code (it's hidden by default so it doesn't leak if your screen gets recorded).
 
-#### 5. Scan the QR with Delta Chat
-
 In Delta Chat on your phone, open the QR scanner. It's either a **QR icon in the top toolbar** of the chat list, or under the **new-chat (+) menu** as **"Scan QR code"** (varies by platform and version). Point your phone at the QR on your computer screen.
 
-After a second or two, a new chat called **`Claude`** appears at the top of your chat list.
-
-#### 6. Read the 5-letter code
-
-Open the `Claude` chat on your phone. The first message is a 5-letter pairing code (e.g. `abcde`).
-
-#### 7. Finish pairing in the terminal
+After a second or two, a new chat called **`Claude`** appears at the top of your chat list. Open it — the first message is a 5-letter pairing code (e.g. `abcde`).
 
 Back in Claude Code, type:
 
@@ -131,9 +116,9 @@ Back in Claude Code, type:
 
 Replace `abcde` with your actual code. Your Delta Chat account is now linked — no one else can command your agent.
 
-#### 8. Send a message to start the tour
+### D. Optional tour
 
-Back on your phone, type anything into the `Claude` chat (a "hi" is fine). The default agent runs a short guided tour covering:
+Send any message into the `Claude` chat on your phone (a "hi" is fine). The default agent runs a short guided tour covering:
 
 - **Permission prompts** — tap Allow or Deny for sensitive actions
 - **File Reviewer** — syntax-highlighted code/doc viewer with inline commenting
@@ -141,20 +126,6 @@ Back on your phone, type anything into the `Claude` chat (a "hi" is fine). The d
 - **WebXDC apps** — one-shot a custom mini-app (or single-player game) right in the chat
 
 Reply "no thanks" to skip the tour and drop into normal chat mode.
-
-> **Why the `--dangerously-load-development-channels` flag?** During the Claude Code channels research preview, third-party channel plugins must be either on the official Anthropic allowlist or loaded with this flag. We're working toward allowlist approval — see [issue #8](https://github.com/jhayashi/dc-claude-channel/issues/8) for status. Team and Enterprise admins can alternatively add this plugin to their org's `allowedChannelPlugins` in managed settings to skip the flag.
-
-### Updating
-
-```
-/plugin marketplace update
-```
-
-```
-/plugin reload-plugins
-```
-
-No Claude Code restart needed.
 
 ### Development install
 
