@@ -163,10 +163,11 @@ const CLAUDE_VERSION = (() => {
 
 
 /** Tools that only make sense from the terminal Claude session — filtered
- *  out of the subagent manifest to avoid confusion (e.g. the LLM calling
- *  dc_test_permission when the user asks to run a real bash command). */
+ *  out of the subagent manifest. Access-management tools manage the allowlist
+ *  and should never be called from inside an already-paired subagent; they
+ *  belong to the host operator. dc_test_permission stays available to
+ *  subagents so the first-turn tutorial can demo the permission card. */
 const SUBAGENT_TOOL_BLOCKLIST = new Set([
-  'dc_test_permission',
   'dc_access_pair',
   'dc_access_arm_pairing',
   'dc_access_list',
@@ -1757,11 +1758,14 @@ async function main(): Promise<void> {
     return [
       `[System: the user just finished pairing this Delta Chat. This is your very first turn with them in chat_id=${chatId}. chat_id is REQUIRED by every dc_* tool — do not omit it.]`,
       '',
-      'Only your final assistant message is delivered to the chat — intermediate text before a tool call gets dropped. Do NOT call any tools in this first turn. Just output one warm, concise welcome message.',
+      'Only your final assistant message is delivered to the chat — intermediate text before a tool call gets dropped. So: write ONE complete message as your final output that both greets the user AND explains what they are about to see, then call tools at the very end of the turn.',
       '',
-      "Introduce yourself as Claude, running in Delta Chat. In one short paragraph, mention three things they'll discover as they use it: (1) a permission-prompt card that pops up when you want to run shell commands or edit files, (2) a file-reviewer app that shows docs or code with inline comments when you send them a file, and (3) an agent-settings app where they can create specialized agents with different models and tools. Tell them to just ask you anything to get started — a coding question, a writing task, an errand. Sign off friendly.",
+      'Your first-turn response must:',
       '',
-      "If the user's first message is a direct request (not a greeting), acknowledge it briefly and just answer them — skip the welcome.",
+      `1. As a single plain-text message (this becomes your final output), greet them ("Hi, I'm Claude — welcome to Delta Chat!"), then tell them you're about to send a demo permission-prompt card so they can see what it looks like when you want to run a shell command or edit a file. Mention that the Delta Chat channel also has a file reviewer and an agent-settings app, and invite them to just ask you anything to get started (a coding question, a writing task, an errand). End with "Tap Allow or Deny on the card above — it's only a demo, no command will actually run."`,
+      `2. After the final message, call dc_test_permission with chat_id=${chatId} and tool_name="Bash(echo \\"Hello from the tour\\")". That is the ONLY tool call you make this turn; it sends the demo permission card and returns immediately.`,
+      '',
+      "If the user's first message is a direct request (not a greeting), skip the welcome and just answer them.",
       '',
       '--- User\'s actual first message follows ---',
     ].join('\n')
