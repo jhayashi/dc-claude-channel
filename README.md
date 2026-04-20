@@ -51,9 +51,9 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
   <img src="screenshots/file-reviewer-comment.jpg" width="250" alt="File reviewer with comment composer">
 </p>
 <p align="center">
-  <em>Rendered markdown and source, on your phone</em>
+  <em>Reviewer app to iterate on files and source</em>
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <em>Long-press any line or paragraph to comment</em>
+  <em>Long-press any line to comment</em>
 </p>
 
 <p align="center">
