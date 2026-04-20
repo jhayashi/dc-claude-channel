@@ -85,9 +85,37 @@ When prompted for install scope, pick **"install for you"** — the plugin's sta
 /plugin reload-plugins
 ```
 
-The plugin installs its native dependencies in the background (~30–120s) and immediately shows phone-side setup instructions. Grab your phone and open Delta Chat — by the time you're ready to scan, the channel will be ready. Run `/deltachat:setup` to arm pairing and see the QR code (the command will transparently wait if install is still finishing).
+The plugin installs its native dependencies in the background (~30–120s). While that's running, grab your phone and:
 
-No Claude Code restart needed.
+1. Install [Delta Chat](https://delta.chat/en/download)
+2. Create a free [chatmail](https://chatmail.at/) account from inside the app (one tap, no signup)
+
+Back in the terminal, arm pairing:
+
+```
+/deltachat:setup
+```
+
+This opens a 5-minute pairing window and prints a link (the command transparently waits if the background install is still finishing). Open that link in a browser on the same machine — on the page that loads, tap the **triangle icon** to reveal a QR code. Scan the QR from your phone's Delta Chat app. A `Claude` chat appears on your phone and posts a 5-letter pairing code.
+
+Read the code off your phone, then type it back in the terminal:
+
+```
+/deltachat:setup pair abcde
+```
+
+(Replace `abcde` with your actual code.) Your Delta Chat account is now linked — no one else can command your agent.
+
+Finally, open the `Claude` chat on your phone and send any message (a greeting is fine). The default agent runs a short guided tour covering:
+
+- **Permission prompts** — tap Allow or Deny for sensitive actions
+- **File Reviewer** — syntax-highlighted code/doc viewer with inline commenting
+- **Agents & Chat setup** — create new chats from templates or custom agents you define
+- **WebXDC apps** — one-shot a custom mini-app (or single-player game) right in the chat
+
+Reply "no thanks" after the first turn to skip the tour and drop into normal chat mode.
+
+No Claude Code restart needed at any point.
 
 > **Why the `--dangerously-load-development-channels` flag?** During the Claude Code channels research preview, third-party channel plugins must be either on the official Anthropic allowlist or loaded with this flag. We're working toward allowlist approval — see [issue #8](https://github.com/jhayashi/dc-claude-channel/issues/8) for status. Team and Enterprise admins can alternatively add this plugin to their org's `allowedChannelPlugins` in managed settings to skip the flag.
 
@@ -106,44 +134,6 @@ No Claude Code restart needed.
 ### Development install
 
 If you want to hack on the plugin itself, see the [Development](#development) section below.
-
-## First-Time Setup
-
-On first launch, the plugin auto-provisions a bot account on a chatmail server. On subsequent launches, it resumes the saved account.
-
-### 1. Start pairing
-
-In Claude Code, run:
-
-```
-/deltachat:setup
-```
-
-This arms a 5-minute pairing window and prints a QR code link.
-
-### 2. Scan the QR from Delta Chat
-
-Open the link in a browser on the same machine running the terminal. On the web page that loads, tap the **triangle icon** to reveal the QR code. Scan it from your Delta Chat app.
-
-Claude will create a `Claude` chat on your phone automatically and post a 5-letter pairing code.
-
-### 3. Finish pairing
-
-Read the code from the `Claude` chat on your phone, then run in your terminal:
-
-> /deltachat:setup pair abcde
-
-This links your Delta Chat account to Claude so no one else can command your agent.
-
-### 4. Say hi
-
-Open the `Claude` chat on your phone and send any message — a greeting is fine. On your first message the default agent runs a short guided tour:
-
-- **Permission prompts** — how to tap Allow or Deny
-- **File Reviewer** — syntax-highlighted code/doc viewer with inline commenting
-- **App building** — optionally one-shot a WebXDC app right in the chat
-
-If you'd rather skip the tour, reply with "no thanks" after the first turn and the agent drops into normal chat mode.
 
 ## Unpairing
 
