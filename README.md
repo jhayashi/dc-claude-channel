@@ -40,9 +40,9 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
   <img src="screenshots/permission-gate.jpg" width="250" alt="Permission prompt">
 </p>
 <p align="center">
-  <em>One chat per agent, each with its own identity</em>
+  <em>One chat per agent</em>
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <em>Tap to allow or deny tool runs</em>
+  <em>Tap to allow or deny</em>
 </p>
 
 <p align="center">
@@ -62,9 +62,9 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
   <img src="screenshots/agent-setup-agent-picker.jpg" width="250" alt="Agent picker with templates">
 </p>
 <p align="center">
-  <em>Agent setup hub — start, manage, or resume</em>
+  <em>Start, manage, or resume</em>
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <em>Pick a template or reuse a saved agent</em>
+  <em>Templates and saved agents</em>
 </p>
 
 <p align="center">
@@ -73,9 +73,9 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
   <img src="screenshots/agent-setup-resume-list.jpg" width="250" alt="Resume terminal session picker">
 </p>
 <p align="center">
-  <em>Scans recent Claude sessions on your machine</em>
+  <em>Scans recent Claude sessions</em>
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <em>Pick one to continue in a new DC chat</em>
+  <em>Continue in a new DC chat</em>
 </p>
 
 ## Prerequisites
