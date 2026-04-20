@@ -74,12 +74,13 @@ describe("access control", () => {
     access.resetArmedState();
     expect(access.isArmed()).toBe(false);
     expect(access.getArmedUntil()).toBeNull();
+    expect(access.getArmedGroupChatId()).toBeNull();
   });
 
   test("arm-window: armPairing sets a 5-minute TTL", () => {
     access.resetArmedState();
     const t0 = 1_000_000_000;
-    access.armPairing(t0);
+    access.armPairing(null, t0);
     expect(access.isArmed(t0)).toBe(true);
     expect(access.isArmed(t0 + 299_000)).toBe(true);
     expect(access.isArmed(t0 + 301_000)).toBe(false);
@@ -89,26 +90,43 @@ describe("access control", () => {
   test("arm-window: re-arm extends the TTL", () => {
     access.resetArmedState();
     const t0 = 1_000_000_000;
-    access.armPairing(t0);
-    access.armPairing(t0 + 120_000); // re-arm 2 min later
+    access.armPairing(null, t0);
+    access.armPairing(null, t0 + 120_000); // re-arm 2 min later
     expect(access.getArmedUntil()).toBe(t0 + 120_000 + 300_000);
+  });
+
+  test("arm-window: armPairing records the group chat ID", () => {
+    access.resetArmedState();
+    const t0 = 1_000_000_000;
+    access.armPairing(12345, t0);
+    expect(access.getArmedGroupChatId()).toBe(12345);
+  });
+
+  test("arm-window: re-arm replaces the group chat ID", () => {
+    access.resetArmedState();
+    const t0 = 1_000_000_000;
+    access.armPairing(11111, t0);
+    access.armPairing(22222, t0 + 60_000);
+    expect(access.getArmedGroupChatId()).toBe(22222);
   });
 
   test("arm-window: consume returns true when armed and clears state", () => {
     access.resetArmedState();
     const t0 = 1_000_000_000;
-    access.armPairing(t0);
+    access.armPairing(42, t0);
     expect(access.consumeArmedWindow(t0 + 10_000)).toBe(true);
     expect(access.isArmed(t0 + 10_000)).toBe(false);
     expect(access.getArmedUntil()).toBeNull();
+    expect(access.getArmedGroupChatId()).toBeNull();
   });
 
   test("arm-window: consume returns false when expired and clears state", () => {
     access.resetArmedState();
     const t0 = 1_000_000_000;
-    access.armPairing(t0);
+    access.armPairing(42, t0);
     expect(access.consumeArmedWindow(t0 + 301_000)).toBe(false);
     expect(access.getArmedUntil()).toBeNull();
+    expect(access.getArmedGroupChatId()).toBeNull();
   });
 
   test("arm-window: consume returns false when never armed", () => {
@@ -119,7 +137,7 @@ describe("access control", () => {
   test("arm-window: first consumer wins", () => {
     access.resetArmedState();
     const t0 = 1_000_000_000;
-    access.armPairing(t0);
+    access.armPairing(null, t0);
     expect(access.consumeArmedWindow(t0 + 10_000)).toBe(true);
     expect(access.consumeArmedWindow(t0 + 20_000)).toBe(false);
   });

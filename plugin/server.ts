@@ -961,15 +961,46 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
       }
 
       case 'dc_invite_link': {
+        // When /deltachat:setup has armed a group chat, return its
+        // securejoin QR so the joiner lands in "Claude" (a group) rather
+        // than a 1:1 where DC hides the bot's display name.
+        const armedGroup = access.getArmedGroupChatId()
+        if (armedGroup !== null && access.isArmed()) {
+          try {
+            const link = await client.getGroupInviteLink(armedGroup)
+            return { content: [{ type: 'text' as const, text: link }] }
+          } catch (err) {
+            logf('dc channel: getGroupInviteLink failed for chat=%d, falling back to personal QR: %v', armedGroup, err)
+          }
+        }
         const link = await client.inviteLink()
         return { content: [{ type: 'text' as const, text: link }] }
       }
 
       case 'dc_access_arm_pairing': {
-        access.armPairing()
+        // Clean up any previous armed group (stale or unused). Re-arming
+        // always produces a fresh "Claude" group so the QR is unique and
+        // the user can't accidentally land in a pre-existing leftover.
+        const prevGroup = access.getArmedGroupChatId()
+        if (prevGroup !== null) {
+          try {
+            await client.deleteChat(prevGroup)
+            logf('dc channel: deleted previous armed group chat=%d', prevGroup)
+          } catch (err) {
+            logf('dc channel: failed to delete previous armed group chat=%d: %v', prevGroup, err)
+          }
+        }
+        let groupChatId: number
+        try {
+          groupChatId = await client.createGroup('Claude')
+        } catch (err) {
+          logf('dc channel: createGroup failed: %v', err)
+          return { content: [{ type: 'text' as const, text: `dc_access_arm_pairing: failed to create group: ${err}` }], isError: true }
+        }
+        access.armPairing(groupChatId)
         const expires = access.getArmedUntil()
         const iso = expires ? new Date(expires).toISOString() : 'unknown'
-        logf('dc channel: pairing armed until %s', iso)
+        logf('dc channel: pairing armed until %s with group chat=%d', iso, groupChatId)
         return { content: [{ type: 'text' as const, text: `Pairing armed for 5 minutes (until ${iso}).` }] }
       }
 
@@ -980,8 +1011,10 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         }
         const chatId = access.completePairing(code)
 
-        // Auto-bind the 1:1 chat to the built-in default agent so it's
-        // immediately usable. ensureDefaultAgent writes the seed if missing.
+        // Auto-bind the paired chat (group for QR-pairing, or 1:1 if the
+        // user is paired via a pending-code flow) to the built-in default
+        // agent so it's immediately usable. ensureDefaultAgent writes the
+        // seed if missing.
         // firstTurnTutorial=true seeds a tutorial prelude into the next
         // subagent dispatch; the agent uses its regular tools (dc_test_permission,
         // dc_send_file, dc_open_agent_settings) to drive the tour itself.
@@ -995,7 +1028,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
             createdAt: new Date().toISOString(),
           }
           bindings.saveBinding(binding)
-          logf('dc channel: auto-bound 1:1 chat %d to agent %s (firstTurnTutorial=true)', chatId, defaultAgent.id)
+          logf('dc channel: auto-bound chat %d to agent %s (firstTurnTutorial=true)', chatId, defaultAgent.id)
         } catch (err) {
           logf('dc channel: auto-bind failed for chat %d: %v', chatId, err)
         }

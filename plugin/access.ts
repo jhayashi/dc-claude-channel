@@ -37,12 +37,20 @@ export function setApprovedDir(dir: string): void { _approvedDir = dir }
 // `/deltachat:setup` arms a 5-minute window during which the next verified
 // contact event is treated as the user pairing their phone. Without this,
 // random QR scans of stale invite links would create unwanted chats.
+//
+// The armed window also records the "Claude" group chat created for this
+// pairing attempt — the skill arms the window, the server creates the group,
+// and `dc_invite_link` hands back the group's securejoin QR so the joiner
+// lands in a group chat (bot visibly identifies as "Claude") rather than a
+// 1:1 where DC hides the peer name.
 
 let _armedUntil: number | null = null;
+let _armedGroupChatId: number | null = null;
 
 /** Arm the pairing window. Idempotent — re-arming extends the TTL. */
-export function armPairing(now: number = Date.now()): void {
+export function armPairing(groupChatId: number | null, now: number = Date.now()): void {
   _armedUntil = now + ARM_WINDOW_MS;
+  _armedGroupChatId = groupChatId;
 }
 
 /** Is the pairing window currently armed? Non-consuming. */
@@ -56,6 +64,16 @@ export function getArmedUntil(): number | null {
 }
 
 /**
+ * Chat ID of the "Claude" group created for the current armed window, or
+ * null if no group was recorded (legacy/1:1 flow or no armed window).
+ * Returned regardless of whether the window is still within TTL — the
+ * server uses this to clean up stale groups on re-arm.
+ */
+export function getArmedGroupChatId(): number | null {
+  return _armedGroupChatId;
+}
+
+/**
  * Atomic check-and-clear. Returns true if the window was armed and valid;
  * false if expired or never armed. Either way, clears the state so the
  * next verified-contact event cannot double-consume.
@@ -63,12 +81,14 @@ export function getArmedUntil(): number | null {
 export function consumeArmedWindow(now: number = Date.now()): boolean {
   const armed = _armedUntil !== null && now < _armedUntil;
   _armedUntil = null;
+  _armedGroupChatId = null;
   return armed;
 }
 
 /** Clear the arm-window state. For tests. */
 export function resetArmedState(): void {
   _armedUntil = null;
+  _armedGroupChatId = null;
 }
 
 // --- In-memory pending pairings ---
