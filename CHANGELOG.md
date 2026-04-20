@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
+## [1.0.33] — 2026-04-19
+
+Patch release. Fixes a P0 crash in agent avatar rendering on fresh installs, switches pairing to a "Claude" group chat, hardens voice-transcription model downloads, refreshes template prompts, and fixes two file-reviewer bugs.
+
+### Fixed
+- **Agent avatar rendering no longer throws `Cannot find module 'sharp'` on fresh installs.** The sharp→@resvg/resvg-js migration shipped in 1.0.3 updated `package.json` but missed `agent-icon-render.ts`, so any code path that rendered a badge (settings card, create/edit agent, first-launch badge generation) threw on a clean install. Completed the migration; tests decode PNGs via `pngjs` instead of `sharp`.
+- **File reviewer — highlighted code blocks no longer collapse to a single line on phones.** Per-line `<div>` children inside an inline `<code>` element parsed as inline in iOS WebKit and Android WebView. Line divs are now direct children of the block-level `<pre>` (valid HTML on all renderers).
+- **File reviewer — markdown links now open.** Links had been rewritten to bare `<a>` tags with no href. Restored the href with scheme allowlisting (`https:`, `http:`, `mailto:`, in-doc `#`); other schemes degrade to `#`. External links carry `target="_blank"` + `rel="noopener noreferrer"`.
+- **STT — whisper model downloads verified against pinned SHA-256.** Weights now land at a tmp path, get hashed, and are renamed into place only on match. Mismatch deletes the tmp and throws so a corrupted or tampered download can't poison the cache forever. Pinned hashes for all 10 supported ggml models ship as `whisper-model-hashes.json`; unpinned models log a warning and are accepted (forward-compat).
+
+### Changed
+- **Pairing materializes a "Claude" group chat** instead of a 1:1. Delta Chat hides the peer display name in 1:1 chats, which made the pairing chat look like a conversation with yourself. `/deltachat:setup` now provisions a verified group up front and returns its securejoin QR; the rest of the flow (pairing code, auto-bind, tutorial prelude) is unchanged. Re-arming deletes the previous armed group so each session has a fresh QR.
+- **All 12 agent templates rewritten** for a stronger distinct voice and more actionable behavior. Each prompt now names the agent's default move, calls out anti-patterns, and ends with a concrete closing habit. Existing agents bound to these templates are unaffected; the rewrites apply only to new agents.
+- Piggyback: `@deltachat/jsonrpc-client` + `@deltachat/stdio-rpc-server` 2.48 → 2.49 (same lockfile as the resvg migration; already running on dev).
+
 ## [1.0.32] — 2026-04-19
 
 Patch release. Fixes `/deltachat:setup` on fresh marketplace installs.
@@ -260,6 +275,7 @@ First public release of the Delta Chat channel for Claude Code.
 - File-based allowlist + pairing codes.
 - `deltachat-rpc-server` integration.
 
+[1.0.33]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.32...v1.0.33
 [1.0.32]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.31...v1.0.32
 [1.0.31]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.3...v1.0.31
 [1.0.3]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.2...v1.0.3
