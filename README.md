@@ -15,18 +15,18 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
 - **Your chats have apps** — Delta Chat ships with a unique open-source app architecture called [WebXDC,](https://webxdc.org/) and Claude can easily build whatever you want using it — games, GUIs for your productivity tools, even multi-person app experiences - think a [real-time,](https://delta.chat/en/2024-11-20-webxdc-realtime) private fantasy sports like experience, but for anything! If that weren't cool enough, because your chat apps are connected to Claude, they can come alive with information and intelligence using Claude as a backend. We call this the "Familiar" WebXDC pattern (a skill and beta runtime is already included), and it's unique to Delta Chat and this channel plugin.
 - **Fine-grained control: permissions, tools, MCP servers** — you decide the permission limits, access controls, and capabilities of every agent. Skipping permissions in channels is not longer an all or nothing dangerous choice, you decide where you want permissions and where you what to let Claude run free.
 - **On-the-go file iteration** — D4C includes a built-in file reviewer that makes it easy to comment on specific parts of a markdown or source file and have Claude make the changes you need.
-- **Session resume** — move your terminal sessions to Delta Chat and back (sometimes called "teleport"). Ask "resume this in my terminal" for a one-line resume command, or pick a recent session from the agent-setup card to continue it in a new DC chat. Take your active coding session with you on the bus, on your morning walk, or even to your fundraising pitch.
+- **Session teleporting** — move your terminal sessions to Delta Chat and back again. Use the "settings" GUI to move a chat to a terminal session or pick a recent session from the settings GUI to continue it in a new DC chat. Take your active coding session with you on the bus, on your morning walk, or even to your fundraising pitch.
 
 ### For productivity
 
-- **Scheduled actions** — D4C adds scheduling to Claude Code. Get pre-scheduled summaries of your email, news, or pipeline reports when you want, in any chat, even if the agent has been put to sleep.
-- **Multiple, customized agents** — D4C makes it easy to set up new chats with custom agents you control — one for marketing, one for research, one for email and calendar. Agents use the [Claude Managed Agents](https://docs.anthropic.com/en/docs/agents-and-tools/managed-agents) format and can be imported, exported, and shared with others.
+- **Scheduled actions** — D4C adds "claw" like scheduling to Claude Code. Get pre-scheduled summaries of your email, news, or pipeline reports when you want, in any chat, even if the agent has been put to sleep. Schedules require an always on computer that you control.
+- **Multiple, customized agents** — D4C makes it easy to set up new chats with custom agents you control — one for marketing, one for research, one for email and calendar. Agents use the [Claude Managed Agents](https://docs.anthropic.com/en/docs/agents-and-tools/managed-agents) agent defintion and can be imported, exported, and shared with others.
 - **GUIs when you need them** — D4C comes with three helper apps: one for permissions, one for file review (which also renders Marp slide decks inline), and one for agent and chat configuration.
 - **Files, screenshots, and more** — Delta Chat makes it easy to send files, screenshots, links, and voice recordings to specific agents for whatever action you can imagine — archive in Notion or Obsidian, process and summarize URLs, you name it.
 
 ### For everybody
 
-- **Easy to get started** — Despite all it does, D4C is the easiest Claude Code channel to set up. It even comes with an optional Getting Started tour to familiarize you with its features and walk you through one-shotting your first WebXDC app.
+- **Easy to get started** — Despite all it does, D4C is the easiest Claude Code channel to set up. It even comes with an optional Getting Started Tour to familiarize you with its features and walk you through one-shotting your first WebXDC app.
 - **Type with your voice, privately** — D4C includes built-in voice transcription that installs and uses a local model on your machine for high-quality, open-source, private transcription (Whisper).
 - **Vibe code games with your kids** — need to distract the kids? Have them tell Claude what kind of game to make for infinite entertainment — using their voice!
 
