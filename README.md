@@ -100,13 +100,13 @@ Back in Claude Code, run:
 /deltachat:setup
 ```
 
-Claude Code prints a `https://i.delta.chat/…` link and opens a 5-minute pairing window. (If the background install is still finishing, the command blocks silently until it's ready — just wait.)
+Claude Code prints a `https://i.delta.chat/…` link. If the background install is still finishing, the command blocks silently until it's ready — just wait.
 
-Open the printed link in any browser on the same machine as the terminal. The page shows a **play button (▶)** in the middle — tap it to reveal the QR code (it's hidden by default so it doesn't leak if your screen gets recorded).
+Open the link in any browser. The page shows a **play button (▶)** in the middle — tap it to reveal the QR code (it's hidden by default so it doesn't leak if your screen gets recorded).
 
 In Delta Chat on your phone, open the QR scanner. It's either a **QR icon in the top toolbar** of the chat list, or under the **new-chat (+) menu** as **"Scan QR code"** (varies by platform and version). Point your phone at the QR on your computer screen.
 
-After a second or two, a new chat called **`Claude`** appears at the top of your chat list. Open it — the first message is a 5-letter pairing code (e.g. `abcde`).
+After a second or two, a new chat called **`Claude`** appears at the top of your chat list. Open it — the first message has your a 5-letter pairing code (e.g. `abcde`).
 
 Back in Claude Code, type:
 
@@ -114,18 +114,18 @@ Back in Claude Code, type:
 /deltachat:setup pair abcde
 ```
 
-Replace `abcde` with your actual code. Your Delta Chat account is now linked — no one else can command your agent.
+Replace `abcde` with your actual code. Your Delta Chat account is securely paired with your claude account.
 
 ### D. Optional tour
 
-Send any message into the `Claude` chat on your phone (a "hi" is fine). The default agent runs a short guided tour covering:
+In the default chat, claude will offer to take you through a short guided tour covering:
 
-- **Permission prompts** — tap Allow or Deny for sensitive actions
-- **File Reviewer** — syntax-highlighted code/doc viewer with inline commenting
+- **Permissions** — tap Allow or Deny for sensitive actions
+- **File Reviewer** — mobile friendly syntax-highlighted code/doc viewer with inline commenting
 - **Agents & Chat setup** — create new chats from templates or custom agents you define
 - **WebXDC apps** — one-shot a custom mini-app (or single-player game) right in the chat
 
-Reply "no thanks" to skip the tour and drop into normal chat mode.
+Reply "no" to skip the tour and drop into normal chat mode.
 
 ### Development install
 
@@ -133,11 +133,11 @@ If you want to hack on the plugin itself, see the [Development](#development) se
 
 ## Unpairing
 
-To remove a paired device, open the agent settings app (ask Claude to "open the agent settings app", or tap the card when it appears) and select **Paired devices** on the home screen. Choose **freeze** (chats go read-only, history preserved) or **delete** (chats are removed).
+To remove a paired device, open the agent settings app (ask Claude to "open settings", or tap the notification when it appears) and select **Paired devices** on the home screen. Choose **freeze** (chats go read-only, history preserved) or **delete** (chats are removed).
 
 From a terminal, `/deltachat:setup unpair` lists paired contacts and `/deltachat:setup unpair <contact_id>` unpairs one. Add `delete` to the command to remove chats instead of freezing them.
 
-## Resuming sessions
+## Resuming / Teleporting sessions
 
 A conversation can move between a DC chat and a local `claude` terminal session in either direction. Ask Claude to **"open settings"** from any DC chat and pick what you want from the settings app — send the current chat to a terminal, or attach a recent terminal session to a new DC chat.
 
