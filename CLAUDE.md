@@ -542,3 +542,11 @@ Your app receives an `AppContext` with:
 5. When you change the HTML, bump `APP_VERSION` in the HTML file (e.g., 1.00 → 1.01) — the builder reads it automatically
 
 This is essential for iterative development via Delta Chat — the user may be on their phone away from the terminal. See `plugin/apps/permissions-app.ts` and `plugin/apps/markdown-viewer-app.ts` for reference implementations.
+
+### Pre-built XDCs at release time
+
+Core server-coupled apps (`permission-prompt`, `file-reviewer`, `agent-setup`) ship pre-zipped in `plugin/webxdc-prebuilt/`. At runtime, `buildXDC` checks for `<basename>-v<version>.xdc` there before re-zipping. On a match, the cached file is served; on miss (version bumped, file missing) the live zip runs and the result still works.
+
+Before cutting a release, run `bun run build:xdcs` in `plugin/` to regenerate the cache and commit the updated `.xdc` files. Expected size: ~180 KB across the three apps — binary diffs on every release are normal.
+
+During local HTML iteration, set `DC_SKIP_PREBUILT=1` to bypass the cache without having to re-run the build script every edit.
