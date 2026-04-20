@@ -29,6 +29,7 @@ import { apps } from './apps.js'
 import type { WebXDCApp, AppContext } from './webxdc-app.js'
 import { filterUpdatesByOwner } from './webxdc-filter.js'
 import { decorateAgentChat, setAgentIcon } from './apps/agent-setup-app.js'
+import * as tutorial from './tutorial.js'
 import { decideCleanup } from './cleanup.js'
 import { SocketServer, type SocketRequest } from './dispatcher/socket-server.js'
 import { SubagentCache } from './dispatcher/subagent-cache.js'
@@ -165,9 +166,10 @@ const CLAUDE_VERSION = (() => {
 /** Tools that only make sense from the terminal Claude session — filtered
  *  out of the subagent manifest. Access-management tools manage the allowlist
  *  and should never be called from inside an already-paired subagent; they
- *  belong to the host operator. dc_test_permission stays available to
- *  subagents so the first-turn tutorial can demo the permission card. */
+ *  belong to the host operator. dc_test_permission drives the onboarding
+ *  tutorial from the dispatcher state machine — not the subagent. */
 const SUBAGENT_TOOL_BLOCKLIST = new Set([
+  'dc_test_permission',
   'dc_access_pair',
   'dc_access_arm_pairing',
   'dc_access_list',
@@ -1025,31 +1027,62 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         // user is paired via a pending-code flow) to the built-in default
         // agent so it's immediately usable. ensureDefaultAgent writes the
         // seed if missing.
-        // firstTurnTutorial=true seeds a tutorial prelude into the next
-        // subagent dispatch; the agent uses its regular tools (dc_test_permission,
-        // dc_send_file, dc_open_agent_settings) to drive the tour itself.
         try {
           const defaultAgent = agents.ensureDefaultAgent()
           const binding: bindings.Binding = {
             chatId,
             agentId: defaultAgent.id,
             inheritClaudeMd: true,
-            firstTurnTutorial: true,
             createdAt: new Date().toISOString(),
           }
           bindings.saveBinding(binding)
-          logf('dc channel: auto-bound chat %d to agent %s (firstTurnTutorial=true)', chatId, defaultAgent.id)
+          logf('dc channel: auto-bound chat %d to agent %s', chatId, defaultAgent.id)
         } catch (err) {
           logf('dc channel: auto-bind failed for chat %d: %v', chatId, err)
         }
 
         // Pre-warm the subagent while the user is switching from terminal
-        // to phone, so their first message hits a hot process. Fire-and-
-        // forget — failure just means the first turn pays the cold-spawn
-        // tax as before.
+        // to phone, so their first message (post-tutorial) hits a hot
+        // process. Fire-and-forget — failure just means the first
+        // post-tour turn pays the cold-spawn tax as before.
         subagentCache.prewarm(chatId).catch((err) =>
           logf('dc channel: prewarm failed for chat %d: %v', chatId, err),
         )
+
+        // Start onboarding tutorial — send bare apps first, then explanation
+        const action = tutorial.startTutorial(chatId)
+        if (action.sendApps) {
+          // Send bare .xdc apps (no content) so the app cards appear in the chat.
+          // Content is sent later during the guided walkthrough.
+          ;(async () => {
+            try {
+              const permissions = await import('./permissions.js')
+              const { xdcPath: permPath } = await permissions.buildPermissionsXDC()
+              const permMsgId = await client.sendWebXDC(chatId, permPath)
+              // Register for update dispatch and pre-register the session
+              // so dc_test_permission reuses this app instead of sending a new one
+              const permApp = appToolMap.get('dc_test_permission')
+              if (permApp) ctx.registerWebXDCMsg(permMsgId, permApp, chatId)
+              const { registerPermissionsSession } = await import('./apps/permissions-app.js')
+              registerPermissionsSession(chatId, permMsgId)
+              try { (await import('node:fs')).unlinkSync(permPath) } catch {}
+
+              const fileReviewer = await import('./file-reviewer.js')
+              const { xdcPath: viewerPath } = await fileReviewer.buildViewerXDC()
+              const viewerMsgId = await client.sendWebXDC(chatId, viewerPath)
+              fileReviewer.setViewer(chatId, viewerMsgId)
+              const fileApp = appToolMap.get('dc_send_file')
+              if (fileApp) ctx.registerWebXDCMsg(viewerMsgId, fileApp, chatId)
+              try { (await import('node:fs')).unlinkSync(viewerPath) } catch {}
+            } catch (err) {
+              logf('dc channel: tutorial sendApps error: %v', err)
+            }
+            // Send explanation after apps so apps appear first in the chat
+            for (const msg of action.messages) {
+              client.send(chatId, msg).catch(() => {})
+            }
+          })()
+        }
 
         return { content: [{ type: 'text' as const, text: `Paired chat ${chatId} successfully.` }] }
       }
@@ -1637,6 +1670,7 @@ async function cleanupChatState(
   } catch (err) {
     logf('dc channel: cleanup familiar error: %v', err)
   }
+  tutorial.clearTutorial(chatId)
   try {
     const n = scheduleStore.deleteForChat(chatId)
     if (n > 0) logf('dc channel: cleanup deleted %d schedules for chat %d', n, chatId)
@@ -1754,45 +1788,6 @@ async function main(): Promise<void> {
   /** Build the text payload handed to the subagent. Mirrors the `<channel>`
    *  tag the main terminal session gets: includes attachment paths so the
    *  subagent can Read the file (image or otherwise). */
-  /**
-   * First-turn onboarding prelude. Prepended exactly once to the subagent's
-   * first user turn after pairing completes. Drives a short interactive
-   * tour using the tools the agent already has; no dispatcher-side state
-   * machine. Clearing the flag after the prelude is emitted (regardless of
-   * whether the agent runs a full tour) keeps the tour from replaying if
-   * the user ignores it.
-   */
-  const buildFirstTurnTutorialPrelude = (chatId: number): string => {
-    return [
-      `[System: the user just finished pairing this Delta Chat. This is your very first turn with them in chat_id=${chatId}. chat_id is REQUIRED by every dc_* tool — do not omit it.]`,
-      '',
-      `You're giving them a 3-step hands-on tour across the next 3 turns, one feature per turn, waiting for the user's reply between each step.`,
-      '',
-      'IMPORTANT ordering rule for every turn: only your FINAL assistant text is delivered to the chat — anything emitted before a tool call is dropped. So each turn is structured: write the full chat message first (introduce the feature + the call-to-action), then call the demo tool at the very end. The tool call is a silent side-effect (sends a card / file / app into the chat); the user sees your text AND the thing the tool dropped in.',
-      '',
-      '== Turn 1 (this turn) — Permission card ==',
-      '',
-      `Final text: Greet them ("Hi, I'm Claude — welcome to Delta Chat!"), explain that when you want to run a shell command or edit a file you'll send a permission card they tap Allow/Deny on. Tell them the one you're sending now is a harmless demo. Invite them to reply anything ("ok", "next", or just send a message) when they're ready for step 2.`,
-      `Tool call: dc_test_permission with chat_id=${chatId} and tool_name="Bash(echo \\"Hello from the tour\\")". This is the only tool call this turn; it returns immediately.`,
-      '',
-      '== Turn 2 (next time they reply) — File reviewer ==',
-      '',
-      `Final text: Explain that the file reviewer is a long-form viewer for docs and source code with inline commenting (long-press a paragraph or line to leave a note). Tell them to open the doc you just sent, scroll around, maybe long-press a heading to try commenting. Invite them to reply when they're ready for step 3.`,
-      `Tool call: dc_send_file with chat_id=${chatId}, title="Tour — File Reviewer", and a short sample markdown body that demonstrates headings, a code block, and a bulleted list.`,
-      '',
-      '== Turn 3 (next time they reply) — Agent settings ==',
-      '',
-      `Final text: Explain that the default Claude they're talking to is just one agent; via the agent-settings card they can make specialized agents (different models, prompts, tool allowlists) each with their own DC chat. Sign off friendly: "Message me anytime — happy coding!"`,
-      `Tool call: dc_open_agent_settings with source_chat_id=${chatId}.`,
-      '',
-      'After turn 3 the tour is done — act normally for all subsequent messages.',
-      '',
-      "If the user's very first message is a direct request (not a greeting), skip the tour entirely and just answer them.",
-      '',
-      '--- User\'s actual first message follows ---',
-    ].join('\n')
-  }
-
   const formatSubagentInput = (msg: Message): string => {
     const parts: string[] = []
     const meta: string[] = [`chat_id=${msg.chatId}`, `message_id=${msg.id}`]
@@ -2004,18 +1999,8 @@ async function main(): Promise<void> {
         logf('reaction: cold-start react failed chat=%d msg=%d: %v', chatId, msg.id, err),
       )
     }
-    // First-turn tutorial: if the binding is flagged, prepend a synthetic
-    // system prelude asking the agent to walk the user through the apps.
-    // Cleared immediately so the tour never replays.
-    let input = formatSubagentInput(enrichedMsg)
-    const binding = bindings.getBinding(chatId)
-    if (binding?.firstTurnTutorial) {
-      input = buildFirstTurnTutorialPrelude(chatId) + '\n\n' + input
-      try { bindings.clearFirstTurnTutorial(chatId) } catch (err) { logf('dc channel: clearFirstTurnTutorial error: %v', err) }
-      logf('dc channel: seeded tutorial prelude for chat=%d (cleared)', chatId)
-    }
     try {
-      const result = await subagentCache.dispatch(chatId, input)
+      const result = await subagentCache.dispatch(chatId, formatSubagentInput(enrichedMsg))
       logf('subagent: chat=%d result.text=%s denials=%d', chatId, (result.text ?? '').slice(0, 500).replace(/\n/g, ' '), result.denials.length)
       if (result.text) {
         await client.send(chatId, result.text)
@@ -2062,11 +2047,54 @@ async function main(): Promise<void> {
   }
 
   /**
-   * Handle a paired, authorized incoming message by notifying the MCP host
-   * (terminal Claude Code). Only called for the auto-pair fall-through
-   * path; regular paired traffic is routed through the subagent cache.
+   * Handle a paired, authorized incoming message — tutorial intercept first,
+   * then notify the MCP host (terminal Claude Code).
+   *
+   * NOTE: in Phase 2, regular user text is routed through the subagent cache
+   * by the router. This function is only called for the auto-pair fall-through
+   * path and for tutorial messages.
    */
   const dispatchPairedMessage = async (msg: Message): Promise<void> => {
+    // Tutorial intercept.
+    const tutorialAction = tutorial.handleMessage(msg.chatId, msg.text)
+    if (!tutorialAction.passThrough) {
+      for (const text of tutorialAction.messages) {
+        await client.send(msg.chatId, text)
+      }
+      if (tutorialAction.sendTestPermission) {
+        const testArgs = { chat_id: String(msg.chatId), tool_name: 'Bash(echo "Hello from the tutorial!")' }
+        const app = appToolMap.get('dc_test_permission')
+        if (app) await app.callTool('dc_test_permission', testArgs, ctx)
+      }
+      if (tutorialAction.sendSampleFile) {
+        const sampleContent = '# Welcome to the File Reviewer!\n\nThis is a sample document sent during your onboarding tutorial.\n\n## Features\n\n- **Syntax highlighting** for source code files\n- **Rendered markdown** for documentation\n- **Inline comments** — long-press any line to leave feedback\n- **Multiple tabs** — I can send several files to the same viewer\n\n## Try It!\n\nTry long-pressing on any line above to leave a comment.\nWhen you\'re done, tap "Send Comments" at the bottom.\n\nOr just swipe back and reply in the chat — I\'ll continue the tour!'
+        const fileArgs = { chat_id: String(msg.chatId), title: 'Tutorial — File Reviewer', content: sampleContent }
+        const app = appToolMap.get('dc_send_file')
+        if (app) await app.callTool('dc_send_file', fileArgs, ctx)
+      }
+      if (tutorialAction.sendAgentSetup) {
+        const proposeArgs = { source_chat_id: String(msg.chatId) }
+        const app = appToolMap.get('dc_open_agent_settings')
+        if (app) await app.callTool('dc_open_agent_settings', proposeArgs, ctx)
+      }
+      if (tutorialAction.handoffToClaud) {
+        const handoffText = `I just finished the onboarding tutorial and chose to build a game! I'd like a "${tutorialAction.gameChoice}" game as a WebXDC app. Build it and send it to this chat (chat_id ${msg.chatId}). Make the game post high scores to the chat using window.webxdc.sendUpdate with an info field (e.g. info: "New high score: 1234!") so scores appear as centered messages in the chat. Include senderAddr: window.webxdc.selfAddr in every sendUpdate payload. Remind me that I can take a screenshot and send it back if something looks wrong, and that I can share the app with friends by forwarding it.`
+        mcp.notification({
+          method: 'notifications/claude/channel',
+          params: {
+            content: handoffText,
+            meta: {
+              chat_id: String(msg.chatId),
+              message_id: String(msg.id),
+              user: safeName(msg.senderName),
+              ts: msg.timestamp.toISOString(),
+            },
+          },
+        }).catch(err => logf('dc channel: tutorial handoff error: %v', err))
+      }
+      return
+    }
+
     const meta: Record<string, string> = {
       chat_id: String(msg.chatId),
       message_id: String(msg.id),
@@ -2109,6 +2137,15 @@ async function main(): Promise<void> {
       return false
     },
     dispatchToSubagent: async (msg) => {
+      // Tutorial intercept runs in the dispatcher, not the subagent —
+      // tutorial state lives here and the onboarding flow drives WebXDC
+      // apps directly via appToolMap.
+      const tutState = tutorial.getState(msg.chatId)
+      if (tutState !== null) {
+        logf('dispatch: chat=%d path=tutorial-legacy state=%s', msg.chatId, String(tutState))
+        await dispatchPairedMessage(msg)
+        return
+      }
       logf('dispatch: chat=%d path=subagent', msg.chatId)
       await runSubagentTurn(msg)
     },
@@ -2268,6 +2305,21 @@ async function main(): Promise<void> {
       await thisTurn
       if (webxdcHandlerChain.get(msgId) === thisTurn) {
         webxdcHandlerChain.delete(msgId)
+      }
+
+      // Tutorial auto-advance: if this chat is in a tutorial step waiting for
+      // an app interaction, advance it (so the user doesn't need to type a reply).
+      const tutorialAction = tutorial.handleAppResponse(entry.chatId)
+      if (!tutorialAction.passThrough) {
+        for (const text of tutorialAction.messages) {
+          await client.send(entry.chatId, text)
+        }
+        if (tutorialAction.sendSampleFile) {
+          const sampleContent = '# Welcome to the File Reviewer!\n\nThis is a sample document sent during your onboarding tutorial.\n\n## Features\n\n- **Syntax highlighting** for source code files\n- **Rendered markdown** for documentation\n- **Inline comments** — long-press any line to leave feedback\n- **Multiple tabs** — I can send several files to the same viewer\n\n## Try It!\n\nTry long-pressing on any line above to leave a comment.\nWhen you\'re done, tap "Send Comments" at the bottom.\n\nOr just swipe back and reply in the chat to continue the tour!'
+          const fileArgs = { chat_id: String(entry.chatId), title: 'Tutorial — File Reviewer', content: sampleContent }
+          const fileApp = appToolMap.get('dc_send_file')
+          if (fileApp) await fileApp.callTool('dc_send_file', fileArgs, ctx)
+        }
       }
     } catch (err) {
       logf('dc channel: webxdc update error for msg %d (app %s): %v', msgId, entry.app.id, err)
