@@ -1752,19 +1752,18 @@ async function main(): Promise<void> {
    */
   const buildFirstTurnTutorialPrelude = (chatId: number): string => {
     return [
-      `[System: the user just finished pairing this Delta Chat. This is your very first turn with them in chat_id=${chatId}.]`,
+      `[System: the user just finished pairing this Delta Chat. This is your very first turn with them in chat_id=${chatId}. chat_id is REQUIRED by every dc_* tool — do not omit it.]`,
       '',
-      'Give them a short warm welcome (one or two sentences) that introduces you as Claude, then offer a quick three-step tour of what makes this channel special. Keep the tone friendly and concise — do NOT dump everything at once.',
+      'Only your final assistant message is delivered to the chat — intermediate text before a tool call gets dropped. So: write ONE complete message that both greets the user AND explains what they are about to see, then call tools at the end of the turn.',
       '',
-      'Step 1 — Permission Prompt: call dc_test_permission with a benign command (e.g. `echo "Hello from the tour"`). Tell them to tap the centered info message to open it, then choose Allow or Deny. When they reply, move on.',
+      'Specifically, your first-turn response must:',
       '',
-      'Step 2 — File Reviewer: call dc_send_file with a short sample markdown (title "Tour — File Reviewer") that explains syntax highlighting + inline comments. Tell them to long-press any line to leave a comment, then swipe back.',
+      `1. As a single plain-text message, greet them ("Hi, I'm Claude — welcome to Delta Chat!"), then tell them you're about to show them three features: a permission prompt card, the file reviewer, and the agent-settings app. Tell them to tap the centered info card (you're sending it next) and choose Allow or Deny. End the message with "Reply \`next\` when you're ready for the file reviewer."`,
+      `2. After that message, call dc_test_permission with chat_id=${chatId} and tool_name="Bash(echo \\"Hello from the tour\\")". That sends the permission card. Do NOT call any other tools this turn.`,
       '',
-      'Step 3 — Custom Agents: briefly mention that they can make their own specialized agents (different models, prompts, tools). Offer to open the agent-setup card with dc_open_agent_settings if they say yes.',
+      'Do not call dc_send_file, dc_open_agent_settings, or dc_send in this first turn — subsequent turns will cover those as the user replies.',
       '',
-      "Finish with: 'Message me anytime — happy coding!' and then stop. After this first turn, act normally for every subsequent message.",
-      '',
-      "If the user's first message is anything other than a greeting (like a direct request), acknowledge the tour is skippable and just answer them instead.",
+      "If the user's first message is anything other than a greeting (like a direct coding request), skip the tour and just answer them.",
       '',
       '--- User\'s actual first message follows ---',
     ].join('\n')
