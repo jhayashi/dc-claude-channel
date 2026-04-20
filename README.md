@@ -37,23 +37,45 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
 <p align="center">
   <img src="screenshots/chat-list.jpg" width="250" alt="Chat list with agent chats">
   &nbsp;&nbsp;
-  <img src="screenshots/agent-setup.jpg" width="250" alt="Agent setup card">
+  <img src="screenshots/permission-prompt.jpg" width="250" alt="Permission prompt">
 </p>
 <p align="center">
-  <em>Multiple agents, isoldated chats</em>
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <em>Agent setup in a WebXDC app</em>
+  <em>One chat per agent, each with its own identity</em>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <em>Tap to allow or deny tool runs</em>
 </p>
 
 <p align="center">
-  <img src="screenshots/permission-prompt.jpg" width="250" alt="Permission prompt">
+  <img src="screenshots/file-reviewer-reading.jpg" width="250" alt="File reviewer">
   &nbsp;&nbsp;
-  <img src="screenshots/file-reviewer.jpg" width="250" alt="File reviewer">
+  <img src="screenshots/file-reviewer-comment.jpg" width="250" alt="File reviewer with comment composer">
 </p>
 <p align="center">
-  <em>Optional permissions GUI</em>
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <em>Review and comment on code from your phone</em>
+  <em>Rendered markdown and source, on your phone</em>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <em>Long-press any line or paragraph to comment</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/agent-setup-home.jpg" width="250" alt="Agent setup home">
+  &nbsp;&nbsp;
+  <img src="screenshots/agent-setup-agent-picker.jpg" width="250" alt="Agent picker with templates">
+</p>
+<p align="center">
+  <em>Agent setup hub — start, manage, or resume</em>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <em>Pick a template or reuse a saved agent</em>
+</p>
+
+<p align="center">
+  <img src="screenshots/agent-setup-resume-loading.jpg" width="250" alt="Resume terminal session, scanning">
+  &nbsp;&nbsp;
+  <img src="screenshots/agent-setup-resume-list.jpg" width="250" alt="Resume terminal session picker">
+</p>
+<p align="center">
+  <em>Scans recent Claude sessions on your machine</em>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <em>Pick one to continue in a new DC chat</em>
 </p>
 
 ## Prerequisites
