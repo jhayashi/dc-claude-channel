@@ -44,6 +44,13 @@ export const BindingSchema = z.object({
    * .jsonl lives in — terminal and DC both read/write the same file.
    */
   workingDir: z.string().optional(),
+  /**
+   * Set to true by the pairing flow when a binding is first created so the
+   * subagent's initial turn for this chat is prefixed with a tutorial
+   * prelude that asks the agent to give a guided tour. Cleared on first
+   * dispatch so the tutorial is only spoken once per chat.
+   */
+  firstTurnTutorial: z.boolean().optional(),
   createdAt: z.string(),
 })
 
@@ -169,6 +176,14 @@ export function clearSessionId(chatId: number): void {
   const binding = getBinding(chatId)
   if (!binding) return
   const { sessionId: _dropped, ...rest } = binding
+  saveBinding(rest as Binding)
+}
+
+/** Clear the firstTurnTutorial flag after the prelude has been seeded once. */
+export function clearFirstTurnTutorial(chatId: number): void {
+  const binding = getBinding(chatId)
+  if (!binding?.firstTurnTutorial) return
+  const { firstTurnTutorial: _dropped, ...rest } = binding
   saveBinding(rest as Binding)
 }
 
