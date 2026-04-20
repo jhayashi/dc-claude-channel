@@ -11,11 +11,18 @@
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import {
-  startDeltaChat,
-  type DeltaChatOverJsonRpcServer,
-} from "@deltachat/stdio-rpc-server";
+import { waitForReady } from "./bootstrap.js";
+import type { DeltaChatOverJsonRpcServer } from "@deltachat/stdio-rpc-server";
 import type { RawClient } from "@deltachat/jsonrpc-client";
+
+// Lazy-loaded so the bundler doesn't resolve @deltachat/* at startup,
+// which fails on a fresh install before `bun install` has run.
+// server.ts awaits waitForReady() before calling start(); the dynamic
+// import here is the actual load after that gate opens.
+async function loadStartDeltaChat(): Promise<typeof import("@deltachat/stdio-rpc-server").startDeltaChat> {
+  await waitForReady();
+  return (await import("@deltachat/stdio-rpc-server")).startDeltaChat;
+}
 
 // ── Exported types ──────────────────────────────────────────────────────
 
@@ -171,6 +178,7 @@ export class DCClient {
    */
   async start(): Promise<void> {
     mkdirSync(DC_DATA_DIR, { recursive: true });
+    const startDeltaChat = await loadStartDeltaChat();
     this.dc = await startDeltaChat(DC_DATA_DIR, { muteStdErr: true });
     this.rpc = this.dc.rpc;
   }

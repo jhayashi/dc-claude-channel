@@ -58,6 +58,7 @@ import {
   _resetSttWorker,
   type STTConfig,
 } from './stt.js'
+import { checkReady, runInstallInBackground, _signalComplete, waitForReady } from './bootstrap.js'
 
 // ── Security hardening ──────────────────────────────────────────────────
 // Freeze Object.prototype at startup to block prototype-pollution from any
@@ -1744,6 +1745,22 @@ async function cleanupChatState(
 // ── Startup ─────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // Bootstrap: if deps are missing, fork `bun install` in the background.
+  // All DC tool handlers + the voice handler await waitForReady() so tool
+  // calls issued before install finishes transparently block rather than
+  // crash on missing native modules. client.start() below also awaits the
+  // gate (via its dynamic @deltachat/* import in dc-client.ts).
+  const pluginDir = import.meta.dir
+  if (checkReady(pluginDir)) {
+    _signalComplete()
+    logf('bootstrap: deps ready, gate open')
+  } else {
+    logf('bootstrap: deps missing, installing in background')
+    runInstallInBackground(pluginDir, logf).catch(err => {
+      logf('bootstrap: install failed — tool calls will return an error: %v', err)
+    })
+  }
+
   await client.start()
 
   const dcAddress = process.env.DC_ADDRESS
