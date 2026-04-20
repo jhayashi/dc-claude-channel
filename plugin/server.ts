@@ -28,7 +28,7 @@ import * as familiarRuntime from './familiar-runtime.js'
 import { apps } from './apps.js'
 import type { WebXDCApp, AppContext } from './webxdc-app.js'
 import { filterUpdatesByOwner } from './webxdc-filter.js'
-import { decorateAgentChat } from './apps/agent-setup-app.js'
+import { decorateAgentChat, setAgentIcon } from './apps/agent-setup-app.js'
 import { decideCleanup } from './cleanup.js'
 import { SocketServer, type SocketRequest } from './dispatcher/socket-server.js'
 import { SubagentCache } from './dispatcher/subagent-cache.js'
@@ -997,11 +997,14 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           logf('dc channel: createGroup failed: %v', err)
           return { content: [{ type: 'text' as const, text: `dc_access_arm_pairing: failed to create group: ${err}` }], isError: true }
         }
+        // Stamp the default agent's composed badge on the group so the user
+        // sees the agent's identity immediately after scanning the QR (before
+        // the binding is actually created by dc_access_pair).
         try {
-          const avatarPath = new URL('./assets/claude-avatar.png', import.meta.url).pathname
-          await client.setChatProfileImage(groupChatId, avatarPath)
+          const defaultAgent = agents.ensureDefaultAgent()
+          await setAgentIcon({ client, logf }, groupChatId, defaultAgent)
         } catch (err) {
-          logf('dc channel: setChatProfileImage for armed group %d failed: %v', groupChatId, err)
+          logf('dc channel: setAgentIcon for armed group %d failed: %v', groupChatId, err)
         }
         access.armPairing(groupChatId)
         const expires = access.getArmedUntil()
@@ -1754,16 +1757,11 @@ async function main(): Promise<void> {
     return [
       `[System: the user just finished pairing this Delta Chat. This is your very first turn with them in chat_id=${chatId}. chat_id is REQUIRED by every dc_* tool — do not omit it.]`,
       '',
-      'Only your final assistant message is delivered to the chat — intermediate text before a tool call gets dropped. So: write ONE complete message that both greets the user AND explains what they are about to see, then call tools at the end of the turn.',
+      'Only your final assistant message is delivered to the chat — intermediate text before a tool call gets dropped. Do NOT call any tools in this first turn. Just output one warm, concise welcome message.',
       '',
-      'Specifically, your first-turn response must:',
+      "Introduce yourself as Claude, running in Delta Chat. In one short paragraph, mention three things they'll discover as they use it: (1) a permission-prompt card that pops up when you want to run shell commands or edit files, (2) a file-reviewer app that shows docs or code with inline comments when you send them a file, and (3) an agent-settings app where they can create specialized agents with different models and tools. Tell them to just ask you anything to get started — a coding question, a writing task, an errand. Sign off friendly.",
       '',
-      `1. As a single plain-text message, greet them ("Hi, I'm Claude — welcome to Delta Chat!"), then tell them you're about to show them three features: a permission prompt card, the file reviewer, and the agent-settings app. Tell them to tap the centered info card (you're sending it next) and choose Allow or Deny. End the message with "Reply \`next\` when you're ready for the file reviewer."`,
-      `2. After that message, call dc_test_permission with chat_id=${chatId} and tool_name="Bash(echo \\"Hello from the tour\\")". That sends the permission card. Do NOT call any other tools this turn.`,
-      '',
-      'Do not call dc_send_file, dc_open_agent_settings, or dc_send in this first turn — subsequent turns will cover those as the user replies.',
-      '',
-      "If the user's first message is anything other than a greeting (like a direct coding request), skip the tour and just answer them.",
+      "If the user's first message is a direct request (not a greeting), acknowledge it briefly and just answer them — skip the welcome.",
       '',
       '--- User\'s actual first message follows ---',
     ].join('\n')

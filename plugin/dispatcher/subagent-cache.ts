@@ -112,8 +112,10 @@ export class SubagentCache {
 
   private async spawn(chatId: number): Promise<CacheEntry> {
     await this.ensureCapacity()
+    const t0 = Date.now()
     const sub = await this.opts.spawnFn(chatId)
     if (!sub) throw new Error('subagent spawn skipped (no agent bound)')
+    this.logf('cache: cold-spawn chat=%d elapsed=%dms', chatId, Date.now() - t0)
     const entry: CacheEntry = { sub, idleTimer: null, queue: [], busy: false }
     this.entries.set(chatId, entry)
     this.touch(chatId)
