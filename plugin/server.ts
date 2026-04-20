@@ -1648,6 +1648,18 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
 mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
   const args = (req.params.arguments ?? {}) as Record<string, unknown>
   try {
+    // Gate every tool call on bootstrap readiness. If bun install is still
+    // running we transparently block for up to 5 min; on install failure
+    // we surface a user-visible error instead of crashing on missing deps.
+    await waitForReady()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return {
+      content: [{ type: 'text' as const, text: `Delta Chat plugin install did not complete. Run \`bun install\` in ${import.meta.dir} manually, then restart this Claude Code session. (${msg})` }],
+      isError: true,
+    }
+  }
+  try {
     const core = await callCoreTool(req.params.name, args)
     if (core) return core
     let app = appToolMap.get(req.params.name)
@@ -1992,6 +2004,17 @@ async function main(): Promise<void> {
    */
   const tryTranscribeVoice = async (msg: Message): Promise<Message | 'drop' | null> => {
     if (!sttConfig.enabled || !isVoiceMessage(msg)) return null
+
+    // Gate on bootstrap readiness — @napi-rs/whisper is a native addon
+    // that gets installed by `bun install`. If we hit the whisper path
+    // before install finishes we'd crash loading the module.
+    try {
+      await waitForReady()
+    } catch (err) {
+      logf('stt: bootstrap gate rejected, voice transcription unavailable: %v', err)
+      client.send(msg.chatId, '\u{26A0}\uFE0F Voice transcription unavailable: plugin install did not complete. Type your message instead.').catch(() => {})
+      return null
+    }
 
     try {
       // React with 👂 so the user knows we're listening/transcribing.
