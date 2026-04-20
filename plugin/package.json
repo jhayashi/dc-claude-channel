@@ -4,20 +4,21 @@
   "type": "module",
   "bin": "./server.ts",
   "scripts": {
-    "start": "bun install --no-summary && bun server.ts"
+    "start": "bun server.ts"
   },
   "dependencies": {
     "@deltachat/jsonrpc-client": "*",
     "@deltachat/stdio-rpc-server": "*",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@napi-rs/whisper": "^0.0.4",
+    "@resvg/resvg-js": "^2.6.2",
     "cron-parser": "5.5.0",
     "fflate": "^0.8.2",
-    "sharp": "^0.34.5",
     "yaml": "^2.8.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "pngjs": "^7.0.0",
     "prismjs": "^1.30.0"
   }
 }

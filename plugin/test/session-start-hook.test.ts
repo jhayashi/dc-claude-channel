@@ -35,7 +35,7 @@ test('empty state, no welcomed flag → emits inline welcome and creates flag', 
   const parsed = JSON.parse(stdout)
   expect(parsed.hookSpecificOutput.hookEventName).toBe('SessionStart')
   expect(parsed.hookSpecificOutput.additionalContext).toContain('Greet the user')
-  expect(parsed.hookSpecificOutput.additionalContext).toContain('/deltachat:configure invite')
+  expect(parsed.hookSpecificOutput.additionalContext).toContain('/deltachat:setup')
   expect(existsSync(join(pluginData, '.welcomed'))).toBe(true)
 })
 

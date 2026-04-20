@@ -79,6 +79,8 @@ Then launch Claude Code with the research-preview channel flag:
 claude --dangerously-load-development-channels plugin:deltachat@dc-claude-channel
 ```
 
+On first launch, the plugin installs its dependencies (~2 min) — you'll see a spinner, followed by a banner with next steps. Subsequent launches are instant.
+
 > **Why the `--dangerously-load-development-channels` flag?** During the Claude Code channels research preview, third-party channel plugins must be either on the official Anthropic allowlist or loaded with this flag. We're working toward allowlist approval — see [issue #8](https://github.com/jhayashi/dc-claude-channel/issues/8) for status. Team and Enterprise admins can alternatively add this plugin to their org's `allowedChannelPlugins` in managed settings to skip the flag.
 
 ### Updating
@@ -97,28 +99,29 @@ If you want to hack on the plugin itself, see the [Development](#development) se
 
 On first launch, the plugin auto-provisions a bot account on a chatmail server. On subsequent launches, it resumes the saved account.
 
-### 1. Get the bot's invite link
+### 1. Start pairing
 
 In Claude Code, run:
 
 ```
-/deltachat:configure invite
+/deltachat:setup
 ```
 
-This prints a QR code link.
+This arms a 5-minute pairing window and prints a QR code link.
 
-### 2. Add the bot in Delta Chat
+### 2. Scan the QR from Delta Chat
 
-Open the link in a browser on the same machine running the terminal. On the web page that loads, tap the **triangle icon** to reveal the QR code. Scan the QR code from your Delta Chat app to add Claude as a verified contact.
+Open the link in a browser on the same machine running the terminal. On the web page that loads, tap the **triangle icon** to reveal the QR code. Scan it from your Delta Chat app.
 
-### 3. Pair your chat
+Claude will create a `Claude` chat on your phone automatically and post a 5-letter pairing code.
 
-Once you've added Claude as a contact, send any message. Claude will reply with a command to type into your terminal:
+### 3. Finish pairing
 
-> Pairing required — run in Claude Code:
-> /deltachat:access pair abcde
+Read the code from the `Claude` chat on your phone, then run in your terminal:
 
-Type that command into your Claude Code terminal to establish the link between your Delta Chat account and Claude. This ensures no one else can command your Claude agent.
+> /deltachat:setup pair abcde
+
+This links your Delta Chat account to Claude so no one else can command your agent.
 
 ### 4. Tutorial
 

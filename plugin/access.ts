@@ -17,6 +17,7 @@ const CODE_ALPHABET = "abcdefghijkmnopqrstuvwxyz"; // no 'l'
 const CODE_LEN = 5;
 const PAIRING_EXPIRY_MS = 3_600_000; // 1 hour
 const MAX_PENDING = 3;
+const ARM_WINDOW_MS = 5 * 60 * 1000; // 5 min pairing arm window
 let _approvedDir = process.env.DC_TEST_APPROVED_DIR ?? join(
   homedir(),
   ".claude",
@@ -30,6 +31,45 @@ export function getApprovedDir(): string { return _approvedDir }
 
 /** Override the approved directory (for testing). */
 export function setApprovedDir(dir: string): void { _approvedDir = dir }
+
+// --- Arm-window state (Phase 2) ---
+//
+// `/deltachat:setup` arms a 5-minute window during which the next verified
+// contact event is treated as the user pairing their phone. Without this,
+// random QR scans of stale invite links would create unwanted chats.
+
+let _armedUntil: number | null = null;
+
+/** Arm the pairing window. Idempotent — re-arming extends the TTL. */
+export function armPairing(now: number = Date.now()): void {
+  _armedUntil = now + ARM_WINDOW_MS;
+}
+
+/** Is the pairing window currently armed? Non-consuming. */
+export function isArmed(now: number = Date.now()): boolean {
+  return _armedUntil !== null && now < _armedUntil;
+}
+
+/** Timestamp (ms epoch) at which the window expires, or null if not armed. */
+export function getArmedUntil(): number | null {
+  return _armedUntil;
+}
+
+/**
+ * Atomic check-and-clear. Returns true if the window was armed and valid;
+ * false if expired or never armed. Either way, clears the state so the
+ * next verified-contact event cannot double-consume.
+ */
+export function consumeArmedWindow(now: number = Date.now()): boolean {
+  const armed = _armedUntil !== null && now < _armedUntil;
+  _armedUntil = null;
+  return armed;
+}
+
+/** Clear the arm-window state. For tests. */
+export function resetArmedState(): void {
+  _armedUntil = null;
+}
 
 // --- In-memory pending pairings ---
 
