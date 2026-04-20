@@ -40,9 +40,9 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
   <img src="screenshots/permission-gate.jpg" width="250" alt="Permission prompt">
 </p>
 <p align="center">
-  <em>One chat per agent</em>
+  <em>Multiple chats with separate context</em>
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <em>Tap to allow or deny</em>
+  <em>Optional permission GUI</em>
 </p>
 
 <p align="center">
@@ -51,9 +51,9 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
   <img src="screenshots/file-reviewer-comment.jpg" width="250" alt="File reviewer with comment composer">
 </p>
 <p align="center">
-  <em>Reviewer app to iterate on files and source</em>
+  <em>GUI iteration on files</em>
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <em>Long-press any line to comment</em>
+  <em>Long press to comment</em>
 </p>
 
 <p align="center">
@@ -62,9 +62,9 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
   <img src="screenshots/agent-setup-agent-picker.jpg" width="250" alt="Agent picker with templates">
 </p>
 <p align="center">
-  <em>Start, manage, or resume</em>
+  <em>GUI chat & agent setup</em>
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <em>Templates and saved agents</em>
+  <em>Simple new chat creation</em>
 </p>
 
 <p align="center">
@@ -73,9 +73,9 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
   <img src="screenshots/agent-setup-resume-list.jpg" width="250" alt="Resume terminal session picker">
 </p>
 <p align="center">
-  <em>Scans recent Claude sessions</em>
+  <em>Teleport recent sessions</em>
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <em>Continue in a new DC chat</em>
+  <em>Easy to find recent sessions</em>
 </p>
 
 ## Prerequisites
