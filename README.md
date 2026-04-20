@@ -85,35 +85,60 @@ When prompted for install scope, pick **"install for you"** — the plugin's sta
 /plugin reload-plugins
 ```
 
-The plugin installs its native dependencies in the background (~30–120s). While that's running, grab your phone and:
+The plugin installs its native dependencies in the background (~30–120s). Use that time to set up your phone.
 
-1. Install [Delta Chat](https://delta.chat/en/download)
-2. Create a free [chatmail](https://chatmail.at/) account from inside the app (one tap, no signup)
+#### 1. Install Delta Chat on your phone
 
-Back in the terminal, arm pairing:
+Get the official build from **[delta.chat/download](https://delta.chat/en/download)** — it links to Google Play, the App Store, F-Droid, and desktop downloads. First launch shows a welcome screen.
+
+#### 2. Create a chatmail account
+
+Through the Delta Chat onboarding, choose to create a **chatmail** account. It's the fastest path — no email address, password, or signup form. Pick a display name when prompted and you'll land on an empty chat list.
+
+#### 3. Arm pairing in the terminal
+
+Back in Claude Code, run:
 
 ```
 /deltachat:setup
 ```
 
-This opens a 5-minute pairing window and prints a link (the command transparently waits if the background install is still finishing). Open that link in a browser on the same machine — on the page that loads, tap the **triangle icon** to reveal a QR code. Scan the QR from your phone's Delta Chat app. A `Claude` chat appears on your phone and posts a 5-letter pairing code.
+Claude Code prints a `http://localhost:…` link and opens a 5-minute pairing window. If the background install is still finishing, the command blocks silently until it's ready — that's expected; just wait.
 
-Read the code off your phone, then type it back in the terminal:
+#### 4. Open the link and reveal the QR
+
+Open the printed link in any browser on the same machine as the terminal. The page shows a **play button (▶)** in the middle — tap it to reveal the QR code (it's hidden by default so it doesn't leak if your screen gets recorded).
+
+#### 5. Scan the QR with Delta Chat
+
+In Delta Chat on your phone, open the QR scanner. It's either a **QR icon in the top toolbar** of the chat list, or under the **new-chat (+) menu** as **"Scan QR code"** (varies by platform and version). Point your phone at the QR on your computer screen.
+
+After a second or two, a new chat called **`Claude`** appears at the top of your chat list.
+
+#### 6. Read the 5-letter code
+
+Open the `Claude` chat on your phone. The first message is a 5-letter pairing code (e.g. `abcde`).
+
+#### 7. Finish pairing in the terminal
+
+Back in Claude Code, type:
 
 ```
 /deltachat:setup pair abcde
 ```
 
-(Replace `abcde` with your actual code.) Your Delta Chat account is now linked — no one else can command your agent.
+Replace `abcde` with your actual code. Your Delta Chat account is now linked — no one else can command your agent.
 
-Finally, open the `Claude` chat on your phone and send any message (a greeting is fine). The default agent runs a short guided tour covering:
+#### 8. Send a message to start the tour
+
+Back on your phone, type anything into the `Claude` chat (a "hi" is fine). The default agent runs a short guided tour covering:
 
 - **Permission prompts** — tap Allow or Deny for sensitive actions
 - **File Reviewer** — syntax-highlighted code/doc viewer with inline commenting
 - **Agents & Chat setup** — create new chats from templates or custom agents you define
 - **WebXDC apps** — one-shot a custom mini-app (or single-player game) right in the chat
 
-Reply "no thanks" after the first turn to skip the tour and drop into normal chat mode.
+Reply "no thanks" to skip the tour and drop into normal chat mode.
 
 No Claude Code restart needed at any point.
 
