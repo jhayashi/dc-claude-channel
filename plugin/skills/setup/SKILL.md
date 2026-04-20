@@ -3,11 +3,11 @@ name: setup
 description: Set up and manage the Delta Chat channel — pair your phone via QR, enter the pairing code, or unpair. Use when the user asks to set up Delta Chat, pair a phone, finish pairing, or remove a paired device.
 user-invocable: true
 allowed-tools:
-  - mcp__deltachat__dc_invite_link
-  - mcp__deltachat__dc_access_arm_pairing
-  - mcp__deltachat__dc_access_pair
-  - mcp__deltachat__dc_access_list
-  - mcp__deltachat__dc_access_unpair
+  - mcp__plugin_deltachat_deltachat__dc_invite_link
+  - mcp__plugin_deltachat_deltachat__dc_access_arm_pairing
+  - mcp__plugin_deltachat_deltachat__dc_access_pair
+  - mcp__plugin_deltachat_deltachat__dc_access_list
+  - mcp__plugin_deltachat_deltachat__dc_access_unpair
   - Read
 ---
 
@@ -25,8 +25,8 @@ Arguments passed: `$ARGUMENTS`
 
 ## Before dispatching
 
-If the `mcp__deltachat__dc_access_arm_pairing` tool (or any other
-`mcp__deltachat__dc_*` tool) isn't registered in this session, the
+If the `mcp__plugin_deltachat_deltachat__dc_access_arm_pairing` tool (or any other
+`mcp__plugin_deltachat_deltachat__dc_*` tool) isn't registered in this session, the
 most common cause is launching Claude Code without the channel flag.
 Tell the user:
 

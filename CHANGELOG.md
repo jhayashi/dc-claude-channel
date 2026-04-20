@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
+## [1.0.32] — 2026-04-19
+
+Patch release. Fixes `/deltachat:setup` on fresh marketplace installs.
+
+### Fixed
+- **`/deltachat:setup` skill now uses the correct MCP tool prefix.** Plugin-scoped MCP tools are exposed as `mcp__plugin_<pluginname>_<servername>__*`, not `mcp__<servername>__*`. The skill's `allowed-tools` list referenced the wrong prefix, so Claude's pre-flight check concluded the tools weren't registered and (misleadingly) told users the `--dangerously-load-development-channels` flag was missing. Updated all references from `mcp__deltachat__` to `mcp__plugin_deltachat_deltachat__`.
+
 ## [1.0.31] — 2026-04-19
 
 Patch release. Fixes a false-positive banner introduced in 1.0.3.
@@ -253,6 +260,7 @@ First public release of the Delta Chat channel for Claude Code.
 - File-based allowlist + pairing codes.
 - `deltachat-rpc-server` integration.
 
+[1.0.32]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.31...v1.0.32
 [1.0.31]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.3...v1.0.31
 [1.0.3]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.1...v1.0.2
