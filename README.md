@@ -120,15 +120,21 @@ Read the code from the `Claude` chat on your phone, then run in your terminal:
 
 This links your Delta Chat account to Claude so no one else can command your agent.
 
-### 4. Tutorial
+### 4. Say hi
 
-After pairing, the bot sends two WebXDC apps (Permission Prompt and File Reviewer) and offers a guided tour. The tutorial walks you through:
+Open the `Claude` chat on your phone and send any message — a greeting is fine. On your first message the default agent runs a short guided tour:
 
-- **Permission prompts** — how to tap the centered message to Allow or Deny
+- **Permission prompts** — how to tap Allow or Deny
 - **File Reviewer** — syntax-highlighted code/doc viewer with inline commenting
-- **App building** — optionally build a WebXDC app right in the chat
+- **App building** — optionally one-shot a WebXDC app right in the chat
 
-Reply "yes" to start, or "no" to skip. You can start using Claude immediately either way.
+If you'd rather skip the tour, reply with "no thanks" after the first turn and the agent drops into normal chat mode.
+
+## Unpairing
+
+To remove a paired device, open the agent settings app (ask Claude to "open the agent settings app", or tap the card when it appears) and select **Paired devices** on the home screen. Choose **freeze** (chats go read-only, history preserved) or **delete** (chats are removed).
+
+From a terminal, `/deltachat:setup unpair` lists paired contacts and `/deltachat:setup unpair <contact_id>` unpairs one. Add `delete` to the command to remove chats instead of freezing them.
 
 ## Resuming sessions
 
