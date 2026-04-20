@@ -80,6 +80,6 @@ if [ "${paired:-0}" -gt 0 ] 2>/dev/null; then
 fi
 
 cat <<'JSON'
-{"systemMessage":"Delta Chat plugin is ready.\n\nOn your phone:\n  1. Install Delta Chat — https://delta.chat/en/download\n  2. Create a free chatmail account from inside Delta Chat (one tap, no signup).\n  3. Have the app ready to scan a QR code.\n\nWhen ready, run /deltachat:setup here to pair your phone.","hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"The Delta Chat plugin is installed but no chat is paired. If the user asks about Delta Chat, pairing, the bot, or QR codes, suggest /deltachat:setup."}}
+{"systemMessage":"Delta Chat plugin is ready.\n\nOn your phone:\n  1. Install Delta Chat — https://delta.chat/en/download\n  2. Create a free chatmail account from inside Delta Chat (one tap, no signup).\n  3. Have the app ready to scan a QR code.\n\nWhen ready, run /deltachat:setup here to pair your phone.\n\nNot for you? Run /plugin uninstall deltachat@dc-claude-channel to remove.","hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"The Delta Chat plugin is installed but no chat is paired. If the user asks about Delta Chat, pairing, the bot, or QR codes, suggest /deltachat:setup."}}
 JSON
 exit 0
