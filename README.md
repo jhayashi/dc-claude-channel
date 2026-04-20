@@ -57,7 +57,7 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
 
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) v2.1.80 or later
 - [Bun](https://bun.sh/) (v1.1+) on your `$PATH`
-- [Delta Chat](https://delta.chat/) on your phone (Android, iOS, or desktop) with a [chatmail](https://chatmail.at/) account
+- [Delta Chat](https://delta.chat/) on your phone with a [chatmail](https://chatmail.at/) account. Tested on **Android 2.49**, **iOS 2.48**, with **dc-core 2.49**. Older versions may work but are unsupported.
 
 ## Installation
 
