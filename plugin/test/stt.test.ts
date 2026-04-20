@@ -1,5 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { join } from 'node:path'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import {
   parseSTTConfig,
   isVoiceMessage,
@@ -7,6 +9,8 @@ import {
   AudioTooShortError,
   checkAudioDuration,
   ensureModel,
+  expectedModelHash,
+  sha256File,
   transcribe,
   _resetSttWorker,
   _seedPendingForTest,
@@ -115,6 +119,35 @@ describe('_resetSttWorker', () => {
     _resetSttWorker()
     await expect(p1).rejects.toThrow(/terminated/)
     await expect(p2).rejects.toThrow(/terminated/)
+  })
+})
+
+describe('model hash verification', () => {
+  test('expectedModelHash returns pinned hash for known models', () => {
+    const h = expectedModelHash('base.en')
+    expect(h).toMatch(/^[a-f0-9]{64}$/)
+  })
+
+  test('expectedModelHash returns null for unknown model', () => {
+    expect(expectedModelHash('not-a-real-model')).toBe(null)
+  })
+
+  test('expectedModelHash ignores the _comment entry', () => {
+    expect(expectedModelHash('_comment')).toBe(null)
+  })
+
+  test('sha256File hashes a file deterministically', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'stt-hash-'))
+    const p = join(dir, 'sample.bin')
+    try {
+      writeFileSync(p, 'hello world')
+      // Known SHA-256 of "hello world"
+      expect(sha256File(p)).toBe(
+        'b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9',
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

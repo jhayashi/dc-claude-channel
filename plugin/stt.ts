@@ -13,8 +13,9 @@
  * Model files are downloaded from Hugging Face on first use.
  */
 
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 
 // ── Bun + native binding compat ─────────────────────────────────────
@@ -174,8 +175,43 @@ function modelUrl(model: string): string {
 }
 
 /**
+ * Pinned SHA-256 hashes for each supported ggml model, sourced from the
+ * HF LFS pointer metadata at download time. Loaded from
+ * whisper-model-hashes.json so the pinned list is reviewable as data
+ * rather than embedded in code.
+ */
+const MODEL_HASHES: Record<string, string> = (() => {
+  const raw = JSON.parse(
+    readFileSync(join(import.meta.dir, 'whisper-model-hashes.json'), 'utf8'),
+  ) as Record<string, string>
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(raw)) {
+    if (k.startsWith('_')) continue
+    out[k] = v
+  }
+  return out
+})()
+
+/** Hex SHA-256 of a file on disk. Streams through a hash rather than reading all at once. */
+export function sha256File(path: string): string {
+  const hash = createHash('sha256')
+  hash.update(readFileSync(path))
+  return hash.digest('hex')
+}
+
+/** Return the pinned SHA-256 for a model, or null if unpinned. */
+export function expectedModelHash(model: string): string | null {
+  return MODEL_HASHES[model] ?? null
+}
+
+/**
  * Ensure the whisper model file exists, downloading if needed.
  * Returns the path to the model file.
+ *
+ * Download is written to a tmp path, hashed, and renamed into place
+ * only after SHA-256 matches the pinned hash. If the model isn't in
+ * the pinned list a warning is logged and the download is accepted
+ * (forward-compat with new whisper.cpp releases).
  */
 export async function ensureModel(
   config: STTConfig,
@@ -197,8 +233,27 @@ export async function ensureModel(
   }
 
   const arrayBuf = await resp.arrayBuffer()
-  const { writeFileSync } = await import('node:fs')
-  writeFileSync(modelPath, new Uint8Array(arrayBuf))
+  const tmpPath = `${modelPath}.tmp-${randomUUID()}`
+  writeFileSync(tmpPath, new Uint8Array(arrayBuf))
+
+  const expected = expectedModelHash(config.model)
+  if (expected) {
+    const actual = sha256File(tmpPath)
+    if (actual !== expected) {
+      try { unlinkSync(tmpPath) } catch {}
+      throw new Error(
+        `Model integrity check failed for ${config.model}: expected ${expected}, got ${actual}`,
+      )
+    }
+    logf('stt: model %s SHA-256 verified', config.model)
+  } else {
+    logf(
+      'stt: WARNING — no pinned SHA-256 for model %s, skipping integrity check',
+      config.model,
+    )
+  }
+
+  renameSync(tmpPath, modelPath)
 
   const sizeMB = (arrayBuf.byteLength / 1024 / 1024).toFixed(0)
   logf('stt: model %s downloaded (%s MB) to %s', config.model, sizeMB, modelPath)
