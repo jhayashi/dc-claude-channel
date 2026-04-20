@@ -193,7 +193,7 @@ body {
   font-size: 13px;
   line-height: 1.5;
 }
-.content pre code { background: none; border: none; padding: 0; }
+.content pre code { display: block; background: none; border: none; padding: 0; }
 .content blockquote {
   border-left: 2px solid var(--orange);
   padding: 4px 16px;
@@ -722,7 +722,7 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
 <body>
 <div id="loading">
   <div class="spinner"></div>
-  <div>Loading document\u2026</div>
+  <div>Loading document…</div>
 </div>
 <div id="empty">
   <div class="empty-icon">
@@ -760,7 +760,7 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
     <div class="target-label" id="card-label">Commenting on</div>
     <div class="target-text" id="card-target"></div>
   </div>
-  <textarea id="comment-text" placeholder="Type your note\u2026"></textarea>
+  <textarea id="comment-text" placeholder="Type your note…"></textarea>
   <div class="card-buttons">
     <button class="card-btn btn-delete" id="card-delete" style="display:none">Delete</button>
     <button class="card-btn btn-cancel" id="card-cancel">Cancel</button>
@@ -772,7 +772,7 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
 /* %%PRISM_JS%% */
 </script>
 <script>
-var APP_VERSION = 1.30;
+var APP_VERSION = 1.38;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -958,8 +958,9 @@ function renderMarkdown(md) {
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/~~(.+?)~~/g, '<del>$1</del>')
     .replace(/^---$/gm, '<hr>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, text) {
-      return '<a>' + esc(text) + '</a>';
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, text, href) {
+      var safe = /^(https?:|mailto:|#)/i.test(href) ? href : '#';
+      return '<a href="' + esc(safe) + '" target="_blank" rel="noopener noreferrer">' + esc(text) + '</a>';
     })
     // Task list items: - [ ] and - [x] (must run before plain list items)
     .replace(/^[*-] \[( |x|X)\] (.+)$/gm, function(_, mark, text) {
@@ -1193,7 +1194,11 @@ function renderBlocksInto(container, children, paraIdx, comments) {
 
         var codeHTML = codeEl.innerHTML;  // eslint-disable-line
         var htmlLines = splitHighlightedLines(codeHTML);
-        while (codeEl.firstChild) codeEl.removeChild(codeEl.firstChild);
+        // Remove the <code> element — block divs inside inline <code> is
+        // invalid HTML and phone webviews rendered the line divs as inline,
+        // collapsing the block onto one line. Line divs become direct
+        // children of <pre>, which is block-level and universally safe.
+        codeEl.parentNode.removeChild(codeEl);
 
         var commentedLines = [];
         for (var k = 0; k < htmlLines.length; k++) {
@@ -1205,7 +1210,7 @@ function renderBlocksInto(container, children, paraIdx, comments) {
             lineDiv.classList.add('commented');
             commentedLines.push({ para: paraIdx, rowEl: lineDiv, rowIndex: k + 1, text: comments[paraIdx] });
           }
-          codeEl.appendChild(lineDiv);
+          child.appendChild(lineDiv);
           (function(pi, el) {
             attachLongPress(el, function() { openCommentCard(pi); });
           })(paraIdx, lineDiv);
@@ -1674,7 +1679,13 @@ function sendComments() {
   if (doc.language) payload.language = doc.language;
 
   var n = commentList.length;
-  var infoText = (n === 1 ? '1 comment' : n + ' comments') + ' sent for ' + doc.title;
+  var raw = (window.webxdc.selfName || '').trim();
+  var looksLikeId = !raw || /^[0-9a-f]{16,}$/i.test(raw);
+  var firstName = looksLikeId ? '' : raw.split(/\s+/)[0];
+  var phrase = (n === 1 ? '1 comment' : n + ' comments');
+  var infoText = firstName
+    ? firstName + ' sent ' + phrase + ' for ' + doc.title
+    : phrase + ' sent for ' + doc.title;
   window.webxdc.sendUpdate({ payload: payload, info: infoText }, infoText);
 
   // Remove the file from the app
