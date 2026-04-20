@@ -24,18 +24,43 @@ NODE_MODULES="${PLUGIN_ROOT}/node_modules"
 LOCK="${PLUGIN_ROOT}/bun.lock"
 PKG="${PLUGIN_ROOT}/package.json"
 
-# --- Detect the --dangerously-load-development-channels flag on the
-# parent (claude) process. If we can't read the parent cmdline (unusual
-# platform, restricted /proc), assume the flag is present rather than
-# false-positive.
-parent_cmd=""
-if [ -r "/proc/$PPID/cmdline" ]; then
-  parent_cmd=$(tr '\0' ' ' < "/proc/$PPID/cmdline" 2>/dev/null)
-elif command -v ps >/dev/null 2>&1; then
-  parent_cmd=$(ps -o command= -p "$PPID" 2>/dev/null)
-fi
+# --- Detect the --dangerously-load-development-channels flag by walking
+# up the ancestor process tree (the hook may be launched via a shell or
+# node intermediate, so $PPID alone isn't the claude process). If we
+# can't inspect any cmdline (unusual platform, restricted /proc), assume
+# the flag is present rather than false-positive.
+flag_found=0
+any_cmd_seen=0
+pid=$PPID
+i=0
+while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ] && [ "$i" -lt 8 ]; do
+  cmd=""
+  if [ -r "/proc/$pid/cmdline" ]; then
+    cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)
+  elif command -v ps >/dev/null 2>&1; then
+    cmd=$(ps -ww -o command= -p "$pid" 2>/dev/null)
+  fi
+  if [ -n "$cmd" ]; then
+    any_cmd_seen=1
+    if echo "$cmd" | grep -q 'dangerously-load-development-channels'; then
+      flag_found=1
+      break
+    fi
+  fi
+  next_pid=""
+  if [ -r "/proc/$pid/status" ]; then
+    next_pid=$(grep -E '^PPid:' "/proc/$pid/status" 2>/dev/null | awk '{print $2}')
+  elif command -v ps >/dev/null 2>&1; then
+    next_pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+  fi
+  [ -z "$next_pid" ] || [ "$next_pid" = "$pid" ] && break
+  pid=$next_pid
+  i=$((i + 1))
+done
+# If we successfully read at least one ancestor and none had the flag,
+# declare it missing. If every read failed, assume the flag is present.
 channel_flag_present=1
-if [ -n "$parent_cmd" ] && ! echo "$parent_cmd" | grep -q 'dangerously-load-development-channels'; then
+if [ "$any_cmd_seen" = "1" ] && [ "$flag_found" = "0" ]; then
   channel_flag_present=0
 fi
 
