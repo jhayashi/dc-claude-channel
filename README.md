@@ -63,7 +63,13 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
 
 ### Install via marketplace (recommended)
 
-In any Claude Code session, run these one at a time:
+Launch Claude Code **once** with the research-preview channel flag:
+
+```bash
+claude --dangerously-load-development-channels plugin:deltachat@dc-claude-channel
+```
+
+On first launch the plugin isn't installed yet, so Claude Code prints a harmless `plugin not installed` warning. Ignore it — at the Claude Code prompt, run these three commands one at a time:
 
 ```
 /plugin marketplace add jhayashi/dc-claude-channel
@@ -75,13 +81,13 @@ In any Claude Code session, run these one at a time:
 
 When prompted for install scope, pick **"install for you"** — the plugin's state (paired phone, agents, schedules) is user-global, so a project-level install gives you nothing extra.
 
-Then launch Claude Code with the research-preview channel flag:
-
-```bash
-claude --dangerously-load-development-channels plugin:deltachat@dc-claude-channel
+```
+/plugin reload-plugins
 ```
 
-On first launch, the plugin installs its dependencies (~2 min) — you'll see a spinner, followed by a banner with next steps. Subsequent launches are instant.
+The plugin begins installing its native dependencies in the background (~30–120s) and immediately shows phone-side setup instructions. Grab your phone and open Delta Chat — by the time you're ready to scan, the channel will be ready. Run `/deltachat:setup` to arm pairing and see the QR code.
+
+No Claude Code restart needed.
 
 > **Why the `--dangerously-load-development-channels` flag?** During the Claude Code channels research preview, third-party channel plugins must be either on the official Anthropic allowlist or loaded with this flag. We're working toward allowlist approval — see [issue #8](https://github.com/jhayashi/dc-claude-channel/issues/8) for status. Team and Enterprise admins can alternatively add this plugin to their org's `allowedChannelPlugins` in managed settings to skip the flag.
 
@@ -91,7 +97,11 @@ On first launch, the plugin installs its dependencies (~2 min) — you'll see a 
 /plugin marketplace update
 ```
 
-Then restart your Claude Code session to pick up the new version.
+```
+/plugin reload-plugins
+```
+
+No Claude Code restart needed.
 
 ### Development install
 
