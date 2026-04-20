@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
+## [1.0.31] — 2026-04-19
+
+Patch release. Fixes a false-positive banner introduced in 1.0.3.
+
+### Fixed
+- **Channel-flag detection now walks the full ancestor process tree** instead of checking only `$PPID`. On setups where the hook is spawned via a shell or node intermediate, the original check missed the real `claude` process and wrongly declared `--dangerously-load-development-channels` missing even when it was present. Walks up to 8 ancestors, uses `ps -ww` on macOS to avoid argv truncation, and includes a one-line diagnostic in the warning banner when it does fire so future false positives can be diagnosed without guessing.
+
+## [1.0.3] — 2026-04-18
+
+Setup-flow overhaul. Replaces the ad-hoc tutorial state machine with an agent-driven onboarding, unifies pairing under a single `/deltachat:setup` skill, and adds a terminal escape hatch for removing paired devices.
+
+### Added
+- **`/deltachat:setup` skill** — one verb, three subcommands (`pair <code>`, `unpair`, `list`). Arms a 5-minute pairing window, fetches the invite URL, and hands off to the phone-side QR flow.
+- **Paired-devices screen** in the agent-setup card — list owned contacts, freeze (read-only + farewell) or delete per device, right from the WebXDC UI.
+- **`/deltachat:setup unpair`** terminal escape hatch — same flow as the WebXDC screen, driven by `dc_access_unpair`.
+- **Install + unpaired banners** on every launch until the first pair, with uninstall hint for users who picked the plugin by mistake.
+- **Channel-flag detection** in the `SessionStart` hook — warns if the user forgot `--dangerously-load-development-channels`.
+
+### Changed
+- Pair-on-verified-contact now materializes a Claude chat on the phone side automatically, removing a manual step.
+- Tutorial state machine replaced with an agent-driven prelude — the bound agent handles the "say hi" welcome flow directly instead of a hard-coded dialogue tree.
+
+### Fixed
+- `stt`: multilingual Whisper models now use `language='auto'` (was hardcoded `en`, which broke non-English transcription on base/small/medium/large models).
+
 ## [1.0.2] — 2026-04-18
 
 Feature release: visual refresh of the helper apps, runtime-composed agent badges, a real bidirectional session-resume model, a send-to-terminal flow, a templates gallery, and Marp slide rendering inside the Reviewer.
@@ -228,6 +253,9 @@ First public release of the Delta Chat channel for Claude Code.
 - File-based allowlist + pairing codes.
 - `deltachat-rpc-server` integration.
 
+[1.0.31]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.3...v1.0.31
+[1.0.3]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.2...v1.0.3
+[1.0.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jhayashi/dc-claude-channel/compare/v0.9.5...v1.0.0
 [0.9.5]: https://github.com/jhayashi/dc-claude-channel/compare/v0.9.1...v0.9.5
