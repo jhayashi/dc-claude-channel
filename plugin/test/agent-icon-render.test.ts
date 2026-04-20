@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync, rmSync, existsSync, statSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync, statSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PNG } from 'pngjs'
@@ -79,6 +79,52 @@ describe('renderAgentBadge', () => {
     })
     expect(existsSync(path)).toBe(true)
     expect(path).toContain('definitely-not-a-real-glyph')
+  })
+
+  test('prebuilt PNG is copied instead of re-rendered when available', async () => {
+    // Drop a stub file into the real prebuilt dir under a key that could
+    // not collide with a shipped build target. If the renderer's prebuilt
+    // lookup works, the stub bytes flow through to the cache verbatim;
+    // Resvg is never consulted (and would fall back to user-round anyway).
+    const prebuiltDir = new URL('../agent-badges-prebuilt/', import.meta.url).pathname
+    const { mkdirSync } = await import('node:fs')
+    mkdirSync(prebuiltDir, { recursive: true })
+    const stubKey = 'role-sonnet-plain-test-stub-glyph.png'
+    const stubPath = join(prebuiltDir, stubKey)
+    const stubBytes = Buffer.from('STUBBED-BADGE-CONTENT')
+    writeFileSync(stubPath, stubBytes)
+    try {
+      const out = await renderAgentBadge({
+        archetype: 'role', modelFamily: 'sonnet', trust: false, glyph: 'test-stub-glyph',
+      })
+      expect(readFileSync(out).equals(stubBytes)).toBe(true)
+    } finally {
+      rmSync(stubPath, { force: true })
+    }
+  })
+
+  test('DC_SKIP_PREBUILT=1 bypasses prebuilt lookup', async () => {
+    const prebuiltDir = new URL('../agent-badges-prebuilt/', import.meta.url).pathname
+    const { mkdirSync } = await import('node:fs')
+    mkdirSync(prebuiltDir, { recursive: true })
+    const stubKey = 'role-sonnet-plain-test-stub-glyph-2.png'
+    const stubPath = join(prebuiltDir, stubKey)
+    writeFileSync(stubPath, Buffer.from('STUBBED-BADGE-CONTENT-2'))
+    const prior = process.env.DC_SKIP_PREBUILT
+    process.env.DC_SKIP_PREBUILT = '1'
+    try {
+      const out = await renderAgentBadge({
+        archetype: 'role', modelFamily: 'sonnet', trust: false, glyph: 'test-stub-glyph-2',
+      })
+      // With skip set, Resvg renders fresh; bytes do not match the stub.
+      expect(readFileSync(out).equals(Buffer.from('STUBBED-BADGE-CONTENT-2'))).toBe(false)
+      const img = decodePng(out)
+      expect(img.width).toBe(256)
+    } finally {
+      if (prior === undefined) delete process.env.DC_SKIP_PREBUILT
+      else process.env.DC_SKIP_PREBUILT = prior
+      rmSync(stubPath, { force: true })
+    }
   })
 
   test('center pixel of a solid orange badge is roughly orange', async () => {

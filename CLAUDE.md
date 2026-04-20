@@ -555,3 +555,11 @@ Core server-coupled apps (`permission-prompt`, `file-reviewer`, `agent-setup`) s
 Before cutting a release, run `bun run build:xdcs` in `plugin/` to regenerate the cache and commit the updated `.xdc` files. Expected size: ~180 KB across the three apps — binary diffs on every release are normal.
 
 During local HTML iteration, set `DC_SKIP_PREBUILT=1` to bypass the cache without having to re-run the build script every edit.
+
+### Pre-built agent badges at release time
+
+Agent profile images are composed from a Lucide glyph + model-tier palette and rendered on demand via Resvg. The UI only exposes the three archetype-default glyphs (`role`→user-round, `utility`→cog, `project`→folder-kanban), so the reachable matrix is 3 archetypes × 3 model families × 2 trust states = 18 PNGs. Those ship pre-rendered in `plugin/agent-badges-prebuilt/`. At runtime, `renderAgentBadge` prefers the prebuilt (via `copyFileSync`) over running Resvg; non-default glyphs (a future glyph picker) fall through to the live renderer.
+
+Before cutting a release, run `bun run build:badges` in `plugin/` (or `bun run build:prebuilt` to do XDCs + badges together). Expected size: ~240 KB across the 18 PNGs.
+
+`DC_SKIP_PREBUILT=1` bypasses both XDC and badge caches — use during palette or glyph iteration.

@@ -17,6 +17,7 @@
 
 import { Resvg } from '@resvg/resvg-js'
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -41,6 +42,8 @@ export interface BadgeInputs {
 }
 
 const GLYPHS_DIR = new URL('./agent-icons/glyphs/', import.meta.url).pathname
+
+const PREBUILT_DIR = new URL('./agent-badges-prebuilt/', import.meta.url).pathname
 
 let CACHE_DIR = process.env.DC_STATE_DIR
   ? join(process.env.DC_STATE_DIR, 'agent-badges')
@@ -105,8 +108,17 @@ function buildBadgeSvg(inner: string, solid: string, checker: string | null): st
  */
 export async function renderAgentBadge(inputs: BadgeInputs): Promise<string> {
   mkdirSync(CACHE_DIR, { recursive: true })
-  const out = join(CACHE_DIR, cacheKey(inputs))
+  const key = cacheKey(inputs)
+  const out = join(CACHE_DIR, key)
   if (existsSync(out)) return out
+
+  if (process.env.DC_SKIP_PREBUILT !== '1') {
+    const prebuilt = join(PREBUILT_DIR, key)
+    if (existsSync(prebuilt)) {
+      copyFileSync(prebuilt, out)
+      return out
+    }
+  }
 
   const fallback = ARCHETYPE_DEFAULT_GLYPH[inputs.archetype]
   const inner = readGlyphInner(inputs.glyph, fallback)

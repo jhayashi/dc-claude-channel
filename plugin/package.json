@@ -5,7 +5,9 @@
   "bin": "./server.ts",
   "scripts": {
     "start": "bun server.ts",
-    "build:xdcs": "bun scripts/build-all-xdcs.ts"
+    "build:xdcs": "bun scripts/build-all-xdcs.ts",
+    "build:badges": "bun scripts/build-all-badges.ts",
+    "build:prebuilt": "bun scripts/build-all-xdcs.ts && bun scripts/build-all-badges.ts"
   },
   "dependencies": {
     "@deltachat/jsonrpc-client": "*",
