@@ -223,7 +223,7 @@ claude --dangerously-load-development-channels plugin:deltachat@dc-claude-channe
 /plugin reload-plugins
 ```
 
-`/plugin reload-plugins` activates the newly installed plugin in the current session — no restart needed. On first install the dispatcher forks `bun install` in the background (~30–120s); the SessionStart hook shows an install-pending banner, and DC tool calls issued during that window transparently block on the readiness gate rather than crashing on missing native modules.
+`/plugin reload-plugins` activates the newly installed plugin in the current session — no restart needed. On first install the dispatcher forks `bun install` in the background (~30–120s); DC tool calls issued during that window transparently block on the readiness gate rather than crashing on missing native modules. The SessionStart hook does not surface install state — the banner was noisy and the readiness gate makes it unnecessary.
 
 Testing against a local unpushed change: use `/plugin marketplace add /path/to/dc-claude-channel` (absolute local path) instead of the GitHub slug. Relative-path plugin sources resolve against the marketplace root (the repo root), so `./plugin` finds the right place.
 

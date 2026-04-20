@@ -85,7 +85,7 @@ When prompted for install scope, pick **"install for you"** — the plugin's sta
 /plugin reload-plugins
 ```
 
-The plugin begins installing its native dependencies in the background (~30–120s) and immediately shows phone-side setup instructions. Grab your phone and open Delta Chat — by the time you're ready to scan, the channel will be ready. Run `/deltachat:setup` to arm pairing and see the QR code.
+The plugin installs its native dependencies in the background (~30–120s) and immediately shows phone-side setup instructions. Grab your phone and open Delta Chat — by the time you're ready to scan, the channel will be ready. Run `/deltachat:setup` to arm pairing and see the QR code (the command will transparently wait if install is still finishing).
 
 No Claude Code restart needed.
 

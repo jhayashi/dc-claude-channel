@@ -5,13 +5,15 @@
 # 1. Channel-flag detection: if Claude Code was launched without
 #    --dangerously-load-development-channels, inbound DC messages
 #    won't reach this session. Warn the user to relaunch.
-# 2. Install-pending banner: if deps are missing or stale, surface a
-#    "plugin is installing in the background" banner with phone-side
-#    setup instructions. server.ts does the actual `bun install` in
-#    a background fork so the user's phone-side setup overlaps.
-# 3. Unpaired-session banner: until at least one chat is paired, show
+# 2. Unpaired-session banner: until at least one chat is paired, show
 #    the phone-side prerequisites + /deltachat:setup prompt on every
 #    launch.
+#
+# Install state is intentionally NOT surfaced here — server.ts forks
+# `bun install` in the background when deps are missing, and every DC
+# tool handler awaits a readiness gate, so tool calls issued during
+# install transparently block rather than crashing. Users don't need
+# a banner to know about it.
 #
 # Exits 0 on any transient error to avoid blocking session start. The
 # hook never runs `bun install` itself; that's server.ts's job.
@@ -20,9 +22,6 @@ set +e
 
 STATE_DIR="${HOME}/.claude/channels/deltachat"
 APPROVED_DIR="${STATE_DIR}/approved"
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-LOCK="${PLUGIN_ROOT}/bun.lock"
-PKG="${PLUGIN_ROOT}/package.json"
 
 # --- Detect the --dangerously-load-development-channels flag by walking
 # up the ancestor process tree (the hook may be launched via a shell or
@@ -68,29 +67,12 @@ if [ "$any_cmd_seen" = "1" ] && [ "$flag_found" = "0" ]; then
   channel_flag_present=0
 fi
 
-# --- State machine. Priority: flag missing > install pending > paired (silent) > unpaired.
+# --- State machine. Priority: flag missing > paired (silent) > unpaired.
 
 if [ "$channel_flag_present" = "0" ]; then
   diag_cmd=$(printf '%s' "$last_cmd" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\n\r')
   cat <<JSON
 {"systemMessage":"Delta Chat plugin is loaded, but the channel flag is MISSING — inbound Delta Chat messages will NOT reach this session.\n\nQuit Claude Code and relaunch with:\n\n    claude --dangerously-load-development-channels plugin:deltachat@dc-claude-channel\n\n(diag: walked ${levels_walked} ancestors, no flag found; last cmdline: ${diag_cmd})"}
-JSON
-  exit 0
-fi
-
-# Install pending: bun.lock missing or older than package.json.
-# server.ts detects the same condition and forks `bun install` in the
-# background. Every DC tool handler awaits a readiness gate, so tool
-# calls issued during install will transparently block for ~30–120s
-# rather than crashing on missing native modules.
-lock_ok=0
-if [ -f "$LOCK" ] && [ -f "$PKG" ] && [ "$LOCK" -nt "$PKG" ]; then
-  lock_ok=1
-fi
-
-if [ "$lock_ok" = "0" ]; then
-  cat <<'JSON'
-{"systemMessage":"Delta Chat plugin is installing its native dependencies in the background (~30–120s).\n\nWhile you wait:\n  1. Install Delta Chat on your phone — https://delta.chat/en/download\n  2. Create a free chatmail account from inside the app (one tap, no signup).\n\nWhen the install finishes, run /deltachat:setup to pair your phone.","hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"The Delta Chat plugin is still installing native dependencies in the background. If the user asks to pair or interact with Delta Chat, tell them to wait ~30–120s for the install to finish, then run /deltachat:setup. Tool calls issued during install will transparently block until deps are ready."}}
 JSON
   exit 0
 fi
