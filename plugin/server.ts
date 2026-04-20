@@ -2043,6 +2043,43 @@ async function main(): Promise<void> {
     router.onChatModified(chatId).catch((err) => logf('router crashed: %v', err))
   })
 
+  // Pair-on-verified-contact: when a joiner completes securejoin during a
+  // /deltachat:setup armed window, post the welcome message + pairing code
+  // into the freshly-created 1:1 chat so the user can finish pairing in
+  // the terminal without sending a message from the phone first.
+  client.onSecurejoinComplete(async (chatId, contactId) => {
+    if (shuttingDown) return
+    try {
+      if (!access.consumeArmedWindow()) {
+        logf('dc channel: securejoin complete for chat=%d contact=%d (no armed window; waiting for user message)', chatId, contactId)
+        return
+      }
+      // Gate by owner when one exists: only previously-known owners can
+      // initiate new pairings even within the armed window. This prevents
+      // a stray stale-QR scan from a stranger from hijacking the flow.
+      if (access.hasAnyOwner() && !access.isKnownOwner(contactId)) {
+        logf('dc channel: securejoin armed but contact=%d is not a known owner; ignoring', contactId)
+        return
+      }
+      if (access.isAllowed(chatId)) {
+        logf('dc channel: securejoin complete for chat=%d but already paired; skipping welcome', chatId)
+        return
+      }
+      const code = access.startPairing(chatId, contactId)
+      const welcome = [
+        "Hi, I'm Claude. To finish pairing, run this in your terminal:",
+        '',
+        `/deltachat:setup pair ${code}`,
+        '',
+        "Once paired, send me any message and I'll help you out.",
+      ].join('\n')
+      await client.send(chatId, welcome)
+      logf('dc channel: pair-on-verified sent code to chat=%d contact=%d', chatId, contactId)
+    } catch (err) {
+      logf('dc channel: pair-on-verified error chat=%d contact=%d: %v', chatId, contactId, err)
+    }
+  })
+
   // Reaction event router — see dispatcher/reaction-router.ts.
   const reactionRouter = new ReactionRouter({
     isAllowed: (chatId) => access.isAllowed(chatId),

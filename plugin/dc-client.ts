@@ -365,6 +365,23 @@ export class DCClient {
     });
   }
 
+  /**
+   * Register a handler for SecurejoinInviterProgress events at progress=1000
+   * — the signal that a joiner has successfully completed the QR-scan
+   * handshake against this bot's invite link. DC has already created the
+   * 1:1 chat by the time we fire. Used by the pair-on-verified-contact
+   * flow in server.ts to materialize a `Claude` chat and post the 5-letter
+   * pairing code during the armed /deltachat:setup window.
+   */
+  onSecurejoinComplete(handler: (chatId: number, contactId: number) => void): void {
+    if (!this.contextEvents) throw new Error('Account not initialized');
+
+    this.contextEvents.on('SecurejoinInviterProgress', (event: { contactId: number; chatId: number; progress: number }) => {
+      if (event.progress !== 1000) return;
+      handler(event.chatId, event.contactId);
+    });
+  }
+
   // ── Existing API (unchanged) ────────────────────────────────────────
 
   async status(): Promise<BotStatus> {
