@@ -34,49 +34,24 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
 
 ## Screenshots
 
-<p align="center">
-  <img src="screenshots/home-screen.jpg" width="250" alt="Chat list with agent chats">
-  &nbsp;&nbsp;
-  <img src="screenshots/permission-gate.jpg" width="250" alt="Permission prompt">
-</p>
-<p align="center">
-  <em>Multiple chats with separate context</em>
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <em>Optional permission GUI</em>
-</p>
-
-<p align="center">
-  <img src="screenshots/file-reviewer-reading.jpg" width="250" alt="File reviewer">
-  &nbsp;&nbsp;
-  <img src="screenshots/file-reviewer-comment.jpg" width="250" alt="File reviewer with comment composer">
-</p>
-<p align="center">
-  <em>GUI iteration on files</em>
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <em>Long press to comment</em>
-</p>
-
-<p align="center">
-  <img src="screenshots/agent-setup-home.jpg" width="250" alt="Agent setup home">
-  &nbsp;&nbsp;
-  <img src="screenshots/agent-setup-agent-picker.jpg" width="250" alt="Agent picker with templates">
-</p>
-<p align="center">
-  <em>GUI chat & agent setup</em>
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <em>Simple new chat creation</em>
-</p>
-
-<p align="center">
-  <img src="screenshots/agent-setup-resume-loading.jpg" width="250" alt="Resume terminal session, scanning">
-  &nbsp;&nbsp;
-  <img src="screenshots/agent-setup-resume-list.jpg" width="250" alt="Resume terminal session picker">
-</p>
-<p align="center">
-  <em>Teleport recent sessions</em>
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <em>Easy to find recent sessions</em>
-</p>
+<table align="center">
+<tr>
+  <td align="center"><img src="screenshots/home-screen.jpg" width="250" alt="Chat list with agent chats"><br><em>Multiple chats with separate context</em></td>
+  <td align="center"><img src="screenshots/permission-gate.jpg" width="250" alt="Permission prompt"><br><em>Optional permission GUI</em></td>
+</tr>
+<tr>
+  <td align="center"><img src="screenshots/file-reviewer-reading.jpg" width="250" alt="File reviewer"><br><em>GUI iteration on files</em></td>
+  <td align="center"><img src="screenshots/file-reviewer-comment.jpg" width="250" alt="File reviewer with comment composer"><br><em>Long press to comment</em></td>
+</tr>
+<tr>
+  <td align="center"><img src="screenshots/agent-setup-home.jpg" width="250" alt="Agent setup home"><br><em>GUI chat &amp; agent setup</em></td>
+  <td align="center"><img src="screenshots/agent-setup-agent-picker.jpg" width="250" alt="Agent picker with templates"><br><em>Simple new chat creation</em></td>
+</tr>
+<tr>
+  <td align="center"><img src="screenshots/agent-setup-resume-loading.jpg" width="250" alt="Resume terminal session, scanning"><br><em>Teleport recent sessions</em></td>
+  <td align="center"><img src="screenshots/agent-setup-resume-list.jpg" width="250" alt="Resume terminal session picker"><br><em>Easy to find recent sessions</em></td>
+</tr>
+</table>
 
 ## Prerequisites
 
