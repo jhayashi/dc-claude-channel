@@ -139,11 +139,7 @@ From a terminal, `/deltachat:setup unpair` lists paired contacts and `/deltachat
 
 ## Resuming sessions
 
-A conversation can move between a DC chat and a local `claude` terminal session, because both sides use the same `.jsonl` session file. Tell Claude "resume this in my terminal" (or "teleport this to my terminal" — same thing) and the reply includes a one-line `cd … && claude --resume <uuid>` command. Wait for the reply to land, then paste it in a terminal — your full history (TodoWrites, plans, tool outputs) loads instantly.
-
-Going the other direction: tell Claude "resume a terminal session here" (or open the agent-setup card and tap **Resume a conversation**). The card lists recent `claude` sessions from the last 5 days; pick one and the next message you send in the DC chat continues that session.
-
-The session file is single-writer, so finish your DC turn before pasting the resume command — the lock releases when the reply lands. Don't send DC messages while the terminal session is still active, or the two sides will fight over the file. This is a same-machine feature; it doesn't involve claude.ai.
+A conversation can move between a DC chat and a local `claude` terminal session in either direction. Ask Claude to **"open settings"** from any DC chat and pick what you want from the settings app — send the current chat to a terminal, or attach a recent terminal session to a new DC chat.
 
 ## Development
 
