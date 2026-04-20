@@ -76,7 +76,9 @@ self.onmessage = async (ev: MessageEvent) => {
     if (req.modelName.endsWith('.en')) {
       params.language = 'en'
     } else {
-      params.detectLanguage = true
+      // 'auto' = detect language, then transcribe. Setting detectLanguage=true
+      // puts whisper in detect-only mode and skips transcription entirely.
+      params.language = 'auto'
     }
     params.printProgress = false
     params.printRealtime = false
