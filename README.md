@@ -63,13 +63,13 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
 
 ### Install via marketplace (recommended)
 
-Launch Claude Code **once** with the research-preview channel flag:
+Open Claude Code in any project:
 
 ```bash
-claude --dangerously-load-development-channels plugin:deltachat@dc-claude-channel
+claude
 ```
 
-On first launch the plugin isn't installed yet, so Claude Code prints a harmless `plugin not installed` warning. Ignore it — at the Claude Code prompt, run these three commands one at a time:
+At the Claude Code prompt, add the marketplace and install the plugin — run the commands one at a time:
 
 ```
 /plugin marketplace add jhayashi/dc-claude-channel
@@ -81,8 +81,10 @@ On first launch the plugin isn't installed yet, so Claude Code prints a harmless
 
 When prompted for install scope, pick **"install for you"** — the plugin's state (paired phone, agents, schedules) is user-global, so a project-level install gives you nothing extra.
 
-```
-/plugin reload-plugins
+Quit Claude Code, then relaunch with the channels flag:
+
+```bash
+claude --dangerously-load-development-channels plugin:deltachat@dc-claude-channel
 ```
 
 The plugin installs its native dependencies in the background (~30–120s). Use that time to set up your phone.
@@ -139,8 +141,6 @@ Back on your phone, type anything into the `Claude` chat (a "hi" is fine). The d
 - **WebXDC apps** — one-shot a custom mini-app (or single-player game) right in the chat
 
 Reply "no thanks" to skip the tour and drop into normal chat mode.
-
-No Claude Code restart needed at any point.
 
 > **Why the `--dangerously-load-development-channels` flag?** During the Claude Code channels research preview, third-party channel plugins must be either on the official Anthropic allowlist or loaded with this flag. We're working toward allowlist approval — see [issue #8](https://github.com/jhayashi/dc-claude-channel/issues/8) for status. Team and Enterprise admins can alternatively add this plugin to their org's `allowedChannelPlugins` in managed settings to skip the flag.
 
