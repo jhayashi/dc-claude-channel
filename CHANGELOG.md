@@ -2,34 +2,55 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
-## [1.0.33] — 2026-04-19
+## [1.1.0] — 2026-04-20
 
-Patch release. Fixes a P0 crash in agent avatar rendering on fresh installs, switches pairing to a "Claude" group chat, hardens voice-transcription model downloads, refreshes template prompts, and fixes two file-reviewer bugs.
+Minor release. Consolidates three same-day patches (1.0.31/32/33) with a full install-flow rewrite, a readiness gate that eliminates the "missing native module" crash on fresh installs, pre-built release-time artifacts, and a tutorial + pairing polish pass.
 
-### Fixed
-- **Agent avatar rendering no longer throws `Cannot find module 'sharp'` on fresh installs.** The sharp→@resvg/resvg-js migration shipped in 1.0.3 updated `package.json` but missed `agent-icon-render.ts`, so any code path that rendered a badge (settings card, create/edit agent, first-launch badge generation) threw on a clean install. Completed the migration; tests decode PNGs via `pngjs` instead of `sharp`.
+### Installation flow rewrite
+
+- **README restructured** into four labeled install sections: **A. Channel installation** (two slash commands inside Claude), **B. Relaunch and install the mobile app** (quit + relaunch with `--dangerously-load-development-channels`, phone-side Delta Chat + chatmail), **C. Secure pairing** (invite link, QR scan, 5-letter code), **D. Optional tour**. The old "flag-first" ordering was flaky on fresh installs; the new order installs the plugin first, then relaunches with the flag.
+- **Phone-side pairing is now a bulletproof step-by-step walkthrough** in the README — QR scanner location varies by platform, 5-minute pairing window, hidden-QR play button, chatmail onboarding hints.
+- **"Resuming sessions" section collapsed** to one sentence pointing at the settings app ("open settings") — the old three-paragraph walkthrough was superseded by the GUI.
+- **`scripts/uninstall.sh`** — companion script for removing plugin state.
+
+### Readiness gate + background install
+
+- **Dispatcher forks `bun install` in the background** on first launch when native deps (whisper, resvg, dc) are missing; every DC tool handler and the voice pipeline await a readiness gate that blocks turns transparently until install finishes. Fail-loud 5 min timeout.
+- **Dynamic `@deltachat/*` imports** — the dispatcher no longer fails at module-load time when native bindings aren't yet compiled; imports happen lazily once the gate opens.
+- **SessionStart hook no longer surfaces install state.** The banner was noisy and the readiness gate makes it unnecessary — paired users see nothing; only unpaired or missing-flag states surface a message.
+
+### Pre-built release-time artifacts
+
+- **Three core WebXDC apps** (`permission-prompt`, `file-reviewer`, `agent-setup`) ship pre-zipped in `plugin/webxdc-prebuilt/` and are served from disk when the requested version matches; live-zip fallback still works. `bun run build:xdcs` regenerates them.
+- **18 agent-badge PNGs** (3 archetypes × 3 model families × 2 trust states) ship pre-rendered in `plugin/agent-badges-prebuilt/`. `bun run build:badges` regenerates them; `bun run build:prebuilt` does both.
+- **`DC_SKIP_PREBUILT=1`** bypasses both caches for local iteration.
+
+### Tutorial + pairing polish
+
+- **Pairing materializes a "Claude" group chat** instead of a 1:1 (Delta Chat hides the peer display name in 1:1 chats, so the pairing chat looked like a conversation with yourself). `/deltachat:setup` provisions a verified group up front and returns its securejoin QR. Re-arming deletes the previous armed group so each session has a fresh QR.
+- **Claude avatar set on the armed group** so the pairing chat looks right on arrival.
+- **Subagent pre-warm at pair time** so the first real turn doesn't pay the cold-spawn cost.
+- **Tutorial rewrite**: greeting lands as final text with the demo tool call last; full 3-step hands-on tour (permissions, file reviewer, agent setup) restored; uses the default agent badge; spawn time logged.
+- **`/deltachat:setup tour` and `/tour`** — manual restart of the onboarding tour.
+- **`dc_test_permission`** unblocked for subagents so the permission-card demo works.
+
+### Permissions app
+
+- **Emoji dropped from the app name** — `👾 Permissions` → `Permissions` (triggers auto-upgrade handshake so deployed cards pick up the new manifest).
+
+### Fixed (rolled up from 1.0.31 / 1.0.32 / 1.0.33)
+
+- **Agent avatar rendering no longer throws `Cannot find module 'sharp'` on fresh installs.** The sharp → @resvg/resvg-js migration shipped in 1.0.3 updated `package.json` but missed `agent-icon-render.ts`, so any code path that rendered a badge (settings card, create/edit agent, first-launch badge generation) threw on a clean install. Completed the migration; tests decode PNGs via `pngjs` instead of `sharp`.
 - **File reviewer — highlighted code blocks no longer collapse to a single line on phones.** Per-line `<div>` children inside an inline `<code>` element parsed as inline in iOS WebKit and Android WebView. Line divs are now direct children of the block-level `<pre>` (valid HTML on all renderers).
 - **File reviewer — markdown links now open.** Links had been rewritten to bare `<a>` tags with no href. Restored the href with scheme allowlisting (`https:`, `http:`, `mailto:`, in-doc `#`); other schemes degrade to `#`. External links carry `target="_blank"` + `rel="noopener noreferrer"`.
-- **STT — whisper model downloads verified against pinned SHA-256.** Weights now land at a tmp path, get hashed, and are renamed into place only on match. Mismatch deletes the tmp and throws so a corrupted or tampered download can't poison the cache forever. Pinned hashes for all 10 supported ggml models ship as `whisper-model-hashes.json`; unpinned models log a warning and are accepted (forward-compat).
+- **STT — whisper model downloads verified against pinned SHA-256.** Weights land at a tmp path, get hashed, and are renamed into place only on match. Mismatch deletes the tmp and throws so a corrupted or tampered download can't poison the cache forever. Pinned hashes for all 10 supported ggml models ship as `whisper-model-hashes.json`; unpinned models log a warning and are accepted (forward-compat).
+- **`/deltachat:setup` skill now uses the correct MCP tool prefix.** Plugin-scoped MCP tools are exposed as `mcp__plugin_<pluginname>_<servername>__*`, not `mcp__<servername>__*`. The skill's `allowed-tools` list referenced the wrong prefix, so Claude's pre-flight check concluded the tools weren't registered and (misleadingly) told users the `--dangerously-load-development-channels` flag was missing.
+- **Channel-flag detection walks the full ancestor process tree** instead of checking only `$PPID`. On setups where the hook is spawned via a shell or node intermediate, the original check missed the real `claude` process and wrongly declared `--dangerously-load-development-channels` missing even when it was present. Walks up to 8 ancestors, uses `ps -ww` on macOS to avoid argv truncation, and includes a one-line diagnostic in the warning banner when it does fire.
 
 ### Changed
-- **Pairing materializes a "Claude" group chat** instead of a 1:1. Delta Chat hides the peer display name in 1:1 chats, which made the pairing chat look like a conversation with yourself. `/deltachat:setup` now provisions a verified group up front and returns its securejoin QR; the rest of the flow (pairing code, auto-bind, tutorial prelude) is unchanged. Re-arming deletes the previous armed group so each session has a fresh QR.
+
 - **All 12 agent templates rewritten** for a stronger distinct voice and more actionable behavior. Each prompt now names the agent's default move, calls out anti-patterns, and ends with a concrete closing habit. Existing agents bound to these templates are unaffected; the rewrites apply only to new agents.
-- Piggyback: `@deltachat/jsonrpc-client` + `@deltachat/stdio-rpc-server` 2.48 → 2.49 (same lockfile as the resvg migration; already running on dev).
-
-## [1.0.32] — 2026-04-19
-
-Patch release. Fixes `/deltachat:setup` on fresh marketplace installs.
-
-### Fixed
-- **`/deltachat:setup` skill now uses the correct MCP tool prefix.** Plugin-scoped MCP tools are exposed as `mcp__plugin_<pluginname>_<servername>__*`, not `mcp__<servername>__*`. The skill's `allowed-tools` list referenced the wrong prefix, so Claude's pre-flight check concluded the tools weren't registered and (misleadingly) told users the `--dangerously-load-development-channels` flag was missing. Updated all references from `mcp__deltachat__` to `mcp__plugin_deltachat_deltachat__`.
-
-## [1.0.31] — 2026-04-19
-
-Patch release. Fixes a false-positive banner introduced in 1.0.3.
-
-### Fixed
-- **Channel-flag detection now walks the full ancestor process tree** instead of checking only `$PPID`. On setups where the hook is spawned via a shell or node intermediate, the original check missed the real `claude` process and wrongly declared `--dangerously-load-development-channels` missing even when it was present. Walks up to 8 ancestors, uses `ps -ww` on macOS to avoid argv truncation, and includes a one-line diagnostic in the warning banner when it does fire so future false positives can be diagnosed without guessing.
+- Piggyback: `@deltachat/jsonrpc-client` + `@deltachat/stdio-rpc-server` 2.48 → 2.49.
 
 ## [1.0.3] — 2026-04-18
 
@@ -275,9 +296,7 @@ First public release of the Delta Chat channel for Claude Code.
 - File-based allowlist + pairing codes.
 - `deltachat-rpc-server` integration.
 
-[1.0.33]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.32...v1.0.33
-[1.0.32]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.31...v1.0.32
-[1.0.31]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.3...v1.0.31
+[1.1.0]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.33...v1.1.0
 [1.0.3]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.0...v1.0.1
