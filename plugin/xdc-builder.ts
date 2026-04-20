@@ -17,14 +17,28 @@ import { tmpdir } from 'node:os'
 import { zipSync, strToU8 } from 'fflate'
 
 export interface XDCAppConfig {
-  /** Path to the HTML file. Ignored when `htmlOverride` is set. */
+  /** Path to the HTML file. When both this and `htmlOverride` are set,
+   *  `htmlOverride` supplies the live-build HTML while `htmlPath` is
+   *  still used to derive the prebuilt-lookup key and to probe
+   *  `APP_VERSION` on disk. */
   htmlPath?: string
-  /** Inline HTML string. When set, used in place of reading `htmlPath`. */
-  htmlOverride?: string
+  /** Inline HTML string or thunk. When set, used in place of reading
+   *  `htmlPath` for the live build. A thunk lets callers defer expensive
+   *  HTML construction (e.g. agent-setup's glyph/icon splice) until
+   *  after the prebuilt lookup misses. Does NOT disable prebuilt lookup
+   *  on its own — callers that want prebuilt + splice should pass both
+   *  `htmlPath` and `htmlOverride`. */
+  htmlOverride?: string | (() => string)
   /** Path to the manifest.toml file */
   manifestPath: string
   /** Path to the icon PNG file (optional) */
   iconPath?: string
+  /** Directory containing pre-built `.xdc` files named
+   *  `<html-basename>-v<version>.xdc`. If present, a matching file
+   *  exists, and `DC_SKIP_PREBUILT` is not `1`, the cached file is
+   *  returned instead of running the live zip. Requires `htmlPath`
+   *  (to compute the lookup key); ignored otherwise. */
+  prebuiltDir?: string
 }
 
 function parseAppVersion(html: string, source: string): number {
@@ -51,14 +65,42 @@ export function getAppVersion(htmlPath: string): number {
  * Returns the path to the temp .xdc file and the version.
  */
 export async function buildXDC(config: XDCAppConfig): Promise<{ xdcPath: string; version: number }> {
-  const { htmlPath, htmlOverride, manifestPath, iconPath } = config
+  const { htmlPath, htmlOverride, manifestPath, iconPath, prebuiltDir } = config
 
   if (!htmlOverride && !htmlPath) {
     throw new Error('buildXDC: one of htmlPath or htmlOverride is required')
   }
 
-  const htmlText = htmlOverride ?? readFileSync(htmlPath!, 'utf-8')
-  const version = parseAppVersion(htmlText, htmlOverride ? '<htmlOverride>' : htmlPath!)
+  // Determine version cheaply: if htmlPath is available, read it directly
+  // (cheap disk read) rather than resolving a potentially-expensive
+  // htmlOverride thunk. Callers that pass both (e.g. agent-setup) are
+  // asserting the override's APP_VERSION matches htmlPath's.
+  let version: number
+  if (htmlPath) {
+    version = parseAppVersion(readFileSync(htmlPath, 'utf-8'), htmlPath)
+  } else {
+    const resolved = typeof htmlOverride === 'function' ? htmlOverride() : htmlOverride!
+    version = parseAppVersion(resolved, '<htmlOverride>')
+  }
+
+  // Prefer pre-built if available, version matches, and DC_SKIP_PREBUILT isn't set.
+  // Requires htmlPath (for the lookup key); htmlOverride alone can't key the cache
+  // since its origin is an in-memory string.
+  if (prebuiltDir && htmlPath && process.env.DC_SKIP_PREBUILT !== '1') {
+    const id = htmlPath.split('/').pop()!.replace(/\.html$/, '')
+    const prebuilt = join(prebuiltDir, `${id}-v${version}.xdc`)
+    if (existsSync(prebuilt)) {
+      const dir = mkdtempSync(join(tmpdir(), 'claude-dc-xdc-prebuilt-'))
+      const dest = join(dir, `${id}.xdc`)
+      await Bun.write(dest, Bun.file(prebuilt))
+      return { xdcPath: dest, version }
+    }
+  }
+
+  // Live-build path: now resolve the override (may run the splice).
+  const htmlText = htmlOverride !== undefined
+    ? (typeof htmlOverride === 'function' ? htmlOverride() : htmlOverride)
+    : readFileSync(htmlPath!, 'utf-8')
   const html = Buffer.from(htmlText, 'utf-8')
 
   // Read manifest and append version to the name

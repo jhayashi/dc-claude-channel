@@ -13,6 +13,7 @@ import { buildXDC, getAppVersion } from './xdc-builder.js'
 const HTML_PATH = join(import.meta.dir, 'webxdc', 'file-reviewer.html')
 const MANIFEST_PATH = join(import.meta.dir, 'webxdc', 'file-reviewer-manifest.toml')
 const ICON_PATH = join(import.meta.dir, 'webxdc', 'file-reviewer-icon.png')
+const PREBUILT_DIR = join(import.meta.dir, 'webxdc-prebuilt')
 
 // Track which chat has an active viewer session.
 interface ViewerSession { msgId: number; lastUpdate?: string }
@@ -49,5 +50,10 @@ export function getViewerVersion(): number {
 
 /** Build the file-reviewer.xdc file. Returns {xdcPath, version}. */
 export async function buildViewerXDC(): Promise<{ xdcPath: string; version: number }> {
-  return buildXDC({ htmlPath: HTML_PATH, manifestPath: MANIFEST_PATH, iconPath: ICON_PATH })
+  return buildXDC({
+    htmlPath: HTML_PATH,
+    manifestPath: MANIFEST_PATH,
+    iconPath: ICON_PATH,
+    prebuiltDir: PREBUILT_DIR,
+  })
 }

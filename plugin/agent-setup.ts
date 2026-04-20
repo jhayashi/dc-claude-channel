@@ -13,6 +13,7 @@ import { loadGlyphsInnerXml } from './agent-setup-glyphs.js'
 const HTML_PATH = join(import.meta.dir, 'webxdc', 'agent-setup.html')
 const MANIFEST_PATH = join(import.meta.dir, 'webxdc', 'agent-setup-manifest.toml')
 const ICON_PATH = join(import.meta.dir, 'webxdc', 'agent-setup-icon.png')
+const PREBUILT_DIR = join(import.meta.dir, 'webxdc-prebuilt')
 const GLYPH_MARKER = '/*__GLYPHS__*/{}'
 const ICON_URI_MARKER = '/*__ICON_DATA_URI__*/'
 
@@ -38,8 +39,10 @@ function buildInjectedHtml(): string {
 
 export async function buildAgentSetupXDC(): Promise<{ xdcPath: string; version: number }> {
   return buildXDC({
-    htmlOverride: buildInjectedHtml(),
+    htmlPath: HTML_PATH,
+    htmlOverride: buildInjectedHtml,
     manifestPath: MANIFEST_PATH,
     iconPath: ICON_PATH,
+    prebuiltDir: PREBUILT_DIR,
   })
 }
