@@ -70,6 +70,8 @@ In any Claude Code session:
 /plugin install deltachat@dc-claude-channel
 ```
 
+When prompted for install scope, pick **"install for you"** — the plugin's state (paired phone, agents, schedules) is user-global, so a project-level install gives you nothing extra.
+
 Then launch Claude Code with the research-preview channel flag:
 
 ```bash
