@@ -1,13 +1,17 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync, rmSync, existsSync, statSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync, statSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import sharp from 'sharp'
+import { PNG } from 'pngjs'
 import {
   renderAgentBadge,
   setBadgeCacheDir,
   type BadgeInputs,
 } from '../agent-icon-render'
+
+function decodePng(path: string): { width: number; height: number; data: Buffer } {
+  return PNG.sync.read(readFileSync(path))
+}
 
 const cacheDir = mkdtempSync(join(tmpdir(), 'dc-badge-cache-'))
 
@@ -46,12 +50,11 @@ describe('renderAgentBadge', () => {
     expect(statSync(second).mtimeMs).toBe(firstMtime)
   })
 
-  test('output is a valid 256x256 PNG decodable by sharp', async () => {
+  test('output is a valid 256x256 PNG', async () => {
     const path = await renderAgentBadge({ ...baseInputs, glyph: 'briefcase' })
-    const meta = await sharp(path).metadata()
-    expect(meta.format).toBe('png')
-    expect(meta.width).toBe(256)
-    expect(meta.height).toBe(256)
+    const img = decodePng(path)
+    expect(img.width).toBe(256)
+    expect(img.height).toBe(256)
   })
 
   test('renders all 24 (archetype × family × trust) combinations with default glyph', async () => {
@@ -82,7 +85,7 @@ describe('renderAgentBadge', () => {
     const path = await renderAgentBadge({
       archetype: 'role', modelFamily: 'opus', trust: false, glyph: 'briefcase',
     })
-    const { data } = await sharp(path).raw().toBuffer({ resolveWithObject: true })
+    const { data } = decodePng(path)
     const offset = (128 * 256 + 16) * 4
     const r = data[offset], g = data[offset + 1], b = data[offset + 2]
     expect(Math.abs(r - 217)).toBeLessThan(10)

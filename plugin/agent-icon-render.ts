@@ -15,7 +15,7 @@
  * and stroke width centrally.
  */
 
-import sharp from 'sharp'
+import { Resvg } from '@resvg/resvg-js'
 import {
   existsSync,
   mkdirSync,
@@ -100,9 +100,8 @@ function buildBadgeSvg(inner: string, solid: string, checker: string | null): st
 
 /**
  * Render or look up the cached PNG for the given badge inputs. Returns
- * an absolute path. Safe to call concurrently for the same inputs —
- * sharp's pipeline is async and the file write is last-writer-wins on
- * identical bytes.
+ * an absolute path. Safe to call concurrently for the same inputs — the
+ * file write is last-writer-wins on identical bytes.
  */
 export async function renderAgentBadge(inputs: BadgeInputs): Promise<string> {
   mkdirSync(CACHE_DIR, { recursive: true })
@@ -114,7 +113,7 @@ export async function renderAgentBadge(inputs: BadgeInputs): Promise<string> {
   const palette = MODEL_COLORS[inputs.modelFamily]
   const checker = inputs.trust ? palette.checker : null
   const svg = buildBadgeSvg(inner, palette.solid, checker)
-  const png = await sharp(Buffer.from(svg)).png().toBuffer()
+  const png = new Resvg(svg).render().asPng()
   writeFileSync(out, png)
   return out
 }
