@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
+## Unreleased
+
+### Changed
+
+- **`access.ts` split into `access/{chat-allowlist,pairing,principals}.ts`.** Phase 0 of the identity/teams migration (`docs/specs/2026-04-20-identity-and-teams-design.md`). `plugin/access/index.ts` is now the barrel; every `import * as access from './access.js'` callsite is flipped to `./access/index.js`. `principals.ts` is a dormant skeleton — types only, no runtime behaviour. No external behaviour change.
+
 ## [1.1.2] — 2026-04-20
 
 Patch release. Fixes a post-tutorial routing bug introduced when the subagent dispatcher landed: once the onboarding tour reached its terminal `"done"` state, subsequent messages in that chat were still routed to the legacy `mcp.notification` path (terminal Claude Code session) instead of the bound subagent. Most visibly: voice messages couldn't be transcribed (transcription lives inside `runSubagentTurn`, which was never called), and replies came from the terminal CC persona rather than the chat's configured agent.
