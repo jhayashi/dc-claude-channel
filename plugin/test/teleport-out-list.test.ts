@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as bindings from '../bindings'
-import * as access from '../access'
+import * as access from '../access/index.js'
 import * as agents from '../agents'
 import { buildTeleportOutList } from '../apps/agent-setup-app'
 

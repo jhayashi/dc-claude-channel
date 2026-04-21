@@ -1,34 +1,19 @@
 /**
- * File-based allowlist and pairing flow for Delta Chat channel access control.
+ * File-based allowlist for Delta Chat channel access control.
  *
  * Approved chat IDs are stored as files under
  * ~/.claude/channels/deltachat/approved/<chatId>.
- * The file contains the owner's contact ID (the person who paired the chat).
- * Legacy empty files (pre-owner tracking) are treated as having no owner.
+ * The file contents = the owner's contact ID (the person who paired the
+ * chat). Legacy empty files (pre-owner tracking) are treated as having
+ * no owner.
  *
- * This file is an intermediate shim during the Phase 0 split
- * (docs/specs/2026-04-20-identity-and-teams-design.md §Phase 0). Pairing
- * state has been extracted to `./access/pairing.ts`; the allowlist itself
- * will move to `./access/chat-allowlist.ts` in Step 3.
+ * Persistent state — survives dispatcher restart. Pairing flow state
+ * (arm window + pending codes, in-memory only) lives in `./pairing.ts`.
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-
-// Re-export the pairing flow (arm window + pending codes) so existing
-// `import * as access from './access.js'` callsites keep working.
-export {
-  armPairing,
-  isArmed,
-  getArmedUntil,
-  getArmedGroupChatId,
-  consumeArmedWindow,
-  resetArmedState,
-  startPairing,
-  completePairing,
-  isPendingPair,
-} from "./access/pairing.js";
 
 let _approvedDir = process.env.DC_TEST_APPROVED_DIR ?? join(
   homedir(),
@@ -43,8 +28,6 @@ export function getApprovedDir(): string { return _approvedDir }
 
 /** Override the approved directory (for testing). */
 export function setApprovedDir(dir: string): void { _approvedDir = dir }
-
-// --- Allowlist functions ---
 
 /** Return all approved chat IDs. */
 export function allowedChats(): number[] {

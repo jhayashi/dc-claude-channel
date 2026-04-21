@@ -10,11 +10,7 @@
  * `./chat-allowlist.ts`.
  */
 
-// addChat is re-exported from ../access.js during Step 2 (pairing.ts
-// extract); Step 3 flips this to `./chat-allowlist.js` once the allowlist
-// module exists. Keeping the intermediate import here means step 2 lands
-// atomically with tests green.
-import { addChat } from "../access.js";
+import { addChat } from "./chat-allowlist.js";
 
 // --- Constants ---
 

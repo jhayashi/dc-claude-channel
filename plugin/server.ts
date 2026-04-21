@@ -21,7 +21,7 @@ import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 
 import { DCClient } from './dc-client.js'
-import * as access from './access.js'
+import * as access from './access/index.js'
 import * as agents from './agents.js'
 import * as bindings from './bindings.js'
 import * as familiarRuntime from './familiar-runtime.js'

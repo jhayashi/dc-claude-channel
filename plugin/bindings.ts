@@ -20,7 +20,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import * as agents from './agents.js'
 import type { AgentDef } from './agents.js'
-import * as access from './access.js'
+import * as access from './access/index.js'
 import * as sessionAgents from './session-agents.js'
 
 let BINDINGS_DIR = join(homedir(), '.claude', 'channels', 'deltachat', 'bindings')

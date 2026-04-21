@@ -2,7 +2,7 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import * as access from "../access";
+import * as access from "../access/index.js";
 
 // Use a temp directory so tests don't touch the real allowlist.
 const testDir = mkdtempSync(join(tmpdir(), "dc-access-test-"));
