@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
+## [1.1.1] — 2026-04-20
+
+Patch release. Introduces structured JSONL event logs for every DC tool call, subagent turn, permission verdict, and inbound WebXDC update; retires the per-chat markdown audit file in favor of the new permission log; adds the `dc_show_events` tool so the agent can surface event history back to the chat.
+
+### Added
+
+- **Tool-call event log.** Every DC tool invocation — from a subagent or the terminal session — appends one JSONL line to `events/tools-<YYYY-MM-DD>.log` with `ts`, `source`, `tool`, caller/target ids, `durationMs`, `ok`, `errorCode`, `argPreview` (sensitive fields redacted), and a `turnId` cross-reference. Filenames roll over by UTC date; no in-process rotation, no retention policy — delete files at will. Overridable via `DC_EVENT_DIR`.
+- **Subagent turn log.** Each round-trip through `SubagentCache.dispatch` appends one JSONL line to `events/turns-<YYYY-MM-DD>.log` with `turnId`, `chatId`, `agentId`, `sessionId`, `spawnColdMs` (attributed to the first turn after a cold spawn), `durationMs`, `toolCalls`, and a taxonomized `exitReason` (`completed` | `idle` | `lru_evict` | `turn_timeout` | `crash` | `user_abort` | `resume_fallback`). Cross-references tool calls via `turnId`.
+- **Permission decision log.** Every allow/deny — whether the owner tapped the WebXDC card or the dispatcher auto-approved under skip-permissions mode — appends one JSONL line to `events/permissions-<YYYY-MM-DD>.log` with `tool`, `inputPreview`, `verdict`, `reason` (`user_allow` | `user_deny` | `skip_auto`), and `durationMs`. Replaces the per-chat markdown audit files that skip-permissions mode used to write.
+- **WebXDC update trace.** Every inbound status update — pass or drop — is logged to `events/webxdc-<YYYY-MM-DD>.log` with `msgId`, `chatId`, `appId`, `ownerVerified`, `payloadType`, and `payloadSize`. Useful for debugging owner-verification misses and spotting runaway apps hammering the update stream.
+- **`dc_show_events` tool.** Surfaces the event log back to the chat. Args: `chat_id`, `stream` (`tools` | `turns` | `permissions` | `webxdc` | `all`; default `all`), `since` (ISO-8601 or `<N>h` / `<N>d`; default `24h`), `tool` (tools-stream filter), `only_errors`. Matches are filtered, sorted, capped at 500, and delivered via `dc_send_file` as a markdown document with one fenced `jsonl` block per stream — scroll and long-press to comment on specific events.
+
+### Removed
+
+- **Per-chat markdown audit files.** The `audit.ts` module and the `dc_show_audit` tool are gone; reviewing past skip-permissions auto-approvals now goes through `dc_show_events` (or reads `events/permissions-<date>.log` directly). The new stream captures both user verdicts and auto-approves in one place, keyed by `chatId` — no more separate per-chat files to juggle.
+
+### Notes
+
+- Event writes are best-effort: failures drop the event with a debug-log warning and never affect tool execution.
+- The WebXDC update stream logs after owner verification, so permission-card responses (already captured in the permission log) don't duplicate.
+
 ## [1.1.0] — 2026-04-20
 
 Minor release. Consolidates three same-day patches (1.0.31/32/33) with a full install-flow rewrite, a readiness gate that eliminates the "missing native module" crash on fresh installs, pre-built release-time artifacts, and a tutorial + pairing polish pass.
@@ -296,6 +317,7 @@ First public release of the Delta Chat channel for Claude Code.
 - File-based allowlist + pairing codes.
 - `deltachat-rpc-server` integration.
 
+[1.1.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.33...v1.1.0
 [1.0.3]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.1...v1.0.2
