@@ -41,7 +41,8 @@ import { createMessageRouter } from './dispatcher/message-router.js'
 import { ReactionRouter } from './dispatcher/reaction-router.js'
 import { tryAutoApprove } from './dispatcher/skip-permissions.js'
 import { createActivityReactor, THINKING_EMOJIS, type ActivityReactor } from './dispatcher/activity-reactions.js'
-import * as audit from './audit.js'
+import { logToolCall, logTurn, logPermission, logWebXDC, buildArgPreview } from './events.js'
+import { parseSince, queryEvents, renderEventsMarkdown, ALL_STREAMS, type EventStream } from './events-query.js'
 import * as resume from './resume.js'
 import * as models from './models.js'
 import { ScheduleStore, type ScheduledJob } from './dispatcher/schedule-store.js'
@@ -149,7 +150,15 @@ const rateLimiter = new RateLimiter({ limit: RATE_LIMIT, windowMs: RATE_WINDOW_M
 const subagentRegistry = new Map<string, { chatId: number }>()
 
 /** Pending hook permission requests by id. */
-const pendingPermissions = new Map<string, { connectionId: string; chatId: number; resolve: (v: ServerMessage) => void; startedAt: number }>()
+const pendingPermissions = new Map<string, {
+  connectionId: string
+  chatId: number
+  resolve: (v: ServerMessage) => void
+  startedAt: number
+  tool: string
+  inputPreview: string
+  agentId: string | null
+}>()
 
 const TOOLS_PROXY = join(import.meta.dir, 'dispatcher', 'tools-proxy.ts')
 
@@ -464,6 +473,14 @@ const subagentCache = new SubagentCache({
   onQueueDrop: (chatId) => {
     client.send(chatId, '\u26a0\ufe0f message dropped \u2014 agent busy, queue full').catch(() => {})
   },
+  onTurnEvent: (ev) => {
+    const binding = bindings.getBinding(ev.chatId)
+    logTurn({
+      ...ev,
+      agentId: binding?.agentId ?? null,
+      sessionId: binding?.sessionId ?? null,
+    }, (err) => logf('logTurn: write failed: %v', err))
+  },
 })
 
 // ── Scheduler (constructed at startup below) ────────────────────────────
@@ -576,9 +593,9 @@ const socketServer = new SocketServer({
   onRequest: async (req: SocketRequest): Promise<ServerMessage> => {
     if (req.frame.kind === 'permissionRequest') {
       // Short-circuit: if the bound agent has x-dc-skipPermissions set,
-      // auto-approve and append an audit entry without touching the
-      // WebXDC permission card. Falls through to the normal prompt path
-      // otherwise.
+      // auto-approve and write a skip_auto permission-log entry without
+      // touching the WebXDC permission card. Falls through to the normal
+      // prompt path otherwise.
       try {
         const auto = tryAutoApprove(req.chatId, req.frame as { id: string; tool?: string; input?: unknown })
         if (auto) {
@@ -597,22 +614,24 @@ const socketServer = new SocketServer({
       }
       // Emit activity reaction even for permission-card agents so the
       // user sees what Claude is doing while the prompt is pending.
-      {
-        const toolName = (req.frame as { tool?: string }).tool ?? 'unknown'
-        const input = (req.frame as { input?: unknown }).input
-        activityReactor.reactForTool(req.chatId, toolName, input)
-      }
+      const toolName = (req.frame as { tool?: string }).tool ?? 'unknown'
+      const rawInput = (req.frame as { input?: unknown }).input
+      activityReactor.reactForTool(req.chatId, toolName, rawInput)
       return await new Promise<ServerMessage>((resolve) => {
         pendingPermissions.set(req.frame.id, {
           connectionId: req.connectionId,
           chatId: req.chatId,
           resolve,
           startedAt: Date.now(),
+          tool: toolName,
+          inputPreview: buildArgPreview(
+            rawInput && typeof rawInput === 'object' ? (rawInput as Record<string, unknown>) : null,
+          ),
+          agentId: bindings.getBinding(req.chatId)?.agentId ?? null,
         })
         ;(async () => {
           try {
-            const toolName = (req.frame as { tool?: string }).tool ?? 'unknown'
-            const input = (req.frame as { input?: unknown }).input ?? {}
+            const input = rawInput ?? {}
             const inputPreview = JSON.stringify(input)
             const cmd = (input as { command?: string }).command
             const description = cmd ? `${toolName}: ${cmd}` : toolName
@@ -631,29 +650,59 @@ const socketServer = new SocketServer({
     }
 
     if (req.frame.kind === 'toolCall') {
-      const args = req.frame.args as { chat_id?: string }
+      const frame = req.frame
+      const args = frame.args as { chat_id?: string }
       const argChatId = args.chat_id ? Number(args.chat_id) : null
+      const start = Date.now()
+      // Tag this tool call against the in-flight turn (if any). Also bumps
+      // the cache's per-turn tool-call counter for the turn event.
+      const turnId = subagentCache.recordToolCall(req.chatId)
+      const emit = (ok: boolean, errorCode: string | null): void => {
+        logToolCall({
+          ts: new Date().toISOString(),
+          source: 'subagent',
+          tool: frame.tool,
+          callerChatId: req.chatId,
+          callerContactId: access.getOwner(req.chatId),
+          argChatId,
+          targetOwner: argChatId !== null ? access.getOwner(argChatId) : null,
+          durationMs: Date.now() - start,
+          ok,
+          errorCode,
+          argPreview: buildArgPreview(frame.args as Record<string, unknown>),
+          turnId,
+        }, (err) => logf('events: log failed: %v', err))
+      }
       if (argChatId !== null && argChatId !== req.chatId) {
-        return { kind: 'toolError', id: req.frame.id, error: { code: 'chat_mismatch', message: 'tool call chat_id does not match subagent binding' } }
+        emit(false, 'chat_mismatch')
+        return { kind: 'toolError', id: frame.id, error: { code: 'chat_mismatch', message: 'tool call chat_id does not match subagent binding' } }
       }
       if (!rateLimiter.check(req.chatId)) {
         logf('rate-limit: chat=%d exceeded %d calls/min', req.chatId, RATE_LIMIT)
-        return { kind: 'toolError', id: req.frame.id, error: { code: 'rate_limited', message: `rate limit exceeded (${RATE_LIMIT}/min per chat)` } }
+        emit(false, 'rate_limited')
+        return { kind: 'toolError', id: frame.id, error: { code: 'rate_limited', message: `rate limit exceeded (${RATE_LIMIT}/min per chat)` } }
       }
       try {
-        const core = await callCoreTool(req.frame.tool, req.frame.args, req.chatId)
-        if (core) return { kind: 'toolResult', id: req.frame.id, result: core }
-        const appTool = appToolMap.get(req.frame.tool)
+        const core = await callCoreTool(frame.tool, frame.args, req.chatId)
+        if (core) {
+          emit(!core.isError, core.isError ? 'tool_error' : null)
+          return { kind: 'toolResult', id: frame.id, result: core }
+        }
+        const appTool = appToolMap.get(frame.tool)
         if (!appTool) {
-          return { kind: 'toolError', id: req.frame.id, error: { code: 'unknown_tool', message: req.frame.tool } }
+          emit(false, 'unknown_tool')
+          return { kind: 'toolError', id: frame.id, error: { code: 'unknown_tool', message: frame.tool } }
         }
-        const result = await appTool.callTool(req.frame.tool, req.frame.args, ctx)
+        const result = await appTool.callTool(frame.tool, frame.args, ctx)
         if (!result) {
-          return { kind: 'toolError', id: req.frame.id, error: { code: 'tool_null', message: 'tool returned null' } }
+          emit(false, 'tool_null')
+          return { kind: 'toolError', id: frame.id, error: { code: 'tool_null', message: 'tool returned null' } }
         }
-        return { kind: 'toolResult', id: req.frame.id, result }
+        emit(!result.isError, result.isError ? 'tool_error' : null)
+        return { kind: 'toolResult', id: frame.id, result }
       } catch (err) {
-        return { kind: 'toolError', id: req.frame.id, error: { code: 'tool_crash', message: String(err) } }
+        emit(false, 'tool_crash')
+        return { kind: 'toolError', id: frame.id, error: { code: 'tool_crash', message: String(err) } }
       }
     }
 
@@ -853,17 +902,6 @@ const coreTools = [
     },
   },
   {
-    name: 'dc_show_audit',
-    description: 'Send the auto-approved tool-call audit log for this chat back to the user as a rendered markdown file. Use when the user asks to review what the agent has done (e.g. "what did you run?", "show me the audit log"). Only meaningful when the bound agent is in skip-permissions mode — otherwise the audit file will not exist and this tool returns an error.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        chat_id: { type: 'string', description: 'Chat ID (must match the calling subagent\'s bound chat)' },
-      },
-      required: ['chat_id'],
-    },
-  },
-  {
     name: 'dc_schedule',
     description: 'Schedule a recurring or one-shot prompt that the dispatcher will fire into this chat as a synthetic user turn. Jobs persist across dispatcher restarts and run independently of subagent lifetime. Returns a job_id, next_fire_at, and an optional warning when the schedule would fire more than 30 times in the next 7 days.',
     inputSchema: {
@@ -909,6 +947,26 @@ const coreTools = [
       type: 'object' as const,
       properties: {
         chat_id: { type: 'string', description: 'The chat to resume from.' },
+      },
+      required: ['chat_id'],
+    },
+  },
+  {
+    name: 'dc_show_events',
+    description:
+      'Show structured DC runtime events (tool calls, subagent turns, permission verdicts, WebXDC updates) for the user. Reads the JSONL event log in $DC_EVENT_DIR, filters by time window / stream / tool / error flag, and sends the result as a markdown file via the file reviewer. Use when the user asks "what did my agent do?", "show me errors", "why was X denied?", etc.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        chat_id: { type: 'string', description: 'Chat to deliver the events file to.' },
+        stream: {
+          type: 'string',
+          description: 'Which log stream to read. Default "all".',
+          enum: ['tools', 'turns', 'permissions', 'webxdc', 'all'],
+        },
+        since: { type: 'string', description: 'Time window. ISO-8601 timestamp, or "<N>h" / "<N>d" relative offset. Default "24h".' },
+        tool: { type: 'string', description: 'Optional tool name filter (tools stream only).' },
+        only_errors: { type: 'boolean', description: 'When true, keep only error events (tools ok=false, permissions deny, webxdc unverified, turns crash/timeout/resume-fallback). Default false.' },
       },
       required: ['chat_id'],
     },
@@ -1427,42 +1485,6 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         return { content: [{ type: 'text' as const, text: msg.file }] }
       }
 
-      case 'dc_show_audit': {
-        const chatIdRaw = args.chat_id as string
-        const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
-        if (!Number.isFinite(chatId)) {
-          return { content: [{ type: 'text' as const, text: 'dc_show_audit: chat_id is required' }], isError: true }
-        }
-        if (!access.isAllowed(chatId)) {
-          return { content: [{ type: 'text' as const, text: `dc_show_audit: chat ${chatId} is not accessible` }], isError: true }
-        }
-        // chat_id authorization is enforced upstream at the socket boundary
-        // (see toolCall chat_mismatch check) so a subagent can only pass its
-        // own chat id here.
-        const path = audit.auditFilePathIfExists(chatId)
-        if (!path) {
-          return {
-            content: [
-              { type: 'text' as const, text: `dc_show_audit: no audit log found for chat ${chatId}. This chat's agent may not be in skip-permissions mode.` },
-            ],
-            isError: true,
-          }
-        }
-        const fileApp = appToolMap.get('dc_send_file')
-        if (!fileApp) {
-          return { content: [{ type: 'text' as const, text: 'dc_show_audit: file reviewer is not available' }], isError: true }
-        }
-        const result = await fileApp.callTool('dc_send_file', {
-          chat_id: String(chatId),
-          title: `Audit log — chat ${chatId}`,
-          file_path: path,
-        }, ctx)
-        if (!result || result.isError) {
-          return { content: [{ type: 'text' as const, text: 'dc_show_audit: file reviewer failed to send audit log' }], isError: true }
-        }
-        return { content: [{ type: 'text' as const, text: `audit log sent for chat ${chatId}` }] }
-      }
-
       case 'dc_schedule': {
         const chatIdRaw = args.chat_id as string
         const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
@@ -1643,6 +1665,52 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         }] }
       }
 
+      case 'dc_show_events': {
+        const chatIdRaw = args.chat_id as string
+        const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
+        if (!Number.isFinite(chatId)) {
+          return { content: [{ type: 'text' as const, text: 'dc_show_events: chat_id is required' }], isError: true }
+        }
+        if (!access.isAllowed(chatId)) {
+          return { content: [{ type: 'text' as const, text: `dc_show_events: chat ${chatId} is not accessible` }], isError: true }
+        }
+        const streamArg = ((args.stream as string | undefined) ?? 'all').toLowerCase()
+        const streams: EventStream[] = streamArg === 'all'
+          ? [...ALL_STREAMS]
+          : (ALL_STREAMS as string[]).includes(streamArg)
+            ? [streamArg as EventStream]
+            : []
+        if (streams.length === 0) {
+          return { content: [{ type: 'text' as const, text: `dc_show_events: unknown stream "${streamArg}". Must be one of: ${ALL_STREAMS.join(', ')}, all` }], isError: true }
+        }
+        const sinceArg = ((args.since as string | undefined) ?? '24h').trim()
+        let since: Date
+        try { since = parseSince(sinceArg) } catch (err) {
+          return { content: [{ type: 'text' as const, text: `dc_show_events: ${err instanceof Error ? err.message : String(err)}` }], isError: true }
+        }
+        const toolFilter = (args.tool as string | undefined) ?? undefined
+        const onlyErrors = args.only_errors === true
+        const hits = queryEvents({ streams, since, tool: toolFilter, onlyErrors })
+        const md = renderEventsMarkdown(hits, { since, streams, tool: toolFilter, onlyErrors })
+
+        const titleParts: string[] = [`Events ${sinceArg}`]
+        if (streamArg !== 'all') titleParts.push(streamArg)
+        if (onlyErrors) titleParts.push('errors')
+        const title = titleParts.join(' · ')
+
+        const fileApp = appToolMap.get('dc_send_file')
+        if (!fileApp) {
+          return { content: [{ type: 'text' as const, text: 'dc_show_events: file reviewer is unavailable' }], isError: true }
+        }
+        const result = await fileApp.callTool('dc_send_file', {
+          chat_id: String(chatId),
+          title,
+          content: md,
+        }, ctx)
+        if (result?.isError) return result
+        return { content: [{ type: 'text' as const, text: `Sent ${hits.length} event(s) to chat ${chatId} as "${title}".` }] }
+      }
+
       default:
         return null
   }
@@ -1650,6 +1718,26 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
 
 mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
   const args = (req.params.arguments ?? {}) as Record<string, unknown>
+  const argChatIdRaw = args.chat_id
+  const argChatId = typeof argChatIdRaw === 'string' && argChatIdRaw.length > 0
+    ? Number(argChatIdRaw)
+    : null
+  const start = Date.now()
+  const emit = (ok: boolean, errorCode: string | null): void => {
+    logToolCall({
+      ts: new Date().toISOString(),
+      source: 'terminal',
+      tool: req.params.name,
+      callerChatId: null,
+      callerContactId: null,
+      argChatId: argChatId !== null && !Number.isNaN(argChatId) ? argChatId : null,
+      targetOwner: argChatId !== null && !Number.isNaN(argChatId) ? access.getOwner(argChatId) : null,
+      durationMs: Date.now() - start,
+      ok,
+      errorCode,
+      argPreview: buildArgPreview(args),
+    }, (err) => logf('events: log failed: %v', err))
+  }
   try {
     // Gate every tool call on bootstrap readiness. If bun install is still
     // running we transparently block for up to 5 min; on install failure
@@ -1657,6 +1745,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     await waitForReady()
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    emit(false, 'install_pending')
     return {
       content: [{ type: 'text' as const, text: `Delta Chat plugin install did not complete. Run \`bun install\` in ${import.meta.dir} manually, then restart this Claude Code session. (${msg})` }],
       isError: true,
@@ -1664,16 +1753,32 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
   }
   try {
     const core = await callCoreTool(req.params.name, args)
-    if (core) return core
+    if (core) {
+      emit(!core.isError, core.isError ? 'tool_error' : null)
+      return core
+    }
     let app = appToolMap.get(req.params.name)
     if (!app) { rebuildAppToolMap(); app = appToolMap.get(req.params.name) }
-    if (app) return await app.callTool(req.params.name, args, ctx)
+    if (app) {
+      const result = await app.callTool(req.params.name, args, ctx)
+      if (!result) {
+        emit(false, 'tool_null')
+        return {
+          content: [{ type: 'text' as const, text: `${req.params.name} returned null` }],
+          isError: true,
+        }
+      }
+      emit(!result.isError, result.isError ? 'tool_error' : null)
+      return result
+    }
+    emit(false, 'unknown_tool')
     return {
       content: [{ type: 'text' as const, text: `unknown tool: ${req.params.name}` }],
       isError: true,
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    emit(false, 'tool_crash')
     return {
       content: [{ type: 'text' as const, text: `${req.params.name} failed: ${msg}` }],
       isError: true,
@@ -2361,12 +2466,24 @@ async function main(): Promise<void> {
           pendingPermissions.delete(payload.requestId)
           const elapsed = Date.now() - pending.startedAt
           subagentCache.extendTurnDeadline(pending.chatId, elapsed)
+          const granted = !!payload.granted
           pending.resolve({
             kind: 'permissionVerdict',
             id: payload.requestId,
-            verdict: payload.granted ? 'allow' : 'deny',
+            verdict: granted ? 'allow' : 'deny',
           })
-          logf('phase2: intercepted permission verdict %s → %s for chat %d (paused turn timeout +%dms)', payload.requestId, payload.granted ? 'allow' : 'deny', pending.chatId, elapsed)
+          logPermission({
+            ts: new Date().toISOString(),
+            chatId: pending.chatId,
+            agentId: pending.agentId,
+            tool: pending.tool,
+            inputPreview: pending.inputPreview,
+            verdict: granted ? 'allow' : 'deny',
+            reason: granted ? 'user_allow' : 'user_deny',
+            timedOut: false,
+            durationMs: elapsed,
+          })
+          logf('phase2: intercepted permission verdict %s → %s for chat %d (paused turn timeout +%dms)', payload.requestId, granted ? 'allow' : 'deny', pending.chatId, elapsed)
           continue
         }
         passthrough.push(u)
@@ -2390,6 +2507,29 @@ async function main(): Promise<void> {
         lookupContactByAddr: (addr) => client.lookupContactByAddr(addr),
         logf,
       })
+      // Trace every inbound update (pass or drop) for post-hoc analysis.
+      // Identity comparison: filterUpdatesByOwner pushes the same object
+      // reference for passing updates.
+      {
+        const passed = new Set(filtered)
+        const nowTs = new Date().toISOString()
+        for (const u of updates) {
+          const payload = u.payload as Record<string, unknown> | null
+          let payloadType: string | null = null
+          if (payload && typeof payload.type === 'string') payloadType = payload.type
+          let payloadSize = 0
+          try { payloadSize = Buffer.byteLength(JSON.stringify(payload ?? null), 'utf8') } catch {}
+          logWebXDC({
+            ts: nowTs,
+            msgId,
+            chatId: entry.chatId,
+            appId: entry.app.id,
+            ownerVerified: passed.has(u),
+            payloadType,
+            payloadSize,
+          }, (err) => logf('logWebXDC: write failed: %v', err))
+        }
+      }
       if (filtered.length === 0) return
 
       const prevTurn = webxdcHandlerChain.get(msgId) ?? Promise.resolve()

@@ -1226,7 +1226,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
             <svg class="shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.5 9.5 8 11 4.5-1.5 8-6 8-11V5l-8-3Z"/></svg>
             Trusted agent
           </span>
-          <span class="caveat">Skips per-tool permission prompts. Every tool call is written to the audit log.</span>
+          <span class="caveat">Skips per-tool permission prompts. Every decision is recorded in the permission event log.</span>
         </span>
       </label>
       <label class="field-label" style="margin-top:12px;">Tools</label>
@@ -1298,7 +1298,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
             <svg class="shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.5 9.5 8 11 4.5-1.5 8-6 8-11V5l-8-3Z"/></svg>
             Trusted agent
           </span>
-          <span class="caveat">Skips per-tool permission prompts. Every tool call is written to the audit log.</span>
+          <span class="caveat">Skips per-tool permission prompts. Every decision is recorded in the permission event log.</span>
         </span>
       </label>
       <label class="field-label" style="margin-top:12px;">Tools</label>
@@ -1537,7 +1537,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.84;
+var APP_VERSION = 1.85;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#3DA85A', checker: '#65C081' },

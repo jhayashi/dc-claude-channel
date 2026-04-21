@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { connect, type Socket } from 'node:net'
-import { mkdtempSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomBytes } from 'node:crypto'
 import { SocketServer, type SocketRequest } from '../dispatcher/socket-server.js'
 import { encodeFrame, type ClientMessage, type ServerMessage } from '../shared/protocol.js'
+import { logToolCall, getEventDir, setEventDir, buildArgPreview } from '../events.js'
 
 function openClient(path: string): Promise<{ sock: Socket; read: () => Promise<unknown>; send: (m: ClientMessage) => void }> {
   return new Promise((resolve, reject) => {
@@ -129,5 +130,62 @@ describe('SocketServer', () => {
     c.sock.write('not json\n')
     const err = await c.read()
     expect((err as { kind: string; error: { code: string } }).error.code).toBe('parse')
+  })
+
+  it('logs tool calls to the event log when onRequest invokes logToolCall', async () => {
+    // Simulates the server.ts wiring: onRequest runs the tool and emits a
+    // ToolCallEvent. End-to-end asserts the JSONL line lands on disk.
+    const eventDir = mkdtempSync(join(tmpdir(), 'sock-evt-'))
+    const prevDir = getEventDir()
+    setEventDir(eventDir)
+    try {
+      server = new SocketServer({
+        path: sockPath + '.evt',
+        secret,
+        hasSubagent: () => true,
+        getSubagentChat: () => 7,
+        onRequest: async (req) => {
+          if (req.frame.kind !== 'toolCall') {
+            return { kind: 'toolError', id: 'x', error: { code: 'unhandled', message: req.frame.kind } }
+          }
+          const start = Date.now()
+          logToolCall({
+            ts: new Date().toISOString(),
+            source: 'subagent',
+            tool: req.frame.tool,
+            callerChatId: req.chatId,
+            callerContactId: null,
+            argChatId: 7,
+            targetOwner: null,
+            durationMs: Date.now() - start,
+            ok: true,
+            errorCode: null,
+            argPreview: buildArgPreview(req.frame.args as Record<string, unknown>),
+          })
+          return { kind: 'toolResult', id: req.frame.id, result: { content: [{ type: 'text', text: 'ok' }] } }
+        },
+      })
+      await server.start()
+      const c = await openClient(sockPath + '.evt')
+      c.send({ kind: 'hello', secret, role: 'tools', chatId: 7, subagentId: 'sub-7' })
+      await c.read() // ack
+      c.send({ kind: 'toolCall', id: 'ev1', tool: 'dc_status', args: { chat_id: '7' } })
+      const res = await c.read()
+      expect((res as { kind: string }).kind).toBe('toolResult')
+      const files = readdirSync(eventDir)
+      expect(files.length).toBe(1)
+      const lines = readFileSync(join(eventDir, files[0]), 'utf-8').split('\n').filter(Boolean)
+      expect(lines.length).toBe(1)
+      const parsed = JSON.parse(lines[0])
+      expect(parsed.tool).toBe('dc_status')
+      expect(parsed.source).toBe('subagent')
+      expect(parsed.callerChatId).toBe(7)
+      expect(parsed.ok).toBe(true)
+      c.sock.end()
+      await server.stop()
+    } finally {
+      setEventDir(prevDir)
+      try { rmSync(eventDir, { recursive: true, force: true }) } catch {}
+    }
   })
 })

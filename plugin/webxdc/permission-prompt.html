@@ -436,7 +436,7 @@ body {
   </div>
 </div>
 <script>
-var APP_VERSION = 1.22;
+var APP_VERSION = 1.23;
 // Map of requestId -> {data, resolved}
 var requests = {};
 // Whether initial replay has finished
@@ -687,7 +687,7 @@ function respond(granted) {
     a.setAttribute('tabindex', '0');
     a.addEventListener('click', summonAgentSettings);
     hint.appendChild(a);
-    hint.appendChild(document.createTextNode('. Trusted agents auto-approve tools and log every decision to an audit trail.'));
+    hint.appendChild(document.createTextNode('. Trusted agents auto-approve tools and log every decision to the permission event log.'));
     r.appendChild(hint);
   }
 

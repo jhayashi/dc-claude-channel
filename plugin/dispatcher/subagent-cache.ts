@@ -11,10 +11,15 @@
  *   - crash recovery (if a subagent dies between turns, next
  *     dispatch re-spawns)
  *   - per-chat queue depth of 10 (overflow drops oldest)
+ *   - turn telemetry: emits a TurnTelemetry record when each runNow
+ *     completes (see onTurnEvent)
  *
  * The SubagentLike interface exists so the test can substitute a
  * fake that doesn't shell out to claude.
  */
+
+import { randomBytes } from 'node:crypto'
+import type { TurnExitReason } from '../events.js'
 
 export interface SubagentLike {
   readonly chatId: number
@@ -30,6 +35,21 @@ export interface SubagentLike {
   extendDeadline?(extraMs: number): void
 }
 
+/**
+ * Turn telemetry emitted by the cache on every runNow completion. The
+ * cache deliberately ships a minimal record — server.ts enriches it with
+ * agentId/sessionId (read from bindings) before handing to logTurn.
+ */
+export interface TurnTelemetry {
+  ts: string
+  turnId: string
+  chatId: number
+  spawnColdMs: number
+  durationMs: number
+  toolCalls: number
+  exitReason: TurnExitReason
+}
+
 export interface SubagentCacheOptions {
   maxActive: number
   idleTimeoutMs: number
@@ -43,16 +63,30 @@ export interface SubagentCacheOptions {
   onCrash?: (chatId: number) => void
   /** Fired when a queued prompt is dropped because the per-chat queue is full. */
   onQueueDrop?: (chatId: number) => void
+  /** Fired once per runNow completion with turn timing + exit reason. */
+  onTurnEvent?: (ev: TurnTelemetry) => void
 }
 
 interface CacheEntry {
   sub: SubagentLike
   idleTimer: NodeJS.Timeout | null
-  queue: Array<{ text: string; resolve: (r: unknown) => void; reject: (e: Error) => void }>
+  queue: Array<{ text: string; turnId: string; enqueuedAt: number; resolve: (r: unknown) => void; reject: (e: Error) => void }>
   busy: boolean
+  /** Ms spent in cold-spawn for this subagent; consumed by the first turn that uses it, then zeroed. */
+  spawnColdMs: number
+  /** In-flight turn id (set between busy=true and finally). */
+  currentTurnId: string | null
+  /** In-flight turn tool-call counter. */
+  currentTurnToolCalls: number
+  /** Set by evict() when the cache tears the sub down; read by runNow's finally to classify the exit. */
+  evictReason: 'lru_evict' | 'user_abort' | null
 }
 
 const DEFAULT_QUEUE_DEPTH = 10
+
+function genTurnId(): string {
+  return randomBytes(6).toString('hex')
+}
 
 export class SubagentCache {
   private entries = new Map<number, CacheEntry>()
@@ -90,13 +124,18 @@ export class SubagentCache {
     }, this.opts.idleTimeoutMs)
   }
 
-  private async evict(chatId: number): Promise<void> {
+  private async evict(chatId: number, reason: 'lru_evict' | 'user_abort' = 'user_abort'): Promise<void> {
     const entry = this.entries.get(chatId)
     if (!entry) return
     if (entry.idleTimer) clearTimeout(entry.idleTimer)
+    // Flag the in-flight turn so runNow's finally classifies correctly.
+    // Known gap: SubagentProcess.close won't unblock an in-flight send, so
+    // the send keeps waiting until turn-timeout; evictReason overrides
+    // that default.
+    if (entry.busy) entry.evictReason = reason
     this.entries.delete(chatId)
     this.lruOrder = this.lruOrder.filter((c) => c !== chatId)
-    // Fail any queued work
+    // Fail queued work — those turns never ran, so we don't emit turn events.
     for (const q of entry.queue) q.reject(new Error('subagent evicted'))
     await entry.sub.close().catch(() => {})
   }
@@ -106,7 +145,7 @@ export class SubagentCache {
       const victimId = this.lruOrder[0]
       if (victimId === undefined) return
       this.logf('cache: evicting LRU chat=%d', victimId)
-      await this.evict(victimId)
+      await this.evict(victimId, 'lru_evict')
     }
   }
 
@@ -115,8 +154,18 @@ export class SubagentCache {
     const t0 = Date.now()
     const sub = await this.opts.spawnFn(chatId)
     if (!sub) throw new Error('subagent spawn skipped (no agent bound)')
-    this.logf('cache: cold-spawn chat=%d elapsed=%dms', chatId, Date.now() - t0)
-    const entry: CacheEntry = { sub, idleTimer: null, queue: [], busy: false }
+    const spawnColdMs = Date.now() - t0
+    this.logf('cache: cold-spawn chat=%d elapsed=%dms', chatId, spawnColdMs)
+    const entry: CacheEntry = {
+      sub,
+      idleTimer: null,
+      queue: [],
+      busy: false,
+      spawnColdMs,
+      currentTurnId: null,
+      currentTurnToolCalls: 0,
+      evictReason: null,
+    }
     this.entries.set(chatId, entry)
     this.touch(chatId)
     this.resetIdleTimer(chatId)
@@ -141,7 +190,22 @@ export class SubagentCache {
 
   async dispatch(chatId: number, text: string): Promise<{ text: string; denials: Array<{ tool_name?: string; command?: string }> }> {
     const entry = await this.ensure(chatId)
-    return await this.runOrQueue(entry, chatId, text)
+    const turnId = genTurnId()
+    return await this.runOrQueue(entry, chatId, text, turnId)
+  }
+
+  /**
+   * Return the turnId currently in-flight for `chatId`, bumping a local
+   * counter so we know how many tool calls it issued. Returns null when
+   * there's no in-flight turn (e.g. a stray tool call arriving between
+   * turns, or from a subagent whose entry was evicted). Safe to call from
+   * the socket-server request path.
+   */
+  recordToolCall(chatId: number): string | null {
+    const entry = this.entries.get(chatId)
+    if (!entry || !entry.busy || !entry.currentTurnId) return null
+    entry.currentTurnToolCalls += 1
+    return entry.currentTurnId
   }
 
   /**
@@ -154,7 +218,7 @@ export class SubagentCache {
     await this.ensure(chatId)
   }
 
-  private runOrQueue(entry: CacheEntry, chatId: number, text: string): Promise<{ text: string; denials: Array<{ tool_name?: string; command?: string }> }> {
+  private runOrQueue(entry: CacheEntry, chatId: number, text: string, turnId: string): Promise<{ text: string; denials: Array<{ tool_name?: string; command?: string }> }> {
     if (entry.busy) {
       if (entry.queue.length >= this.queueMax) {
         const dropped = entry.queue.shift()
@@ -163,31 +227,61 @@ export class SubagentCache {
         try { this.opts.onQueueDrop?.(chatId) } catch {}
       }
       return new Promise((resolve, reject) => {
-        entry.queue.push({ text, resolve: resolve as (r: unknown) => void, reject })
+        entry.queue.push({ text, turnId, enqueuedAt: Date.now(), resolve: resolve as (r: unknown) => void, reject })
       })
     }
-    return this.runNow(entry, chatId, text)
+    return this.runNow(entry, chatId, text, turnId)
   }
 
-  private async runNow(entry: CacheEntry, chatId: number, text: string): Promise<{ text: string; denials: Array<{ tool_name?: string; command?: string }> }> {
+  private async runNow(entry: CacheEntry, chatId: number, text: string, turnId: string): Promise<{ text: string; denials: Array<{ tool_name?: string; command?: string }> }> {
+    const turnStart = Date.now()
+    const spawnColdMs = entry.spawnColdMs
+    entry.spawnColdMs = 0 // consumed by this turn
     entry.busy = true
+    entry.currentTurnId = turnId
+    entry.currentTurnToolCalls = 0
+    let exitReason: TurnExitReason = 'completed'
     try {
       const result = await entry.sub.send(text, this.opts.turnTimeoutMs)
       this.touch(chatId)
       this.resetIdleTimer(chatId)
       return result
     } catch (err) {
-      if (!entry.sub.alive) {
+      if (entry.evictReason) {
+        exitReason = entry.evictReason
+      } else if (err instanceof Error && /^timeout after \d+ms/.test(err.message)) {
+        exitReason = 'turn_timeout'
+      } else if (!entry.sub.alive) {
+        exitReason = 'crash'
+      } else {
+        exitReason = 'crash'
+      }
+      if (!entry.sub.alive && !entry.evictReason) {
         this.logf('cache: subagent died during send chat=%d', chatId)
         try { this.opts.onCrash?.(chatId) } catch {}
       }
       throw err
     } finally {
+      const durationMs = Date.now() - turnStart
+      const toolCalls = entry.currentTurnToolCalls
+      try {
+        this.opts.onTurnEvent?.({
+          ts: new Date(turnStart).toISOString(),
+          turnId,
+          chatId,
+          spawnColdMs,
+          durationMs,
+          toolCalls,
+          exitReason,
+        })
+      } catch {}
+      entry.currentTurnId = null
+      entry.currentTurnToolCalls = 0
       entry.busy = false
       // Drain one queued message if any
       const next = entry.queue.shift()
       if (next) {
-        this.runNow(entry, chatId, next.text).then(next.resolve).catch(next.reject)
+        this.runNow(entry, chatId, next.text, next.turnId).then(next.resolve).catch(next.reject)
       }
     }
   }
