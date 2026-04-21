@@ -8,8 +8,12 @@
  * and forwards every CallTool request to the dispatcher over the Unix
  * socket using the shared protocol.
  *
- * The dispatcher enforces chat_id authorization at the socket boundary
- * — a subagent bound to chat A cannot call DC tools against chat B.
+ * Tool calls are gated by the owner's paired-chats allowlist. Chat-scoping
+ * is a context-hygiene default, not a privacy boundary — a subagent CAN
+ * reach any paired chat via dc_chat_history / dc_send_* / dc_react when it
+ * needs to pull or push context across chats. The one exception is the
+ * scheduler (dc_schedule*), which requires caller chat_id = target chat_id
+ * because a job is owned by its chat.
  *
  * Required env (inherited from the parent claude -p, which inherits
  * from the dispatcher's spawn env):
