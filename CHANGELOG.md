@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. Dates are in `YYYY-MM-DD`.
 
+## [1.1.2] — 2026-04-20
+
+Patch release. Fixes a post-tutorial routing bug introduced when the subagent dispatcher landed: once the onboarding tour reached its terminal `"done"` state, subsequent messages in that chat were still routed to the legacy `mcp.notification` path (terminal Claude Code session) instead of the bound subagent. Most visibly: voice messages couldn't be transcribed (transcription lives inside `runSubagentTurn`, which was never called), and replies came from the terminal CC persona rather than the chat's configured agent.
+
+### Fixed
+
+- **Post-tutorial chats now reach the subagent.** The dispatcher router treated any non-null tutorial state as "in progress," but `tutorial.ts` leaves `"done"` in place as a historical marker. Router now checks `state !== 'done'` in addition to `state !== null`, so terminal-marker state falls through to `runSubagentTurn`. Tutorial state machine contract is unchanged — existing tests still assert `getState() === "done"`.
+
 ## [1.1.1] — 2026-04-20
 
 Patch release. Introduces structured JSONL event logs for every DC tool call, subagent turn, permission verdict, and inbound WebXDC update; retires the per-chat markdown audit file in favor of the new permission log; adds the `dc_show_events` tool so the agent can surface event history back to the chat.
@@ -317,6 +325,7 @@ First public release of the Delta Chat channel for Claude Code.
 - File-based allowlist + pairing codes.
 - `deltachat-rpc-server` integration.
 
+[1.1.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.33...v1.1.0
 [1.0.3]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.2...v1.0.3
