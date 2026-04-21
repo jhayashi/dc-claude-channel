@@ -2339,9 +2339,11 @@ async function main(): Promise<void> {
       }
       // Tutorial intercept runs in the dispatcher, not the subagent —
       // tutorial state lives here and the onboarding flow drives WebXDC
-      // apps directly via appToolMap.
+      // apps directly via appToolMap. "done" is a terminal marker, not
+      // an in-progress state — messages arriving after the tour ends
+      // must reach the bound subagent, not the terminal Claude session.
       const tutState = tutorial.getState(msg.chatId)
-      if (tutState !== null) {
+      if (tutState !== null && tutState !== 'done') {
         logf('dispatch: chat=%d path=tutorial-legacy state=%s', msg.chatId, String(tutState))
         await dispatchPairedMessage(msg)
         return
