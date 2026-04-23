@@ -15,10 +15,15 @@
 import { createServer, type Server } from "node:http";
 import { readFile } from "node:fs/promises";
 import { mkdtempSync, rmSync } from "node:fs";
-import { join, dirname, resolve as pathResolve } from "node:path";
+import { join, resolve as pathResolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type BrowserContext, type Page } from "@playwright/test";
+
+// Node-compatible __dirname equivalent (Playwright's runner doesn't
+// support Bun's import.meta.dir).
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 export interface HarnessHandle {
   page: Page;
@@ -36,7 +41,7 @@ interface InternalHandle {
   tmpDir: string;
 }
 
-const SHIM_PATH = join(import.meta.dir, "shim.js");
+const SHIM_PATH = join(HERE, "shim.js");
 
 function contentTypeFor(path: string): string {
   if (path.endsWith(".html")) return "text/html; charset=utf-8";
