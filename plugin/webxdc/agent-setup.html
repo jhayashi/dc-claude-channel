@@ -761,8 +761,8 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   border-radius: 50%;
   display: inline-block;
 }
-.seg .dot.haiku  { background: var(--green); }
-.seg .dot.sonnet { background: var(--amber); }
+.seg .dot.haiku  { background: var(--amber); }
+.seg .dot.sonnet { background: var(--green); }
 .seg .dot.opus   { background: var(--orange); }
 .preview-bar {
   display: flex;
@@ -1012,8 +1012,8 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   display: inline-block;
   flex-shrink: 0;
 }
-.agent-row .meta .tier-dot.haiku  { background: var(--green); }
-.agent-row .meta .tier-dot.sonnet { background: #B4862A; }
+.agent-row .meta .tier-dot.haiku  { background: #B4862A; }
+.agent-row .meta .tier-dot.sonnet { background: var(--green); }
 .agent-row .meta .tier-dot.opus   { background: var(--orange); }
 .agent-row .meta .sep {
   color: var(--ink-faint);
@@ -1537,11 +1537,11 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.85;
+var APP_VERSION = 1.87;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
-  haiku:  { solid: '#3DA85A', checker: '#65C081' },
-  sonnet: { solid: '#B4862A', checker: '#D9B25B' },
+  haiku:  { solid: '#B4862A', checker: '#D9B25B' },
+  sonnet: { solid: '#3DA85A', checker: '#65C081' },
   opus:   { solid: '#D97757', checker: '#F2A778' },
 };
 

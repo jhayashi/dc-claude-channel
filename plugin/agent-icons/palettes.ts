@@ -20,8 +20,8 @@ export interface ModelPalette {
 }
 
 export const MODEL_COLORS: Record<ModelFamily, ModelPalette> = {
-  haiku: { solid: '#3DA85A', checker: '#65C081' },
-  sonnet: { solid: '#B4862A', checker: '#D9B25B' },
+  haiku: { solid: '#B4862A', checker: '#D9B25B' },
+  sonnet: { solid: '#3DA85A', checker: '#65C081' },
   opus: { solid: '#D97757', checker: '#F2A778' },
 }
 

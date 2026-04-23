@@ -4,12 +4,17 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.1.3] — 2026-04-22
+
+Cosmetic + infrastructure patch. Haiku/Sonnet badge colors swapped for better at-a-glance model-tier recognition; tier-1 WebXDC test harness lands off by default; `access.ts` split into its Phase-0 folder layout.
+
 ### Added
 
 - **Tier-1 WebXDC test harness (opt-in).** Playwright-based harness at `plugin/test/webxdc/` that unzips each `.xdc`, serves it on an ephemeral HTTP port with a stub `webxdc.js`, and drives it in headless Chromium. First two tests: a cross-app auto-upgrade handshake (every `.xdc` must reply `version_mismatch` when `payload.version > APP_VERSION`) and a file-reviewer DOM + long-press comment roundtrip. Phase 1 of `docs/specs/2026-04-20-e2e-testing-proposal.md`. Isolated behind a nested `package.json` so marketplace installs pay zero cost; run `cd plugin/test/webxdc && bun install && bunx playwright install chromium` once, then `bun run test:webxdc` from `plugin/`. Default `bun test` is unchanged (548/0).
 
 ### Changed
 
+- **Swapped Haiku and Sonnet badge colors.** Haiku is now gold (`#B4862A`), Sonnet is now green (`#3DA85A`). Opus remains orange. Touches `agent-icons/palettes.ts` and the mirrored `MODEL_COLORS` + `.tier-dot` + `.seg .dot` CSS in `webxdc/agent-setup.html` (APP_VERSION 1.85 → 1.87). Prebuilt PNGs (`agent-badges-prebuilt/`) and the bundled `agent-setup.xdc` regenerated. Existing runtime cache at `~/.claude/channels/deltachat/agent-badges/` can be wiped to force immediate re-render; otherwise badges refresh lazily on next `setAgentIcon` call.
 - **`access.ts` split into `access/{chat-allowlist,pairing,principals}.ts`.** Phase 0 of the identity/teams migration (`docs/specs/2026-04-20-identity-and-teams-design.md`). `plugin/access/index.ts` is now the barrel; every `import * as access from './access.js'` callsite is flipped to `./access/index.js`. `principals.ts` is a dormant skeleton — types only, no runtime behaviour. No external behaviour change.
 
 ## [1.1.2] — 2026-04-20
@@ -335,6 +340,7 @@ First public release of the Delta Chat channel for Claude Code.
 - File-based allowlist + pairing codes.
 - `deltachat-rpc-server` integration.
 
+[1.1.3]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/jhayashi/dc-claude-channel/compare/v1.0.33...v1.1.0
