@@ -1,2 +1,6 @@
 [test]
 root = "./test"
+# Tier-1 WebXDC harness (test/webxdc/) uses *.pw.ts filenames which bun's
+# default matcher (*.{test,spec}.{js,ts,tsx}) ignores. Playwright has its
+# own config (test/webxdc/playwright.config.ts) picking those up. Run
+# `bun run test:webxdc` to invoke.

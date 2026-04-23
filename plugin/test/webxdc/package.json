@@ -1,0 +1,10 @@
+{
+  "name": "dc-claude-channel-webxdc-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tier-1 WebXDC harness. Isolated from plugin/package.json so the dispatcher's bun install doesn't pull Playwright onto marketplace users' phones.",
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}
