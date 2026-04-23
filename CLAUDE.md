@@ -315,10 +315,11 @@ version each time you send an updated revision.
 - `plugin/bindings.ts` — Per-chat binding records (chat ↔ agent link + session UUID + inheritClaudeMd)
 - `plugin/agent-setup.ts` — XDC builder for the agent setup WebXDC app
 - `plugin/dc-client.ts` — Wraps `@deltachat/jsonrpc-client` + `@deltachat/stdio-rpc-server`
-- `plugin/access.ts` — File-based allowlist + pairing codes (~/.claude/channels/deltachat/approved/)
+- `plugin/access/` — File-based allowlist + pairing codes (~/.claude/channels/deltachat/approved/). Split (v1.1.2+) into `chat-allowlist.ts` (persistent `approved/<chatId>` store), `pairing.ts` (in-memory arm window + pending codes), `principals.ts` (Phase-0 skeleton for the upcoming identity/teams model), and `index.ts` (the barrel every call site imports).
 - `plugin/tutorial.ts` — Onboarding tutorial state machine
 - `plugin/webxdc-filter.ts` — Centralized owner verification for WebXDC updates
 - `plugin/events.ts` — Structured JSONL log of every DC tool call
+- `plugin/test/webxdc/` — Tier-1 WebXDC test harness (opt-in; Playwright-based). Isolated `package.json` so marketplace installs pay zero cost. See `plugin/test/webxdc/README.md` for contributor bootstrap.
 - State dir: `~/.claude/channels/deltachat/` (.env, dc-data/, approved/, agents/, bindings/, schedules/, events/, dispatcher.sock, debug.log)
 
 ## Subagent model (v0.9+)
