@@ -27,6 +27,39 @@ describe('PLUGIN_DIR', () => {
   })
 })
 
+describe('sessionFileExists', () => {
+  let tmpRoot: string
+  let projectsRoot: string
+
+  beforeEach(() => {
+    tmpRoot = mkdtempSync(join(tmpdir(), 'session-exists-test-'))
+    projectsRoot = join(tmpRoot, 'projects')
+    mkdirSync(projectsRoot, { recursive: true })
+    resume.setProjectsRoot(projectsRoot)
+  })
+
+  afterEach(() => rmSync(tmpRoot, { recursive: true, force: true }))
+
+  it('returns true when the session jsonl exists under the cwd hash', () => {
+    const cwd = '/home/user/src/proj'
+    const sessionId = '3b9526d5-a8f9-4ccc-a8e8-c08f6fd515ee'
+    const dir = join(projectsRoot, resume.projectHashForCwd(cwd))
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, `${sessionId}.jsonl`), '')
+    expect(resume.sessionFileExists(cwd, sessionId)).toBe(true)
+  })
+
+  it('returns false when the cwd hash dir is absent', () => {
+    expect(resume.sessionFileExists('/no/such/cwd', '3b9526d5-a8f9-4ccc-a8e8-c08f6fd515ee')).toBe(false)
+  })
+
+  it('returns false when the dir exists but the session file does not (ghost session)', () => {
+    const cwd = '/home/user/src/proj'
+    mkdirSync(join(projectsRoot, resume.projectHashForCwd(cwd)), { recursive: true })
+    expect(resume.sessionFileExists(cwd, 'deadbeef-aaaa-bbbb-cccc-dddddddddddd')).toBe(false)
+  })
+})
+
 describe('buildResumeCommand', () => {
   let tmpRoot: string
   let projectsRoot: string

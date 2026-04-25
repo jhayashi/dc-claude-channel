@@ -47,6 +47,15 @@ export function projectHashForCwd(cwd: string): string {
   return cwd.replace(/\//g, '-')
 }
 
+/**
+ * Whether claude's .jsonl exists on disk for `sessionId` under `cwd`.
+ * False when the file was never written (e.g. the spawn that claimed the
+ * id was killed before its first turn, leaving a ghost id in the binding).
+ */
+export function sessionFileExists(cwd: string, sessionId: string): boolean {
+  return existsSync(join(PROJECTS_ROOT, projectHashForCwd(cwd), `${sessionId}.jsonl`))
+}
+
 export interface ResumeCommand {
   /** 'resume' = `claude --resume <uuid>`; 'fresh' = bare `claude` (no session to resume). */
   kind: 'resume' | 'fresh'

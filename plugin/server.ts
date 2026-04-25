@@ -357,10 +357,6 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     toolDefs: filteredToolDefs,
   })
   let { sessionId, created } = bindings.loadOrCreateSessionId(chatId)
-  logf(
-    'subagent: chat=%d session=%s %s',
-    chatId, sessionId, created ? 'NEW' : 'RESUME',
-  )
   // If the binding has an explicit inheritClaudeMd flag, honor it.
   // Otherwise pass undefined so SubagentProcess uses its default (inherit).
   const suppressUserClaudeMd =
@@ -393,6 +389,23 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
       bindings.saveBinding({ ...existing, workingDir })
     }
   }
+
+  // Ghost-session check: a previous spawn may have persisted a sessionId
+  // to the binding before claude wrote its .jsonl (e.g. SIGTERM during
+  // pre-warm, or eviction before the first turn completed). Resuming such
+  // a session is guaranteed to fail with `error_during_execution`. If the
+  // file is absent, drop the ghost id and create a fresh session instead.
+  if (!created && !resume.sessionFileExists(workingDir, sessionId)) {
+    logf('subagent: chat=%d session=%s ghost (no jsonl on disk), creating fresh', chatId, sessionId)
+    bindings.clearSessionId(chatId)
+    const fresh = bindings.loadOrCreateSessionId(chatId)
+    sessionId = fresh.sessionId
+    created = true
+  }
+  logf(
+    'subagent: chat=%d session=%s %s',
+    chatId, sessionId, created ? 'NEW' : 'RESUME',
+  )
 
   let resumeFailed = false
   let sub = new SubagentProcess({
