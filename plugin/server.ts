@@ -84,7 +84,12 @@ function logf(format: string, ...args: unknown[]): void {
     let i = 0
     const msg = format.replace(/%[svd]/g, () => {
       if (i >= args.length) return ''
-      return String(args[i++])
+      const val = args[i++]
+      if (val instanceof Error) return `${val.message}${val.stack ? '\n' + val.stack : ''}`
+      if (val !== null && typeof val === 'object') {
+        try { return JSON.stringify(val) } catch { return String(val) }
+      }
+      return String(val)
     })
     appendFileSync(LOG_FILE, msg + '\n')
   } catch {
@@ -2193,7 +2198,8 @@ async function main(): Promise<void> {
       const result = await subagentCache.dispatch(chatId, formatSubagentInput(enrichedMsg))
       logf('subagent: chat=%d result.text=%s denials=%d', chatId, (result.text ?? '').slice(0, 500).replace(/\n/g, ' '), result.denials.length)
       if (result.text) {
-        await client.send(chatId, result.text)
+        const sentMsgId = await client.send(chatId, result.text)
+        logf('subagent: chat=%d sent msgId=%d', chatId, sentMsgId)
       }
       if (result.denials.length > 0) {
         const summary = result.denials

@@ -124,20 +124,33 @@ export interface ActivityReactor {
 
 export interface ActivityReactorDeps {
   sendReaction: (msgId: number, emoji: string) => Promise<void>
+  /** Injectable clock for tests; defaults to Date.now. */
+  now?: () => number
 }
+
+/**
+ * Minimum time between reactions per chat. Each subagent tool call would
+ * otherwise emit its own reaction; on long multi-step turns that easily
+ * generates 30–50 reactions per user message, each one a separate
+ * encrypted SMTP send. Throttling to one per minute keeps the chatmail
+ * server from rate-limiting the account.
+ */
+export const REACTION_DEBOUNCE_MS = 60_000
 
 interface TurnState {
   msgId: number
   lastClass: string | null
+  lastFiredAtMs: number
 }
 
 export function createActivityReactor(deps: ActivityReactorDeps): ActivityReactor {
   const state = new Map<number, TurnState>()
+  const now = deps.now ?? (() => Date.now())
 
   return {
     setTurnTarget(chatId, msgId) {
       const emoji = THINKING_EMOJIS[Math.floor(Math.random() * THINKING_EMOJIS.length)]
-      state.set(chatId, { msgId, lastClass: 'thinking' })
+      state.set(chatId, { msgId, lastClass: 'thinking', lastFiredAtMs: now() })
       // Fire-and-forget thinking indicator before any tool fires.
       deps.sendReaction(msgId, emoji).catch(() => {})
     },
@@ -151,6 +164,9 @@ export function createActivityReactor(deps: ActivityReactorDeps): ActivityReacto
       if (!result) return
       if (result.cls === entry.lastClass) return
       entry.lastClass = result.cls
+      const t = now()
+      if (t - entry.lastFiredAtMs < REACTION_DEBOUNCE_MS) return
+      entry.lastFiredAtMs = t
       const { msgId } = entry
       deps.sendReaction(msgId, result.emoji).catch(() => {})
     },

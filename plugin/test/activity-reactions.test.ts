@@ -143,15 +143,17 @@ describe('todoStepEmoji', () => {
 function makeReactor() {
   const calls: Array<{ msgId: number; emoji: string }> = []
   const logs: string[] = []
+  const clock = { t: 0 }
   const reactor = createActivityReactor({
     sendReaction: async (msgId, emoji) => {
       calls.push({ msgId, emoji })
     },
+    now: () => clock.t,
     logf: (fmt, ...args) => {
       logs.push(`${fmt} ${JSON.stringify(args)}`)
     },
   })
-  return { reactor, calls, logs }
+  return { reactor, calls, logs, clock }
 }
 
 describe('createActivityReactor', () => {
@@ -175,9 +177,10 @@ describe('createActivityReactor', () => {
     expect(isThinking(calls[0].emoji)).toBe(true)
   })
 
-  test('fires reaction for a set turn target', async () => {
-    const { reactor, calls } = makeReactor()
+  test('fires reaction for a set turn target after debounce window', async () => {
+    const { reactor, calls, clock } = makeReactor()
     reactor.setTurnTarget(1, 100)
+    clock.t += 60_000
     reactor.reactForTool(1, 'Bash', {})
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toHaveLength(2)
@@ -186,9 +189,23 @@ describe('createActivityReactor', () => {
     expect(runningSet.has(calls[1].emoji)).toBe(true)
   })
 
-  test('debounces repeated same emoji', async () => {
-    const { reactor, calls } = makeReactor()
+  test('debounces tool reactions within 60s of last fire', async () => {
+    const { reactor, calls, clock } = makeReactor()
     reactor.setTurnTarget(1, 100)
+    clock.t += 30_000  // halfway through debounce window
+    reactor.reactForTool(1, 'Bash', {})
+    reactor.reactForTool(1, 'Edit', {})
+    reactor.reactForTool(1, 'Read', {})
+    await new Promise((r) => setTimeout(r, 0))
+    // Only the thinking emoji from setTurnTarget fired.
+    expect(calls).toHaveLength(1)
+    expect(isThinking(calls[0].emoji)).toBe(true)
+  })
+
+  test('debounces repeated same class', async () => {
+    const { reactor, calls, clock } = makeReactor()
+    reactor.setTurnTarget(1, 100)
+    clock.t += 60_000
     reactor.reactForTool(1, 'Read', {})
     reactor.reactForTool(1, 'Grep', {})
     reactor.reactForTool(1, 'Glob', {})
@@ -198,29 +215,31 @@ describe('createActivityReactor', () => {
     expect(calls[1].msgId).toBe(100); expect(readingSet.has(calls[1].emoji)).toBe(true)
   })
 
-  test('fires again when emoji class changes', async () => {
-    const { reactor, calls } = makeReactor()
+  test('class changes still rate-limited to one fire per 60s', async () => {
+    const { reactor, calls, clock } = makeReactor()
     reactor.setTurnTarget(1, 100)
-    reactor.reactForTool(1, 'Read', {})
-    reactor.reactForTool(1, 'Bash', {})
-    reactor.reactForTool(1, 'Edit', {})
+    clock.t += 60_000
+    reactor.reactForTool(1, 'Read', {})   // fires 🔍
+    clock.t += 60_000
+    reactor.reactForTool(1, 'Bash', {})   // fires running emoji
+    clock.t += 60_000
+    reactor.reactForTool(1, 'Edit', {})   // fires coding emoji
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toHaveLength(4)
     expect(isThinking(calls[0].emoji)).toBe(true)
-    expect(calls[1].msgId).toBe(100); expect(readingSet.has(calls[1].emoji)).toBe(true)
-    expect(calls[2].msgId).toBe(100)
+    expect(readingSet.has(calls[1].emoji)).toBe(true)
     expect(runningSet.has(calls[2].emoji)).toBe(true)
-    expect(calls[3].msgId).toBe(100)
     expect(codingSet.has(calls[3].emoji)).toBe(true)
   })
 
   test('skips unknown tools without disturbing debounce state', async () => {
-    const { reactor, calls } = makeReactor()
+    const { reactor, calls, clock } = makeReactor()
     reactor.setTurnTarget(1, 100)
+    clock.t += 60_000
     reactor.reactForTool(1, 'Read', {})
     reactor.reactForTool(1, 'dc_send', {})   // skipped
     reactor.reactForTool(1, 'Unknown', {})   // skipped
-    reactor.reactForTool(1, 'Grep', {})      // debounced (still 🔍)
+    reactor.reactForTool(1, 'Grep', {})      // class debounced (still 🔍)
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toHaveLength(2)
     expect(isThinking(calls[0].emoji)).toBe(true)
@@ -228,10 +247,12 @@ describe('createActivityReactor', () => {
   })
 
   test('clearTurnTarget drops state so subsequent calls no-op', async () => {
-    const { reactor, calls } = makeReactor()
+    const { reactor, calls, clock } = makeReactor()
     reactor.setTurnTarget(1, 100)
+    clock.t += 60_000
     reactor.reactForTool(1, 'Bash', {})
     reactor.clearTurnTarget(1)
+    clock.t += 60_000
     reactor.reactForTool(1, 'Edit', {})
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toHaveLength(2)
@@ -241,10 +262,12 @@ describe('createActivityReactor', () => {
   })
 
   test('setTurnTarget on the same chat resets debounce and target', async () => {
-    const { reactor, calls } = makeReactor()
+    const { reactor, calls, clock } = makeReactor()
     reactor.setTurnTarget(1, 100)
+    clock.t += 60_000
     reactor.reactForTool(1, 'Bash', {})
-    reactor.setTurnTarget(1, 200)
+    reactor.setTurnTarget(1, 200)        // new turn fires thinking immediately
+    clock.t += 60_000
     reactor.reactForTool(1, 'Bash', {})  // new turn → fires again
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toHaveLength(4)
@@ -259,9 +282,10 @@ describe('createActivityReactor', () => {
   })
 
   test('chats are isolated', async () => {
-    const { reactor, calls } = makeReactor()
+    const { reactor, calls, clock } = makeReactor()
     reactor.setTurnTarget(1, 100)
     reactor.setTurnTarget(2, 200)
+    clock.t += 60_000
     reactor.reactForTool(1, 'Read', {})
     reactor.reactForTool(2, 'Bash', {})
     await new Promise((r) => setTimeout(r, 0))
