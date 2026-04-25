@@ -3,7 +3,18 @@ import type { WebXDCUpdate } from '../dc-client.js'
 import * as fileReviewer from '../file-reviewer.js'
 import { getBinding } from '../bindings.js'
 
-const MAX_PAYLOAD_BYTES = 120_000
+// DC core's STATUS_UPDATE_SIZE_MAX is 100 KiB (102_400 bytes) — the
+// per-SMTP-batch soft limit at which `flush_status_updates` splits the
+// queued updates into multiple SMTP messages. We aim chunks well below
+// that so a single chunk fits in a single SMTP batch with margin for
+// the {"updates":[...]} envelope DC core wraps around it.
+const MAX_PAYLOAD_BYTES = 80_000
+
+// Bundling threshold: if the entire document (all chunks combined into a
+// single sendUpdate call) fits under this size, we send as one update —
+// guaranteeing one SMTP send. Beyond this, we fall back to streaming
+// chunks and rely on the dc-client rate limiter to pace them.
+const BUNDLED_THRESHOLD_BYTES = 90_000
 
 // Overhead for JSON wrapper, info, href, etc. (~500 bytes is generous)
 const PAYLOAD_OVERHEAD = 500
@@ -209,25 +220,57 @@ export const fileReviewerApp: WebXDCApp = {
       try { unlinkSync(xdcPath) } catch {}
     }
 
-    // Send each chunk as a separate tab
-    for (const chunk of chunks) {
-      const prefix = `Tap to review ${icon} `
-      const maxTitle = 50 - prefix.length
-      const shortTitle = chunk.title.length > maxTitle ? chunk.title.slice(0, maxTitle - 1) + '\u2026' : chunk.title
-      const updateObj: Record<string, unknown> = {
-        payload: chunk.payload,
-        info: prefix + shortTitle,
-        href: 'index.html',
-      }
-      const update = JSON.stringify(updateObj)
-      await ctx.client.sendWebXDCUpdate(viewerMsgId, update)
-      // Save last update for replay after version mismatch upgrade
+    const prefix = `Tap to review ${icon} `
+    const maxTitle = 50 - prefix.length
+    const shortTitle = title.length > maxTitle ? title.slice(0, maxTitle - 1) + '\u2026' : title
+    const partsNote = chunks.length > 1 ? ` (${chunks.length} parts)` : ''
+
+    // Try bundled-update path first: one sendUpdate carrying all chunks.
+    // For typical-sized docs this means one SMTP send instead of N. The
+    // per-chunk startLine fields are preserved so comment routing still
+    // resolves to absolute line numbers in the viewer.
+    const bundledUpdateObj = {
+      payload: {
+        type: 'document',
+        title,
+        version,
+        ...(language ? { language } : {}),
+        chunks: chunks.map((c) => c.payload),
+      },
+      info: prefix + shortTitle + partsNote,
+      href: 'index.html',
+    }
+    const bundledUpdate = JSON.stringify(bundledUpdateObj)
+    const bundledSize = new TextEncoder().encode(bundledUpdate).length
+
+    if (bundledSize <= BUNDLED_THRESHOLD_BYTES) {
+      await ctx.client.sendWebXDCUpdate(viewerMsgId, bundledUpdate)
       const session = fileReviewer.getSession(chatId)
-      if (session) session.lastUpdate = update
+      if (session) session.lastUpdate = bundledUpdate
+    } else {
+      // Pathological-doc fallback: stream chunks individually. The
+      // dc-client rate limiter paces these to avoid the chatmail GCRA
+      // bucket. info on the first chunk only \u2014 subsequent chunks are
+      // silent payload-only updates so the chat shows one notification
+      // per document, not one per chunk.
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i]
+        const chunkShortTitle = chunk.title.length > maxTitle
+          ? chunk.title.slice(0, maxTitle - 1) + '\u2026'
+          : chunk.title
+        const updateObj: Record<string, unknown> = { payload: chunk.payload }
+        if (i === 0) {
+          updateObj.info = prefix + chunkShortTitle + partsNote
+          updateObj.href = 'index.html'
+        }
+        const update = JSON.stringify(updateObj)
+        await ctx.client.sendWebXDCUpdate(viewerMsgId, update)
+        const session = fileReviewer.getSession(chatId)
+        if (session) session.lastUpdate = update
+      }
     }
 
-    const chunkNote = chunks.length > 1 ? ` (${chunks.length} parts)` : ''
-    return { content: [{ type: 'text', text: `Sent "${title}"${chunkNote} to file reviewer in chat ${chatId}.` }] }
+    return { content: [{ type: 'text', text: `Sent "${title}"${partsNote} to file reviewer in chat ${chatId}.` }] }
   },
 
   async onWebXDCUpdate(msgId: number, updates: WebXDCUpdate[], ctx: AppContext): Promise<void> {

@@ -925,7 +925,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.38;
+var APP_VERSION = 1.39;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -2076,7 +2076,30 @@ window.webxdc.setUpdateListener(function(update) {
     return;
   }
 
-  // Backward compat: old payloads have 'markdown' field
+  // Bundled-document path (1.39+): one update carries all chunks of a
+  // single document. Each chunk preserves its own startLine so comment
+  // routing still maps to absolute line numbers.
+  if (data.type === 'document' && Array.isArray(data.chunks)) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('empty').style.display = 'none';
+    var firstNewIndex = documents.length;
+    for (var i = 0; i < data.chunks.length; i++) {
+      var c = data.chunks[i];
+      var chunkContent = c.content || c.markdown;
+      if (!chunkContent) continue;
+      documents.push({
+        title: c.title || 'Untitled',
+        content: chunkContent,
+        language: c.language || data.language || null,
+        startLine: c.startLine || 1,
+      });
+    }
+    rebuildSidebar();
+    if (documents.length > firstNewIndex) showDocument(firstNewIndex);
+    return;
+  }
+
+  // Legacy single-chunk path: old payloads have 'markdown' field
   var content = data.content || data.markdown;
   if (!content) return;
 
