@@ -4,6 +4,23 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.1.4] — 2026-04-25
+
+DC-friendliness patch. Fixes a runaway outbound-traffic pattern that was tripping chatmail's per-account rate limit and getting agent accounts silently throttled at the server. Also fixes a first-turn `error_during_execution` crash that surfaced after pairing or after any spawn that died before claude wrote its session jsonl.
+
+### Fixed
+
+- **Per-tool reaction emoji storm.** `reactForTool` previously fired a `sendReaction` on every subagent tool call; long multi-step turns produced 30–50 encrypted SMTP sends per user message, and over a week drove ~59% of the agent account's outbound volume. Now skipped when <60 s have passed since the last fire on that chat. `setTurnTarget` still emits the initial thinking emoji so the user gets immediate feedback. Class-change debouncing is preserved on top.
+- **First-turn ghost-session crash.** A subagent killed before claude writes its first `.jsonl` line (e.g. SIGTERM during pre-warm, eviction before the first turn completes) used to leave a "ghost" session id in the binding. The next spawn would `--resume <ghost>`, claude would reject with "No conversation found", and the user saw an internal-error reaction before the post-hoc recovery path kicked in on the second turn. Now `spawnSubagentForChat` checks `~/.claude/projects/<cwd-hash>/<sessionId>.jsonl` on disk before deciding to resume; if absent, drops the ghost id and creates a fresh session up-front. Pre-spawn and deterministic; the existing post-hoc recovery (`9f91a4a`, `f8ec3ed`) stays as defense-in-depth.
+
+### Added
+
+- **Client-side outbound send rate limiter.** Mirrors chatmail's per-account GCRA bucket on the dispatcher side so we never submit faster than the server will accept. When the bucket is empty, sends park locally instead of getting 4xx-rejected — rejected sends would just retry inside DC core, burning more bucket capacity and creating an unrecoverable backlog. Default sizing is conservative (8 burst, 50/min) to leave 20 % margin for DC core's internal retries on transient 4xx that we cannot observe locally. Override via `DC_SEND_BURST_SIZE` / `DC_SEND_PER_MIN`; disable entirely via `DC_SEND_RATE_LIMIT=false`. Wired into `DCClient.send` / `sendReaction` / `sendWebXDC` / `sendWebXDCUpdate` / `sendAttachment`.
+
+### Changed
+
+- **File-reviewer bundles all chunks into a single sendUpdate.** Previously issued one awaited `sendWebXDCUpdate` per chunk; per `deltachat-core-rust src/webxdc.rs`, the `smtp_status_updates` DB-level coalescing only helps if multiple updates land before the SMTP loop drains the row, and JS awaits between calls reliably prevent that. So an N-chunk briefing produced N separate ~120 KB SMTP messages — already over DC core's 100 KiB `STATUS_UPDATE_SIZE_MAX`, so each one further split internally. Combined with daily scheduled briefings, this pattern was a top contributor to the chatmail rate-limit trips. Now: build all chunks first, render a single `{type: 'document', chunks: [...]}` payload, send one `sendWebXDCUpdate` when the bundled size fits under `BUNDLED_THRESHOLD_BYTES` (90 KiB). For pathological docs over the threshold, fall back to streaming chunks individually — paced by the new dc-client rate limiter — with `info` set on the first chunk only (one chat notification per document, not one per chunk). `MAX_PAYLOAD_BYTES` 120 K → 80 K to fit comfortably under DC core's SMTP batch limit. Viewer (`file-reviewer.html`) gains a `type: 'document'` branch; legacy single-chunk payloads still work for the streaming fallback. APP_VERSION 1.38 → 1.39 (auto-upgrade via `version_mismatch` handshake). Incidentally fixes a latent version-mismatch upgrade bug where only `lastUpdate` (the LAST chunk) was replayed, losing chunks 1..N-1 of multi-part docs.
+
 ## [1.1.3] — 2026-04-22
 
 Cosmetic + infrastructure patch. Haiku/Sonnet badge colors swapped for better at-a-glance model-tier recognition; tier-1 WebXDC test harness lands off by default; `access.ts` split into its Phase-0 folder layout.
@@ -340,6 +357,7 @@ First public release of the Delta Chat channel for Claude Code.
 - File-based allowlist + pairing codes.
 - `deltachat-rpc-server` integration.
 
+[1.1.4]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.0...v1.1.1
