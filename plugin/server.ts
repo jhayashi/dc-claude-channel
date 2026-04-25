@@ -35,6 +35,7 @@ import { SocketServer, type SocketRequest } from './dispatcher/socket-server.js'
 import { SubagentCache } from './dispatcher/subagent-cache.js'
 import { cleanupOrphanSubagents } from './dispatcher/orphan-cleanup.js'
 import { RateLimiter } from './dispatcher/rate-limit.js'
+import { createSendRateLimiter } from './dispatcher/send-rate-limiter.js'
 import { SubagentProcess, KNOWN_MCP_SERVERS } from './dispatcher/subagent-process.js'
 import { generateHookConfig } from './dispatcher/hook-config.js'
 import { createMessageRouter } from './dispatcher/message-router.js'
@@ -114,6 +115,22 @@ try {
     if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2]
   }
 } catch {}
+
+// ── Outbound rate limiter ───────────────────────────────────────────────
+// Mirror chatmail's GCRA bucket (default 60/min, 10 burst per chatmaild
+// config) client-side so the dispatcher never submits faster than the
+// server will accept. Conservative defaults (8 burst, 50/min) leave
+// margin for DC core's internal retries on transient 4xx that we cannot
+// observe locally. Disable with DC_SEND_RATE_LIMIT=false during dev.
+const SEND_RATE_LIMIT_ENABLED = (process.env.DC_SEND_RATE_LIMIT ?? 'true') !== 'false'
+const SEND_BURST_SIZE = Number(process.env.DC_SEND_BURST_SIZE ?? '8')
+const SEND_PER_MIN = Number(process.env.DC_SEND_PER_MIN ?? '50')
+client.setRateLimiter(createSendRateLimiter({
+  capacity: SEND_BURST_SIZE,
+  refillPerSec: SEND_PER_MIN / 60,
+  enabled: SEND_RATE_LIMIT_ENABLED,
+  logf: (msg) => logf('%s', msg),
+}))
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 

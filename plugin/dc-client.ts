@@ -106,16 +106,33 @@ const DC_CONNECTIVITY_CONNECTED = 4000;
 
 // ── Client ──────────────────────────────────────────────────────────────
 
+import type { RateLimiter } from './dispatcher/send-rate-limiter.js';
+
 export class DCClient {
   private dc: DeltaChatOverJsonRpcServer | null = null;
   private rpc: RawClient | null = null;
   private accountId: number = 0;
   private contextEvents: ReturnType<DeltaChatOverJsonRpcServer['getContextEvents']> | null = null;
   private logFn: ((format: string, ...args: unknown[]) => void) | null = null;
+  private rateLimiter: RateLimiter | null = null;
 
   /** Set a logger for internal error reporting. */
   setLogger(fn: (format: string, ...args: unknown[]) => void): void {
     this.logFn = fn;
+  }
+
+  /**
+   * Set the outbound rate limiter. All send-style methods will acquire
+   * a token from it before issuing the RPC. Pass null to disable.
+   * The chatmail server enforces a per-account GCRA bucket (default 60/min,
+   * 10 burst); this mirrors it client-side so we never get 4xx-rejected.
+   */
+  setRateLimiter(limiter: RateLimiter | null): void {
+    this.rateLimiter = limiter;
+  }
+
+  private async acquireSendToken(): Promise<void> {
+    if (this.rateLimiter) await this.rateLimiter.acquire();
   }
 
   private log(format: string, ...args: unknown[]): void {
@@ -418,6 +435,7 @@ export class DCClient {
 
   async send(chatId: number, text: string): Promise<number> {
     const { rpc, accountId } = this.ensureAccount();
+    await this.acquireSendToken();
     const msgId = await rpc.sendMsg(accountId, chatId, {
       text,
       html: null,
@@ -439,11 +457,13 @@ export class DCClient {
    */
   async sendReaction(messageId: number, emoji: string): Promise<void> {
     const { rpc, accountId } = this.ensureAccount();
+    await this.acquireSendToken();
     await rpc.sendReaction(accountId, messageId, emoji ? [emoji] : []);
   }
 
   async sendWebXDC(chatId: number, xdcPath: string): Promise<number> {
     const { rpc, accountId } = this.ensureAccount();
+    await this.acquireSendToken();
     const msgId = await rpc.sendMsg(accountId, chatId, {
       text: null,
       html: null,
@@ -460,6 +480,7 @@ export class DCClient {
 
   async sendAttachment(chatId: number, filePath: string, caption?: string): Promise<number> {
     const { rpc, accountId } = this.ensureAccount();
+    await this.acquireSendToken();
     const msgId = await rpc.sendMsg(accountId, chatId, {
       text: caption ?? null,
       html: null,
@@ -476,6 +497,7 @@ export class DCClient {
 
   async sendWebXDCUpdate(msgId: number, update: string): Promise<void> {
     const { rpc, accountId } = this.ensureAccount();
+    await this.acquireSendToken();
     await rpc.sendWebxdcStatusUpdate(accountId, msgId, update, null);
   }
 
