@@ -1,0 +1,31 @@
+# chatmail/relay test fixture for tier-2 integration tests.
+#
+# Loopback-only by design — see the spec at
+# docs/superpowers/specs/2026-04-25-tier-2-local-chatmail-relay-design.md.
+#
+# Usage:
+#   docker compose up -d        # start
+#   docker compose logs -f      # watch
+#   docker compose down         # stop, keep data
+#   docker compose down -v      # stop + wipe accounts
+#
+# After Task 2, the image tag below should be pinned to the digest
+# captured during the verify-and-pin step.
+
+services:
+  relay:
+    image: ghcr.io/chatmail/relay:latest  # Task 2 will replace with digest-pinned tag
+    environment:
+      MAIL_DOMAIN: _chatmail.test
+    ports:
+      # The 127.0.0.1: prefix is REQUIRED — without it docker compose binds
+      # to 0.0.0.0 (all interfaces) and exposes the relay on the LAN.
+      - "127.0.0.1:8443:443"   # HTTPS — POST /new account API
+      - "127.0.0.1:10465:465"  # SMTPS submission
+      - "127.0.0.1:10993:993"  # IMAPS
+    volumes:
+      - relay-data:/var/lib/chatmail
+    restart: unless-stopped
+
+volumes:
+  relay-data:
