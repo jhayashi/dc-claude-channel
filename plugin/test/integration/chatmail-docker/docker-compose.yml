@@ -16,13 +16,13 @@ services:
   relay:
     image: ghcr.io/chatmail/relay:latest  # Task 2 will replace with digest-pinned tag
     environment:
-      MAIL_DOMAIN: _chatmail.test
+      MAIL_DOMAIN: ${MAIL_DOMAIN:-_chatmail.test}
     ports:
       # The 127.0.0.1: prefix is REQUIRED — without it docker compose binds
       # to 0.0.0.0 (all interfaces) and exposes the relay on the LAN.
-      - "127.0.0.1:8443:443"   # HTTPS — POST /new account API
-      - "127.0.0.1:10465:465"  # SMTPS submission
-      - "127.0.0.1:10993:993"  # IMAPS
+      - "127.0.0.1:${RELAY_HTTPS_PORT:-8443}:443"   # HTTPS — POST /new account API
+      - "127.0.0.1:${RELAY_SMTPS_PORT:-10465}:465"  # SMTPS submission
+      - "127.0.0.1:${RELAY_IMAPS_PORT:-10993}:993"  # IMAPS
     volumes:
       - relay-data:/var/lib/chatmail
     restart: unless-stopped
