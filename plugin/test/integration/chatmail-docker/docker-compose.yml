@@ -3,18 +3,24 @@
 # Loopback-only by design — see the spec at
 # docs/superpowers/specs/2026-04-25-tier-2-local-chatmail-relay-design.md.
 #
-# Usage:
+# Usage (Podman):
+#   podman-compose up -d        # start
+#   podman-compose logs -f      # watch
+#   podman-compose down         # stop, keep data
+#   podman-compose down -v      # stop + wipe accounts
+#
+# Usage (Docker):
 #   docker compose up -d        # start
 #   docker compose logs -f      # watch
 #   docker compose down         # stop, keep data
 #   docker compose down -v      # stop + wipe accounts
 #
-# After Task 2, the image tag below should be pinned to the digest
-# captured during the verify-and-pin step.
+# Image: ghcr.io/chatmail/docker (full chatmail stack — nginx, dovecot, postfix)
+# Pinned digest captured 2026-04-27.
 
 services:
   relay:
-    image: ghcr.io/chatmail/relay:latest  # Task 2 will replace with digest-pinned tag
+    image: ghcr.io/chatmail/docker@sha256:11aa3f9de095e69e3380257a49f2f9d99827e9fb9a1843817a5fab4dacb683ac
     environment:
       MAIL_DOMAIN: ${MAIL_DOMAIN:-_chatmail.test}
     ports:

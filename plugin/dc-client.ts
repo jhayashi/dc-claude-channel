@@ -196,7 +196,10 @@ export class DCClient {
   async start(): Promise<void> {
     mkdirSync(DC_DATA_DIR, { recursive: true });
     const startDeltaChat = await loadStartDeltaChat();
-    this.dc = await startDeltaChat(DC_DATA_DIR, { muteStdErr: true });
+    // DC_RPC_DEBUG=1 forwards deltachat-rpc-server stderr (incl. RUST_LOG) to
+    // the parent process. Muted by default since the rpc-server is chatty.
+    const muteStdErr = process.env.DC_RPC_DEBUG !== "1";
+    this.dc = await startDeltaChat(DC_DATA_DIR, { muteStdErr });
     this.rpc = this.dc.rpc;
   }
 
@@ -215,7 +218,16 @@ export class DCClient {
 
     try {
       const url = `https://${chatmailServer}/new`;
-      const resp = await fetch(url, { method: "POST" });
+      const host = chatmailServer.split(":")[0];
+      const testRelay = host === "localhost" || host === "127.0.0.1" || host.startsWith("_");
+
+      // Local/test-domain relays use self-signed TLS — skip verification.
+      const fetchOpts: RequestInit & { tls?: { rejectUnauthorized: boolean } } = {
+        method: "POST",
+      };
+      if (testRelay) fetchOpts.tls = { rejectUnauthorized: false };
+
+      const resp = await fetch(url, fetchOpts);
       if (!resp.ok) {
         throw new Error(`POST ${url}: HTTP ${resp.status}`);
       }
@@ -232,7 +244,30 @@ export class DCClient {
       await rpc.setConfig(accountId, "displayname", name);
       await rpc.setConfig(accountId, "bot", "1");
 
+      if (testRelay) {
+        // Override DC core's autoconfiguration to use the loopback-mapped ports
+        // rather than DNS-resolving the _chatmail.test domain.  Set before
+        // configure() so the connection test succeeds; re-apply after because
+        // configure()'s autoconfig may reset the cert-check setting.
+        const imapsPort = Number(process.env.RELAY_IMAPS_PORT ?? "10993");
+        const smtpsPort = Number(process.env.RELAY_SMTPS_PORT ?? "10465");
+        await rpc.setConfig(accountId, "mail_server", "127.0.0.1");
+        await rpc.setConfig(accountId, "send_server", "127.0.0.1");
+        await rpc.setConfig(accountId, "mail_port", String(imapsPort));
+        await rpc.setConfig(accountId, "send_port", String(smtpsPort));
+        // "3" = AcceptInvalidCertificates — accept self-signed test certs
+        await rpc.setConfig(accountId, "imap_certificate_checks", "3");
+        await rpc.setConfig(accountId, "smtp_certificate_checks", "3");
+      }
+
       await rpc.configure(accountId);
+
+      if (testRelay) {
+        // Re-apply cert checks after configure() in case autoconfig reset them.
+        await rpc.setConfig(accountId, "imap_certificate_checks", "3");
+        await rpc.setConfig(accountId, "smtp_certificate_checks", "3");
+      }
+
       await rpc.startIo(accountId);
 
       const [inviteLink] = await rpc.getChatSecurejoinQrCodeSvg(
