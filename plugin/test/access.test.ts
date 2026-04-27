@@ -4,12 +4,15 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import * as access from "../access/index.js";
 
-// Use a temp directory so tests don't touch the real allowlist.
+// Use temp directories so tests don't touch the real on-disk state.
 const testDir = mkdtempSync(join(tmpdir(), "dc-access-test-"));
+const principalsDir = join(testDir, "principals");
 
 beforeAll(() => {
-  // Point the access module at the temp directory.
+  // Point the access module at the temp directories.  Both required —
+  // `completePairing` writes to chat-allowlist AND principals.
   access.setApprovedDir(testDir);
+  access.setPrincipalsDir(principalsDir);
 });
 
 afterAll(() => {

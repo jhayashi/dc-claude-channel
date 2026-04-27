@@ -1959,6 +1959,16 @@ async function main(): Promise<void> {
     logf('dc channel: orphan sweep failed: %v', err)
   }
 
+  // Phase 2 principal backfill — write a HumanPrincipal record for each
+  // owner currently in the chat-allowlist. Idempotent; run on every
+  // startup so legacy installs migrate without re-pairing.
+  try {
+    const written = access.backfillFromAllowlist()
+    if (written > 0) logf('dc channel: backfilled %d principal record(s) at startup', written)
+  } catch (err) {
+    logf('dc channel: principal backfill failed: %v', err)
+  }
+
   // Register event handlers BEFORE starting IO to avoid missing queued messages.
 
   const cleanupChat = (chatId: number, reason: string): Promise<void> =>
