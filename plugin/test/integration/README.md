@@ -37,8 +37,9 @@ unset OR the relay is unreachable — no silent false-green.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DC_INTEGRATION_TEST` | — | Must be `1` to enable the suite |
+| `DC_TEST_SUBAGENT` | — | Set `1` to opt into the subagent-lifecycle test (incurs ~1 Anthropic turn per run) |
 | `DC_TEST_RELAY` | `localhost:8443` | Relay host:port for HTTPS `/new` API |
-| `DC_REUSE_ACCOUNTS` | — | Set `1` to reuse `.fixtures/` across runs |
+| `DC_REUSE_ACCOUNTS` | — | Set `1` to reuse `.fixtures/` and `.fixtures-subagent/` across runs |
 | `RELAY_IMAPS_PORT` | `10993` | IMAP port of the local relay |
 | `RELAY_SMTPS_PORT` | `10465` | SMTP submission port of the local relay |
 | `DC_RPC_DEBUG` | — | Set `1` to unmute dispatcher `deltachat-rpc-server` stderr |
@@ -82,15 +83,24 @@ Slice 1 (`pairing.test.ts`):
   client-side `secureJoin` → welcome message arrives → extract code →
   `dc_access_pair`. Asserts the dispatcher writes its
   `approved/<chatId>` record.
-- **Dispatcher → sim text.** Dispatcher posts via `dc_send` MCP tool;
+- **Dispatcher → sim text.** Dispatcher posts via the `reply` MCP tool;
   client-sim receives via the `IncomingMsg` event.
 - **Sim → dispatcher text.** Client-sim sends via
   `miscSendTextMessage`; dispatcher's `dc_chat_history` shows the
   message in the paired chat.
 
+Slice 2 (`subagent-lifecycle.test.ts`) — **opt-in via `DC_TEST_SUBAGENT=1`**:
+
+- **Subagent cold-spawn + reply.** Sim sends a message into the paired
+  chat; dispatcher's `IncomingMsg` handler routes through
+  `SubagentCache`; a real `claude -p` subagent spawns; first turn
+  produces a reply via the `reply` tool; sim observes the reply.
+  Costs ~1 Anthropic turn per run — credentials inherited from the
+  parent process env.
+
 Future slices:
 
-- Subagent spawn + turn dispatch + idle eviction + `--resume`.
+- Subagent idle eviction + `--resume` (the warm-respawn path).
 - Scheduler armed-timer firing a synthetic turn.
 - Group-chat `senderAddr` owner verification (drop non-owner WebXDC
   updates).

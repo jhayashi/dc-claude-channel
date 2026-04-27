@@ -24,6 +24,8 @@ export interface SimMessage {
   chatId: number;
   text: string;
   fromId: number;
+  /** True for DC core info/system messages (e.g. "X added Y to group"). */
+  isInfo: boolean;
 }
 
 export interface BootOptions {
@@ -140,7 +142,7 @@ export class ClientSim {
     events.on("IncomingMsg", async (ev: { msgId: number }) => {
       try {
         const msg = await dc.rpc.getMessage(accountId, ev.msgId);
-        const sm: SimMessage = { id: msg.id, chatId: msg.chatId, text: msg.text ?? "", fromId: msg.fromId };
+        const sm: SimMessage = { id: msg.id, chatId: msg.chatId, text: msg.text ?? "", fromId: msg.fromId, isInfo: msg.isInfo };
         sim.absorbMessage(sm);
       } catch {
         // Best-effort — message may have been deleted between event and fetch.
@@ -167,6 +169,21 @@ export class ClientSim {
   /** Send a text message and return the message id. */
   async sendText(chatId: number, text: string): Promise<number> {
     return await this.dc.rpc.miscSendTextMessage(this.accountId, chatId, text);
+  }
+
+  /**
+   * Highest incoming-buffer message id for `chatId`, or 0 if none seen.
+   * Use as a baseline before sending a prompt so subsequent
+   * `waitForMessage` calls can filter `m.id > baseline` and skip
+   * historical messages already in the buffer (welcome banners, prior
+   * test runs).
+   */
+  getMaxIncomingMsgId(chatId: number): number {
+    let max = 0;
+    for (const m of this.incoming) {
+      if (m.chatId === chatId && m.id > max) max = m.id;
+    }
+    return max;
   }
 
   /**
@@ -198,7 +215,7 @@ export class ClientSim {
     for (const id of slice) {
       try {
         const msg = await this.dc.rpc.getMessage(this.accountId, id);
-        out.push({ id: msg.id, chatId: msg.chatId, text: msg.text ?? "", fromId: msg.fromId });
+        out.push({ id: msg.id, chatId: msg.chatId, text: msg.text ?? "", fromId: msg.fromId, isInfo: msg.isInfo });
       } catch {
         // skip unreadable
       }
