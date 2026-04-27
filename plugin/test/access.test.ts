@@ -17,6 +17,10 @@ beforeAll(() => {
 
 afterAll(() => {
   rmSync(testDir, { recursive: true, force: true });
+  // Module-level pending-pairings map leaks across test files; reset
+  // so subsequent test files don't trip the MAX_PENDING cap.
+  access.resetPendingPairings();
+  access.resetArmedState();
 });
 
 const TEST_IDS = [900001, 900002, 900003, 900004, 900005];

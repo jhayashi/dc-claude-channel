@@ -12,19 +12,25 @@ import { tmpdir } from 'node:os'
 import * as agents from '../agents'
 import * as bindings from '../bindings'
 import * as sessionAgents from '../session-agents'
+import * as access from '../access/index.js'
 
 const agentsDir = mkdtempSync(join(tmpdir(), 'dc-bindings-agents-'))
 const bindingsDir = mkdtempSync(join(tmpdir(), 'dc-bindings-test-'))
+const approvedDir = mkdtempSync(join(tmpdir(), 'dc-bindings-approved-'))
 
 beforeAll(() => {
   agents.setAgentsDir(agentsDir)
   bindings.setBindingsDir(bindingsDir)
   sessionAgents.setIndexDir(bindingsDir)
+  // Bindings.countByAgentId / sweepOrphans both filter via
+  // access.isAllowed; without this they'd read the user's real
+  // ~/.claude tree.
+  access.setApprovedDir(approvedDir)
 })
 
 beforeEach(() => {
-  // Clean both dirs so tests start from a known state.
-  for (const d of [agentsDir, bindingsDir]) {
+  // Clean all three dirs so tests start from a known state.
+  for (const d of [agentsDir, bindingsDir, approvedDir]) {
     if (existsSync(d)) {
       for (const f of readdirSync(d)) {
         unlinkSync(join(d, f))
@@ -36,6 +42,7 @@ beforeEach(() => {
 afterAll(() => {
   rmSync(agentsDir, { recursive: true, force: true })
   rmSync(bindingsDir, { recursive: true, force: true })
+  rmSync(approvedDir, { recursive: true, force: true })
 })
 
 function makeAgent(id: string, overrides: Partial<agents.AgentDef> = {}): agents.AgentDef {
@@ -298,5 +305,112 @@ describe('bindAgent', () => {
     agents.saveAgent(makeAgent('coach'))
     bindings.bindAgent(13, 'coach', { inheritClaudeMd: true })
     expect(sessionAgents.getAgentForSession('sess-pre')).toBe('coach')
+  })
+})
+
+describe('countByAgentId', () => {
+  test('returns 0 when no bindings exist', () => {
+    expect(bindings.countByAgentId('marketing')).toBe(0)
+  })
+
+  test('counts only bindings with matching agentId', () => {
+    access.addChat(1, 100)
+    access.addChat(2, 100)
+    access.addChat(3, 100)
+    bindings.saveBinding({ chatId: 1, agentId: 'marketing', createdAt: 'now' })
+    bindings.saveBinding({ chatId: 2, agentId: 'sales', createdAt: 'now' })
+    bindings.saveBinding({ chatId: 3, agentId: 'marketing', createdAt: 'now' })
+    expect(bindings.countByAgentId('marketing')).toBe(2)
+    expect(bindings.countByAgentId('sales')).toBe(1)
+    expect(bindings.countByAgentId('ghost')).toBe(0)
+  })
+
+  test('excludes bindings whose chat is no longer approved (orphans)', () => {
+    // chat 1 is approved + bound; chat 2 is bound but unapproved (orphan).
+    access.addChat(1, 100)
+    bindings.saveBinding({ chatId: 1, agentId: 'marketing', createdAt: 'now' })
+    bindings.saveBinding({ chatId: 2, agentId: 'marketing', createdAt: 'now' })
+    expect(bindings.countByAgentId('marketing')).toBe(1)
+  })
+
+  test('excludes bindings without an agentId', () => {
+    access.addChat(1, 100)
+    access.addChat(2, 100)
+    bindings.saveBinding({ chatId: 1, agentId: 'marketing', createdAt: 'now' })
+    bindings.saveBinding({ chatId: 2, createdAt: 'now' }) // unbound
+    expect(bindings.countByAgentId('marketing')).toBe(1)
+  })
+
+  test('handles many bindings under one agent', () => {
+    for (let i = 1; i <= 20; i++) {
+      access.addChat(i, 100)
+      bindings.saveBinding({ chatId: i, agentId: 'busy', createdAt: 'now' })
+    }
+    expect(bindings.countByAgentId('busy')).toBe(20)
+  })
+})
+
+describe('sweepOrphans', () => {
+  test('returns 0 when no bindings exist', () => {
+    expect(bindings.sweepOrphans()).toBe(0)
+  })
+
+  test('returns 0 when every binding is approved', () => {
+    access.addChat(1, 100)
+    access.addChat(2, 100)
+    bindings.saveBinding({ chatId: 1, agentId: 'a', createdAt: 'now' })
+    bindings.saveBinding({ chatId: 2, agentId: 'a', createdAt: 'now' })
+    expect(bindings.sweepOrphans()).toBe(0)
+    expect(bindings.listBindings()).toHaveLength(2)
+  })
+
+  test('removes bindings for unapproved chats and returns the count', () => {
+    access.addChat(1, 100)
+    bindings.saveBinding({ chatId: 1, agentId: 'a', createdAt: 'now' }) // kept
+    bindings.saveBinding({ chatId: 2, agentId: 'a', createdAt: 'now' }) // orphan
+    bindings.saveBinding({ chatId: 3, agentId: 'a', createdAt: 'now' }) // orphan
+    expect(bindings.sweepOrphans()).toBe(2)
+    expect(bindings.listBindings().map((b) => b.chatId)).toEqual([1])
+  })
+
+  test('removes bindings without agentId if their chat is unapproved', () => {
+    access.addChat(1, 100)
+    bindings.saveBinding({ chatId: 1, createdAt: 'now' }) // approved, no agent — kept
+    bindings.saveBinding({ chatId: 2, createdAt: 'now' }) // unapproved, no agent — orphan
+    expect(bindings.sweepOrphans()).toBe(1)
+    expect(bindings.listBindings().map((b) => b.chatId)).toEqual([1])
+  })
+
+  test('is idempotent — second sweep finds nothing', () => {
+    bindings.saveBinding({ chatId: 1, agentId: 'a', createdAt: 'now' })
+    bindings.saveBinding({ chatId: 2, agentId: 'a', createdAt: 'now' })
+    expect(bindings.sweepOrphans()).toBe(2)
+    expect(bindings.sweepOrphans()).toBe(0)
+  })
+
+  test('does not touch approved bindings even when other orphans are swept', () => {
+    access.addChat(1, 100)
+    access.addChat(3, 100)
+    bindings.saveBinding({ chatId: 1, agentId: 'a', sessionId: 's1', createdAt: 'now' })
+    bindings.saveBinding({ chatId: 2, agentId: 'b', sessionId: 's2', createdAt: 'now' }) // orphan
+    bindings.saveBinding({ chatId: 3, agentId: 'c', sessionId: 's3', createdAt: 'now' })
+    expect(bindings.sweepOrphans()).toBe(1)
+    const remaining = bindings.listBindings()
+    expect(remaining.map((b) => b.chatId)).toEqual([1, 3])
+    // Sessions on the kept bindings must survive untouched.
+    expect(remaining.find((b) => b.chatId === 1)?.sessionId).toBe('s1')
+    expect(remaining.find((b) => b.chatId === 3)?.sessionId).toBe('s3')
+  })
+
+  test('countByAgentId reflects the post-sweep state', () => {
+    access.addChat(1, 100)
+    bindings.saveBinding({ chatId: 1, agentId: 'a', createdAt: 'now' })
+    bindings.saveBinding({ chatId: 2, agentId: 'a', createdAt: 'now' }) // orphan
+    bindings.saveBinding({ chatId: 3, agentId: 'a', createdAt: 'now' }) // orphan
+    // Pre-sweep, countByAgentId already filters orphans (1).
+    expect(bindings.countByAgentId('a')).toBe(1)
+    bindings.sweepOrphans()
+    // Post-sweep, the count is the same — sweep + count agree.
+    expect(bindings.countByAgentId('a')).toBe(1)
   })
 })

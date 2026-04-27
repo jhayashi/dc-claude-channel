@@ -80,6 +80,17 @@ export function resetArmedState(): void {
   _armedGroupChatId = null;
 }
 
+/**
+ * Clear pending-pairings state. For tests — without this, the
+ * module-level `pending` map leaks across test files and the
+ * `MAX_PENDING` cap throws spuriously. Future structural fix:
+ * factor into `createPairingState()` so each test gets its own
+ * instance (deferred Tomas review item).
+ */
+export function resetPendingPairings(): void {
+  pending.clear();
+}
+
 // --- Pending pairings ---
 
 interface PendingPair {
