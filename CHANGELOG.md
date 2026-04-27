@@ -4,6 +4,23 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.1.5] — 2026-04-27
+
+Test infrastructure + Phase 2 identity foundations. No user-visible behavior change. The principals store starts populating on every pair so Phase 3 (read-side wiring) has a real on-disk record to consume.
+
+### Added
+
+- **Tier-2 integration harness.** Real `@deltachat/stdio-rpc-server` driving two accounts on a local `chatmail/docker` container. Pairing slice (`pairing.test.ts`) exercises the full secure-join handshake + bidirectional text delivery in <3s end-to-end. Subagent lifecycle slice (`subagent-lifecycle.test.ts`, opt-in via `DC_TEST_SUBAGENT=1`) spawns a real `claude -p` and observes the reply roundtrip — incurs ~1 Anthropic turn per run. Bootstrap: `cd plugin/test/integration/chatmail-docker && ./podman-run.sh up` (or `docker compose up -d`); then `bun run test:integration` from `plugin/`. The harness probes the relay before booting and skips with an actionable hint if it's down (no silent green). Replaces the `nine.testrun.org` path that was blocked on a slow-secure-join handshake. Per `docs/specs/2026-04-25-tier-2-local-chatmail-relay-design.md`.
+- **Phase 2 access starter — on-disk principals store.** Per-contact identity records at `~/.claude/channels/deltachat/principals/humans/<contactId>.json`. Populated on every successful `completePairing` call and lazily backfilled on dispatcher startup so legacy installs migrate without re-pairing. Write-only for now; Phase 3 will route `isAllowed` through `principals.chatsFor(caller)` and add agent principals. API in `plugin/access/principals.ts`: `loadHuman` / `writeHuman` / `listHumans` / `removeHuman` / `recordHumanPair` / `backfillFromAllowlist` / `chatsFor`. Atomic writes via tmpfile + rename; `DC_TEST_PRINCIPALS_DIR` env override for tests. Per `docs/specs/2026-04-20-identity-and-teams-design.md` §Phase 2.
+- **`DC_RPC_DEBUG=1` env var.** Forwards `deltachat-rpc-server` stderr (incl. `RUST_LOG`) to the dispatcher's parent process. Muted by default since the rpc-server is chatty.
+- **`bun run test:integration` script** in `plugin/package.json`.
+- **`access.resetPendingPairings()`** test-only export so the module-level `pending` map doesn't leak across test files (deferred Tomas review item; structural fix via `createPairingState()` factory remains TODO).
+
+### Changed
+
+- **Closed Phase-0 review coverage gaps.** `bindings.test.ts` now covers `countByAgentId` (orphan exclusion, missing-agentId exclusion, large-agent counts) and `sweepOrphans` (idempotency, session-id preservation on kept bindings, post-sweep agreement with the count). `auto-pair.test.ts` adds 6 tests pinning the auto-pair → principals contract: `addChat()` does NOT write principals directly because the contact's record already exists from their first `completePairing`; `firstPairedAt` is preserved across re-pairs; `backfillFromAllowlist` is idempotent and catches pre-Phase-2 legacy installs.
+- **Tutorial state-machine coverage 18 → 53 tests.** Added: `agent_offered`/`phase2_offered` passThrough on unrelated text, every yes/no alias parametrically (`yes`/`y`/`yeah`/`yep`/`sure`/`ok`/`tour`/`let's go`/`lets go` and `no`/`n`/`nah`/`nope`/`skip`/`later`), case-insensitivity + whitespace trim, whole-word matching contract (`"yes please"` does NOT match), `handleAppResponse` passThrough on every inactive state, per-chat state isolation, `clearTutorial` mid-flow + idempotent, and a reachability fuzz that proves the declared-but-unused `voice_offered` state has no incoming edges.
+
 ## [1.1.4] — 2026-04-25
 
 DC-friendliness patch. Fixes a runaway outbound-traffic pattern that was tripping chatmail's per-account rate limit and getting agent accounts silently throttled at the server. Also fixes a first-turn `error_during_execution` crash that surfaced after pairing or after any spawn that died before claude wrote its session jsonl.
@@ -357,6 +374,7 @@ First public release of the Delta Chat channel for Claude Code.
 - File-based allowlist + pairing codes.
 - `deltachat-rpc-server` integration.
 
+[1.1.5]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.4...v1.1.5
 [1.1.4]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.1...v1.1.2

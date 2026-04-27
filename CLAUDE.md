@@ -122,6 +122,42 @@ rejected with an error.
 **Tools:** `dc_familiar_create`, `dc_familiar_update`, `dc_familiar_list`,
 `dc_familiar_delete`.
 
+## Principals (v1.1.5+, Phase 2 starter)
+
+Per-contact identity records, on-disk at
+`~/.claude/channels/deltachat/principals/humans/<contactId>.json`. Schema:
+
+```json
+{
+  "kind": "human",
+  "contactId": 11,
+  "displayName": "Alice",
+  "firstPairedAt": "2026-04-25T12:00:00.000Z"
+}
+```
+
+**Phase 2 scope (this release): write-only.** Records are populated on
+every successful pair (`completePairing` hook) and lazily backfilled on
+dispatcher startup for legacy installs (`backfillFromAllowlist`). The
+chat-allowlist (`approved/<chatId>`) is still the auth gate — nothing
+reads from principals yet for `isAllowed` decisions.
+
+**Phase 3 (next): reads.** A compatibility shim will route
+`isAllowed(chatId)` through `principals.chatsFor(caller)`, and agents
+will get their own principal records under `principals/agents/<id>.json`.
+
+Auto-pair (`addChat()`, used when a known owner sends in a new chat) does
+NOT write principals directly — the contact's record already exists from
+their first pair. This is intentional and pinned in
+`test/auto-pair.test.ts`.
+
+API in `plugin/access/principals.ts`: `loadHuman` / `writeHuman` /
+`listHumans` / `removeHuman` / `recordHumanPair` / `backfillFromAllowlist`
+/ `chatsFor`. Storage dir overridable for tests via
+`DC_TEST_PRINCIPALS_DIR` or `setPrincipalsDir(dir)`.
+
+Per `docs/specs/2026-04-20-identity-and-teams-design.md`.
+
 ## Subagent session resume
 
 Each binding holds a persistent claude session UUID. The first spawn for a
@@ -315,11 +351,12 @@ version each time you send an updated revision.
 - `plugin/bindings.ts` — Per-chat binding records (chat ↔ agent link + session UUID + inheritClaudeMd)
 - `plugin/agent-setup.ts` — XDC builder for the agent setup WebXDC app
 - `plugin/dc-client.ts` — Wraps `@deltachat/jsonrpc-client` + `@deltachat/stdio-rpc-server`
-- `plugin/access/` — File-based allowlist + pairing codes (~/.claude/channels/deltachat/approved/). Split (v1.1.2+) into `chat-allowlist.ts` (persistent `approved/<chatId>` store), `pairing.ts` (in-memory arm window + pending codes), `principals.ts` (Phase-0 skeleton for the upcoming identity/teams model), and `index.ts` (the barrel every call site imports).
+- `plugin/access/` — File-based allowlist + pairing codes (~/.claude/channels/deltachat/approved/). Split (v1.1.2+) into `chat-allowlist.ts` (persistent `approved/<chatId>` store), `pairing.ts` (in-memory arm window + pending codes), `principals.ts` (per-contact identity records — see "Principals" below), and `index.ts` (the barrel every call site imports).
 - `plugin/tutorial.ts` — Onboarding tutorial state machine
 - `plugin/webxdc-filter.ts` — Centralized owner verification for WebXDC updates
 - `plugin/events.ts` — Structured JSONL log of every DC tool call
 - `plugin/test/webxdc/` — Tier-1 WebXDC test harness (opt-in; Playwright-based). Isolated `package.json` so marketplace installs pay zero cost. See `plugin/test/webxdc/README.md` for contributor bootstrap.
+- `plugin/test/integration/` — Tier-2 integration harness (v1.1.5+; opt-in via `DC_INTEGRATION_TEST=1`). Real `@deltachat/stdio-rpc-server` driving two accounts on a local `chatmail/docker` container. Bootstrap: `cd plugin/test/integration/chatmail-docker && ./podman-run.sh up` (or `docker compose up -d`). Then `bun run test:integration` from `plugin/`. Slices: `pairing.test.ts` (pair + text round-trip, free), `subagent-lifecycle.test.ts` (real `claude -p` spawn + reply, gated by `DC_TEST_SUBAGENT=1` — incurs ~1 Anthropic turn per run). See `plugin/test/integration/README.md`.
 - State dir: `~/.claude/channels/deltachat/` (.env, dc-data/, approved/, agents/, bindings/, schedules/, events/, dispatcher.sock, debug.log)
 
 ## Subagent model (v0.9+)
