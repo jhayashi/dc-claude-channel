@@ -1110,6 +1110,26 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 
 .leaf-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 6px; cursor: pointer; }
 .leaf-row:hover { border-color: var(--orange); }
+
+/* L2 drill-in + leaf detail (Phase 6.3). The .leaf-row rules above style
+   the flat search-result list (cards w/ surface + border). Inside .L2-list
+   we want a tighter, list-row look — so scope the overrides to that
+   container instead of redefining .leaf-row globally. */
+.L2-list { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 6px 0; margin-bottom: 14px; }
+.back-bar { padding: 8px 14px; border-bottom: 1px solid var(--line); color: var(--text-mute); font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.back-bar:hover { color: var(--orange); }
+.L2-list .leaf-row { padding: 9px 14px; cursor: pointer; font-size: 13px; color: var(--ink); line-height: 1.45; display: flex; align-items: center; gap: 6px; background: transparent; border: 0; border-radius: 0; margin-bottom: 0; }
+.L2-list .leaf-row:hover { background: rgba(217, 119, 87, 0.08); color: var(--orange); border-color: transparent; }
+.L2-list .leaf-row .param { color: var(--text-dim); font-size: 11px; }
+.leaf-detail { margin-top: 14px; padding: 14px; background: var(--surface-2); border: 1px solid var(--orange); border-radius: 10px; }
+.leaf-detail-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.leaf-detail h3 { font-size: 16px; flex: 1; }
+.leaf-detail .pitch { color: var(--text-mute); font-size: 13px; line-height: 1.55; margin: 8px 0 12px; }
+.leaf-detail .meta { font-size: 11px; color: var(--text-dim); margin-bottom: 10px; }
+.leaf-detail .meta strong { color: var(--text-mute); font-weight: 600; }
+.cta-row { display: flex; gap: 8px; margin-top: 8px; }
+/* .btn-primary already defined above as a TP variant — do not redefine.
+   The detail CTA picks up the same orange-on-paper treatment automatically. */
 </style>
 </head>
 <body>
@@ -1589,7 +1609,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.88;
+var APP_VERSION = 1.89;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -2647,6 +2667,62 @@ function onWallSearch() {
   document.getElementById('wall-results').innerHTML = html;
 }
 
+// Drill into a single L2 specialty: hide grid + helper, render its leaves
+// in a back-bar-topped list. Search results (if any) are also hidden — the
+// user picked a tile, the search filter no longer applies.
+function enterL2(l2) {
+  document.getElementById('wall-helper').style.display = 'none';
+  document.getElementById('wall-grid').style.display = 'none';
+  document.getElementById('wall-results').style.display = 'none';
+  document.getElementById('wall-leaf-detail').innerHTML = '';
+
+  var leaves = (state.newAgentFlow.leaves || []).filter(function(l) { return l.l2 === l2; });
+  var path = leaves[0] ? leaves[0].path : 'Expert';
+  var html = '<div class="L2-list">' +
+    '<div class="back-bar" data-action="back-to-wall"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 6 9 12 15 18"/></svg> Back to specialties</div>' +
+    '<div style="padding: 10px 14px; display: flex; align-items: center; gap: 8px;">' + pathTag(path) + '<strong style="font-size: 14px;">' + escapeHtml(l2) + '</strong></div>';
+  for (var i = 0; i < leaves.length; i++) {
+    var l = leaves[i];
+    var paramStr = l.parameter ? ' <span class="param">— ' + escapeHtml(l.parameter) + '</span>' : '';
+    html += '<div class="leaf-row" data-leaf-id="' + escapeHtml(l.id) + '">' + escapeHtml(l.name) + paramStr + '</div>';
+  }
+  html += '</div>';
+  document.getElementById('wall-l2').innerHTML = html;
+}
+
+// Open the leaf-detail card below whichever list is currently shown
+// (L2 drill-in or search results). state.openLeafId is read by Phase 7's
+// toggleBuild to re-render the open card after a build mutation.
+function showLeafDetail(leafId) {
+  var l = (state.newAgentFlow.leaves || []).find(function(x) { return x.id === leafId; });
+  if (!l) return;
+  state.openLeafId = l.id;
+  var html = '<div class="leaf-detail">' +
+    '<div class="leaf-detail-head">' + pathTag(l.path) + '<h3>' + escapeHtml(l.name) + '</h3></div>' +
+    (l.parameter ? '<div class="meta"><strong>Asks you about:</strong> ' + escapeHtml(l.parameter) + '</div>' : '') +
+    '<div class="pitch">' + escapeHtml(l.pitch || '') + '</div>' +
+    // Pairs-with chips added in Phase 7 (also via data-pair-add).
+    '<div class="cta-row">' +
+      '<button class="btn-primary" data-action="build-now" data-leaf-id-build="' + escapeHtml(l.id) + '">Build now</button>' +
+    '</div>' +
+    '<div style="text-align: center; margin-top: 10px;"><a href="#" data-action="hide-leaf" style="font-size: 12px; color: var(--text-dim);">cancel</a></div>' +
+  '</div>';
+  document.getElementById('wall-leaf-detail').innerHTML = html;
+  document.getElementById('wall-leaf-detail').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+function hideLeafDetail() {
+  state.openLeafId = null;
+  document.getElementById('wall-leaf-detail').innerHTML = '';
+}
+
+// Single-leaf build — emits a build-agent payload to the dispatcher.
+// Phase 8 wires the dispatcher side (coach handoff). senderAddr is
+// MANDATORY per project owner-verification convention (CLAUDE.md).
+function buildSingleLeaf(leafId) {
+  webxdc.sendUpdate({ payload: { type: 'build-agent', leafIds: [leafId], senderAddr: webxdc.selfAddr } }, '');
+}
+
 // Delegated listeners — install once at startup. Handles wall tiles +
 // search input. All wall navigation triggers via data-* attributes set
 // during render — no inline JS, no string concatenation of identifiers
@@ -2656,12 +2732,21 @@ function installWallDelegates() {
   if (!wallScreen || wallScreen.__delegatesInstalled) return;
   wallScreen.__delegatesInstalled = true;
 
-  // Click delegate — handles tile clicks (Task 6.3 will add leaf-detail and pair-chip cases)
+  // Click delegate — handles tile clicks, L2 drill-down, leaf detail, and
+  // detail-card actions. Phase 7 will extend this with data-pair-add and
+  // data-action="review" for the mash-up flow. Action attributes are
+  // checked BEFORE data-l2 / data-leaf-id so a button carrying both can't
+  // fall through to the wrong handler (defense-in-depth).
   wallScreen.addEventListener('click', function(e) {
     var t = e.target;
     while (t && t !== wallScreen) {
-      if (t.dataset && t.dataset.l2) { /* enterL2(t.dataset.l2) — Task 6.3 */ return; }
-      if (t.dataset && t.dataset.leafId) { /* showLeafDetail(t.dataset.leafId) — Task 6.3 */ return; }
+      if (t.dataset) {
+        if (t.dataset.action === 'back-to-wall') { renderWall(); return; }
+        if (t.dataset.action === 'hide-leaf') { e.preventDefault(); hideLeafDetail(); return; }
+        if (t.dataset.action === 'build-now') { buildSingleLeaf(t.dataset.leafIdBuild); return; }
+        if (t.dataset.l2) { enterL2(t.dataset.l2); return; }
+        if (t.dataset.leafId) { showLeafDetail(t.dataset.leafId); return; }
+      }
       t = t.parentElement;
     }
   });
