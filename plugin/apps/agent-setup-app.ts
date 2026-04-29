@@ -19,6 +19,7 @@ import { decideCleanup, CONTACT_SELF } from '../cleanup.js'
 import { ALL_BUILTIN_TOOLS, BUILTIN_TOOL_DESCRIPTIONS } from '../dispatcher/subagent-process.js'
 import { startCoach, advanceCoach, isCoachDone, collectAnswers, type CoachState, type CoachAnswers } from '../coach.js'
 import { assembleSystemPrompt } from '../prompt-assembler.js'
+import { PATTERN_IDS } from '../agent-icons/palettes.js'
 import { logLifecycleEvent } from '../events-lifecycle.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -228,6 +229,11 @@ export interface CoachSession {
   coachState: CoachState
   leafIds: string[]
   sessionId: string
+  /** Badge pattern picked by the user on the review screen (Phase 9.2).
+   *  Validated against PATTERN_IDS at intake; fallback to 'checker' if
+   *  the client sent an unknown id. Written to metadata['x-dc-pattern']
+   *  by graduateAgent. */
+  pattern: string
 }
 
 export const coachSessions = new Map<number, CoachSession>()
@@ -530,6 +536,7 @@ async function handleBuildAgent(
   ctx: AppContext,
   sourceChatId: number,
   leafIds: string[],
+  pattern: string,
   resolveOwner: () => Promise<number | null>,
 ): Promise<void> {
   // Validate against the catalog up front so we don't create a dead chat.
@@ -562,7 +569,7 @@ async function handleBuildAgent(
     return
   }
 
-  coachSessions.set(newChatId, { coachState, leafIds: validIds, sessionId })
+  coachSessions.set(newChatId, { coachState, leafIds: validIds, sessionId, pattern })
 
   if (coachState.nextQuestion) {
     const skipHint = '\n\n_(Or just say "let\'s go" and I\'ll use defaults.)_'
@@ -630,7 +637,7 @@ export async function graduateAgent(ctx: AppContext, chatId: number): Promise<vo
       'x-dc-personality-preset': 'mentor',
       'x-dc-personality-sliders': {},
       'x-dc-coach-answers': answers as unknown as Record<string, unknown>,
-      'x-dc-pattern': 'checker',
+      'x-dc-pattern': session.pattern || 'checker',
       // Legacy compat — drives existing badge palette / archetype-aware logic.
       'x-dc-archetype': 'role',
     },
@@ -857,8 +864,15 @@ export const agentSetupApp: WebXDCApp = {
           ctx.logf('agent-setup: build-agent payload had no string leafIds')
           continue
         }
+        // Phase 9.2: pattern picker on review screen. Validate against
+        // PATTERN_IDS — fall back to 'checker' if missing or unknown so a
+        // stale client (pre-1.93) still graduates with a sensible default.
+        const rawPattern = (payload as { pattern?: unknown }).pattern
+        const validPattern = typeof rawPattern === 'string' && (PATTERN_IDS as readonly string[]).includes(rawPattern)
+          ? rawPattern
+          : 'checker'
         try {
-          await handleBuildAgent(ctx, session.sourceChatId, leafIds, resolveOwner)
+          await handleBuildAgent(ctx, session.sourceChatId, leafIds, validPattern, resolveOwner)
         } catch (err) {
           ctx.logf('agent-setup: build-agent failed: %v', err)
         }

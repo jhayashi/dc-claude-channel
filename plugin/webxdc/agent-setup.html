@@ -1166,6 +1166,16 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 /* Phase 7 secondary CTA — outline variant of .btn-primary, used in
    .leaf-detail .cta-row alongside the existing primary button. */
 .btn-secondary { flex: 1; padding: 11px 14px; border-radius: 8px; font: inherit; font-weight: 600; cursor: pointer; background: transparent; border: 1px solid var(--orange); color: var(--orange); }
+
+/* Pattern picker (Phase 9.2) */
+.pattern-picker { margin-bottom: 16px; }
+.pattern-picker-label { font-size: 11px; color: var(--text-mute); margin-bottom: 8px; font-weight: 600; }
+.pattern-picker-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.pattern-tile { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px; cursor: pointer; text-align: center; transition: border-color 0.12s; }
+.pattern-tile:hover { border-color: var(--orange); }
+.pattern-tile.selected { border: 2px solid var(--orange); padding: 5px; box-shadow: 0 0 0 1px var(--orange); }
+.pattern-thumb { width: 100%; height: auto; display: block; border-radius: 4px; aspect-ratio: 1; }
+.pattern-tile-name { font-size: 9px; color: var(--text-dim); margin-top: 4px; text-transform: capitalize; }
 </style>
 </head>
 <body>
@@ -1650,7 +1660,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.92;
+var APP_VERSION = 1.93;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -2809,7 +2819,7 @@ function hideLeafDetail() {
 // Phase 8 wires the dispatcher side (coach handoff). senderAddr is
 // MANDATORY per project owner-verification convention (CLAUDE.md).
 function buildSingleLeaf(leafId) {
-  webxdc.sendUpdate({ payload: { type: 'build-agent', leafIds: [leafId], senderAddr: webxdc.selfAddr } }, '');
+  webxdc.sendUpdate({ payload: { type: 'build-agent', leafIds: [leafId], pattern: state.pattern, senderAddr: webxdc.selfAddr } }, '');
 }
 
 // ----- Phase 7 mash-up state machine -----------------------------------
@@ -2896,6 +2906,25 @@ function showReviewScreen() {
     ? 'A single specialist. The coach will help you tune its voice and tools next.'
     : 'These ' + n + ' specialties combine into <strong>one</strong> agent with a unified system prompt. The coach helps you weight them and tune voice next.';
 
+  // Pattern picker (Phase 9.2). 8 inline-SVG thumbs preview the badge
+  // pattern that will be written to metadata['x-dc-pattern'] on graduation.
+  // The thumbs intentionally duplicate (don't share) the server-side
+  // renderer in agent-icons/pattern-renderer.ts — they're a 32-48px
+  // preview, the renderer produces a 256x256 PNG, and decoupling means
+  // a renderer change can't accidentally break the picker preview.
+  var patternIds = ['checker', 'mini-checker', 'stripes', 'v-stripes', 'quartered', 'quartered-x', 'dots', 'big-dots'];
+  var patternHtml = '<div class="pattern-picker">' +
+    '<div class="pattern-picker-label">Pick a badge pattern</div>' +
+    '<div class="pattern-picker-grid">' +
+      patternIds.map(function(p) {
+        var selected = state.pattern === p;
+        return '<div class="pattern-tile' + (selected ? ' selected' : '') + '" data-pattern="' + escapeHtml(p) + '">' +
+                 renderPatternThumb(p) +
+                 '<div class="pattern-tile-name">' + escapeHtml(p.replace(/-/g, ' ')) + '</div>' +
+               '</div>';
+      }).join('') +
+    '</div></div>';
+
   var html = '<div class="review-screen">' +
     '<h2>' + escapeHtml(h2) + '</h2><div class="sub">' + sub + '</div>' +
     '<div class="review-list">' + leaves.map(function(l) {
@@ -2907,11 +2936,76 @@ function showReviewScreen() {
     }).join('') + '</div>' +
     '<div class="merged-pitch"><strong>How it will introduce itself</strong>' +
       escapeHtml(composeMergedPitch(leaves)) + '</div>' +
+    patternHtml +
     '<div class="review-cta-row">' +
       '<button class="btn-back-to-wall" data-action="back-to-wall">+ Add another</button>' +
       '<button class="btn-build-final" data-action="build-mashup">Build &amp; start chatting →</button>' +
     '</div></div>';
   document.getElementById('wall-l2').innerHTML = html;
+}
+
+// Render a small SVG preview of a badge pattern. Fixed orange/coral
+// preview because the picker shows shape, not the eventual model-tier
+// accent color (which depends on which model the agent ends up running).
+// Intentionally duplicates the shape logic in agent-icons/pattern-renderer.ts —
+// see commentary in showReviewScreen.
+function renderPatternThumb(p) {
+  var solid = 'var(--orange)';
+  var accent = '#F2A778';  // Opus accent works as a contrast preview
+  switch (p) {
+    case 'checker':
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb"><rect width="256" height="256" fill="' + solid + '"/><rect x="0" y="0" width="128" height="128" fill="' + accent + '"/><rect x="128" y="128" width="128" height="128" fill="' + accent + '"/></svg>';
+    case 'mini-checker':
+      var miniRects = '';
+      for (var i = 0; i < 16; i++) {
+        var row = Math.floor(i / 4), col = i % 4;
+        var fill = (row + col) % 2 === 0 ? solid : accent;
+        miniRects += '<rect x="' + (col * 64) + '" y="' + (row * 64) + '" width="64" height="64" fill="' + fill + '"/>';
+      }
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' + miniRects + '</svg>';
+    case 'stripes':
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
+        '<rect width="256" height="64" fill="' + solid + '"/><rect y="64" width="256" height="64" fill="' + accent + '"/>' +
+        '<rect y="128" width="256" height="64" fill="' + solid + '"/><rect y="192" width="256" height="64" fill="' + accent + '"/>' +
+        '</svg>';
+    case 'v-stripes':
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
+        '<rect width="64" height="256" fill="' + solid + '"/><rect x="64" width="64" height="256" fill="' + accent + '"/>' +
+        '<rect x="128" width="64" height="256" fill="' + solid + '"/><rect x="192" width="64" height="256" fill="' + accent + '"/>' +
+        '</svg>';
+    case 'quartered':
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
+        '<rect width="128" height="128" fill="' + solid + '"/><rect x="128" width="128" height="128" fill="' + accent + '"/>' +
+        '<rect y="128" width="128" height="128" fill="' + accent + '"/><rect x="128" y="128" width="128" height="128" fill="' + solid + '"/>' +
+        '</svg>';
+    case 'quartered-x':
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
+        '<rect width="256" height="256" fill="' + solid + '"/>' +
+        '<polygon points="0,0 256,0 128,128" fill="' + accent + '"/><polygon points="0,256 256,256 128,128" fill="' + accent + '"/>' +
+        '<polygon points="0,0 0,256 128,128" fill="' + solid + '"/><polygon points="256,0 256,256 128,128" fill="' + solid + '"/>' +
+        '</svg>';
+    case 'dots':
+      var smallDots = '';
+      for (var y = 32; y < 256; y += 64) {
+        for (var x = 32; x < 256; x += 64) {
+          smallDots += '<circle cx="' + x + '" cy="' + y + '" r="20" fill="' + accent + '"/>';
+        }
+      }
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
+        '<rect width="256" height="256" fill="' + solid + '"/>' + smallDots +
+        '</svg>';
+    case 'big-dots':
+      var bigDots = '';
+      for (var y2 = 64; y2 < 256; y2 += 128) {
+        for (var x2 = 64; x2 < 256; x2 += 128) {
+          bigDots += '<circle cx="' + x2 + '" cy="' + y2 + '" r="40" fill="' + accent + '"/>';
+        }
+      }
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
+        '<rect width="256" height="256" fill="' + solid + '"/>' + bigDots +
+        '</svg>';
+  }
+  return '';
 }
 
 // Compose a single-line preview of how the mash-up agent will introduce
@@ -2930,7 +3024,7 @@ function composeMergedPitch(leaves) {
 // queue. Phase 8 wires the dispatcher's coach handoff. senderAddr is
 // MANDATORY per project owner-verification convention (CLAUDE.md).
 function buildMashup() {
-  webxdc.sendUpdate({ payload: { type: 'build-agent', leafIds: state.build.slice(), senderAddr: webxdc.selfAddr } }, '');
+  webxdc.sendUpdate({ payload: { type: 'build-agent', leafIds: state.build.slice(), pattern: state.pattern, senderAddr: webxdc.selfAddr } }, '');
 }
 // ----- End Phase 7 mash-up state machine -------------------------------
 
@@ -2964,6 +3058,9 @@ function installWallDelegates() {
         if (t.dataset.action === 'build-mashup') { buildMashup(); return; }
         if (t.dataset.action === 'remove-from-build') { toggleBuild(t.dataset.leafRm); rerenderReviewIfOpen(); return; }
         if (t.dataset.pairAdd) { toggleBuild(t.dataset.pairAdd); return; }
+        // Phase 9.2 pattern picker — re-render the review screen so the
+        // selected tile flips to the .selected class.
+        if (t.dataset.pattern) { state.pattern = t.dataset.pattern; showReviewScreen(); return; }
         // Tile + leaf-row drilling stays last so a button carrying both
         // an action and a data-leaf-id can't fall through.
         if (t.dataset.l2) { enterL2(t.dataset.l2); return; }
@@ -3964,6 +4061,7 @@ window.webxdc.setUpdateListener(function(update) {
     // re-init since setUpdateListener replays from serial 0.
     state.build = [];
     state.openLeafId = null;
+    state.pattern = 'checker';  // default; overridable via the review screen picker
     creating = false;
     editingAgentId = null;
     dismissModal();
