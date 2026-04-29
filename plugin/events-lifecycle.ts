@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 export type LifecycleEvent =
   | { kind: 'graduation'; chatId: number; agentId: string; sessionId: string; leafIds: string[]; fromCoach: true }
   | { kind: 'refine-complete'; chatId: number; agentId: string; sessionId: string }
+  | { kind: 'graduation-failed'; chatId: number; sessionId: string; leafIds: string[]; reason: string }
 
 let DIR = process.env.DC_EVENT_DIR
   ? join(process.env.DC_EVENT_DIR)

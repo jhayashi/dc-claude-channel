@@ -19,7 +19,7 @@ import { decideCleanup, CONTACT_SELF } from '../cleanup.js'
 import { ALL_BUILTIN_TOOLS, BUILTIN_TOOL_DESCRIPTIONS } from '../dispatcher/subagent-process.js'
 import { startCoach, advanceCoach, isCoachDone, collectAnswers, type CoachState, type CoachAnswers } from '../coach.js'
 import { assembleSystemPrompt } from '../prompt-assembler.js'
-import { PATTERN_IDS } from '../agent-icons/palettes.js'
+import { PATTERN_IDS, type PatternId } from '../agent-icons/palettes.js'
 import { logLifecycleEvent } from '../events-lifecycle.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -233,7 +233,7 @@ export interface CoachSession {
    *  Validated against PATTERN_IDS at intake; fallback to 'checker' if
    *  the client sent an unknown id. Written to metadata['x-dc-pattern']
    *  by graduateAgent. */
-  pattern: string
+  pattern: PatternId
 }
 
 export const coachSessions = new Map<number, CoachSession>()
@@ -536,7 +536,7 @@ async function handleBuildAgent(
   ctx: AppContext,
   sourceChatId: number,
   leafIds: string[],
-  pattern: string,
+  pattern: PatternId,
   resolveOwner: () => Promise<number | null>,
 ): Promise<void> {
   // Validate against the catalog up front so we don't create a dead chat.
@@ -596,15 +596,23 @@ export async function graduateAgent(ctx: AppContext, chatId: number): Promise<vo
   const session = coachSessions.get(chatId)
   if (!session) return
 
-  const catalog = getDefaultCatalog()
-  const answers = collectAnswers(session.coachState)
-
-  const identityPreamble = composeIdentityPreamble(session.leafIds, answers, catalog)
-  const agentName = composeAgentName(session.leafIds, answers, catalog)
-
-  let systemPrompt: string
+  // Wrap the entire post-validation graduation body in a single try/catch.
+  // Previous structure had narrow try/catches around assembleSystemPrompt
+  // and saveAgent only — a throw from saveBinding/setChatName/setAgentIcon
+  // would orphan the chat in a half-state (agent YAML on disk, no binding,
+  // coach session not always cleared) and the user would see nothing. The
+  // catch below: logs, posts a user-visible message, clears in-memory
+  // state, and emits a lifecycle event so a downstream tool can surface
+  // partial graduations. coachLocks cleanup happens at the call site
+  // (server.ts) once this function returns.
   try {
-    systemPrompt = assembleSystemPrompt({
+    const catalog = getDefaultCatalog()
+    const answers = collectAnswers(session.coachState)
+
+    const identityPreamble = composeIdentityPreamble(session.leafIds, answers, catalog)
+    const agentName = composeAgentName(session.leafIds, answers, catalog)
+
+    const systemPrompt = assembleSystemPrompt({
       leafIds: session.leafIds,
       // assembleSystemPrompt rejects leadLeafId on single-leaf agents.
       leadLeafId: session.leafIds.length > 1 ? answers.leadLeafId : undefined,
@@ -615,92 +623,118 @@ export async function graduateAgent(ctx: AppContext, chatId: number): Promise<vo
       identityPreamble,
       catalog,
     })
-  } catch (err) {
-    ctx.logf('agent-setup: assembleSystemPrompt failed for chat %d: %v', chatId, err)
-    coachSessions.delete(chatId)
-    return
-  }
 
-  const agentId = agents.synthesizeAgentId(agentName)
-  const newAgent: agents.AgentDef = {
-    id: agentId,
-    name: agentName,
-    model: agents.DEFAULT_MODEL,
-    description: '',
-    system: systemPrompt,
-    // Forward-compat hook (per CLAUDE.md): tools[] is a no-op marker; per-agent
-    // tool capabilities use allowedBuiltinTools/allowedMcpServers (not derived
-    // from coach answers in v1).
-    tools: [],
-    metadata: {
-      'x-dc-leaves': session.leafIds,
-      'x-dc-personality-preset': 'mentor',
-      'x-dc-personality-sliders': {},
-      'x-dc-coach-answers': answers as unknown as Record<string, unknown>,
-      'x-dc-pattern': session.pattern || 'checker',
-      // Legacy compat — drives existing badge palette / archetype-aware logic.
-      'x-dc-archetype': 'role',
-    },
-  }
-  // Roll a random orientation so same-model agents are visually
-  // differentiable (mirrors the templated/create paths).
-  agents.setIconMirror(newAgent, Math.random() < 0.5)
+    // Synthesize the agent id BEFORE saveAgent so we have one stable
+    // identifier for the whole graduation. (Pre-fix this happened in the
+    // same place but the structure didn't make the sequencing intent
+    // explicit. Keeping it here so a downstream change can't accidentally
+    // hoist saveAgent earlier and re-introduce the partial-graduation
+    // namespace fork via a retry.)
+    const agentId = agents.synthesizeAgentId(agentName)
+    const newAgent: agents.AgentDef = {
+      id: agentId,
+      name: agentName,
+      model: agents.DEFAULT_MODEL,
+      description: '',
+      system: systemPrompt,
+      // Forward-compat hook (per CLAUDE.md): tools[] is a no-op marker; per-agent
+      // tool capabilities use allowedBuiltinTools/allowedMcpServers (not derived
+      // from coach answers in v1).
+      tools: [],
+      metadata: {
+        'x-dc-leaves': session.leafIds,
+        'x-dc-personality-preset': 'mentor',
+        'x-dc-personality-sliders': {},
+        'x-dc-coach-answers': answers as unknown as Record<string, unknown>,
+        // session.pattern is typed PatternId so it's always a valid id —
+        // the prior `|| 'checker'` defense is no longer needed.
+        'x-dc-pattern': session.pattern,
+        // Legacy compat — drives existing badge palette / archetype-aware logic.
+        'x-dc-archetype': 'role',
+      },
+    }
+    // Roll a random orientation so same-model agents are visually
+    // differentiable (mirrors the templated/create paths).
+    agents.setIconMirror(newAgent, Math.random() < 0.5)
 
-  try {
     agents.saveAgent(newAgent)
-  } catch (err) {
-    ctx.logf('agent-setup: saveAgent failed during graduation chat=%d: %v', chatId, err)
+
+    // First-time binding for this chat — coach lived only in `coachSessions`
+    // until now. Persist the same sessionId so claude --resume can be used
+    // by the subagent on first spawn.
+    bindings.saveBinding({
+      chatId,
+      agentId,
+      sessionId: session.sessionId,
+      inheritClaudeMd: agents.inheritClaudeMdForModel(newAgent.model),
+      workingDir: process.cwd(),
+      createdAt: new Date().toISOString(),
+    })
+
+    // Rename the chat to the agent name + install the agent badge so the
+    // chat avatar swaps from the placeholder to the real agent. These two
+    // are still individually try/caught because they're cosmetic — a
+    // failure here shouldn't roll back a successful agent+binding write.
+    try {
+      await ctx.client.setChatName(chatId, agentName)
+    } catch (err) {
+      ctx.logf('agent-setup: graduation rename failed chat=%d: %v', chatId, err)
+    }
+    try {
+      await setAgentIcon(ctx, chatId, newAgent)
+    } catch (err) {
+      ctx.logf('agent-setup: graduation icon refresh failed chat=%d: %v', chatId, err)
+    }
+
     coachSessions.delete(chatId)
-    return
-  }
 
-  // First-time binding for this chat — coach lived only in `coachSessions`
-  // until now. Persist the same sessionId so claude --resume can be used
-  // by the subagent on first spawn.
-  bindings.saveBinding({
-    chatId,
-    agentId,
-    sessionId: session.sessionId,
-    inheritClaudeMd: agents.inheritClaudeMdForModel(newAgent.model),
-    workingDir: process.cwd(),
-    createdAt: new Date().toISOString(),
-  })
+    logLifecycleEvent({
+      kind: 'graduation',
+      chatId,
+      agentId,
+      sessionId: session.sessionId,
+      leafIds: session.leafIds,
+      fromCoach: true,
+    })
 
-  // Rename the chat to the agent name + install the agent badge so the
-  // chat avatar swaps from the placeholder to the real agent.
-  try {
-    await ctx.client.setChatName(chatId, agentName)
+    // Post the agent's first message into the new chat. We send a plain
+    // greeting here rather than driving the agent's first turn through the
+    // subagent — the subagent will spawn lazily on the user's next message
+    // and respond in-character via the just-written system prompt. The
+    // coach Q&A isn't in the agent's session history; it's already baked
+    // into the prompt via assembleSystemPrompt + composeIdentityPreamble,
+    // and the raw answers are preserved in metadata['x-dc-coach-answers'].
+    try {
+      await ctx.client.send(chatId, `Ready! I'm your "${agentName}" agent. Anything you say from here on lands with me.`)
+    } catch (err) {
+      ctx.logf('agent-setup: graduation greeting failed chat=%d: %v', chatId, err)
+    }
   } catch (err) {
-    ctx.logf('agent-setup: graduation rename failed chat=%d: %v', chatId, err)
-  }
-  try {
-    await setAgentIcon(ctx, chatId, newAgent)
-  } catch (err) {
-    ctx.logf('agent-setup: graduation icon refresh failed chat=%d: %v', chatId, err)
-  }
-
-  coachSessions.delete(chatId)
-
-  logLifecycleEvent({
-    kind: 'graduation',
-    chatId,
-    agentId,
-    sessionId: session.sessionId,
-    leafIds: session.leafIds,
-    fromCoach: true,
-  })
-
-  // Post the agent's first message into the new chat. We send a plain
-  // greeting here rather than driving the agent's first turn through the
-  // subagent — the subagent will spawn lazily on the user's next message
-  // and respond in-character via the just-written system prompt. The
-  // coach Q&A isn't in the agent's session history; it's already baked
-  // into the prompt via assembleSystemPrompt + composeIdentityPreamble,
-  // and the raw answers are preserved in metadata['x-dc-coach-answers'].
-  try {
-    await ctx.client.send(chatId, `Ready! I'm your "${agentName}" agent. Anything you say from here on lands with me.`)
-  } catch (err) {
-    ctx.logf('agent-setup: graduation greeting failed chat=%d: %v', chatId, err)
+    const reason = err instanceof Error ? err.message : String(err)
+    ctx.logf('agent-setup: graduation failed for chat %d: %v', chatId, err)
+    // Always clear in-memory state so the chat doesn't loop on the same
+    // failure if the user sends another message.
+    coachSessions.delete(chatId)
+    // Emit a lifecycle event so the partial-graduation case is observable
+    // alongside successful graduations.
+    logLifecycleEvent({
+      kind: 'graduation-failed',
+      chatId,
+      sessionId: session.sessionId,
+      leafIds: session.leafIds,
+      reason,
+    })
+    // Tell the user something went wrong — silent failure is worse than
+    // a generic message because the chat is now in an unusable in-between
+    // state and the user has no idea why.
+    try {
+      await ctx.client.send(
+        chatId,
+        "Sorry — I couldn't finish setting up your agent. Tap the agent settings card to try again.",
+      )
+    } catch (sendErr) {
+      ctx.logf('agent-setup: graduation-failure notice send failed chat=%d: %v', chatId, sendErr)
+    }
   }
 }
 
@@ -868,9 +902,10 @@ export const agentSetupApp: WebXDCApp = {
         // PATTERN_IDS — fall back to 'checker' if missing or unknown so a
         // stale client (pre-1.93) still graduates with a sensible default.
         const rawPattern = (payload as { pattern?: unknown }).pattern
-        const validPattern = typeof rawPattern === 'string' && (PATTERN_IDS as readonly string[]).includes(rawPattern)
-          ? rawPattern
-          : 'checker'
+        const validPattern: PatternId =
+          typeof rawPattern === 'string' && (PATTERN_IDS as readonly string[]).includes(rawPattern)
+            ? (rawPattern as PatternId)
+            : 'checker'
         try {
           await handleBuildAgent(ctx, session.sourceChatId, leafIds, validPattern, resolveOwner)
         } catch (err) {

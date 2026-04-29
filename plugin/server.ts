@@ -150,9 +150,16 @@ const webxdcLastSerial = new Map<number, number>()
 // arriving in quick succession both read the same starting state and the
 // second's `advanceCoach` mutation overwrites the first — the question's
 // answer is silently dropped. Mirrors the per-chat queue in
-// dispatcher/subagent-cache.ts. The map grows by chatId; entries are
-// pruned implicitly when the in-flight promise settles back to the same
-// reference (cleanup happens on chat teardown via cleanupChatState).
+// dispatcher/subagent-cache.ts.
+//
+// Lifetime: the map grows by chatId on each coach turn. Entries are
+// explicitly cleared when (a) graduation succeeds (in the coach
+// interception below), (b) graduation has already raced ahead and we
+// fall through to the subagent, or (c) the chat is torn down via
+// cleanupChatState. Outside those paths the entry holds a settled-
+// promise tail and persists until something explicitly deletes it —
+// the JS engine keeps a single resolved Promise around for free, so
+// the leak is bounded but not zero.
 const coachLocks = new Map<number, Promise<unknown>>()
 
 async function withCoachLock<T>(chatId: number, fn: () => Promise<T>): Promise<T> {
@@ -2256,11 +2263,21 @@ async function main(): Promise<void> {
     // quick succession would otherwise both read the same starting state
     // and the second's advance would clobber the first's. The inner
     // re-read of coachSessions handles the race where graduation in turn
-    // N deletes the session before turn N+1 enters the critical section.
+    // N deletes the session before turn N+1 enters the critical section
+    // — we set `coachHandled = false` and fall through to subagent
+    // dispatch so the post-graduation message isn't silently dropped.
+    let coachHandled = false
     if (coachSessions.has(enrichedMsg.chatId)) {
       await withCoachLock(enrichedMsg.chatId, async () => {
         const session = coachSessions.get(enrichedMsg.chatId)
-        if (!session) return  // graduated between checks; fall through cleanly
+        if (!session) {
+          // Graduation raced ahead of this turn. Drop the (now-stale)
+          // lock entry so it can't leak, and fall through to subagent
+          // dispatch — the just-graduated agent owns the chat now.
+          coachLocks.delete(enrichedMsg.chatId)
+          return
+        }
+        coachHandled = true
         try {
           session.coachState = advanceCoach(session.coachState, enrichedMsg.text ?? '')
           if (session.coachState.lastReflection?.text) {
@@ -2268,6 +2285,9 @@ async function main(): Promise<void> {
           }
           if (isCoachDone(session.coachState)) {
             await graduateAgent(ctx, enrichedMsg.chatId)
+            // Graduation succeeded — drop the lock so the map doesn't
+            // accumulate one settled-promise tail per graduated chat.
+            coachLocks.delete(enrichedMsg.chatId)
           } else if (session.coachState.nextQuestion) {
             await client.send(enrichedMsg.chatId, session.coachState.nextQuestion)
           }
@@ -2275,8 +2295,8 @@ async function main(): Promise<void> {
           logf('coach: advance failed chat=%d: %v', enrichedMsg.chatId, err)
         }
       })
-      return
     }
+    if (coachHandled) return
 
     const chatId = msg.chatId
     activityReactor.setTurnTarget(chatId, msg.id)
