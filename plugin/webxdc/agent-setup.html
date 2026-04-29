@@ -1130,6 +1130,42 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .cta-row { display: flex; gap: 8px; margin-top: 8px; }
 /* .btn-primary already defined above as a TP variant — do not redefine.
    The detail CTA picks up the same orange-on-paper treatment automatically. */
+
+/* Phase 7 mash-up build pill + cap-warn (top of #wall-screen .body) */
+.build-pill { background: linear-gradient(135deg, var(--orange) 0%, #c46a4d 100%); color: #fff; border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; cursor: pointer; box-shadow: 0 0 0 1px rgba(217,119,87,0.25); display: flex; align-items: center; gap: 10px; }
+.build-pill .glyph { width: 24px; height: 24px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
+.build-pill-title { font-weight: 700; font-size: 13.5px; line-height: 1.3; }
+.build-pill-sub { font-size: 11px; opacity: 0.85; margin-top: 2px; }
+.build-pill-cta { margin-left: auto; font-size: 12px; font-weight: 600; background: rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 999px; }
+.cap-warn { background: rgba(201, 140, 64, 0.12); border: 1px solid #c98c40; color: #c98c40; border-radius: 8px; padding: 8px 12px; font-size: 12px; line-height: 1.4; margin-bottom: 14px; }
+
+/* Phase 7 pairs-with chips inside .leaf-detail */
+.pairs-with-label { font-size: 11px; color: var(--text-mute); margin: 12px 0 6px; font-weight: 600; }
+.pairs-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.pair-chip { background: var(--surface); border: 1px solid var(--line); color: var(--ink); border-radius: 999px; padding: 5px 11px 5px 9px; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.pair-chip:hover { border-color: var(--orange); color: var(--orange); }
+.pair-chip .plus { font-weight: 700; color: var(--orange); font-size: 13px; }
+.pair-chip.added { background: rgba(217, 119, 87, 0.12); border-color: var(--orange); color: var(--orange); }
+
+/* Phase 7 review screen (rendered into #wall-l2) */
+.review-screen { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.review-screen h2 { font-size: 17px; margin-bottom: 4px; }
+.review-screen .sub { color: var(--text-mute); font-size: 12px; margin-bottom: 16px; line-height: 1.5; }
+.review-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.review-item { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; align-items: center; gap: 8px; }
+.review-item .name { font-weight: 600; font-size: 13px; flex: 1; }
+.review-item .where { color: var(--text-dim); font-size: 11px; }
+.review-item .x { color: var(--text-dim); cursor: pointer; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
+.review-item .x:hover { background: var(--line); color: var(--ink); }
+.merged-pitch { background: var(--surface); border: 1px dashed var(--orange); border-radius: 8px; padding: 12px 14px; color: var(--text-mute); font-size: 12.5px; line-height: 1.55; margin-bottom: 16px; }
+.merged-pitch strong { color: var(--orange); display: block; margin-bottom: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.review-cta-row { display: flex; gap: 8px; }
+.btn-back-to-wall { background: transparent; border: 1px solid var(--line); color: var(--text-mute); border-radius: 8px; padding: 11px 14px; cursor: pointer; font: inherit; }
+.btn-build-final { flex: 1; background: var(--orange); color: #fff; border: none; border-radius: 8px; padding: 11px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+
+/* Phase 7 secondary CTA — outline variant of .btn-primary, used in
+   .leaf-detail .cta-row alongside the existing primary button. */
+.btn-secondary { flex: 1; padding: 11px 14px; border-radius: 8px; font: inherit; font-weight: 600; cursor: pointer; background: transparent; border: 1px solid var(--orange); color: var(--orange); }
 </style>
 </head>
 <body>
@@ -1235,6 +1271,11 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       <div class="title">Build new agent</div>
     </div>
     <div class="body">
+      <!-- Phase 7 mash-up build pill + cap warning. Both hidden until
+           state.build has entries; .build-pill becomes a Review affordance,
+           .cap-warn fires soft-warn at 4+ leaves. -->
+      <div id="build-pill" style="display:none"></div>
+      <div id="cap-warn" style="display:none" class="cap-warn"></div>
       <div class="search-wrap">
         <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
         <input id="wall-search" placeholder="Filter — e.g., 'sleep', 'tax', 'kid'…">
@@ -1609,7 +1650,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.91;
+var APP_VERSION = 1.92;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -2641,6 +2682,8 @@ function renderWall() {
   }
   html += '</div>';
   document.getElementById('wall-grid').innerHTML = html;
+  // Keep the build pill visible when navigating back to the wall (Phase 7).
+  renderBuildPill();
 }
 
 function onWallSearch() {
@@ -2696,25 +2739,64 @@ function enterL2(l2) {
 
 // Open the leaf-detail card below whichever list is currently shown
 // (L2 drill-in or search results). state.openLeafId is read by Phase 7's
-// toggleBuild to re-render the open card after a build mutation.
+// toggleBuild to re-render the open card after a build mutation so chip
+// checkmarks + CTAs reflect the current build state without the user
+// having to close and reopen the card.
+//
+// CTA matrix (Phase 7):
+//   inBuild                    → "✓ In your mash-up"  +  "Review →"
+//   build empty (this not in)  → "+ Add to mash-up"   +  "Build now"
+//   build non-empty (this not) → "+ Add to mash-up"   +  "Add & review"
 function showLeafDetail(leafId) {
   var l = (state.newAgentFlow.leaves || []).find(function(x) { return x.id === leafId; });
   if (!l) return;
   state.openLeafId = l.id;
+  var inBuild = state.build.indexOf(l.id) !== -1;
+
+  // Pairs-with chips. combinesWith holds leaf IDs from the catalog;
+  // resolve each one and skip any that didn't survive the catalog
+  // (defensive — the catalog could change between releases).
+  var pairs = (l.combinesWith || []).map(function(pid) {
+    return (state.newAgentFlow.leaves || []).find(function(x) { return x.id === pid; });
+  }).filter(Boolean);
+
+  var pairsHtml = pairs.length === 0 ? '' :
+    '<div class="pairs-with-label">Pairs well with — tap to add to your mash-up</div>' +
+    '<div class="pairs-chips">' +
+      pairs.map(function(p) {
+        var added = state.build.indexOf(p.id) !== -1;
+        return '<span class="pair-chip ' + (added ? 'added' : '') + '" data-pair-add="' + escapeHtml(p.id) + '">' +
+                 '<span class="plus">' + (added ? '✓' : '+') + '</span>' + escapeHtml(p.name) +
+               '</span>';
+      }).join('') +
+    '</div>';
+
+  var ctaHtml;
+  if (inBuild) {
+    ctaHtml = '<button class="btn-secondary" data-pair-add="' + escapeHtml(l.id) + '">✓ In your mash-up</button>' +
+              '<button class="btn-primary" data-action="review">Review →</button>';
+  } else if (state.build.length === 0) {
+    ctaHtml = '<button class="btn-secondary" data-pair-add="' + escapeHtml(l.id) + '">+ Add to mash-up</button>' +
+              '<button class="btn-primary" data-action="build-now" data-leaf-id-build="' + escapeHtml(l.id) + '">Build now</button>';
+  } else {
+    // "Add & review" needs a single delegate target; use a dedicated action
+    // so the click handler doesn't have to peek at state.build itself.
+    ctaHtml = '<button class="btn-secondary" data-pair-add="' + escapeHtml(l.id) + '">+ Add to mash-up</button>' +
+              '<button class="btn-primary" data-action="add-and-review" data-leaf-id-add="' + escapeHtml(l.id) + '">Add &amp; review</button>';
+  }
+
   // Same display-restoration concern as enterL2 — renderWall() hid the
   // container; populating innerHTML alone won't make it visible again.
   document.getElementById('wall-leaf-detail').style.display = '';
-  var html = '<div class="leaf-detail">' +
-    '<div class="leaf-detail-head">' + pathTag(l.path) + '<h3>' + escapeHtml(l.name) + '</h3></div>' +
-    (l.parameter ? '<div class="meta"><strong>Asks you about:</strong> ' + escapeHtml(l.parameter) + '</div>' : '') +
-    '<div class="pitch">' + escapeHtml(l.pitch || '') + '</div>' +
-    // Pairs-with chips added in Phase 7 (also via data-pair-add).
-    '<div class="cta-row">' +
-      '<button class="btn-primary" data-action="build-now" data-leaf-id-build="' + escapeHtml(l.id) + '">Build now</button>' +
-    '</div>' +
-    '<div style="text-align: center; margin-top: 10px;"><a href="#" data-action="hide-leaf" style="font-size: 12px; color: var(--text-dim);">cancel</a></div>' +
-  '</div>';
-  document.getElementById('wall-leaf-detail').innerHTML = html;
+  document.getElementById('wall-leaf-detail').innerHTML =
+    '<div class="leaf-detail">' +
+      '<div class="leaf-detail-head">' + pathTag(l.path) + '<h3>' + escapeHtml(l.name) + '</h3></div>' +
+      (l.parameter ? '<div class="meta"><strong>Asks you about:</strong> ' + escapeHtml(l.parameter) + '</div>' : '') +
+      '<div class="pitch">' + escapeHtml(l.pitch || '') + '</div>' +
+      pairsHtml +
+      '<div class="cta-row">' + ctaHtml + '</div>' +
+      '<div style="text-align: center; margin-top: 10px;"><a href="#" data-action="hide-leaf" style="font-size: 12px; color: var(--text-dim);">cancel</a></div>' +
+    '</div>';
   document.getElementById('wall-leaf-detail').scrollIntoView({behavior: 'smooth', block: 'start'});
 }
 
@@ -2729,6 +2811,128 @@ function hideLeafDetail() {
 function buildSingleLeaf(leafId) {
   webxdc.sendUpdate({ payload: { type: 'build-agent', leafIds: [leafId], senderAddr: webxdc.selfAddr } }, '');
 }
+
+// ----- Phase 7 mash-up state machine -----------------------------------
+// state.build is the source of truth for which leaves the user has
+// queued. Three render targets observe it:
+//   - #build-pill       (top of #wall-screen .body, via renderBuildPill)
+//   - #cap-warn         (sibling of pill, soft-warn at 4+)
+//   - #wall-leaf-detail (open card, via showLeafDetail re-render)
+//   - #wall-l2          (review screen, via showReviewScreen)
+// Mutations always flow through toggleBuild so all observers stay in sync.
+
+function renderBuildPill() {
+  var pill = document.getElementById('build-pill');
+  var capWarn = document.getElementById('cap-warn');
+  if (!pill || !capWarn) return;
+  if (state.build.length === 0) {
+    pill.style.display = 'none';
+    capWarn.style.display = 'none';
+    return;
+  }
+  var leaves = state.build.map(function(id) {
+    return (state.newAgentFlow.leaves || []).find(function(l) { return l.id === id; });
+  }).filter(Boolean);
+  var n = leaves.length;
+  var label = n === 1 ? 'Building 1 specialist' : 'Mashing up ' + n + ' specialists';
+  var sub = leaves.slice(0, 3).map(function(l) { return l.name; }).join(' + ') +
+            (n > 3 ? ' + ' + (n - 3) + ' more' : '');
+  pill.className = 'build-pill';
+  pill.innerHTML =
+    '<div class="glyph">' + n + '</div>' +
+    '<div style="flex:1; min-width:0">' +
+      '<div class="build-pill-title">' + escapeHtml(label) + '</div>' +
+      '<div class="build-pill-sub">' + escapeHtml(sub) + '</div>' +
+    '</div>' +
+    '<div class="build-pill-cta">Review →</div>';
+  pill.onclick = function() { showReviewScreen(); };
+  pill.style.display = 'flex';
+
+  // Cap warning at 4+ leaves — informational, NOT enforced.
+  if (state.build.length >= 4) {
+    capWarn.textContent = "Adding more may dilute the agent's focus. Three is usually the sweet spot.";
+    capWarn.style.display = 'block';
+  } else {
+    capWarn.style.display = 'none';
+  }
+}
+
+// Toggle a leaf in/out of the build queue. Always re-renders the pill and
+// the open detail card (if any) so chip checkmarks + CTAs flip immediately
+// — Alice review fix for the state/UI drift bug where the pill updated
+// but the open card kept showing stale "+ Add" buttons.
+function toggleBuild(leafId) {
+  var idx = state.build.indexOf(leafId);
+  if (idx === -1) state.build.push(leafId);
+  else state.build.splice(idx, 1);
+  renderBuildPill();
+  if (state.openLeafId) {
+    showLeafDetail(state.openLeafId);
+  }
+}
+
+// Called from the delegate after a review-screen × removes a leaf. If the
+// build emptied, bounce back to the wall (the review screen no longer
+// has anything to show); otherwise re-render the review screen in place.
+function rerenderReviewIfOpen() {
+  if (state.build.length === 0) { renderWall(); return; }
+  showReviewScreen();
+}
+
+// Render the review screen into #wall-l2 (replacing any L2 drill-in).
+// This is the same container the L2 drill-in uses — they're mutually
+// exclusive views. The merged-pitch composer below previews how the
+// resulting agent will introduce itself.
+function showReviewScreen() {
+  if (state.build.length === 0) return;
+  document.getElementById('wall-l2').style.display = '';
+  hideAll(['wall-grid', 'wall-helper', 'wall-results', 'wall-leaf-detail']);
+  var leaves = state.build.map(function(id) {
+    return (state.newAgentFlow.leaves || []).find(function(l) { return l.id === id; });
+  }).filter(Boolean);
+  var n = leaves.length;
+  var h2 = n === 1 ? 'Your new agent' : 'Your mash-up agent';
+  var sub = n === 1
+    ? 'A single specialist. The coach will help you tune its voice and tools next.'
+    : 'These ' + n + ' specialties combine into <strong>one</strong> agent with a unified system prompt. The coach helps you weight them and tune voice next.';
+
+  var html = '<div class="review-screen">' +
+    '<h2>' + escapeHtml(h2) + '</h2><div class="sub">' + sub + '</div>' +
+    '<div class="review-list">' + leaves.map(function(l) {
+      return '<div class="review-item">' + pathTag(l.path) +
+              '<div class="name">' + escapeHtml(l.name) + '</div>' +
+              '<div class="where">' + escapeHtml(l.l2) + '</div>' +
+              '<div class="x" data-action="remove-from-build" data-leaf-rm="' + escapeHtml(l.id) + '">×</div>' +
+            '</div>';
+    }).join('') + '</div>' +
+    '<div class="merged-pitch"><strong>How it will introduce itself</strong>' +
+      escapeHtml(composeMergedPitch(leaves)) + '</div>' +
+    '<div class="review-cta-row">' +
+      '<button class="btn-back-to-wall" data-action="back-to-wall">+ Add another</button>' +
+      '<button class="btn-build-final" data-action="build-mashup">Build &amp; start chatting →</button>' +
+    '</div></div>';
+  document.getElementById('wall-l2').innerHTML = html;
+}
+
+// Compose a single-line preview of how the mash-up agent will introduce
+// itself. For a single leaf we just echo the pitch; for multiple we
+// stitch the first sentence of each pitch with "; also " connectors.
+function composeMergedPitch(leaves) {
+  if (leaves.length === 1) return leaves[0].pitch;
+  var firstSentences = leaves.map(function(l) {
+    var s = (l.pitch || '').split('. ')[0];
+    return s.charAt(0).toLowerCase() + s.slice(1);
+  });
+  return '"I am a single agent who ' + firstSentences.join('; also ') + '. Tell me which side of me you need today."';
+}
+
+// Final commit. Same payload shape as buildSingleLeaf but with the full
+// queue. Phase 8 wires the dispatcher's coach handoff. senderAddr is
+// MANDATORY per project owner-verification convention (CLAUDE.md).
+function buildMashup() {
+  webxdc.sendUpdate({ payload: { type: 'build-agent', leafIds: state.build.slice(), senderAddr: webxdc.selfAddr } }, '');
+}
+// ----- End Phase 7 mash-up state machine -------------------------------
 
 // Delegated listeners — install once at startup. Handles wall tiles +
 // search input. All wall navigation triggers via data-* attributes set
@@ -2748,9 +2952,20 @@ function installWallDelegates() {
     var t = e.target;
     while (t && t !== wallScreen) {
       if (t.dataset) {
+        // Phase 6.3 actions
         if (t.dataset.action === 'back-to-wall') { renderWall(); return; }
         if (t.dataset.action === 'hide-leaf') { e.preventDefault(); hideLeafDetail(); return; }
         if (t.dataset.action === 'build-now') { buildSingleLeaf(t.dataset.leafIdBuild); return; }
+        // Phase 7 mash-up actions. Order: explicit data-action first, then
+        // data-pair-add (fires for both chips and the leaf-card "+ Add"
+        // secondary button), then the wall navigation fallbacks below.
+        if (t.dataset.action === 'review') { showReviewScreen(); return; }
+        if (t.dataset.action === 'add-and-review') { toggleBuild(t.dataset.leafIdAdd); showReviewScreen(); return; }
+        if (t.dataset.action === 'build-mashup') { buildMashup(); return; }
+        if (t.dataset.action === 'remove-from-build') { toggleBuild(t.dataset.leafRm); rerenderReviewIfOpen(); return; }
+        if (t.dataset.pairAdd) { toggleBuild(t.dataset.pairAdd); return; }
+        // Tile + leaf-row drilling stays last so a button carrying both
+        // an action and a data-leaf-id can't fall through.
         if (t.dataset.l2) { enterL2(t.dataset.l2); return; }
         if (t.dataset.leafId) { showLeafDetail(t.dataset.leafId); return; }
       }
@@ -3742,6 +3957,13 @@ window.webxdc.setUpdateListener(function(update) {
     existingAgents = d.existingAgents || [];
     templateList = d.templates || [];
     state.newAgentFlow = d.newAgentFlow || { enabled: false };
+    // Phase 7 mash-up state. state.build holds leaf IDs the user has
+    // tapped to combine. state.openLeafId tracks the currently-displayed
+    // leaf detail card (set in showLeafDetail) so toggleBuild can re-render
+    // it after a chip flip without losing the open card. Reset on every
+    // re-init since setUpdateListener replays from serial 0.
+    state.build = [];
+    state.openLeafId = null;
     creating = false;
     editingAgentId = null;
     dismissModal();
