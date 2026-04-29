@@ -95,4 +95,36 @@ describe('System-prompt assembler', () => {
     })
     expect(prompt).not.toContain('Specific preferences')
   })
+
+  test('caps each preference at 500 chars and escapes quotes after truncation', () => {
+    // 600-char preference with a " near the truncation boundary
+    const longPref = 'A'.repeat(498) + '"' + 'B'.repeat(100)
+    const prompt = assembleSystemPrompt({
+      leafIds: ['tutor'],
+      preset: 'mentor',
+      sliders: {},
+      preferences: [longPref],
+      tools: [],
+      parameters: {},
+      identityPreamble: 'You are a tutor.',
+    })
+    // Truncate-then-escape: first 500 chars are kept, the embedded "
+    // (now at position 498) is escaped to \" — producing 501 chars in
+    // the inner string. Critically, the framed wrap closes with a clean ".
+    expect(prompt).toContain('A'.repeat(498) + '\\"' + 'B' /* first B kept; rest dropped */)
+    // Make sure the trailing 100 'B's were truncated:
+    expect(prompt).not.toContain('B'.repeat(50))
+  })
+
+  test('throws with descriptive message when any leaf id is unknown', () => {
+    expect(() => assembleSystemPrompt({
+      leafIds: ['tutor', 'no-such-leaf'],
+      preset: 'mentor',
+      sliders: {},
+      preferences: [],
+      tools: [],
+      parameters: {},
+      identityPreamble: 'You are a tutor.',
+    })).toThrow(/unknown leaf ids.*no-such-leaf/)
+  })
 })
