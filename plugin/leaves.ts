@@ -9,6 +9,15 @@
  *     closure of `combinesWith` (one-way authoring, two-way runtime).
  *   - 1.3 export-from-CSV: bulk-converts the authored CSV catalog into
  *     individual leaf YAML files.
+ *
+ * Task 8.A (catalog refactor): the loader now exposes an explicit
+ * `Catalog` handle (built via `loadCatalog(dir)`) so callers that want
+ * isolation — primarily tests running in parallel and the upcoming
+ * Task 11.4 e2e harness — can construct their own catalog without
+ * mutating module-global state. A lazy default singleton
+ * (`getDefaultCatalog`) preserves the old module-level functions
+ * (`loadAllLeaves`, `findLeaf`, etc.) for production callers that
+ * should not have to thread a catalog through.
  */
 
 import { z } from 'zod'
@@ -63,37 +72,63 @@ export const LeafSchema = z.object({
 
 export type Leaf = z.infer<typeof LeafSchema>
 
-let LEAVES_DIR = join(import.meta.dir, 'leaves')
-let CACHE: { leaves: Leaf[]; sym: Map<string, Set<string>> } | null = null
+const DEFAULT_LEAVES_DIR = join(import.meta.dir, 'leaves')
 
-export function setLeavesDir(dir: string): void {
-  LEAVES_DIR = dir
-  CACHE = null
+/**
+ * An immutable view over a directory of leaf YAML files. All accessor
+ * methods return fresh copies / fresh queries — the underlying data is
+ * computed once at load time and never mutated.
+ */
+export interface Catalog {
+  /** All leaves in the catalog (fresh copy on every call). */
+  all(): Leaf[]
+  /** Lookup by id. Returns null if unknown. */
+  findLeaf(id: string): Leaf | null
+  /**
+   * Group all leaves by path. Always returns all 3 keys
+   * (Expert/Service/Goal), with empty arrays where applicable.
+   */
+  leavesByPath(): Record<Path, Leaf[]>
+  /**
+   * Group all leaves by L2 specialty. The returned Map only contains
+   * keys for L2 strings actually observed in the catalog.
+   */
+  leavesByL2(): Map<string, Leaf[]>
+  /** Bidirectional combines_with closure. */
+  symmetricCombines(): Map<string, Set<string>>
 }
 
-export function loadAllLeaves(): Leaf[] {
-  if (CACHE) return CACHE.leaves
-  if (!existsSync(LEAVES_DIR)) {
-    CACHE = { leaves: [], sym: new Map() }
-    return CACHE.leaves
-  }
-  const files = readdirSync(LEAVES_DIR).filter(f => f.endsWith('.yaml'))
+/**
+ * Build a fresh `Catalog` from a directory of YAML leaves.
+ *
+ * Always re-reads from disk on every call — there is no caching shared
+ * between `Catalog` instances. (If you want caching for production
+ * callers, use `getDefaultCatalog`.) Returns an empty catalog without
+ * throwing when `dir` does not exist, matching the behavior of the
+ * previous module-level loader.
+ */
+export function loadCatalog(dir: string = DEFAULT_LEAVES_DIR): Catalog {
   const leaves: Leaf[] = []
   const seen = new Map<string, string>() // id -> filename, for duplicate-error context
-  for (const f of files) {
-    const raw = YAML.parse(readFileSync(join(LEAVES_DIR, f), 'utf-8'))
-    let parsed: Leaf
-    try {
-      parsed = LeafSchema.parse(raw)
-    } catch (e) {
-      throw new Error(`leaves/${f}: ${e instanceof Error ? e.message : String(e)}`)
+
+  if (existsSync(dir)) {
+    const files = readdirSync(dir).filter(f => f.endsWith('.yaml'))
+    for (const f of files) {
+      const raw = YAML.parse(readFileSync(join(dir, f), 'utf-8'))
+      let parsed: Leaf
+      try {
+        parsed = LeafSchema.parse(raw)
+      } catch (e) {
+        throw new Error(`leaves/${f}: ${e instanceof Error ? e.message : String(e)}`)
+      }
+      if (seen.has(parsed.id)) {
+        throw new Error(`duplicate leaf id: ${parsed.id} (in ${seen.get(parsed.id)} and ${f})`)
+      }
+      seen.set(parsed.id, f)
+      leaves.push(parsed)
     }
-    if (seen.has(parsed.id)) {
-      throw new Error(`duplicate leaf id: ${parsed.id} (in ${seen.get(parsed.id)} and ${f})`)
-    }
-    seen.set(parsed.id, f)
-    leaves.push(parsed)
   }
+
   // Validate combinesWith references resolve to known leaves.
   const knownIds = new Set(leaves.map(l => l.id))
   for (const l of leaves) {
@@ -103,43 +138,83 @@ export function loadAllLeaves(): Leaf[] {
       }
     }
   }
-  const sym = computeSymmetricClosure(leaves)
-  CACHE = { leaves, sym }
-  return leaves
-}
 
-function computeSymmetricClosure(leaves: Leaf[]): Map<string, Set<string>> {
-  const out = new Map<string, Set<string>>()
-  for (const l of leaves) out.set(l.id, new Set())
+  // Compute symmetric closure once at load time.
+  const sym = new Map<string, Set<string>>()
+  for (const l of leaves) sym.set(l.id, new Set())
   for (const l of leaves) {
     for (const partner of l.combinesWith) {
-      out.get(l.id)?.add(partner)
-      out.get(partner)?.add(l.id)
+      sym.get(l.id)?.add(partner)
+      sym.get(partner)?.add(l.id)
     }
   }
-  return out
+
+  // Index by id for O(1) findLeaf.
+  const byId = new Map<string, Leaf>()
+  for (const l of leaves) byId.set(l.id, l)
+
+  return {
+    all() { return leaves.slice() },
+    findLeaf(id: string) { return byId.get(id) ?? null },
+    leavesByPath() {
+      const out: Record<Path, Leaf[]> = { Expert: [], Service: [], Goal: [] }
+      for (const l of leaves) out[l.path].push(l)
+      return out
+    },
+    leavesByL2() {
+      const out = new Map<string, Leaf[]>()
+      for (const l of leaves) {
+        if (!out.has(l.l2)) out.set(l.l2, [])
+        out.get(l.l2)!.push(l)
+      }
+      return out
+    },
+    symmetricCombines() { return sym },
+  }
 }
 
-export function symmetricCombines(): Map<string, Set<string>> {
-  loadAllLeaves()
-  return CACHE!.sym
+// --- Default singleton (production convenience) -------------------
+
+let defaultDir = DEFAULT_LEAVES_DIR
+let defaultCatalog: Catalog | null = null
+
+/**
+ * Production-side accessor. Lazy-initialized on first access; reuses
+ * the same instance until `setLeavesDir` resets it.
+ */
+export function getDefaultCatalog(): Catalog {
+  if (!defaultCatalog) defaultCatalog = loadCatalog(defaultDir)
+  return defaultCatalog
+}
+
+/**
+ * Reset the default singleton. Tests that point at a temp leaves dir
+ * use this — the next `getDefaultCatalog` call (or any module-level
+ * delegating function) reloads from `dir`.
+ */
+export function setLeavesDir(dir: string): void {
+  defaultDir = dir
+  defaultCatalog = null
+}
+
+// --- Module-level convenience functions (delegate to default) -----
+
+export function loadAllLeaves(): Leaf[] {
+  return getDefaultCatalog().all()
 }
 
 export function findLeaf(id: string): Leaf | null {
-  return loadAllLeaves().find(l => l.id === id) ?? null
+  return getDefaultCatalog().findLeaf(id)
 }
 
 export function leavesByPath(): Record<Path, Leaf[]> {
-  const out: Record<Path, Leaf[]> = { Expert: [], Service: [], Goal: [] }
-  for (const l of loadAllLeaves()) out[l.path].push(l)
-  return out
+  return getDefaultCatalog().leavesByPath()
 }
 
 export function leavesByL2(): Map<string, Leaf[]> {
-  const out = new Map<string, Leaf[]>()
-  for (const l of loadAllLeaves()) {
-    if (!out.has(l.l2)) out.set(l.l2, [])
-    out.get(l.l2)!.push(l)
-  }
-  return out
+  return getDefaultCatalog().leavesByL2()
+}
+
+export function symmetricCombines(): Map<string, Set<string>> {
+  return getDefaultCatalog().symmetricCombines()
 }

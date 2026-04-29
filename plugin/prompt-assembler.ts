@@ -1,4 +1,4 @@
-import { findLeaf } from './leaves.js'
+import { type Catalog, getDefaultCatalog } from './leaves.js'
 import {
   renderVoice,
   type PresetId,
@@ -17,10 +17,13 @@ export interface AssembleInputs {
   preferences: string[]
   tools: string[]
   identityPreamble: string
+  /** Optional catalog handle. Defaults to the production singleton. */
+  catalog?: Catalog
 }
 
 export function assembleSystemPrompt(input: AssembleInputs): string {
-  const resolved = input.leafIds.map(id => ({ id, leaf: findLeaf(id) }))
+  const catalog = input.catalog ?? getDefaultCatalog()
+  const resolved = input.leafIds.map(id => ({ id, leaf: catalog.findLeaf(id) }))
   const missing = resolved.filter(r => !r.leaf).map(r => r.id)
   if (missing.length) {
     throw new Error(`assembleSystemPrompt: unknown leaf ids: ${missing.join(', ')}`)

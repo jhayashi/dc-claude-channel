@@ -1,4 +1,4 @@
-import { findLeaf } from './leaves.js'
+import { type Catalog, getDefaultCatalog } from './leaves.js'
 import type { PresetId, SliderState } from './personality-presets.js'
 
 interface QuestionStep {
@@ -11,6 +11,8 @@ export interface CoachInputs {
   leafIds: string[]
   preset: PresetId
   sliders: SliderState
+  /** Optional catalog handle. Defaults to the production singleton. */
+  catalog?: Catalog
 }
 
 export interface CoachAnswers {
@@ -69,8 +71,8 @@ function matchesLeafName(answer: string, leafName: string): boolean {
   return tokens.some(t => ans.includes(t))
 }
 
-function buildSteps(inputs: CoachInputs): QuestionStep[] {
-  const leaves = inputs.leafIds.map(findLeaf).filter((l): l is NonNullable<ReturnType<typeof findLeaf>> => l !== null)
+function buildSteps(inputs: CoachInputs, catalog: Catalog): QuestionStep[] {
+  const leaves = inputs.leafIds.map(id => catalog.findLeaf(id)).filter((l): l is NonNullable<ReturnType<Catalog['findLeaf']>> => l !== null)
   const steps: QuestionStep[] = []
 
   // Q1a — parameter steps (one per parameterized leaf — works for both
@@ -153,18 +155,19 @@ function parameterPrompt(parameter: string, leafName: string): string {
 }
 
 export function startCoach(inputs: CoachInputs): CoachState {
+  const catalog = inputs.catalog ?? getDefaultCatalog()
   // Defense-in-depth: dispatcher should validate first, but if a leaf
   // disappears between validation and coach-start, fail loud rather than
   // produce a malformed mash-up question.
-  const validLeafIds = inputs.leafIds.filter(id => findLeaf(id) !== null)
+  const validLeafIds = inputs.leafIds.filter(id => catalog.findLeaf(id) !== null)
   if (validLeafIds.length === 0) {
     throw new Error(`startCoach: no valid leaf ids in ${inputs.leafIds.join(', ') || '(empty)'}`)
   }
   if (validLeafIds.length !== inputs.leafIds.length) {
-    const missing = inputs.leafIds.filter(id => findLeaf(id) === null)
+    const missing = inputs.leafIds.filter(id => catalog.findLeaf(id) === null)
     throw new Error(`startCoach: unknown leaf ids: ${missing.join(', ')}`)
   }
-  const remaining = buildSteps(inputs)
+  const remaining = buildSteps(inputs, catalog)
   const warnings: string[] = []
   if (inputs.leafIds.length >= 4) {
     warnings.push('Adding more may dilute the agent\'s focus. Three is usually the sweet spot.')

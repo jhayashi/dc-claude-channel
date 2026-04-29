@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   loadAllLeaves,
+  loadCatalog,
   setLeavesDir,
   findLeaf,
   leavesByPath,
@@ -138,5 +139,36 @@ describe('Leaves loader', () => {
     const sym = symmetricCombines()
     expect(sym).toBeInstanceOf(Map)
     expect(sym.size).toBe(0)
+  })
+})
+
+describe('Catalog isolation', () => {
+  test('two Catalog instances at different dirs do not share state', () => {
+    // Two independent dirs, each with a leaf using the same id but
+    // different content. If the catalogs leaked into each other, we'd
+    // see one set of values in both — confirm we don't.
+    const dir1 = mkdtempSync(join(tmpdir(), 'cat1-'))
+    const dir2 = mkdtempSync(join(tmpdir(), 'cat2-'))
+    writeFileSync(join(dir1, 'a.yaml'), `id: a\npath: Expert\nl2: X\nname: A1\npitch: pitch\nexpertise: expertise\n`)
+    writeFileSync(join(dir2, 'a.yaml'), `id: a\npath: Expert\nl2: Y\nname: A2\npitch: pitch\nexpertise: expertise\n`)
+
+    const cat1 = loadCatalog(dir1)
+    const cat2 = loadCatalog(dir2)
+
+    expect(cat1.findLeaf('a')!.name).toBe('A1')
+    expect(cat2.findLeaf('a')!.name).toBe('A2')
+    expect(cat1.findLeaf('a')!.l2).toBe('X')
+    expect(cat2.findLeaf('a')!.l2).toBe('Y')
+
+    rmSync(dir1, { recursive: true, force: true })
+    rmSync(dir2, { recursive: true, force: true })
+  })
+
+  test('loadCatalog with non-existent dir returns empty catalog (no throw)', () => {
+    const cat = loadCatalog('/no/such/path/xyz123')
+    expect(cat.all()).toEqual([])
+    expect(cat.findLeaf('anything')).toBeNull()
+    expect(cat.leavesByPath()).toEqual({ Expert: [], Service: [], Goal: [] })
+    expect(cat.symmetricCombines().size).toBe(0)
   })
 })
