@@ -53,8 +53,11 @@ describe('Coach state machine', () => {
   })
 
   test('Service coach asks schedule + sources', () => {
-    const s = startCoach({ leafIds: ['daily-news-feed-briefing'], preset: 'mentor', sliders: {} })
-    expect(s.nextQuestion?.toLowerCase()).toMatch(/topic|time|schedule/)
+    // inbox-notification-triage is a Service leaf without a parameter, so
+    // the Service-branch question fires (not the parameter prompt).
+    const s = startCoach({ leafIds: ['inbox-notification-triage'], preset: 'mentor', sliders: {} })
+    // Service-branch text from buildSteps: "What topics, sources, or schedule do you want for the …?"
+    expect(s.nextQuestion?.toLowerCase()).toMatch(/sources|schedule/)
   })
 
   test('reflectiveAck classifies user input structurally', () => {
@@ -121,6 +124,32 @@ describe('Coach state machine', () => {
     // The strip-prefix behavior still works for compound input:
     expect(reflect('yes, watch my Gmail').text.toLowerCase()).toContain('gmail')
     expect(reflect('yes, watch my Gmail').text.toLowerCase()).not.toContain('yes,')
+  })
+
+  test('lead-pick captures hyphenated leaf names from natural user input', () => {
+    let s: CoachState = startCoach({
+      leafIds: ['sleep-coach', 'stress-management-coach', 'mindfulness-meditation-guide'],
+      preset: 'mentor', sliders: {},
+    })
+    // Skip Q1 (lead) by answering it
+    s = advanceCoach(s, 'stress is killing me')
+    expect(s.answers.leadLeafId).toBe('stress-management-coach')
+
+    s = startCoach({
+      leafIds: ['sleep-coach', 'mindfulness-meditation-guide'],
+      preset: 'mentor', sliders: {},
+    })
+    s = advanceCoach(s, 'mindfulness please')
+    expect(s.answers.leadLeafId).toBe('mindfulness-meditation-guide')
+  })
+
+  test('mash-up with parameterized leaves asks for each parameter', () => {
+    const s = startCoach({
+      leafIds: ['tutor', 'test-prep-coach'],
+      preset: 'mentor', sliders: {},
+    })
+    // First question should be about subject (tutor's parameter)
+    expect(s.nextQuestion?.toLowerCase()).toMatch(/subject|tutor/)
   })
 
   test('startCoach throws when all leaf ids are unknown', () => {

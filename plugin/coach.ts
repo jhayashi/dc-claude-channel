@@ -20,11 +20,6 @@ export interface CoachAnswers {
   leadLeafId?: string
 }
 
-export interface RefineInputs {
-  agentId: string
-  existingPrompt: string
-}
-
 export interface Reflection {
   kind: 'echo' | 'short' | 'skip'
   text: string
@@ -37,8 +32,6 @@ export interface CoachState {
   nextQuestion: string | null
   lastReflection: Reflection | null
   warnings: string[]
-  /** Set when the state was created via startRefineCoach (Phase 11). */
-  refineContext?: RefineInputs
 }
 
 const SKIP_PATTERN = /^(let'?s go|just go|skip|use defaults)\b/i
@@ -68,41 +61,57 @@ export function detectTools(text: string): string[] {
   return TOOL_HINTS.filter(([re]) => re.test(text)).map(([, tool]) => tool)
 }
 
+function matchesLeafName(answer: string, leafName: string): boolean {
+  // Token-based match — tolerate hyphens, slashes, and spaces, and skip
+  // very short tokens that would false-positive on common words.
+  const ans = answer.toLowerCase()
+  const tokens = leafName.toLowerCase().split(/[\s\-/]+/).filter(t => t.length >= 4)
+  return tokens.some(t => ans.includes(t))
+}
+
 function buildSteps(inputs: CoachInputs): QuestionStep[] {
   const leaves = inputs.leafIds.map(findLeaf).filter((l): l is NonNullable<ReturnType<typeof findLeaf>> => l !== null)
   const steps: QuestionStep[] = []
 
-  // Q1 — parameter (single leaf with parameter) OR lead pick (mash-up) OR schedule (service)
-  if (leaves.length === 1) {
-    const l = leaves[0]
-    if (l.parameter) {
-      steps.push({
-        id: 'parameter',
-        question: () => `Got it — a ${l.name.toLowerCase()}. ${parameterPrompt(l.parameter!, l.name)}`,
-        capture: (a, ans) => ({
-          ...a,
-          parameters: { ...a.parameters, [l.id]: ans },
-        }),
-      })
-    } else if (l.path === 'Service') {
-      steps.push({
-        id: 'service',
-        question: () => `What topics, sources, or schedule do you want for the ${l.name.toLowerCase()}?`,
-        capture: (a, ans) => ({ ...a, preferences: [...a.preferences, ans] }),
-      })
-    }
-  } else {
+  // Q1a — parameter steps (one per parameterized leaf — works for both
+  // single-leaf and mash-up). When two parameterized leaves are stacked
+  // we append "(For your <leaf name>)" so the user knows which leaf the
+  // question is about.
+  const parameterized = leaves.filter(l => l.parameter)
+  for (const l of parameterized) {
+    const suffix = leaves.length > 1 ? ` (For your ${l.name.toLowerCase()}.)` : ''
+    const intro = leaves.length === 1 ? `Got it — a ${l.name.toLowerCase()}. ` : ''
+    steps.push({
+      id: `parameter-${l.id}`,
+      question: () => `${intro}${parameterPrompt(l.parameter!, l.name)}${suffix}`,
+      capture: (a, ans) => ({
+        ...a,
+        parameters: { ...a.parameters, [l.id]: ans },
+      }),
+    })
+  }
+
+  // Q1b — lead-pick (only for mash-ups)
+  if (leaves.length > 1) {
     steps.push({
       id: 'lead',
       question: () => `Which of these specialties is the bigger pain right now: ${leaves.map(l => l.name).join(', ')}?`,
       capture: (a, ans) => {
-        const matched = leaves.find(l => ans.toLowerCase().includes(l.name.split(/\s/)[0].toLowerCase()))
+        const matched = leaves.find(l => matchesLeafName(ans, l.name))
         return {
           ...a,
           leadLeafId: matched?.id ?? a.leadLeafId,
           preferences: [...a.preferences, `User said the lead concern is: ${ans}`],
         }
       },
+    })
+  } else if (leaves[0].path === 'Service' && !leaves[0].parameter) {
+    // Q1c — service-only (single Service leaf without parameter)
+    const l = leaves[0]
+    steps.push({
+      id: 'service',
+      question: () => `What topics, sources, or schedule do you want for the ${l.name.toLowerCase()}?`,
+      capture: (a, ans) => ({ ...a, preferences: [...a.preferences, ans] }),
     })
   }
 
