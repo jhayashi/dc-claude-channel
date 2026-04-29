@@ -24,7 +24,12 @@ import YAML from 'yaml'
 import { z } from 'zod'
 import * as bindings from './bindings.js'
 import * as models from './models.js'
-import { ARCHETYPE_PALETTES, ARCHETYPE_DEFAULT_GLYPH } from './agent-icons/palettes.js'
+import {
+  ARCHETYPE_PALETTES,
+  ARCHETYPE_DEFAULT_GLYPH,
+  PATTERN_IDS,
+  type PatternId,
+} from './agent-icons/palettes.js'
 
 let AGENTS_DIR = join(homedir(), '.claude', 'channels', 'deltachat', 'agents')
 
@@ -349,6 +354,24 @@ export function glyphForAgent(def: AgentDef): string {
     if (palette.includes(explicit)) return explicit
   }
   return ARCHETYPE_DEFAULT_GLYPH[archetype]
+}
+
+/** Metadata key for an agent's background pattern (one of PATTERN_IDS). */
+export const PATTERN_META_KEY = 'x-dc-pattern'
+
+/**
+ * Read the resolved background pattern for an agent. Falls back to
+ * 'checker' if the metadata is unset, an unknown pattern id, or the
+ * wrong type. Pattern only affects the trust-on (skip-permissions)
+ * badge variant; trust-off badges always render as a single solid
+ * color regardless.
+ */
+export function patternForAgent(def: AgentDef): PatternId {
+  const v = def.metadata?.[PATTERN_META_KEY]
+  if (typeof v === 'string' && (PATTERN_IDS as readonly string[]).includes(v)) {
+    return v as PatternId
+  }
+  return 'checker'
 }
 
 /** Metadata key used to store the skipPermissions flag inside an agent's metadata bag. */

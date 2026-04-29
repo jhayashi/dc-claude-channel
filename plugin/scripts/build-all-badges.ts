@@ -39,7 +39,11 @@ for (const archetype of archetypes) {
   const glyph = ARCHETYPE_DEFAULT_GLYPH[archetype]
   for (const modelFamily of models) {
     for (const trust of trusts) {
-      const inputs: BadgeInputs = { archetype, modelFamily, trust, glyph }
+      // Prebuild only the legacy 'checker' variant. Other patterns are
+      // user-pickable and small enough to render on demand at runtime
+      // (the cache eliminates the repeat cost). Adding all 8 here would
+      // 8x the prebuilt PNG count for a feature most users never tweak.
+      const inputs: BadgeInputs = { archetype, modelFamily, trust, glyph, pattern: 'checker' }
       const path = await renderAgentBadge(inputs)
       console.log(`built ${path}`)
       count++

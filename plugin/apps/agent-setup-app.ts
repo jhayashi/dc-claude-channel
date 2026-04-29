@@ -254,9 +254,10 @@ async function listExistingForPicker(sourceChatId: number): Promise<Array<{ id: 
     const tier = models.tierForModel(a.model)
     const trust = agents.getSkipPermissions(a)
     const glyph = agents.glyphForAgent(a)
+    const pattern = agents.patternForAgent(a)
     let iconDataUri = ''
     try {
-      const pngPath = await renderAgentBadge({ archetype, modelFamily: tier, trust, glyph })
+      const pngPath = await renderAgentBadge({ archetype, modelFamily: tier, trust, glyph, pattern })
       iconDataUri = `data:image/png;base64,${readFileSync(pngPath).toString('base64')}`
     } catch {
       /* fall back to empty — client renders a placeholder */
@@ -420,11 +421,12 @@ export async function setAgentIcon(
   const modelFamily = models.tierForModel(agent.model)
   const trust = agents.getSkipPermissions(agent)
   const glyph = agents.glyphForAgent(agent)
-  const iconPath = await renderAgentBadge({ archetype, modelFamily, trust, glyph })
+  const pattern = agents.patternForAgent(agent)
+  const iconPath = await renderAgentBadge({ archetype, modelFamily, trust, glyph, pattern })
   await ctx.client.setChatProfileImage(chatId, iconPath)
   ctx.logf(
-    'agent-setup: set agent badge %s/%s/%s/%s for chat %d',
-    archetype, modelFamily, trust ? 'trust' : 'plain', glyph, chatId,
+    'agent-setup: set agent badge %s/%s/%s/%s/%s for chat %d',
+    archetype, modelFamily, trust ? 'trust' : 'plain', glyph, pattern, chatId,
   )
 }
 

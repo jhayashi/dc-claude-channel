@@ -23,6 +23,7 @@ const baseInputs: BadgeInputs = {
   modelFamily: 'sonnet',
   trust: false,
   glyph: 'user-round',
+  pattern: 'checker',
 }
 
 describe('renderAgentBadge', () => {
@@ -65,7 +66,7 @@ describe('renderAgentBadge', () => {
       for (const f of families) {
         for (const t of [false, true]) {
           const path = await renderAgentBadge({
-            archetype: a, modelFamily: f, trust: t, glyph: defaults[a],
+            archetype: a, modelFamily: f, trust: t, glyph: defaults[a], pattern: 'checker',
           })
           expect(existsSync(path)).toBe(true)
         }
@@ -89,13 +90,13 @@ describe('renderAgentBadge', () => {
     const prebuiltDir = new URL('../agent-badges-prebuilt/', import.meta.url).pathname
     const { mkdirSync } = await import('node:fs')
     mkdirSync(prebuiltDir, { recursive: true })
-    const stubKey = 'role-sonnet-plain-test-stub-glyph.png'
+    const stubKey = 'role-sonnet-plain-test-stub-glyph-checker.png'
     const stubPath = join(prebuiltDir, stubKey)
     const stubBytes = Buffer.from('STUBBED-BADGE-CONTENT')
     writeFileSync(stubPath, stubBytes)
     try {
       const out = await renderAgentBadge({
-        archetype: 'role', modelFamily: 'sonnet', trust: false, glyph: 'test-stub-glyph',
+        archetype: 'role', modelFamily: 'sonnet', trust: false, glyph: 'test-stub-glyph', pattern: 'checker',
       })
       expect(readFileSync(out).equals(stubBytes)).toBe(true)
     } finally {
@@ -107,14 +108,14 @@ describe('renderAgentBadge', () => {
     const prebuiltDir = new URL('../agent-badges-prebuilt/', import.meta.url).pathname
     const { mkdirSync } = await import('node:fs')
     mkdirSync(prebuiltDir, { recursive: true })
-    const stubKey = 'role-sonnet-plain-test-stub-glyph-2.png'
+    const stubKey = 'role-sonnet-plain-test-stub-glyph-2-checker.png'
     const stubPath = join(prebuiltDir, stubKey)
     writeFileSync(stubPath, Buffer.from('STUBBED-BADGE-CONTENT-2'))
     const prior = process.env.DC_SKIP_PREBUILT
     process.env.DC_SKIP_PREBUILT = '1'
     try {
       const out = await renderAgentBadge({
-        archetype: 'role', modelFamily: 'sonnet', trust: false, glyph: 'test-stub-glyph-2',
+        archetype: 'role', modelFamily: 'sonnet', trust: false, glyph: 'test-stub-glyph-2', pattern: 'checker',
       })
       // With skip set, Resvg renders fresh; bytes do not match the stub.
       expect(readFileSync(out).equals(Buffer.from('STUBBED-BADGE-CONTENT-2'))).toBe(false)
@@ -129,7 +130,7 @@ describe('renderAgentBadge', () => {
 
   test('center pixel of a solid orange badge is roughly orange', async () => {
     const path = await renderAgentBadge({
-      archetype: 'role', modelFamily: 'opus', trust: false, glyph: 'briefcase',
+      archetype: 'role', modelFamily: 'opus', trust: false, glyph: 'briefcase', pattern: 'checker',
     })
     const { data } = decodePng(path)
     const offset = (128 * 256 + 16) * 4

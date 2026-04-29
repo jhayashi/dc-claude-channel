@@ -45,3 +45,30 @@ export const ARCHETYPE_DEFAULT_GLYPH = {
   utility: 'cog',
   project: 'folder-kanban',
 } as const
+
+/**
+ * Eight visually distinct background patterns available for trust-on
+ * agents. The renderer dispatches on this field; trust-off agents
+ * always render as a single solid color regardless of pattern.
+ *
+ * - checker: 2x2 alternating squares (legacy default)
+ * - mini-checker: 8x8 denser checker
+ * - stripes: 4 horizontal bands
+ * - v-stripes: 4 vertical bands
+ * - quartered: heraldic four squares
+ * - quartered-x: four triangles meeting at center
+ * - dots: 4x4 grid of small dots
+ * - big-dots: 2x2 grid of large dots
+ */
+export const PATTERN_IDS = [
+  'checker',
+  'mini-checker',
+  'stripes',
+  'v-stripes',
+  'quartered',
+  'quartered-x',
+  'dots',
+  'big-dots',
+] as const
+
+export type PatternId = (typeof PATTERN_IDS)[number]
