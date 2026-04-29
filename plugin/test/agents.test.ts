@@ -784,3 +784,57 @@ describe('importAgentFromYaml', () => {
     expect(result.agent.name).toBe('RT Collide')
   })
 })
+
+describe('setAgentModel', () => {
+  test('LATEST_MODELS exposes a current id for each tier', () => {
+    expect(agents.LATEST_MODELS.haiku).toBeTruthy()
+    expect(agents.LATEST_MODELS.sonnet).toBeTruthy()
+    expect(agents.LATEST_MODELS.opus).toBeTruthy()
+  })
+
+  test('updates the agent model to the latest in the named tier', () => {
+    agents.saveAgent(makeDef({ id: 'tier-switch', model: 'claude-haiku-4-5' }))
+    agents.setAgentModel('tier-switch', 'opus')
+    const after = agents.getAgent('tier-switch')
+    expect(after?.model).toBe(agents.LATEST_MODELS.opus)
+  })
+
+  test('persists the change to disk (round-trip via getAgent)', () => {
+    agents.saveAgent(makeDef({ id: 'tier-persist', model: 'claude-haiku-4-5' }))
+    agents.setAgentModel('tier-persist', 'sonnet')
+    expect(agents.getAgent('tier-persist')!.model).toBe(agents.LATEST_MODELS.sonnet)
+  })
+
+  test('throws on missing agent', () => {
+    expect(() => agents.setAgentModel('no-such-agent', 'sonnet')).toThrow(/no agent/)
+  })
+})
+
+describe('setAgentTrust', () => {
+  test('flips skip-permissions on an existing agent (true → false → true)', () => {
+    agents.saveAgent(makeDef({ id: 'trust-flip' }))
+    agents.setAgentTrust('trust-flip', true)
+    expect(agents.getSkipPermissions(agents.getAgent('trust-flip')!)).toBe(true)
+    agents.setAgentTrust('trust-flip', false)
+    expect(agents.getSkipPermissions(agents.getAgent('trust-flip')!)).toBe(false)
+    agents.setAgentTrust('trust-flip', true)
+    expect(agents.getSkipPermissions(agents.getAgent('trust-flip')!)).toBe(true)
+  })
+
+  test('preserves sibling metadata when toggling trust', () => {
+    const def = makeDef({
+      id: 'trust-siblings',
+      metadata: { 'x-dc-archetype': 'utility', 'custom': 'preserved' },
+    })
+    agents.saveAgent(def)
+    agents.setAgentTrust('trust-siblings', true)
+    const after = agents.getAgent('trust-siblings')!
+    expect(after.metadata?.['x-dc-skipPermissions']).toBe(true)
+    expect(after.metadata?.['x-dc-archetype']).toBe('utility')
+    expect(after.metadata?.['custom']).toBe('preserved')
+  })
+
+  test('throws on missing agent', () => {
+    expect(() => agents.setAgentTrust('no-such-agent', true)).toThrow(/no agent/)
+  })
+})

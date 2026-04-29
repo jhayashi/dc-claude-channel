@@ -240,6 +240,50 @@ export function updateAgentModel(id: string, model: AllowedModel): boolean {
   return true
 }
 
+/**
+ * Latest model id per tier. Backed by the models manifest
+ * (plugin/models.json) so the registry has a single source of truth —
+ * adding a new model only requires editing JSON.
+ *
+ * Used by the NL intent classifier path (e.g., "switch to opus" maps
+ * `opus` → the current latest opus model id).
+ */
+export const LATEST_MODELS: Record<models.ModelTier, string> = {
+  haiku: models.latestModelForTier('haiku'),
+  sonnet: models.latestModelForTier('sonnet'),
+  opus: models.latestModelForTier('opus'),
+}
+
+/**
+ * Update an agent's model to the latest in the named tier. Throws if
+ * the agent doesn't exist.
+ *
+ * Wrapper around updateAgentModel that takes a tier rather than a full
+ * model id. Used by the NL intent handler in the dispatcher to act on
+ * "switch to <tier>" / "use <tier>" utterances.
+ */
+export function setAgentModel(agentId: string, tier: models.ModelTier): void {
+  const def = getAgent(agentId)
+  if (!def) throw new Error(`setAgentModel: no agent ${agentId}`)
+  def.model = LATEST_MODELS[tier]
+  saveAgent(def)
+}
+
+/**
+ * Update an agent's skip-permissions trust flag. Throws if the agent
+ * doesn't exist.
+ *
+ * Wrapper around setSkipPermissions + saveAgent that loads, mutates,
+ * and persists in one call. Used by the NL intent handler in the
+ * dispatcher to act on "trust me" / "be safer" utterances.
+ */
+export function setAgentTrust(agentId: string, value: boolean): void {
+  const def = getAgent(agentId)
+  if (!def) throw new Error(`setAgentTrust: no agent ${agentId}`)
+  setSkipPermissions(def, value)
+  saveAgent(def)
+}
+
 /** The three agent archetypes. Cosmetic — drives the default icon glyph. */
 export const ARCHETYPES = ['role', 'utility', 'project'] as const
 export type Archetype = typeof ARCHETYPES[number]
