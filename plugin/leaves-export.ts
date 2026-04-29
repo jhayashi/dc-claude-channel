@@ -4,7 +4,7 @@
  * per leaf into plugin/leaves/. Run with: bun run plugin/leaves-export.ts <csv-path>
  */
 
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { readFileSync, mkdirSync, writeFileSync, readdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import YAML from 'yaml'
 
@@ -51,6 +51,11 @@ const rows = parseCsv(text)
 
 const outDir = join(import.meta.dir, 'leaves')
 mkdirSync(outDir, { recursive: true })
+
+// Clean stale outputs so renames/removals in the CSV don't leave phantom leaves.
+for (const f of readdirSync(outDir)) {
+  if (f.endsWith('.yaml')) unlinkSync(join(outDir, f))
+}
 
 const seen = new Set<string>()
 let written = 0
