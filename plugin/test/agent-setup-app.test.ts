@@ -59,9 +59,10 @@ describe('composeIdentityPreamble', () => {
 
   test('unknown leaf id silently dropped (no crash)', () => {
     // Defense-in-depth — composer is downstream of validation but should
-    // not blow up on a bad id slipping through.
+    // not blow up on a bad id slipping through. Filter drops the unknown
+    // id so the result is the same generic fallback as `[]`.
     const out = composeIdentityPreamble(['no-such-leaf-id'], empty, getDefaultCatalog())
-    expect(out).toBeTruthy()
+    expect(out).toBe('You are a helpful assistant.')
   })
 
   test('empty leafIds yields a generic fallback', () => {

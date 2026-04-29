@@ -1660,7 +1660,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.93;
+var APP_VERSION = 1.94;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -2954,13 +2954,27 @@ function renderPatternThumb(p) {
   var accent = '#F2A778';  // Opus accent works as a contrast preview
   switch (p) {
     case 'checker':
-      return '<svg viewBox="0 0 256 256" class="pattern-thumb"><rect width="256" height="256" fill="' + solid + '"/><rect x="0" y="0" width="128" height="128" fill="' + accent + '"/><rect x="128" y="128" width="128" height="128" fill="' + accent + '"/></svg>';
-    case 'mini-checker':
-      var miniRects = '';
+      // Server renders 'checker' as a 128px tile (64px cells) repeated 2x2
+      // across the 256px canvas — i.e. a 4x4 grid of 64px alternating cells.
+      // The previous 2x2 thumb (single solid + two 128px accents) misled the
+      // picker — users selecting it expected coarse quartering and got a
+      // dense checker.
+      var checkerRects = '';
       for (var i = 0; i < 16; i++) {
         var row = Math.floor(i / 4), col = i % 4;
         var fill = (row + col) % 2 === 0 ? solid : accent;
-        miniRects += '<rect x="' + (col * 64) + '" y="' + (row * 64) + '" width="64" height="64" fill="' + fill + '"/>';
+        checkerRects += '<rect x="' + (col * 64) + '" y="' + (row * 64) + '" width="64" height="64" fill="' + fill + '"/>';
+      }
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' + checkerRects + '</svg>';
+    case 'mini-checker':
+      // Server renders 'mini-checker' as a 64px tile (32px cells) repeated
+      // 4x4 — i.e. 8x8 alternating cells. Match it (and keep the picker
+      // visually distinct from 'checker').
+      var miniRects = '';
+      for (var i = 0; i < 64; i++) {
+        var row = Math.floor(i / 8), col = i % 8;
+        var fill = (row + col) % 2 === 0 ? solid : accent;
+        miniRects += '<rect x="' + (col * 32) + '" y="' + (row * 32) + '" width="32" height="32" fill="' + fill + '"/>';
       }
       return '<svg viewBox="0 0 256 256" class="pattern-thumb">' + miniRects + '</svg>';
     case 'stripes':

@@ -102,7 +102,9 @@ function buildSteps(inputs: CoachInputs, catalog: Catalog): QuestionStep[] {
         const matched = leaves.find(l => matchesLeafName(ans, l.name))
         // Fall back to the first leaf when the matcher misses — better than leaving
         // leadLeafId undefined, which downstream assembler would reject.
-        const leadId = matched?.id ?? a.leadLeafId ?? leaves[0]?.id
+        // (`a.leadLeafId` was a dead middle branch — this is the only step
+        // that ever sets it, so it's always undefined when capture runs.)
+        const leadId = matched?.id ?? leaves[0].id
         return {
           ...a,
           leadLeafId: leadId,
