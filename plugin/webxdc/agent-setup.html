@@ -1609,7 +1609,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.89;
+var APP_VERSION = 1.91;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -2675,6 +2675,10 @@ function enterL2(l2) {
   document.getElementById('wall-grid').style.display = 'none';
   document.getElementById('wall-results').style.display = 'none';
   document.getElementById('wall-leaf-detail').innerHTML = '';
+  // renderWall() runs hideAll(['wall-results','wall-l2','wall-leaf-detail'])
+  // which set display:none on this container; restore it now that we're
+  // about to populate it.
+  document.getElementById('wall-l2').style.display = '';
 
   var leaves = (state.newAgentFlow.leaves || []).filter(function(l) { return l.l2 === l2; });
   var path = leaves[0] ? leaves[0].path : 'Expert';
@@ -2697,6 +2701,9 @@ function showLeafDetail(leafId) {
   var l = (state.newAgentFlow.leaves || []).find(function(x) { return x.id === leafId; });
   if (!l) return;
   state.openLeafId = l.id;
+  // Same display-restoration concern as enterL2 — renderWall() hid the
+  // container; populating innerHTML alone won't make it visible again.
+  document.getElementById('wall-leaf-detail').style.display = '';
   var html = '<div class="leaf-detail">' +
     '<div class="leaf-detail-head">' + pathTag(l.path) + '<h3>' + escapeHtml(l.name) + '</h3></div>' +
     (l.parameter ? '<div class="meta"><strong>Asks you about:</strong> ' + escapeHtml(l.parameter) + '</div>' : '') +
