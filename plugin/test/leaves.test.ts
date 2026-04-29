@@ -111,4 +111,12 @@ describe('Leaves loader', () => {
     writeLeaf(`id: a\npath: Service\nl2: Service\nname: A2\npitch: x\nexpertise: x\n`, 'a2')
     expect(() => loadAllLeaves()).toThrow(/duplicate leaf id/)
   })
+
+  test('symmetricCombines returns empty Map when leaves dir is missing', () => {
+    setLeavesDir('/nonexistent/path/that/does/not/exist')
+    expect(loadAllLeaves()).toEqual([])
+    const sym = symmetricCombines()
+    expect(sym).toBeInstanceOf(Map)
+    expect(sym.size).toBe(0)
+  })
 })

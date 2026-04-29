@@ -73,7 +73,10 @@ export function setLeavesDir(dir: string): void {
 
 export function loadAllLeaves(): Leaf[] {
   if (CACHE) return CACHE.leaves
-  if (!existsSync(LEAVES_DIR)) return []
+  if (!existsSync(LEAVES_DIR)) {
+    CACHE = { leaves: [], sym: new Map() }
+    return CACHE.leaves
+  }
   const files = readdirSync(LEAVES_DIR).filter(f => f.endsWith('.yaml'))
   const leaves: Leaf[] = []
   const seen = new Set<string>()
