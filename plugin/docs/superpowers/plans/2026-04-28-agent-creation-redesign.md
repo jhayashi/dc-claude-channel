@@ -2147,6 +2147,12 @@ git commit -m "feat(agent-setup): mash-up build pill + pairs-with chips + review
 
 A graduation observable is also added: every successful graduation appends one JSONL line to `events/agent-lifecycle-<YYYY-MM-DD>.log` with fields `{ts, kind: 'graduation', chatId, agentId, sessionId, leafIds, fromCoach: true}`. Same writer for Refine completion (`kind: 'refine-complete'`). E2E tests assert on this event line rather than on private module state.
 
+**Pre-integration cleanup carried over from Phase 5 review (Elena break + hurt):** Phase 8's integration work is the first place a test will mock the catalog or hold multiple coach states across chats simultaneously. Two structural items must land BEFORE Task 8.1, since Task 8.1's wiring has no path forward without them:
+
+- **Task 8.A — Catalog handle refactor** (Elena break #1). Replace the module-global `CACHE` + `setLeavesDir` design in `plugin/leaves.ts` with an explicit `Catalog` handle threaded through downstream consumers. Public surface becomes `loadCatalog(dir): Catalog` with `catalog.findLeaf(id)`, `catalog.leavesByPath()`, `catalog.symmetricCombines()`. Update `prompt-assembler.ts` to take `Catalog` as a parameter (or in `AssembleInputs`); update `coach.ts` likewise. Keep a default-singleton convenience for the production call site, but tests must accept an explicit catalog. Also fixes the parallel-test races that Bun's default file parallelism would surface in Task 11.4 (e2e). Tests for: two `Catalog` instances at different dirs returning different `findLeaf` results without mutual interference.
+
+- **Task 8.B — `leadLeafId` invariant in assembler** (Elena hurt #4). `assembleSystemPrompt` should throw when `leadLeafId` is set but doesn't appear in `leafIds` (silent ignore today). Coach lead-capture should fall back to the first leaf when its regex matcher misses, instead of leaving `leadLeafId` undefined after the lead question was answered. Tests pin both cases.
+
 ### Task 8.0: Lifecycle event log scaffolding
 
 **Files:**
@@ -3028,11 +3034,20 @@ git commit -m "feat(agent-setup): Refine card on home + agent-shaping group divi
 - Modify: `plugin/coach.ts` (add `startRefineCoach`)
 - Modify: `plugin/dispatcher/message-router.ts` (full Refine impl)
 
+**Pre-step — coach restructure for `isObviousLead`** (Elena hurt #5 from Phase 5 review). The current `buildSteps` in `coach.ts` makes its decisions inline as imperative `if` branches; landing `isObviousLead` on top of that requires either array-splice gymnastics (coupling step ID to position) or a duplicate `else if` branch. Restructure FIRST: build a candidate `Step[]` list (`parameterStep`, `leadStep`, `serviceStep`, `voiceStep`, `toolsStep`), then filter with predicates (`shouldAskLead(leaves)`, `shouldAskParameter(leaves)`, etc.). `isObviousLead()` becomes one predicate that flips `shouldAskLead` to false and pre-fills `answers.leadLeafId` in the initial state. Same shape works for the new `RefineInputs` flow below — Refine's "What would you like to change?" step is just another candidate step that fires when `inputs.refineContext` is set.
+
+(Note: `RefineInputs` and `CoachState.refineContext` were removed during the Phase 5 review cleanup since they were ghost types with no callers. Re-add them in this task as part of the restructure — they live now alongside an actual implementation.)
+
 - [ ] **Step 1: Add `startRefineCoach` that loads existing prompt as context**
 
-In `plugin/coach.ts` (the `RefineInputs` interface was added in Task 5.1):
+In `plugin/coach.ts`:
 
 ```typescript
+export interface RefineInputs {
+  agentId: string
+  existingPrompt: string
+}
+
 export function startRefineCoach(inputs: RefineInputs): CoachState {
   const state: CoachState = {
     inputs: { leafIds: [], preset: 'mentor', sliders: {} },
@@ -3197,6 +3212,16 @@ git commit -m "test(e2e): full agent-creation happy path (wall → coach → gra
 ```
 
 ### Task 11.5: Update CLAUDE.md & cut release
+
+**Final polish carried over from Phase 5 review (Oliver P3 ×2):**
+
+- [ ] **Step 0a: Drop the Reflection 'skip' kind**
+
+`coach.ts` defines `Reflection.kind: 'echo' | 'short' | 'skip'` but no caller branches on `'skip'`. `advanceCoach` always overwrites `lastReflection`. Either drop the variant entirely (return `null` from `reflect` when input is empty) or have `advanceCoach` skip the `step.capture` call when `kind === 'skip'`. Pick one; remove the trap.
+
+- [ ] **Step 0b: Escape backslashes before quotes in preferences**
+
+`prompt-assembler.ts` does `.slice(0, MAX_PREFERENCE_CHARS).replace(/"/g, '\\"')` but never escapes `\`. A preference ending in `\` produces `…abc\\"` which a model treating the wrap as JSON-ish will read as an escaped quote, consuming the closing wrapper. Change to `.replace(/\\/g, '\\\\').replace(/"/g, '\\"')` (backslash before quote). One-line, hardens prompt-injection robustness.
 
 - [ ] **Step 1: Update CLAUDE.md project section on Agent setup**
 
