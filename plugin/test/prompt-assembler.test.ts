@@ -120,4 +120,43 @@ describe('System-prompt assembler', () => {
       identityPreamble: 'You are a tutor.',
     })).toThrow(/unknown leaf ids.*no-such-leaf/)
   })
+
+  test('throws when leadLeafId is not in leafIds', () => {
+    expect(() => assembleSystemPrompt({
+      leafIds: ['tutor', 'language-coach'],
+      leadLeafId: 'sleep-coach',  // not in leafIds
+      preset: 'mentor',
+      sliders: {},
+      preferences: [],
+      tools: [],
+      identityPreamble: 'You are a tutor + language coach mash-up.',
+    })).toThrow(/leadLeafId.*sleep-coach.*not in leafIds/)
+  })
+
+  test('throws when leadLeafId is set for a single-leaf agent', () => {
+    expect(() => assembleSystemPrompt({
+      leafIds: ['tutor'],
+      leadLeafId: 'tutor',  // meaningless when only 1 leaf
+      preset: 'mentor',
+      sliders: {},
+      preferences: [],
+      tools: [],
+      identityPreamble: 'You are a tutor.',
+    })).toThrow(/leadLeafId is meaningless for single-leaf/)
+  })
+
+  test('accepts leadLeafId when properly in leafIds (mash-up)', () => {
+    // Sanity-check the happy path still works after the invariant.
+    const prompt = assembleSystemPrompt({
+      leafIds: ['sleep-coach', 'stress-management-coach'],
+      leadLeafId: 'sleep-coach',
+      preset: 'mentor',
+      sliders: {},
+      preferences: [],
+      tools: [],
+      identityPreamble: 'Sleep-led wellness mash-up.',
+    })
+    expect(prompt).toContain('Sleep coach (lead)')
+    expect(prompt).toContain('Stress-management coach')
+  })
 })

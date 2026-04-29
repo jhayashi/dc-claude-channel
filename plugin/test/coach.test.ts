@@ -161,6 +161,28 @@ describe('Coach state machine', () => {
     expect(() => startCoach({ leafIds: ['tutor', 'no-such-leaf'], preset: 'mentor', sliders: {} }))
       .toThrow(/unknown leaf ids.*no-such-leaf/)
   })
+
+  test('lead-pick falls back to first leaf when matcher misses', () => {
+    let s = startCoach({
+      leafIds: ['sleep-coach', 'stress-management-coach', 'mindfulness-meditation-guide'],
+      preset: 'mentor', sliders: {},
+    })
+    s = advanceCoach(s, "they're all important honestly")
+    expect(s.answers.leadLeafId).toBe('sleep-coach')  // first in leafIds
+    // Should also record the guess in preferences for transparency.
+    expect(s.answers.preferences.some(p => p.toLowerCase().includes('coach guessed'))).toBe(true)
+  })
+
+  test('lead-pick succeeds normally when user names a leaf', () => {
+    let s = startCoach({
+      leafIds: ['sleep-coach', 'stress-management-coach'],
+      preset: 'mentor', sliders: {},
+    })
+    s = advanceCoach(s, 'stress is bigger right now')
+    expect(s.answers.leadLeafId).toBe('stress-management-coach')
+    // Should NOT have the "guessed" annotation.
+    expect(s.answers.preferences.some(p => p.toLowerCase().includes('coach guessed'))).toBe(false)
+  })
 })
 
 describe('detectTools (exported helper)', () => {

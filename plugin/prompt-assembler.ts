@@ -29,6 +29,19 @@ export function assembleSystemPrompt(input: AssembleInputs): string {
     throw new Error(`assembleSystemPrompt: unknown leaf ids: ${missing.join(', ')}`)
   }
   const leaves = resolved.map(r => r.leaf!)
+  // Invariant: when leadLeafId is set, it must be one of the leafIds.
+  if (input.leadLeafId !== undefined) {
+    if (!input.leafIds.includes(input.leadLeafId)) {
+      throw new Error(
+        `assembleSystemPrompt: leadLeafId "${input.leadLeafId}" is not in leafIds [${input.leafIds.join(', ')}]`
+      )
+    }
+    if (input.leafIds.length === 1) {
+      throw new Error(
+        `assembleSystemPrompt: leadLeafId is meaningless for single-leaf agents (leafIds: [${input.leafIds[0]}])`
+      )
+    }
+  }
   if (leaves.length === 0) {
     throw new Error('assembleSystemPrompt: no leaves')
   }

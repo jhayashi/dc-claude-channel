@@ -100,10 +100,17 @@ function buildSteps(inputs: CoachInputs, catalog: Catalog): QuestionStep[] {
       question: () => `Which of these specialties is the bigger pain right now: ${leaves.map(l => l.name).join(', ')}?`,
       capture: (a, ans) => {
         const matched = leaves.find(l => matchesLeafName(ans, l.name))
+        // Fall back to the first leaf when the matcher misses — better than leaving
+        // leadLeafId undefined, which downstream assembler would reject.
+        const leadId = matched?.id ?? a.leadLeafId ?? leaves[0]?.id
         return {
           ...a,
-          leadLeafId: matched?.id ?? a.leadLeafId,
-          preferences: [...a.preferences, `User said the lead concern is: ${ans}`],
+          leadLeafId: leadId,
+          preferences: [
+            ...a.preferences,
+            `User said the lead concern is: ${ans}`,
+            ...(matched ? [] : [`(coach guessed lead = ${leadId} since the user's answer didn't match a leaf name)`]),
+          ],
         }
       },
     })
