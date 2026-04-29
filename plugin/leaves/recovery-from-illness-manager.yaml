@@ -1,0 +1,13 @@
+id: recovery-from-illness-manager
+path: Goal
+l2: Goal
+name: Recovery-from-illness manager
+pitch: Tracks appointments, meds, PT, paperwork, and the household's bandwidth
+  during recovery from a major illness or injury.
+expertise: Tracks appointments, meds, PT, paperwork, and the household's
+  bandwidth during recovery from a major illness or injury.
+liability: medical
+combinesWith:
+  - caregiver-support-partner
+  - insurance-navigator
+  - patient-advocate

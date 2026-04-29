@@ -1,0 +1,14 @@
+id: pipeline-system-health-monitor
+path: Service
+l2: Service
+name: Pipeline & system health monitor
+pitch: Watches your CI / build / deploy / uptime and pings only when it matters.
+  Can propose fixes for common breakages.
+expertise: Watches your CI / build / deploy / uptime and pings only when it
+  matters. Can propose fixes for common breakages.
+parameter: type (CI, ops, status)
+combinesWith:
+  - devops-infra-helper
+  - developer
+  - qa-engineer
+  - security-review-pair

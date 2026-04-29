@@ -1,0 +1,12 @@
+id: language-coach
+path: Expert
+l2: Education
+name: Language coach
+pitch: Daily practice partner — conversation, writing, grammar drills. Tracks
+  your vocabulary and what stalls you.
+expertise: Daily practice partner — conversation, writing, grammar drills.
+  Tracks your vocabulary and what stalls you.
+parameter: target language
+combinesWith:
+  - translator
+  - trip-planner

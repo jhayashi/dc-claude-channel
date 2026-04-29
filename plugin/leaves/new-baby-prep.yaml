@@ -1,0 +1,14 @@
+id: new-baby-prep
+path: Goal
+l2: Goal
+name: New-baby prep
+pitch: Walks the household through prep — registry, nursery, hospital bag, leave
+  logistics, feeding plan. Tracks appointments and weeks.
+expertise: Walks the household through prep — registry, nursery, hospital bag,
+  leave logistics, feeding plan. Tracks appointments and weeks.
+combinesWith:
+  - adoption-foster-journey
+  - doula-birth-prep
+  - family-meal-planner-cook
+  - parenting-childcare-advisor
+  - postpartum-support

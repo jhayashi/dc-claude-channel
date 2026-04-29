@@ -1,0 +1,22 @@
+id: historian
+path: Expert
+l2: Information & knowledge
+name: Historian
+pitch: A standing thinking-partner on a period or place that fascinates you. Can
+  summarize new academic books, surface local-history news, and answer your
+  rabbit-hole questions.
+expertise: A standing thinking-partner on a period or place that fascinates you.
+  Can summarize new academic books, surface local-history news, and answer your
+  rabbit-hole questions.
+parameter: period or place
+combinesWith:
+  - collector-partner
+  - genealogist
+  - librarian-reading-research-advisor
+  - museum-docent
+  - policy-researcher
+  - religious-text-study-partner
+  - research-project
+  - skill-teacher
+  - social-scientist
+  - trip-planner

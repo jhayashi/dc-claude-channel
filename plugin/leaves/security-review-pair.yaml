@@ -1,0 +1,12 @@
+id: security-review-pair
+path: Expert
+l2: Engineering & technical
+name: Security-review pair
+pitch: Reviews code and configs for security issues, threat-models proposals,
+  and audits dependencies. Can monitor CVE feeds for your stack.
+expertise: Reviews code and configs for security issues, threat-models
+  proposals, and audits dependencies. Can monitor CVE feeds for your stack.
+combinesWith:
+  - devops-infra-helper
+  - developer
+  - pipeline-system-health-monitor

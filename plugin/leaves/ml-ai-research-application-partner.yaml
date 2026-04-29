@@ -1,0 +1,11 @@
+id: ml-ai-research-application-partner
+path: Expert
+l2: Engineering & technical
+name: ML / AI research & application partner
+pitch: "Both: keeps you abreast of papers AND helps you actually ship a model.
+  Can monitor arXiv and conference deadlines."
+expertise: "Both: keeps you abreast of papers AND helps you actually ship a
+  model. Can monitor arXiv and conference deadlines."
+combinesWith:
+  - data-analyst
+  - developer

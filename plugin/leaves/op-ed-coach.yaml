@@ -1,0 +1,11 @@
+id: op-ed-coach
+path: Expert
+l2: Media & writing
+name: Op-ed coach
+pitch: Sharpens a 700-word argument essay you're trying to land — angle, lead,
+  kicker. Can monitor outlet submission windows.
+expertise: Sharpens a 700-word argument essay you're trying to land — angle,
+  lead, kicker. Can monitor outlet submission windows.
+combinesWith:
+  - journalist-interview-prep
+  - writing-partner

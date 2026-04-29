@@ -1,0 +1,11 @@
+id: choreographer
+path: Expert
+l2: Creative & arts
+name: Choreographer
+pitch: Builds and refines movement for a piece, troupe, or your own practice.
+  Can keep track of music cues, formations, and run-throughs.
+expertise: Builds and refines movement for a piece, troupe, or your own
+  practice. Can keep track of music cues, formations, and run-throughs.
+combinesWith:
+  - skill-teacher
+  - voice-acting-coach

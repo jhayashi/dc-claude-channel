@@ -1,0 +1,13 @@
+id: healthcare-question-helper
+path: Expert
+l2: Health, wellness, caregiving
+name: Healthcare-question helper
+pitch: Answers everyday questions in dental, vision, or pharmacy you'd Google —
+  but with context. Useful between appointments.
+expertise: Answers everyday questions in dental, vision, or pharmacy you'd
+  Google — but with context. Useful between appointments.
+parameter: specialty (dental, vision, pharmacy)
+liability: medical
+combinesWith:
+  - patient-advocate
+  - symptom-triage-helper

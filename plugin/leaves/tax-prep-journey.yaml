@@ -1,0 +1,13 @@
+id: tax-prep-journey
+path: Goal
+l2: Goal
+name: Tax-prep journey
+pitch: Gathers documents, walks through the form, finds deductions, and files.
+  Tracks year-round so April isn't a fire drill.
+expertise: Gathers documents, walks through the form, finds deductions, and
+  files. Tracks year-round so April isn't a fire drill.
+liability: tax
+combinesWith:
+  - accountant-bookkeeping-helper
+  - bill-payment-monitor
+  - personal-finance-budgeting-coach

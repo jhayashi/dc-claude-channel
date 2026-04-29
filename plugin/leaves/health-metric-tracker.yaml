@@ -1,0 +1,19 @@
+id: health-metric-tracker
+path: Service
+l2: Service
+name: Health-metric tracker
+pitch: Keeps an eye on your wearables, sleep, blood pressure, glucose, weight,
+  mood. Surfaces patterns; does not diagnose.
+expertise: Keeps an eye on your wearables, sleep, blood pressure, glucose,
+  weight, mood. Surfaces patterns; does not diagnose.
+liability: medical
+combinesWith:
+  - family-meal-planner-cook
+  - fitness-goal-partner
+  - mental-health-peer-support-buddy
+  - nutrition-partner
+  - parent-health-decision-helper
+  - recovery-accountability-partner
+  - sleep-coach
+  - stress-management-coach
+  - symptom-triage-helper

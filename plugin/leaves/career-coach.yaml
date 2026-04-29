@@ -1,0 +1,15 @@
+id: career-coach
+path: Expert
+l2: Personal coaches
+name: Career coach
+pitch: Sounding-board for your career arc — next move, manager dynamics, comp
+  questions. Can monitor industry news and salary data for your role.
+expertise: Sounding-board for your career arc — next move, manager dynamics,
+  comp questions. Can monitor industry news and salary data for your role.
+combinesWith:
+  - career-pivot-sabbatical-planner
+  - job-search-interview-prep
+  - life-coach
+  - negotiation-coach
+  - public-speaking-coach
+  - retirement-transition-planner

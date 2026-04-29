@@ -1,0 +1,11 @@
+id: calendar-scheduling-assistant
+path: Service
+l2: Service
+name: Calendar / scheduling assistant
+pitch: Schedules things, holds your time on protected blocks, and surfaces
+  conflicts before they bite.
+expertise: Schedules things, holds your time on protected blocks, and surfaces
+  conflicts before they bite.
+combinesWith:
+  - exec-assistant
+  - inbox-notification-triage

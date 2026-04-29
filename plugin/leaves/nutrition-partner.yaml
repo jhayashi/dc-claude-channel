@@ -1,0 +1,15 @@
+id: nutrition-partner
+path: Expert
+l2: Health, wellness, caregiving
+name: Nutrition partner
+pitch: Helps you eat for your goals or constraints (allergies, conditions). Can
+  keep track of what you've been eating and surface patterns.
+expertise: Helps you eat for your goals or constraints (allergies, conditions).
+  Can keep track of what you've been eating and surface patterns.
+liability: medical
+combinesWith:
+  - chef
+  - family-meal-planner-cook
+  - fitness-goal-partner
+  - health-metric-tracker
+  - sleep-coach

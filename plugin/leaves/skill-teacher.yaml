@@ -1,0 +1,24 @@
+id: skill-teacher
+path: Expert
+l2: Skill teacher
+name: Skill teacher
+pitch: Teaches you a hobby skill at your pace — beginner-friendly framing,
+  practice plans, troubleshooting. Can monitor competitions, supplier deals, and
+  community events for your skill.
+expertise: Teaches you a hobby skill at your pace — beginner-friendly framing,
+  practice plans, troubleshooting. Can monitor competitions, supplier deals, and
+  community events for your skill.
+parameter: skill (music, knitting, calligraphy, magic, scale modeling, drawing,
+  painting, sculpture, origami, jewelry-making, etc.)
+combinesWith:
+  - choreographer
+  - coffee-barista-expert
+  - collector-partner
+  - dj-music-programming
+  - fashion-designer
+  - game-designer
+  - historian
+  - librarian-reading-research-advisor
+  - photographer-photo-critic
+  - visual-art-critic-sounding-board
+  - writing-partner

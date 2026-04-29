@@ -1,0 +1,12 @@
+id: veterinary-question-helper
+path: Expert
+l2: Personal care & service
+name: Veterinary-question helper
+pitch: When your pet does something weird, helps you triage 'wait and watch' vs
+  'call the vet' vs 'go now.' Non-diagnostic.
+expertise: When your pet does something weird, helps you triage 'wait and watch'
+  vs 'call the vet' vs 'go now.' Non-diagnostic.
+liability: veterinary
+combinesWith:
+  - pet-animal-trainer
+  - pet-acquisition-or-pet-loss-planner

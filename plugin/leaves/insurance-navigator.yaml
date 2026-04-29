@@ -1,0 +1,13 @@
+id: insurance-navigator
+path: Expert
+l2: Business & finance
+name: Insurance navigator
+pitch: Translates policies, helps you compare, and walks you through claims. Can
+  monitor renewal dates and flag suspicious changes year-over-year.
+expertise: Translates policies, helps you compare, and walks you through claims.
+  Can monitor renewal dates and flag suspicious changes year-over-year.
+liability: financial-investment
+combinesWith:
+  - personal-finance-budgeting-coach
+  - recovery-from-illness-manager
+  - retirement-transition-planner

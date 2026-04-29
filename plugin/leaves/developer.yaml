@@ -1,0 +1,18 @@
+id: developer
+path: Expert
+l2: Engineering & technical
+name: Developer
+pitch: Pair-programs across whatever stack you work in. Can monitor your repo,
+  CI status, and dependency-update PRs.
+expertise: Pair-programs across whatever stack you work in. Can monitor your
+  repo, CI status, and dependency-update PRs.
+parameter: stack (web, mobile, backend, data, embedded, game)
+combinesWith:
+  - data-analyst
+  - database-designer
+  - devops-infra-helper
+  - ml-ai-research-application-partner
+  - pipeline-system-health-monitor
+  - qa-engineer
+  - security-review-pair
+  - technical-writer

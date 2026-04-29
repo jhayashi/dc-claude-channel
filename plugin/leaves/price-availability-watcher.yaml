@@ -1,0 +1,12 @@
+id: price-availability-watcher
+path: Service
+l2: Service
+name: Price / availability watcher
+pitch: Watches prices, inventory, and 'in-stock' for things on your list. Pings
+  you when there's movement.
+expertise: Watches prices, inventory, and 'in-stock' for things on your list.
+  Pings you when there's movement.
+parameter: items
+combinesWith:
+  - major-purchase-research
+  - personal-stylist

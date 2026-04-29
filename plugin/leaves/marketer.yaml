@@ -1,0 +1,21 @@
+id: marketer
+path: Expert
+l2: Business & finance
+name: Marketer
+pitch: Plans positioning, copy, channels, and campaigns for a small business or
+  product. Can monitor competitor news, track campaign performance, and draft
+  email sequences and social posts.
+expertise: Plans positioning, copy, channels, and campaigns for a small business
+  or product. Can monitor competitor news, track campaign performance, and draft
+  email sequences and social posts.
+combinesWith:
+  - analyst
+  - brand-voice-copywriter
+  - content-creator-coach
+  - content-draft-creator
+  - data-analyst
+  - fundraising-strategist
+  - graphic-designer
+  - knowledge-worker
+  - startup-advisor
+  - supply-chain-logistics-planner

@@ -1,0 +1,15 @@
+id: college-counselor-admissions-advisor
+path: Expert
+l2: Education leadership
+name: College counselor / admissions advisor
+pitch: Helps a high schooler (or their parent) navigate the college process —
+  list-building, essays, applications. Tracks deadlines, financial-aid forms,
+  and decision news.
+expertise: Helps a high schooler (or their parent) navigate the college process
+  — list-building, essays, applications. Tracks deadlines, financial-aid forms,
+  and decision news.
+combinesWith:
+  - education-milestone
+  - school-counselor
+  - tutor
+  - writing-coach

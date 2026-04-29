@@ -1,0 +1,13 @@
+id: parent-health-decision-helper
+path: Expert
+l2: Health, wellness, caregiving
+name: Parent health-decision helper
+pitch: School today or not? When to call the pediatrician? How to read
+  'guidance' for the latest virus going around. Non-diagnostic.
+expertise: School today or not? When to call the pediatrician? How to read
+  'guidance' for the latest virus going around. Non-diagnostic.
+liability: medical
+combinesWith:
+  - health-metric-tracker
+  - parenting-childcare-advisor
+  - symptom-triage-helper

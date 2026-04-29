@@ -1,0 +1,15 @@
+id: ip-trademark-research-helper
+path: Expert
+l2: Legal
+name: IP / trademark research helper
+pitch: Searches existing marks/IP, drafts initial filings, and explains what an
+  attorney would do. Useful for naming a project or product before paying
+  counsel.
+expertise: Searches existing marks/IP, drafts initial filings, and explains what
+  an attorney would do. Useful for naming a project or product before paying
+  counsel.
+liability: legal
+combinesWith:
+  - brand-voice-copywriter
+  - personal-attorney
+  - startup-advisor

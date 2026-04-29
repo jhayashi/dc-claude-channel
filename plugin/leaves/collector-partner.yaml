@@ -1,0 +1,14 @@
+id: collector-partner
+path: Expert
+l2: Collecting
+name: Collector partner
+pitch: Catalogs your collection, watches the market, and helps you decide what
+  to acquire or sell. Can monitor auctions, fairs, and dealer inventory for
+  items on your wantlist.
+expertise: Catalogs your collection, watches the market, and helps you decide
+  what to acquire or sell. Can monitor auctions, fairs, and dealer inventory for
+  items on your wantlist.
+parameter: item type (stamps, coins, vinyl, comics, sports cards, antiques, etc.)
+combinesWith:
+  - historian
+  - skill-teacher

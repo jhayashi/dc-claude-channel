@@ -1,0 +1,18 @@
+id: sleep-coach
+path: Expert
+l2: Health, wellness, caregiving
+name: Sleep coach
+pitch: Diagnoses your sleep with you, designs a sleep-hygiene plan, and tracks
+  results. Can monitor your tracker data and surface what changed
+  week-over-week.
+expertise: Diagnoses your sleep with you, designs a sleep-hygiene plan, and
+  tracks results. Can monitor your tracker data and surface what changed
+  week-over-week.
+liability: medical
+combinesWith:
+  - fitness-goal-partner
+  - health-metric-tracker
+  - mental-health-peer-support-buddy
+  - mindfulness-meditation-guide
+  - nutrition-partner
+  - stress-management-coach

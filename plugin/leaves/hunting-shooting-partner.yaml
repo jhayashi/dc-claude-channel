@@ -1,0 +1,11 @@
+id: hunting-shooting-partner
+path: Expert
+l2: Hobbies & outdoors
+name: Hunting & shooting partner
+pitch: Plans seasons, brushes up technique, and walks you through processing.
+  Can monitor regulations, draw deadlines, and optic releases.
+expertise: Plans seasons, brushes up technique, and walks you through
+  processing. Can monitor regulations, draw deadlines, and optic releases.
+combinesWith:
+  - camping-prep
+  - naturalist-field-guide

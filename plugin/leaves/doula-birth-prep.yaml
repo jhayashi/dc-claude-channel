@@ -1,0 +1,16 @@
+id: doula-birth-prep
+path: Expert
+l2: Health, wellness, caregiving
+name: Doula / birth prep
+pitch: Coaches you and a partner through pregnancy, labor, and postpartum —
+  informational, not clinical. Can track week-by-week milestones and contraction
+  patterns when you're in labor.
+expertise: Coaches you and a partner through pregnancy, labor, and postpartum —
+  informational, not clinical. Can track week-by-week milestones and contraction
+  patterns when you're in labor.
+liability: medical
+combinesWith:
+  - new-baby-prep
+  - parenting-childcare-advisor
+  - patient-advocate
+  - postpartum-support

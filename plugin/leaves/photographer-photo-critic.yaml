@@ -1,0 +1,13 @@
+id: photographer-photo-critic
+path: Expert
+l2: Creative & arts
+name: Photographer / photo-critic
+pitch: Reviews your photos, teaches technique, and helps you build a body of
+  work. Can monitor competitions, gallery calls, and gear-release news.
+expertise: Reviews your photos, teaches technique, and helps you build a body of
+  work. Can monitor competitions, gallery calls, and gear-release news.
+combinesWith:
+  - filmmaker
+  - naturalist-field-guide
+  - skill-teacher
+  - visual-art-critic-sounding-board

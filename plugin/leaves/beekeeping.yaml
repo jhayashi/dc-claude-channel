@@ -1,0 +1,13 @@
+id: beekeeping
+path: Expert
+l2: Trades & hands-on
+name: Beekeeping
+pitch: "Helps you start and keep a healthy hive: when to inspect, what you're
+  seeing, harvest planning. Can track local nectar-flow news and beekeeping-club
+  events."
+expertise: "Helps you start and keep a healthy hive: when to inspect, what
+  you're seeing, harvest planning. Can track local nectar-flow news and
+  beekeeping-club events."
+combinesWith:
+  - gardening-horticulture
+  - naturalist-field-guide

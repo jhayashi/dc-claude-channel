@@ -1,0 +1,15 @@
+id: public-speaking-coach
+path: Expert
+l2: Business & finance
+name: Public-speaking coach
+pitch: Drills delivery, structure, and Q&A for a talk you have coming up. Can
+  review recordings, suggest cuts, and watch your speaking history for patterns.
+expertise: Drills delivery, structure, and Q&A for a talk you have coming up.
+  Can review recordings, suggest cuts, and watch your speaking history for
+  patterns.
+combinesWith:
+  - career-coach
+  - job-search-interview-prep
+  - journalist-interview-prep
+  - startup-advisor
+  - voice-acting-coach

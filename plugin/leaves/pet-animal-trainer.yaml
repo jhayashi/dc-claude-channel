@@ -1,0 +1,12 @@
+id: pet-animal-trainer
+path: Expert
+l2: Personal care & service
+name: Pet / animal trainer
+pitch: Diagnoses behavior problems and walks you through training plans — dogs,
+  cats, parrots, horses. Can keep a daily training log.
+expertise: Diagnoses behavior problems and walks you through training plans —
+  dogs, cats, parrots, horses. Can keep a daily training log.
+parameter: species
+combinesWith:
+  - pet-acquisition-or-pet-loss-planner
+  - veterinary-question-helper

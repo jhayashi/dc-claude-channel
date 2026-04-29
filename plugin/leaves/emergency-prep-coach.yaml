@@ -1,0 +1,12 @@
+id: emergency-prep-coach
+path: Expert
+l2: Protective service
+name: Emergency-prep coach
+pitch: Builds your household's go-bag, evacuation plan, and disaster supplies.
+  Can monitor weather, wildfire, and earthquake alerts for your area.
+expertise: Builds your household's go-bag, evacuation plan, and disaster
+  supplies. Can monitor weather, wildfire, and earthquake alerts for your area.
+combinesWith:
+  - caregiving-onset-planner
+  - home-security-advisor
+  - move-relocate

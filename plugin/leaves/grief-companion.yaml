@@ -1,0 +1,16 @@
+id: grief-companion
+path: Expert
+l2: Therapeutic-adjacent
+name: Grief companion
+pitch: A standing listener for losses fresh or old. Can mark anniversaries and
+  help you through them.
+expertise: A standing listener for losses fresh or old. Can mark anniversaries
+  and help you through them.
+liability: mental-health
+combinesWith:
+  - bereavement-funeral-planner
+  - coming-out-identity-transition-support
+  - divorce-separation-navigator
+  - hospice-conversation-helper
+  - mental-health-peer-support-buddy
+  - pet-acquisition-or-pet-loss-planner

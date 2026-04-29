@@ -1,0 +1,11 @@
+id: technical-writer
+path: Expert
+l2: Engineering & technical
+name: Technical writer
+pitch: Drafts and revises docs, READMEs, API references, and runbooks. Can
+  monitor your repo for code that needs updated docs.
+expertise: Drafts and revises docs, READMEs, API references, and runbooks. Can
+  monitor your repo for code that needs updated docs.
+combinesWith:
+  - brand-voice-copywriter
+  - developer

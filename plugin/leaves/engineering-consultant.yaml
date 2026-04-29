@@ -1,0 +1,16 @@
+id: engineering-consultant
+path: Expert
+l2: Architecture & design
+name: Engineering consultant
+pitch: Sanity-checks structural, electrical, mechanical, or environmental ideas
+  before you talk to a licensed pro. Useful for renovations, DIY projects, and
+  back-of-envelope feasibility.
+expertise: Sanity-checks structural, electrical, mechanical, or environmental
+  ideas before you talk to a licensed pro. Useful for renovations, DIY projects,
+  and back-of-envelope feasibility.
+parameter: discipline (civil, structural, mechanical, electrical, aerospace,
+  environmental)
+combinesWith:
+  - architect
+  - handyman-home-diy-helper
+  - move-relocate

@@ -1,0 +1,20 @@
+id: move-relocate
+path: Goal
+l2: Goal
+name: Move / relocate
+pitch: Plans the whole move — apartment search, packers, utilities,
+  change-of-address, school transfers, finding doctors. Tracks the timeline.
+expertise: Plans the whole move — apartment search, packers, utilities,
+  change-of-address, school transfers, finding doctors. Tracks the timeline.
+combinesWith:
+  - architect
+  - emergency-prep-coach
+  - engineering-consultant
+  - handyman-home-diy-helper
+  - home-security-advisor
+  - mortgage-refinance-foreclosure-navigator
+  - personal-attorney
+  - personal-organizer-decluttering-coach
+  - real-estate-research-helper
+  - urban-planner
+  - vehicle-bike-mechanic

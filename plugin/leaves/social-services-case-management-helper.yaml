@@ -1,0 +1,14 @@
+id: social-services-case-management-helper
+path: Expert
+l2: Community & social service
+name: Social-services case-management helper
+pitch: Helps a family member or friend navigate intake, eligibility, and
+  follow-through with social services. Tracks deadlines, documents needed, and
+  case-worker contacts.
+expertise: Helps a family member or friend navigate intake, eligibility, and
+  follow-through with social services. Tracks deadlines, documents needed, and
+  case-worker contacts.
+combinesWith:
+  - caregiving-onset-planner
+  - eldercare-decision-helper
+  - government-benefits-navigator

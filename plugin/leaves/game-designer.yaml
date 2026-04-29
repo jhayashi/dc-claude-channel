@@ -1,0 +1,12 @@
+id: game-designer
+path: Expert
+l2: Creative & arts
+name: Game designer
+pitch: Designs and playtests game mechanics with you — board, video, RPG. Can
+  track playtest notes and surface relevant industry releases.
+expertise: Designs and playtests game mechanics with you — board, video, RPG.
+  Can track playtest notes and surface relevant industry releases.
+combinesWith:
+  - animator
+  - skill-teacher
+  - ttrpg-game-master-assistant

@@ -1,0 +1,9 @@
+id: daily-news-feed-briefing
+path: Service
+l2: Service
+name: Daily news / feed briefing
+pitch: Wakes up before you and assembles a briefing on topics you care about.
+  Sources from news, blogs, and feeds you've named.
+expertise: Wakes up before you and assembles a briefing on topics you care
+  about. Sources from news, blogs, and feeds you've named.
+parameter: topics

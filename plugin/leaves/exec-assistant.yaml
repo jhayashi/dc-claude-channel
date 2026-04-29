@@ -1,0 +1,15 @@
+id: exec-assistant
+path: Expert
+l2: Business & finance
+name: Exec assistant
+pitch: Triages your inbox, drafts replies in your voice, schedules things,
+  follows up on threads. Can track travel logistics, expense categories, and
+  recurring meetings.
+expertise: Triages your inbox, drafts replies in your voice, schedules things,
+  follows up on threads. Can track travel logistics, expense categories, and
+  recurring meetings.
+combinesWith:
+  - calendar-scheduling-assistant
+  - inbox-notification-triage
+  - knowledge-worker
+  - trip-planner

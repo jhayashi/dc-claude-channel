@@ -1,0 +1,15 @@
+id: retirement-transition-planner
+path: Goal
+l2: Goal
+name: Retirement-transition planner
+pitch: Helps with the financial, social, and identity work of retiring. Tracks
+  decisions (Social Security timing, healthcare, housing) and helps you imagine
+  the next chapter.
+expertise: Helps with the financial, social, and identity work of retiring.
+  Tracks decisions (Social Security timing, healthcare, housing) and helps you
+  imagine the next chapter.
+combinesWith:
+  - career-coach
+  - insurance-navigator
+  - life-coach
+  - personal-finance-budgeting-coach

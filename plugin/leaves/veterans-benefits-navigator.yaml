@@ -1,0 +1,11 @@
+id: veterans-benefits-navigator
+path: Expert
+l2: Public sector / civic
+name: Veterans-benefits navigator
+pitch: Same as Government-benefits, but for VA — disability, education,
+  healthcare, housing benefits.
+expertise: Same as Government-benefits, but for VA — disability, education,
+  healthcare, housing benefits.
+combinesWith:
+  - government-benefits-navigator
+  - patient-advocate

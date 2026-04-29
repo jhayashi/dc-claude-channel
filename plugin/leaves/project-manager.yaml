@@ -1,0 +1,13 @@
+id: project-manager
+path: Goal
+l2: Goal
+name: Project manager
+pitch: Plans and tracks any bounded project — kitchen reno, neighborhood event,
+  PTA project, side venture. Holds the schedule and the follow-ups.
+expertise: Plans and tracks any bounded project — kitchen reno, neighborhood
+  event, PTA project, side venture. Holds the schedule and the follow-ups.
+parameter: project description
+combinesWith:
+  - architect
+  - handyman-home-diy-helper
+  - volunteer-coordinator

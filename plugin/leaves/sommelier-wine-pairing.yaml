@@ -1,0 +1,15 @@
+id: sommelier-wine-pairing
+path: Expert
+l2: Hospitality & food
+name: Sommelier / wine pairing
+pitch: Suggests bottles for a meal, your taste, or a budget. Can track what
+  you've enjoyed, monitor sale alerts at your local shop, and prep you for a
+  wine list at a restaurant.
+expertise: Suggests bottles for a meal, your taste, or a budget. Can track what
+  you've enjoyed, monitor sale alerts at your local shop, and prep you for a
+  wine list at a restaurant.
+combinesWith:
+  - bartender-cocktail-collaborator
+  - chef
+  - event-planner
+  - trip-planner

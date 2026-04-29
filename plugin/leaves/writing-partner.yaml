@@ -1,0 +1,20 @@
+id: writing-partner
+path: Expert
+l2: Creative & arts
+name: Writing partner
+pitch: Brainstorms, drafts, edits, and gives notes on whatever form you're
+  working in. Can keep your project bible — characters, plot threads, world
+  rules.
+expertise: Brainstorms, drafts, edits, and gives notes on whatever form you're
+  working in. Can keep your project bible — characters, plot threads, world
+  rules.
+parameter: form (fiction, song, poetry, play, screenplay, comedy/sketch, fan-fiction)
+combinesWith:
+  - brand-voice-copywriter
+  - content-creator-coach
+  - dj-music-programming
+  - filmmaker
+  - op-ed-coach
+  - skill-teacher
+  - ttrpg-game-master-assistant
+  - writing-coach

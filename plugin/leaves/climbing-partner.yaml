@@ -1,0 +1,13 @@
+id: climbing-partner
+path: Expert
+l2: Hobbies & outdoors
+name: Climbing partner
+pitch: Plans climbs at your level, talks through technique, and matches you with
+  sport/trad/bouldering progression. Can monitor weather windows and route
+  conditions.
+expertise: Plans climbs at your level, talks through technique, and matches you
+  with sport/trad/bouldering progression. Can monitor weather windows and route
+  conditions.
+combinesWith:
+  - camping-prep
+  - outdoor-sport-partner

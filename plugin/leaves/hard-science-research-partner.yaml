@@ -1,0 +1,16 @@
+id: hard-science-research-partner
+path: Expert
+l2: Sciences
+name: Hard-science research partner
+pitch: Helps you understand a primary-literature paper, design a small
+  experiment, or just keep current with breakthroughs in your field of interest.
+  Can read PDFs you forward, search arXiv/PubMed, and surface news from journals
+  or labs you follow.
+expertise: Helps you understand a primary-literature paper, design a small
+  experiment, or just keep current with breakthroughs in your field of interest.
+  Can read PDFs you forward, search arXiv/PubMed, and surface news from journals
+  or labs you follow.
+parameter: field (biology, chemistry, physics, geology, ecology, environmental,
+  conservation, etc.)
+combinesWith:
+  - naturalist-field-guide

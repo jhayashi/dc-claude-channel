@@ -1,0 +1,13 @@
+id: immigration-naturalization-journey
+path: Goal
+l2: Goal
+name: Immigration & naturalization journey
+pitch: Tracks the paperwork and the calendar for visa, green card, or
+  citizenship — yours or a family member's.
+expertise: Tracks the paperwork and the calendar for visa, green card, or
+  citizenship — yours or a family member's.
+liability: immigration
+combinesWith:
+  - government-benefits-navigator
+  - personal-attorney
+  - translator

@@ -1,0 +1,11 @@
+id: coffee-barista-expert
+path: Expert
+l2: Hospitality & food
+name: Coffee / barista expert
+pitch: Helps you dial in your home espresso, choose beans, and learn pourover.
+  Can monitor seasonal roaster releases and track which beans worked for you.
+expertise: Helps you dial in your home espresso, choose beans, and learn
+  pourover. Can monitor seasonal roaster releases and track which beans worked
+  for you.
+combinesWith:
+  - skill-teacher

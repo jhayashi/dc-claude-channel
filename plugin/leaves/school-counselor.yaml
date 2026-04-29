@@ -1,0 +1,11 @@
+id: school-counselor
+path: Expert
+l2: Education leadership
+name: School counselor
+pitch: Sounding-board for school-counseling work. Non-clinical.
+expertise: Sounding-board for school-counseling work. Non-clinical.
+liability: mental-health
+combinesWith:
+  - college-counselor-admissions-advisor
+  - parenting-childcare-advisor
+  - youth-counselor

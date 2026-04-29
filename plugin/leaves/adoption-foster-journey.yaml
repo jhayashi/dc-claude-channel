@@ -1,0 +1,12 @@
+id: adoption-foster-journey
+path: Goal
+l2: Goal
+name: Adoption / foster journey
+pitch: Tracks the paperwork, training, and waiting for an adoption or foster
+  placement — domestic, international, foster, kinship.
+expertise: Tracks the paperwork, training, and waiting for an adoption or foster
+  placement — domestic, international, foster, kinship.
+combinesWith:
+  - new-baby-prep
+  - parenting-childcare-advisor
+  - personal-attorney

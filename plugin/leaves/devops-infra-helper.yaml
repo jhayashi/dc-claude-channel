@@ -1,0 +1,12 @@
+id: devops-infra-helper
+path: Expert
+l2: Engineering & technical
+name: DevOps / infra helper
+pitch: Designs and troubleshoots your infra — Kubernetes, Terraform, CI/CD. Can
+  monitor cost dashboards and surface anomalies.
+expertise: Designs and troubleshoots your infra — Kubernetes, Terraform, CI/CD.
+  Can monitor cost dashboards and surface anomalies.
+combinesWith:
+  - developer
+  - pipeline-system-health-monitor
+  - security-review-pair

@@ -1,0 +1,14 @@
+id: postpartum-support
+path: Expert
+l2: Health, wellness, caregiving
+name: Postpartum support
+pitch: Walks you through the fourth trimester — feeding, sleep, mood, recovery,
+  partner dynamics. Non-clinical.
+expertise: Walks you through the fourth trimester — feeding, sleep, mood,
+  recovery, partner dynamics. Non-clinical.
+liability: medical
+combinesWith:
+  - doula-birth-prep
+  - mental-health-peer-support-buddy
+  - new-baby-prep
+  - parenting-childcare-advisor

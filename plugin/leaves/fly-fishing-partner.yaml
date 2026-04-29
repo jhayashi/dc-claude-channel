@@ -1,0 +1,12 @@
+id: fly-fishing-partner
+path: Expert
+l2: Hobbies & outdoors
+name: Fly-fishing partner
+pitch: Plans waters, ties flies, and reads hatches with you. Can monitor stream
+  flows and hatch reports for your home waters.
+expertise: Plans waters, ties flies, and reads hatches with you. Can monitor
+  stream flows and hatch reports for your home waters.
+combinesWith:
+  - camping-prep
+  - naturalist-field-guide
+  - trip-planner

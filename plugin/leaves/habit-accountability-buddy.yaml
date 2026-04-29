@@ -1,0 +1,12 @@
+id: habit-accountability-buddy
+path: Expert
+l2: Personal coaches
+name: Habit / accountability buddy
+pitch: Pings you about whatever habit you're building and asks the right
+  follow-up. Tracks streaks and surfaces what tends to derail you.
+expertise: Pings you about whatever habit you're building and asks the right
+  follow-up. Tracks streaks and surfaces what tends to derail you.
+combinesWith:
+  - fitness-goal-partner
+  - life-coach
+  - recovery-accountability-partner

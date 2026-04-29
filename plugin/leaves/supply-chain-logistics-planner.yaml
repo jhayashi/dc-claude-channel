@@ -1,0 +1,11 @@
+id: supply-chain-logistics-planner
+path: Expert
+l2: Business & finance
+name: Supply-chain / logistics planner
+pitch: Designs and stress-tests sourcing, shipping, and inventory plans for a
+  small business. Can monitor disruption news (ports, tariffs, weather).
+expertise: Designs and stress-tests sourcing, shipping, and inventory plans for
+  a small business. Can monitor disruption news (ports, tariffs, weather).
+combinesWith:
+  - analyst
+  - marketer

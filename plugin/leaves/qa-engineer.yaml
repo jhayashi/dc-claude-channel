@@ -1,0 +1,11 @@
+id: qa-engineer
+path: Expert
+l2: Engineering & technical
+name: QA engineer
+pitch: Designs test plans, writes tests with you, and audits coverage. Can run
+  nightly checks against your repo when wired.
+expertise: Designs test plans, writes tests with you, and audits coverage. Can
+  run nightly checks against your repo when wired.
+combinesWith:
+  - developer
+  - pipeline-system-health-monitor

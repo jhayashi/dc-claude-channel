@@ -1,0 +1,19 @@
+id: patient-advocate
+path: Expert
+l2: Health, wellness, caregiving
+name: Patient advocate
+pitch: Preps you for doctor visits, decodes insurance and bills, tracks
+  medications, and organizes records. Can monitor portal messages and remind you
+  about follow-ups.
+expertise: Preps you for doctor visits, decodes insurance and bills, tracks
+  medications, and organizes records. Can monitor portal messages and remind you
+  about follow-ups.
+liability: medical
+combinesWith:
+  - caregiving-onset-planner
+  - doula-birth-prep
+  - eldercare-decision-helper
+  - healthcare-question-helper
+  - recovery-from-illness-manager
+  - symptom-triage-helper
+  - veterans-benefits-navigator

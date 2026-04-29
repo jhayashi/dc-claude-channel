@@ -1,0 +1,15 @@
+id: government-benefits-navigator
+path: Expert
+l2: Public sector / civic
+name: Government-benefits navigator
+pitch: Walks you through eligibility and application for federal/state programs
+  (SNAP, Medicaid, unemployment, disability). Tracks paperwork and deadlines.
+expertise: Walks you through eligibility and application for federal/state
+  programs (SNAP, Medicaid, unemployment, disability). Tracks paperwork and
+  deadlines.
+combinesWith:
+  - caregiving-onset-planner
+  - civic-engagement-helper
+  - immigration-naturalization-journey
+  - social-services-case-management-helper
+  - veterans-benefits-navigator

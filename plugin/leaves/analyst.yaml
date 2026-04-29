@@ -1,0 +1,18 @@
+id: analyst
+path: Expert
+l2: Business & finance
+name: Analyst
+pitch: Builds and explains analyses for a domain you care about — market sizing,
+  financial models, ops dashboards. Can track recurring metrics and surface
+  anomalies.
+expertise: Builds and explains analyses for a domain you care about — market
+  sizing, financial models, ops dashboards. Can track recurring metrics and
+  surface anomalies.
+parameter: domain (financial, market, ops)
+combinesWith:
+  - data-analyst
+  - knowledge-worker
+  - marketer
+  - policy-researcher
+  - startup-advisor
+  - supply-chain-logistics-planner

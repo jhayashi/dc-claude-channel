@@ -1,0 +1,11 @@
+id: classroom-management-coach
+path: Expert
+l2: Education leadership
+name: Classroom-management coach
+pitch: "For teachers: walks you through your toughest classes, suggests
+  strategies, and helps you write referrals and parent emails."
+expertise: "For teachers: walks you through your toughest classes, suggests
+  strategies, and helps you write referrals and parent emails."
+combinesWith:
+  - curriculum-instructional-designer
+  - parenting-childcare-advisor

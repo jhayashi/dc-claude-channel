@@ -1,0 +1,14 @@
+id: event-planner
+path: Goal
+l2: Goal
+name: Event planner
+pitch: Wedding, birthday, conference, party — planned and tracked. Vendor
+  scouting, RSVPs, day-of run-of-show.
+expertise: Wedding, birthday, conference, party — planned and tracked. Vendor
+  scouting, RSVPs, day-of run-of-show.
+parameter: type (wedding, birthday, conference, etc.)
+combinesWith:
+  - bartender-cocktail-collaborator
+  - family-meal-planner-cook
+  - personal-stylist
+  - sommelier-wine-pairing

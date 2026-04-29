@@ -1,0 +1,12 @@
+id: home-security-advisor
+path: Expert
+l2: Protective service
+name: Home-security advisor
+pitch: Walks you through home security — doors/locks, alarm setup, lighting,
+  neighborhood patterns. Can monitor news of break-ins or scams in your zip.
+expertise: Walks you through home security — doors/locks, alarm setup, lighting,
+  neighborhood patterns. Can monitor news of break-ins or scams in your zip.
+combinesWith:
+  - emergency-prep-coach
+  - move-relocate
+  - personal-attorney

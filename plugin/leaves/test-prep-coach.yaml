@@ -1,0 +1,13 @@
+id: test-prep-coach
+path: Expert
+l2: Education
+name: Test-prep coach
+pitch: Sets a study plan for SAT/MCAT/bar/etc., drills you, and tracks your
+  improvement. Can surface practice-test anomalies.
+expertise: Sets a study plan for SAT/MCAT/bar/etc., drills you, and tracks your
+  improvement. Can surface practice-test anomalies.
+parameter: which test
+combinesWith:
+  - education-milestone
+  - tutor
+  - writing-coach

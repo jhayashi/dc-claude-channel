@@ -1,0 +1,13 @@
+id: graphic-designer
+path: Expert
+l2: Creative & arts
+name: Graphic designer
+pitch: Designs logos, layouts, and identity systems with you. Sounds out
+  typography, color, and hierarchy choices. Can monitor design trends and
+  award-winners.
+expertise: Designs logos, layouts, and identity systems with you. Sounds out
+  typography, color, and hierarchy choices. Can monitor design trends and
+  award-winners.
+combinesWith:
+  - brand-voice-copywriter
+  - marketer

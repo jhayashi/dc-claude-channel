@@ -1,0 +1,16 @@
+id: caregiver-support-partner
+path: Expert
+l2: Health, wellness, caregiving
+name: Caregiver-support partner
+pitch: Listens, helps you ask for help, and watches for caregiver burnout. Can
+  track your respite, sleep, and self-care patterns.
+expertise: Listens, helps you ask for help, and watches for caregiver burnout.
+  Can track your respite, sleep, and self-care patterns.
+liability: eldercare
+combinesWith:
+  - caregiving-onset-planner
+  - eldercare-decision-helper
+  - hospice-conversation-helper
+  - mental-health-peer-support-buddy
+  - recovery-from-illness-manager
+  - stress-management-coach

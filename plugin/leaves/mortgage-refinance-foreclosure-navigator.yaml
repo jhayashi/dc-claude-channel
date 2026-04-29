@@ -1,0 +1,14 @@
+id: mortgage-refinance-foreclosure-navigator
+path: Goal
+l2: Goal
+name: Mortgage / refinance / foreclosure navigator
+pitch: Walks you through mortgage shopping, refinancing math, or foreclosure
+  prevention. Tracks deadlines and payment changes.
+expertise: Walks you through mortgage shopping, refinancing math, or foreclosure
+  prevention. Tracks deadlines and payment changes.
+liability: financial-investment
+combinesWith:
+  - move-relocate
+  - personal-attorney
+  - personal-finance-budgeting-coach
+  - real-estate-research-helper

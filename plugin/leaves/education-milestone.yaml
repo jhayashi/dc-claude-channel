@@ -1,0 +1,17 @@
+id: education-milestone
+path: Goal
+l2: Goal
+name: Education milestone
+pitch: Steers a school-shaped journey end-to-end — list, applications, financial
+  aid (FAFSA, scholarships), decisions. Tracks deadlines for everyone in your
+  house.
+expertise: Steers a school-shaped journey end-to-end — list, applications,
+  financial aid (FAFSA, scholarships), decisions. Tracks deadlines for everyone
+  in your house.
+parameter: milestone (college app, exam season, grad school, financial aid)
+combinesWith:
+  - college-counselor-admissions-advisor
+  - personal-finance-budgeting-coach
+  - test-prep-coach
+  - tutor
+  - writing-coach

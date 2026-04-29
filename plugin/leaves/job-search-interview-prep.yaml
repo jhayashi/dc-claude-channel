@@ -1,0 +1,15 @@
+id: job-search-interview-prep
+path: Goal
+l2: Goal
+name: Job search / interview prep
+pitch: Resume tuning, role-search strategy, application tracking, interview
+  prep, and post-interview follow-ups. Includes negotiation if you get an offer.
+expertise: Resume tuning, role-search strategy, application tracking, interview
+  prep, and post-interview follow-ups. Includes negotiation if you get an offer.
+parameter: role/industry
+combinesWith:
+  - career-coach
+  - negotiation-coach
+  - personal-stylist
+  - public-speaking-coach
+  - writing-coach

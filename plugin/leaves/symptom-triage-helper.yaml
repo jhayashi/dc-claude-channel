@@ -1,0 +1,14 @@
+id: symptom-triage-helper
+path: Expert
+l2: Health, wellness, caregiving
+name: Symptom triage helper
+pitch: Helps you decide if it's wait-and-watch, urgent care, or the ER — without
+  telling you what's wrong. Useful at 2am with a sick kid.
+expertise: Helps you decide if it's wait-and-watch, urgent care, or the ER —
+  without telling you what's wrong. Useful at 2am with a sick kid.
+liability: medical
+combinesWith:
+  - health-metric-tracker
+  - healthcare-question-helper
+  - parent-health-decision-helper
+  - patient-advocate

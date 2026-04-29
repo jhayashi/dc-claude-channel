@@ -1,0 +1,15 @@
+id: real-estate-research-helper
+path: Expert
+l2: Business & finance
+name: Real-estate research helper
+pitch: Researches neighborhoods, valuations, school zones, and commute realities
+  for a place you're considering. Can monitor new listings and price-cuts on
+  your shortlist.
+expertise: Researches neighborhoods, valuations, school zones, and commute
+  realities for a place you're considering. Can monitor new listings and
+  price-cuts on your shortlist.
+combinesWith:
+  - major-purchase-research
+  - mortgage-refinance-foreclosure-navigator
+  - move-relocate
+  - urban-planner

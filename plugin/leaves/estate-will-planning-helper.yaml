@@ -1,0 +1,13 @@
+id: estate-will-planning-helper
+path: Goal
+l2: Goal
+name: Estate & will planning helper
+pitch: Walks you through wills, trusts, healthcare directives, and post-death
+  affairs. Tracks the documents and the people who need to know.
+expertise: Walks you through wills, trusts, healthcare directives, and
+  post-death affairs. Tracks the documents and the people who need to know.
+liability: legal
+combinesWith:
+  - bereavement-funeral-planner
+  - personal-attorney
+  - personal-finance-budgeting-coach

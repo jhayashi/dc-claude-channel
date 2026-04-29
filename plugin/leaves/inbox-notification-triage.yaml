@@ -1,0 +1,12 @@
+id: inbox-notification-triage
+path: Service
+l2: Service
+name: Inbox & notification triage
+pitch: Reads your inbox at the cadence you set, summarizes, drafts replies in
+  your voice, and surfaces what actually needs you.
+expertise: Reads your inbox at the cadence you set, summarizes, drafts replies
+  in your voice, and surfaces what actually needs you.
+combinesWith:
+  - bill-payment-monitor
+  - calendar-scheduling-assistant
+  - exec-assistant

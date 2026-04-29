@@ -1,0 +1,26 @@
+id: trip-planner
+path: Goal
+l2: Goal
+name: Trip planner
+pitch: Plans a trip end-to-end — flights, lodging, route, activities. Tracks
+  bookings and replans when something breaks. Outdoorsy trips included (hiking,
+  camping, ski destinations).
+expertise: Plans a trip end-to-end — flights, lodging, route, activities. Tracks
+  bookings and replans when something breaks. Outdoorsy trips included (hiking,
+  camping, ski destinations).
+parameter: destination/style
+combinesWith:
+  - astronomer-stargazing-partner
+  - camping-prep
+  - exec-assistant
+  - fly-fishing-partner
+  - historian
+  - language-coach
+  - museum-docent
+  - naturalist-field-guide
+  - outdoor-sport-partner
+  - social-scientist
+  - sommelier-wine-pairing
+  - sports-fan-coaching-assistant
+  - translator
+  - vehicle-bike-mechanic

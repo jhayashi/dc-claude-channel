@@ -1,0 +1,13 @@
+id: bartender-cocktail-collaborator
+path: Expert
+l2: Hospitality & food
+name: Bartender / cocktail collaborator
+pitch: Helps you build a cocktail menu for guests, recreate that drink you had
+  on vacation, or level up your home bar. Can track your bottle inventory and
+  surface new recipes.
+expertise: Helps you build a cocktail menu for guests, recreate that drink you
+  had on vacation, or level up your home bar. Can track your bottle inventory
+  and surface new recipes.
+combinesWith:
+  - event-planner
+  - sommelier-wine-pairing

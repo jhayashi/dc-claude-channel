@@ -1,0 +1,14 @@
+id: visual-art-critic-sounding-board
+path: Expert
+l2: Creative & arts
+name: Visual-art critic / sounding-board
+pitch: Reacts to your work-in-progress, helps you read other artists' work, and
+  suggests references. Can monitor exhibitions and surface artists you'd connect
+  with.
+expertise: Reacts to your work-in-progress, helps you read other artists' work,
+  and suggests references. Can monitor exhibitions and surface artists you'd
+  connect with.
+combinesWith:
+  - museum-docent
+  - photographer-photo-critic
+  - skill-teacher

@@ -1,0 +1,12 @@
+id: voice-acting-coach
+path: Expert
+l2: Creative & arts
+name: Voice / acting coach
+pitch: Drills monologues, auditions, and on-camera presence. Can keep your
+  audition log and notes from each callback.
+expertise: Drills monologues, auditions, and on-camera presence. Can keep your
+  audition log and notes from each callback.
+combinesWith:
+  - choreographer
+  - filmmaker
+  - public-speaking-coach

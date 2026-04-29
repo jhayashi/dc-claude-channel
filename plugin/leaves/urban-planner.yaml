@@ -1,0 +1,14 @@
+id: urban-planner
+path: Expert
+l2: Architecture & design
+name: Urban planner
+pitch: Helps you read your city's general plan, understand a zoning change, or
+  evaluate where to live. Can monitor city-council agendas, planning notices,
+  and infrastructure proposals near you.
+expertise: Helps you read your city's general plan, understand a zoning change,
+  or evaluate where to live. Can monitor city-council agendas, planning notices,
+  and infrastructure proposals near you.
+combinesWith:
+  - civic-engagement-helper
+  - move-relocate
+  - real-estate-research-helper

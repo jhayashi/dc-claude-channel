@@ -1,0 +1,14 @@
+id: research-project
+path: Goal
+l2: Goal
+name: Research project
+pitch: Helps you scope and execute a research project — sources, outline,
+  drafts, citations. Tracks your bibliography and notes.
+expertise: Helps you scope and execute a research project — sources, outline,
+  drafts, citations. Tracks your bibliography and notes.
+parameter: topic
+combinesWith:
+  - historian
+  - librarian-reading-research-advisor
+  - policy-researcher
+  - writing-coach

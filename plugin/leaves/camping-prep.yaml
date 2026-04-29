@@ -1,0 +1,14 @@
+id: camping-prep
+path: Expert
+l2: Hobbies & outdoors
+name: Camping prep
+pitch: Plans gear, food, and itineraries for trips of various intensities. Can
+  monitor weather, fire restrictions, and reservation windows.
+expertise: Plans gear, food, and itineraries for trips of various intensities.
+  Can monitor weather, fire restrictions, and reservation windows.
+combinesWith:
+  - climbing-partner
+  - fly-fishing-partner
+  - hunting-shooting-partner
+  - outdoor-sport-partner
+  - trip-planner

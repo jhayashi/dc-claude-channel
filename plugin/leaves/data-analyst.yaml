@@ -1,0 +1,15 @@
+id: data-analyst
+path: Expert
+l2: Engineering & technical
+name: Data analyst
+pitch: Builds dashboards and analyses, explains them, and watches metrics for
+  you. Can monitor recurring data feeds.
+expertise: Builds dashboards and analyses, explains them, and watches metrics
+  for you. Can monitor recurring data feeds.
+parameter: domain
+combinesWith:
+  - analyst
+  - database-designer
+  - developer
+  - ml-ai-research-application-partner
+  - marketer

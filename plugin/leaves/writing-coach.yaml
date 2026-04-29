@@ -1,0 +1,18 @@
+id: writing-coach
+path: Expert
+l2: Education
+name: Writing coach
+pitch: Helps you write better — academic, business, fiction, college essays.
+  Reviews drafts, tracks your improvement, and calls out tics.
+expertise: Helps you write better — academic, business, fiction, college essays.
+  Reviews drafts, tracks your improvement, and calls out tics.
+parameter: writing type
+combinesWith:
+  - college-counselor-admissions-advisor
+  - curriculum-instructional-designer
+  - education-milestone
+  - job-search-interview-prep
+  - research-project
+  - test-prep-coach
+  - tutor
+  - writing-partner

@@ -1,0 +1,16 @@
+id: eldercare-decision-helper
+path: Expert
+l2: Health, wellness, caregiving
+name: Eldercare-decision helper
+pitch: Helps you think through home vs assisted vs memory care, hospice timing,
+  and family-meeting scripts. Tracks care plans and provider communications.
+expertise: Helps you think through home vs assisted vs memory care, hospice
+  timing, and family-meeting scripts. Tracks care plans and provider
+  communications.
+liability: eldercare
+combinesWith:
+  - caregiver-support-partner
+  - caregiving-onset-planner
+  - hospice-conversation-helper
+  - patient-advocate
+  - social-services-case-management-helper

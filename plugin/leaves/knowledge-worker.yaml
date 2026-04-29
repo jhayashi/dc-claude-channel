@@ -1,0 +1,16 @@
+id: knowledge-worker
+path: Expert
+l2: Business & finance
+name: Knowledge worker
+pitch: Drafts memos, briefing docs, slide decks, board updates, and project
+  reports for you. Can pull from sources you point it at, harmonize tone with
+  your voice, and turn rough notes into polished deliverables.
+expertise: Drafts memos, briefing docs, slide decks, board updates, and project
+  reports for you. Can pull from sources you point it at, harmonize tone with
+  your voice, and turn rough notes into polished deliverables.
+combinesWith:
+  - analyst
+  - brand-voice-copywriter
+  - exec-assistant
+  - marketer
+  - startup-advisor

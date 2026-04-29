@@ -1,0 +1,15 @@
+id: major-purchase-research
+path: Goal
+l2: Goal
+name: Major-purchase research
+pitch: Helps you research, decide, and negotiate a big-ticket purchase — car,
+  house, appliance, gift. Can watch prices and reviews.
+expertise: Helps you research, decide, and negotiate a big-ticket purchase —
+  car, house, appliance, gift. Can watch prices and reviews.
+parameter: item type (car, house, gift)
+combinesWith:
+  - negotiation-coach
+  - personal-finance-budgeting-coach
+  - price-availability-watcher
+  - real-estate-research-helper
+  - vehicle-bike-mechanic

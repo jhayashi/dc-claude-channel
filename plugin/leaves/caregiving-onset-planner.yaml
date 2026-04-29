@@ -1,0 +1,16 @@
+id: caregiving-onset-planner
+path: Goal
+l2: Goal
+name: Caregiving-onset planner
+pitch: "When a parent suddenly needs help: assesses what's needed, finds
+  providers, manages siblings, tracks paperwork."
+expertise: "When a parent suddenly needs help: assesses what's needed, finds
+  providers, manages siblings, tracks paperwork."
+liability: eldercare
+combinesWith:
+  - caregiver-support-partner
+  - eldercare-decision-helper
+  - emergency-prep-coach
+  - government-benefits-navigator
+  - patient-advocate
+  - social-services-case-management-helper

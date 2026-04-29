@@ -1,0 +1,16 @@
+id: librarian-reading-research-advisor
+path: Expert
+l2: Information & knowledge
+name: Librarian / reading & research advisor
+pitch: Curates what you should read next based on what you've enjoyed and what
+  you're working through. Can monitor new releases, awards lists, and
+  reader-community recommendations.
+expertise: Curates what you should read next based on what you've enjoyed and
+  what you're working through. Can monitor new releases, awards lists, and
+  reader-community recommendations.
+combinesWith:
+  - genealogist
+  - historian
+  - research-project
+  - skill-teacher
+  - tutor

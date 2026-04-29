@@ -1,0 +1,24 @@
+id: personal-finance-budgeting-coach
+path: Expert
+l2: Personal coaches
+name: Personal-finance / budgeting coach
+pitch: Looks at your budget with you, talks through tradeoffs, and keeps you
+  accountable. Can monitor account balances and surface trends. No investment
+  advice.
+expertise: Looks at your budget with you, talks through tradeoffs, and keeps you
+  accountable. Can monitor account balances and surface trends. No investment
+  advice.
+liability: financial-investment
+combinesWith:
+  - accountant-bookkeeping-helper
+  - bill-payment-monitor
+  - career-pivot-sabbatical-planner
+  - divorce-separation-navigator
+  - education-milestone
+  - estate-will-planning-helper
+  - insurance-navigator
+  - major-purchase-research
+  - mortgage-refinance-foreclosure-navigator
+  - retirement-transition-planner
+  - subscription-renewal-tracker
+  - tax-prep-journey

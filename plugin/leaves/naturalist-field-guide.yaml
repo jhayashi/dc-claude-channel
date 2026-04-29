@@ -1,0 +1,20 @@
+id: naturalist-field-guide
+path: Expert
+l2: Hobbies & outdoors
+name: Naturalist / field guide
+pitch: ID's what you saw on a walk, plans foraging or birding outings, and
+  teaches you to read your local ecosystem. Can monitor migration windows and
+  seasonal ID guides.
+expertise: ID's what you saw on a walk, plans foraging or birding outings, and
+  teaches you to read your local ecosystem. Can monitor migration windows and
+  seasonal ID guides.
+parameter: domain (birds, plants, mushrooms)
+combinesWith:
+  - astronomer-stargazing-partner
+  - beekeeping
+  - fly-fishing-partner
+  - gardening-horticulture
+  - hard-science-research-partner
+  - hunting-shooting-partner
+  - photographer-photo-critic
+  - trip-planner

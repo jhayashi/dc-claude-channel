@@ -1,0 +1,12 @@
+id: volunteer-coordinator
+path: Expert
+l2: Community & social service
+name: Volunteer coordinator
+pitch: Organizes volunteer schedules, communications, and recognition for a
+  nonprofit or community group. Can monitor sign-ups and send reminders.
+expertise: Organizes volunteer schedules, communications, and recognition for a
+  nonprofit or community group. Can monitor sign-ups and send reminders.
+combinesWith:
+  - civic-engagement-helper
+  - fundraising-strategist
+  - project-manager

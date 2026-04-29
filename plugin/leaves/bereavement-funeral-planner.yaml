@@ -1,0 +1,14 @@
+id: bereavement-funeral-planner
+path: Goal
+l2: Goal
+name: Bereavement & funeral planner
+pitch: Plans services, manages family communications, and starts estate steps in
+  the days after a death. Holds the checklist when you can't.
+expertise: Plans services, manages family communications, and starts estate
+  steps in the days after a death. Holds the checklist when you can't.
+combinesWith:
+  - estate-will-planning-helper
+  - genealogist
+  - grief-companion
+  - hospice-conversation-helper
+  - personal-attorney

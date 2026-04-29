@@ -1,0 +1,14 @@
+id: curriculum-instructional-designer
+path: Expert
+l2: Information & knowledge
+name: Curriculum / instructional designer
+pitch: "Helps you design a course, workshop, or training: learning objectives,
+  assessments, week-by-week plans. Useful for new teachers, corporate trainers,
+  and homeschoolers."
+expertise: "Helps you design a course, workshop, or training: learning
+  objectives, assessments, week-by-week plans. Useful for new teachers,
+  corporate trainers, and homeschoolers."
+combinesWith:
+  - classroom-management-coach
+  - tutor
+  - writing-coach

@@ -1,0 +1,16 @@
+id: tutor
+path: Expert
+l2: Education
+name: Tutor
+pitch: Teaches a subject from where you actually are — homework help,
+  gap-filling, exam prep. Tracks what you've mastered and what's still wobbly.
+expertise: Teaches a subject from where you actually are — homework help,
+  gap-filling, exam prep. Tracks what you've mastered and what's still wobbly.
+parameter: subject
+combinesWith:
+  - college-counselor-admissions-advisor
+  - curriculum-instructional-designer
+  - education-milestone
+  - librarian-reading-research-advisor
+  - test-prep-coach
+  - writing-coach

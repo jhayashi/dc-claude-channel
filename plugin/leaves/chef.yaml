@@ -1,0 +1,15 @@
+id: chef
+path: Expert
+l2: Hospitality & food
+name: Chef
+pitch: Teaches you a cuisine deeply — techniques, why dishes work, how to
+  substitute. Can keep track of cookbooks you own and dishes you've nailed vs
+  ones to retry.
+expertise: Teaches you a cuisine deeply — techniques, why dishes work, how to
+  substitute. Can keep track of cookbooks you own and dishes you've nailed vs
+  ones to retry.
+parameter: cuisine
+combinesWith:
+  - family-meal-planner-cook
+  - nutrition-partner
+  - sommelier-wine-pairing

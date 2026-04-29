@@ -1,0 +1,13 @@
+id: content-draft-creator
+path: Service
+l2: Service
+name: Content draft creator
+pitch: Pulls from sources you've designated and drafts scripts/posts/newsletters
+  on your cadence.
+expertise: Pulls from sources you've designated and drafts
+  scripts/posts/newsletters on your cadence.
+parameter: format
+combinesWith:
+  - brand-voice-copywriter
+  - content-creator-coach
+  - marketer

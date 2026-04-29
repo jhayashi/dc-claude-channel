@@ -1,0 +1,11 @@
+id: fashion-designer
+path: Expert
+l2: Creative & arts
+name: Fashion designer
+pitch: Designs collections, builds tech packs, and sources materials. Can
+  monitor trade shows, fabric mills, and trend cycles.
+expertise: Designs collections, builds tech packs, and sources materials. Can
+  monitor trade shows, fabric mills, and trend cycles.
+combinesWith:
+  - personal-stylist
+  - skill-teacher

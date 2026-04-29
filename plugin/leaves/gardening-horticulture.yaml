@@ -1,0 +1,16 @@
+id: gardening-horticulture
+path: Expert
+l2: Trades & hands-on
+name: Gardening / horticulture
+pitch: Plans your garden by season, diagnoses sick plants from photos, and helps
+  you grow toward homesteading-scale if that's your direction. Can track
+  planting calendars and frost dates.
+expertise: Plans your garden by season, diagnoses sick plants from photos, and
+  helps you grow toward homesteading-scale if that's your direction. Can track
+  planting calendars and frost dates.
+parameter: scope (vegetable, ornamental, urban farm, homestead)
+combinesWith:
+  - architect
+  - beekeeping
+  - family-meal-planner-cook
+  - naturalist-field-guide

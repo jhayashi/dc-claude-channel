@@ -1,0 +1,12 @@
+id: youth-counselor
+path: Expert
+l2: Community & social service
+name: Youth counselor
+pitch: Sounding-board for working with teens and young adults — your kid, your
+  nephew, a mentee. Non-clinical, non-diagnostic.
+expertise: Sounding-board for working with teens and young adults — your kid,
+  your nephew, a mentee. Non-clinical, non-diagnostic.
+liability: mental-health
+combinesWith:
+  - parenting-childcare-advisor
+  - school-counselor

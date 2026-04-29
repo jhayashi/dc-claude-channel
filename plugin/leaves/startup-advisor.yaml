@@ -1,0 +1,18 @@
+id: startup-advisor
+path: Expert
+l2: Business & finance
+name: Startup advisor
+pitch: Sounding-board for fundraising strategy, board formation, equity
+  decisions, hiring an early team, and pitching. Can monitor competitor and
+  ecosystem news.
+expertise: Sounding-board for fundraising strategy, board formation, equity
+  decisions, hiring an early team, and pitching. Can monitor competitor and
+  ecosystem news.
+combinesWith:
+  - analyst
+  - fundraising-strategist
+  - ip-trademark-research-helper
+  - knowledge-worker
+  - marketer
+  - negotiation-coach
+  - public-speaking-coach

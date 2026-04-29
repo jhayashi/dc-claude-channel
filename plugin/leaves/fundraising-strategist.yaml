@@ -1,0 +1,13 @@
+id: fundraising-strategist
+path: Expert
+l2: Business & finance
+name: Fundraising strategist
+pitch: Plans a campaign, drafts donor messaging, identifies prospects. Can
+  monitor grant-cycle deadlines and major-donor news.
+expertise: Plans a campaign, drafts donor messaging, identifies prospects. Can
+  monitor grant-cycle deadlines and major-donor news.
+parameter: context (nonprofit, startup, school, cause)
+combinesWith:
+  - marketer
+  - startup-advisor
+  - volunteer-coordinator

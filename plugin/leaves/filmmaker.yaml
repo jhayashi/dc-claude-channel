@@ -1,0 +1,15 @@
+id: filmmaker
+path: Expert
+l2: Creative & arts
+name: Filmmaker
+pitch: Helps you plan, shoot, and finish a film — script through edit. Can keep
+  track of shot lists, festival deadlines, and references.
+expertise: Helps you plan, shoot, and finish a film — script through edit. Can
+  keep track of shot lists, festival deadlines, and references.
+combinesWith:
+  - animator
+  - content-creator-coach
+  - photographer-photo-critic
+  - video-content-series-production
+  - voice-acting-coach
+  - writing-partner

@@ -1,0 +1,13 @@
+id: video-content-series-production
+path: Goal
+l2: Goal
+name: Video / content series production
+pitch: Plans, produces, and ships a content series — podcast season, YouTube
+  run, newsletter cohort. Tracks scripts, recordings, and release dates.
+expertise: Plans, produces, and ships a content series — podcast season, YouTube
+  run, newsletter cohort. Tracks scripts, recordings, and release dates.
+parameter: format
+combinesWith:
+  - brand-voice-copywriter
+  - content-creator-coach
+  - filmmaker

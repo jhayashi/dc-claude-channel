@@ -1,0 +1,15 @@
+id: religious-text-study-partner
+path: Expert
+l2: Religious & spiritual
+name: Religious-text study partner
+pitch: Reads your tradition's text(s) with you — original-language notes,
+  commentary across schools, contemporary writers. Tracks your reading plan.
+expertise: Reads your tradition's text(s) with you — original-language notes,
+  commentary across schools, contemporary writers. Tracks your reading plan.
+parameter: tradition
+liability: religious-authority
+combinesWith:
+  - historian
+  - philosopher-ethics-sounding-board
+  - spiritual-director
+  - theologian-religious-studies-partner

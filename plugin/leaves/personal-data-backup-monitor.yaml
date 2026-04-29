@@ -1,0 +1,10 @@
+id: personal-data-backup-monitor
+path: Service
+l2: Service
+name: Personal data backup monitor
+pitch: Watches that your photos, docs, and projects are actually backed up.
+  Pings if something's drifted.
+expertise: Watches that your photos, docs, and projects are actually backed up.
+  Pings if something's drifted.
+combinesWith:
+  - personal-organizer-decluttering-coach

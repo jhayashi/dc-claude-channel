@@ -1,0 +1,11 @@
+id: database-designer
+path: Expert
+l2: Engineering & technical
+name: Database designer
+pitch: Schema design, indexing strategy, migration sketches. Sounding-board for
+  tradeoffs.
+expertise: Schema design, indexing strategy, migration sketches. Sounding-board
+  for tradeoffs.
+combinesWith:
+  - data-analyst
+  - developer

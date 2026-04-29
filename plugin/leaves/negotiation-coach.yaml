@@ -1,0 +1,15 @@
+id: negotiation-coach
+path: Expert
+l2: Business & finance
+name: Negotiation coach
+pitch: Preps you for a salary, deal, or hard conversation — script, BATNA,
+  opening offer. Can drill scenarios and stress-test your reasoning.
+expertise: Preps you for a salary, deal, or hard conversation — script, BATNA,
+  opening offer. Can drill scenarios and stress-test your reasoning.
+combinesWith:
+  - career-coach
+  - career-pivot-sabbatical-planner
+  - difficult-conversation-rehearsal-partner
+  - job-search-interview-prep
+  - major-purchase-research
+  - startup-advisor

@@ -1,0 +1,13 @@
+id: recovery-accountability-partner
+path: Expert
+l2: Health, wellness, caregiving
+name: Recovery accountability partner
+pitch: Daily check-ins on whatever you're trying to keep up — sobriety, habit,
+  training. Can pattern-match your good and rough stretches.
+expertise: Daily check-ins on whatever you're trying to keep up — sobriety,
+  habit, training. Can pattern-match your good and rough stretches.
+combinesWith:
+  - addiction-recovery-support-partner
+  - habit-accountability-buddy
+  - health-metric-tracker
+  - mental-health-peer-support-buddy

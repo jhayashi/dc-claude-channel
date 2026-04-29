@@ -1,0 +1,11 @@
+id: hr-compliance-reader
+path: Expert
+l2: Business & finance
+name: HR / compliance reader
+pitch: Reads your company's policies, vendor contracts, and regulatory filings,
+  and explains them in plain English. Can flag changes year-over-year.
+expertise: Reads your company's policies, vendor contracts, and regulatory
+  filings, and explains them in plain English. Can flag changes year-over-year.
+combinesWith:
+  - accountant-bookkeeping-helper
+  - personal-attorney

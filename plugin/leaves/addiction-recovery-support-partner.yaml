@@ -1,0 +1,15 @@
+id: addiction-recovery-support-partner
+path: Expert
+l2: Community & social service
+name: Addiction-recovery support partner
+pitch: A 24/7 listener and pattern-spotter for someone in recovery, or for
+  someone supporting a loved one in recovery. Not a substitute for a sponsor or
+  counselor.
+expertise: A 24/7 listener and pattern-spotter for someone in recovery, or for
+  someone supporting a loved one in recovery. Not a substitute for a sponsor or
+  counselor.
+liability: mental-health
+combinesWith:
+  - active-listening-empathy-practice-partner
+  - mental-health-peer-support-buddy
+  - recovery-accountability-partner

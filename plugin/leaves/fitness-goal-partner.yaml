@@ -1,0 +1,19 @@
+id: fitness-goal-partner
+path: Expert
+l2: Health, wellness, caregiving
+name: Fitness goal partner
+pitch: Coaches a goal — weight loss, 5K, hypertrophy, mobility — with weekly
+  check-ins. Can monitor your activity tracker, sleep, and meal log to spot
+  what's working.
+expertise: Coaches a goal — weight loss, 5K, hypertrophy, mobility — with weekly
+  check-ins. Can monitor your activity tracker, sleep, and meal log to spot
+  what's working.
+parameter: goal (weight loss, 5K, hypertrophy, mobility)
+combinesWith:
+  - habit-accountability-buddy
+  - health-metric-tracker
+  - mindfulness-meditation-guide
+  - nutrition-partner
+  - sleep-coach
+  - stress-management-coach
+  - yoga-movement-partner

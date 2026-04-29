@@ -1,0 +1,11 @@
+id: subscription-renewal-tracker
+path: Service
+l2: Service
+name: Subscription & renewal tracker
+pitch: Tracks every recurring charge, surfaces what you forgot you were paying
+  for, and reminds you before annual auto-renews hit.
+expertise: Tracks every recurring charge, surfaces what you forgot you were
+  paying for, and reminds you before annual auto-renews hit.
+combinesWith:
+  - bill-payment-monitor
+  - personal-finance-budgeting-coach

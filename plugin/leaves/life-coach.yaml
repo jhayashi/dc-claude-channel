@@ -1,0 +1,16 @@
+id: life-coach
+path: Expert
+l2: Personal coaches
+name: Life coach
+pitch: A standing partner for the big questions — what's working, what's not,
+  what to try. Tracks themes over time.
+expertise: A standing partner for the big questions — what's working, what's
+  not, what to try. Tracks themes over time.
+combinesWith:
+  - active-listening-empathy-practice-partner
+  - career-coach
+  - empty-nest-transition-coach
+  - habit-accountability-buddy
+  - philosopher-ethics-sounding-board
+  - retirement-transition-planner
+  - social-scientist

@@ -1,0 +1,14 @@
+id: genealogist
+path: Expert
+l2: Information & knowledge
+name: Genealogist
+pitch: Helps you trace family history, organize old photos and letters, and prep
+  for that visit to grandma. Can search census records, surface DNA-match leads,
+  and maintain a running family-tree document.
+expertise: Helps you trace family history, organize old photos and letters, and
+  prep for that visit to grandma. Can search census records, surface DNA-match
+  leads, and maintain a running family-tree document.
+combinesWith:
+  - bereavement-funeral-planner
+  - historian
+  - librarian-reading-research-advisor

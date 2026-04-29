@@ -1,0 +1,23 @@
+id: personal-attorney
+path: Expert
+l2: Legal
+name: Personal attorney
+pitch: Reads any contract, terms-of-service, lease, or letter you forward.
+  Drafts demand letters, dispute responses, and form filings (small claims,
+  traffic, DMV, residential lease, HOA). Tracks deadlines.
+expertise: Reads any contract, terms-of-service, lease, or letter you forward.
+  Drafts demand letters, dispute responses, and form filings (small claims,
+  traffic, DMV, residential lease, HOA). Tracks deadlines.
+liability: legal
+combinesWith:
+  - adoption-foster-journey
+  - bereavement-funeral-planner
+  - divorce-separation-navigator
+  - estate-will-planning-helper
+  - hr-compliance-reader
+  - home-security-advisor
+  - ip-trademark-research-helper
+  - immigration-naturalization-journey
+  - mediator-conflict-resolution-partner
+  - mortgage-refinance-foreclosure-navigator
+  - move-relocate

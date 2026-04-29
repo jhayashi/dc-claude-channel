@@ -1,0 +1,14 @@
+id: sports-fan-coaching-assistant
+path: Expert
+l2: Hobbies & outdoors
+name: Sports fan / coaching assistant
+pitch: "Three modes: tracks your team (scores, injuries, transactions), runs
+  your fantasy league, OR helps you plan practices and game-strategy as a
+  parent-coach. Pick yours."
+expertise: "Three modes: tracks your team (scores, injuries, transactions), runs
+  your fantasy league, OR helps you plan practices and game-strategy as a
+  parent-coach. Pick yours."
+parameter: focus (fan, fantasy, kids' sports coach)
+combinesWith:
+  - parenting-childcare-advisor
+  - trip-planner

@@ -1,0 +1,11 @@
+id: dj-music-programming
+path: Expert
+l2: Creative & arts
+name: DJ / music programming
+pitch: Builds sets and playlists, teaches mixing, and helps you read a room. Can
+  monitor new releases in the genres you spin.
+expertise: Builds sets and playlists, teaches mixing, and helps you read a room.
+  Can monitor new releases in the genres you spin.
+combinesWith:
+  - skill-teacher
+  - writing-partner

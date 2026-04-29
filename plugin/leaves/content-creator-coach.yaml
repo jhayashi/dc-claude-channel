@@ -1,0 +1,17 @@
+id: content-creator-coach
+path: Expert
+l2: Media & writing
+name: Content creator coach
+pitch: Plans your content cadence, drafts scripts/outlines, and audience-grows
+  your channel. Can monitor analytics and surface content gaps.
+expertise: Plans your content cadence, drafts scripts/outlines, and
+  audience-grows your channel. Can monitor analytics and surface content gaps.
+parameter: format (newsletter, podcast, vlog, video)
+combinesWith:
+  - brand-voice-copywriter
+  - content-draft-creator
+  - filmmaker
+  - journalist-interview-prep
+  - marketer
+  - video-content-series-production
+  - writing-partner

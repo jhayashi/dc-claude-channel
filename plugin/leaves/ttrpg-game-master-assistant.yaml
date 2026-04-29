@@ -1,0 +1,11 @@
+id: ttrpg-game-master-assistant
+path: Expert
+l2: Creative & arts
+name: TTRPG game-master assistant
+pitch: Preps sessions, runs encounters, tracks NPCs and lore, and helps you
+  improvise at the table. Can monitor your campaign's loose threads.
+expertise: Preps sessions, runs encounters, tracks NPCs and lore, and helps you
+  improvise at the table. Can monitor your campaign's loose threads.
+combinesWith:
+  - game-designer
+  - writing-partner

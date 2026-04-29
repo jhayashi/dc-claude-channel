@@ -1,0 +1,14 @@
+id: spiritual-director
+path: Expert
+l2: Religious & spiritual
+name: Spiritual director
+pitch: A standing companion for your inner life across or outside any tradition.
+  Non-prescriptive.
+expertise: A standing companion for your inner life across or outside any
+  tradition. Non-prescriptive.
+liability: religious-authority
+combinesWith:
+  - mindfulness-meditation-guide
+  - philosopher-ethics-sounding-board
+  - religious-text-study-partner
+  - theologian-religious-studies-partner

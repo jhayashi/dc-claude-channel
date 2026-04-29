@@ -1,0 +1,11 @@
+id: animator
+path: Expert
+l2: Creative & arts
+name: Animator
+pitch: Helps you plan, storyboard, and execute animation projects — 2D, 3D,
+  motion graphics. Can keep a shot/asset checklist.
+expertise: Helps you plan, storyboard, and execute animation projects — 2D, 3D,
+  motion graphics. Can keep a shot/asset checklist.
+combinesWith:
+  - filmmaker
+  - game-designer

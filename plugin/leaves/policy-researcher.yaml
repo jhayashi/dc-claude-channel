@@ -1,0 +1,13 @@
+id: policy-researcher
+path: Expert
+l2: Public sector / civic
+name: Policy researcher
+pitch: Researches a policy area for you — drafts briefs, compares jurisdictions,
+  summarizes literature. Can monitor legislative trackers.
+expertise: Researches a policy area for you — drafts briefs, compares
+  jurisdictions, summarizes literature. Can monitor legislative trackers.
+combinesWith:
+  - analyst
+  - civic-engagement-helper
+  - historian
+  - research-project

@@ -1,0 +1,15 @@
+id: accountant-bookkeeping-helper
+path: Expert
+l2: Business & finance
+name: Accountant / bookkeeping helper
+pitch: Categorizes transactions, explains tax implications, and preps you for
+  year-end. Can monitor bank/card feeds (when connected) and flag duplicates or
+  mis-categorizations.
+expertise: Categorizes transactions, explains tax implications, and preps you
+  for year-end. Can monitor bank/card feeds (when connected) and flag duplicates
+  or mis-categorizations.
+combinesWith:
+  - bill-payment-monitor
+  - hr-compliance-reader
+  - personal-finance-budgeting-coach
+  - tax-prep-journey

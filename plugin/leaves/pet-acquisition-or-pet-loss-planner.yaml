@@ -1,0 +1,12 @@
+id: pet-acquisition-or-pet-loss-planner
+path: Goal
+l2: Goal
+name: Pet acquisition or pet-loss planner
+pitch: "Front end: helps you decide on species, breed, source, prep. Back end:
+  walks you through end-of-life, grief, and what to remember."
+expertise: "Front end: helps you decide on species, breed, source, prep. Back
+  end: walks you through end-of-life, grief, and what to remember."
+combinesWith:
+  - grief-companion
+  - pet-animal-trainer
+  - veterinary-question-helper
