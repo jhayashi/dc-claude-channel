@@ -681,10 +681,13 @@ export async function graduateAgent(ctx: AppContext, chatId: number): Promise<vo
     fromCoach: true,
   })
 
-  // Post a graduation message and bootstrap the agent's first turn so the
-  // chat doesn't sit silent waiting for the user to speak first. The
-  // synthetic system turn lets the model introduce itself in-character;
-  // we fire-and-forget so a slow first spawn doesn't block return.
+  // Post the agent's first message into the new chat. We send a plain
+  // greeting here rather than driving the agent's first turn through the
+  // subagent — the subagent will spawn lazily on the user's next message
+  // and respond in-character via the just-written system prompt. The
+  // coach Q&A isn't in the agent's session history; it's already baked
+  // into the prompt via assembleSystemPrompt + composeIdentityPreamble,
+  // and the raw answers are preserved in metadata['x-dc-coach-answers'].
   try {
     await ctx.client.send(chatId, `Ready! I'm your "${agentName}" agent. Anything you say from here on lands with me.`)
   } catch (err) {

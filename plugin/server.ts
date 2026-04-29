@@ -145,6 +145,27 @@ function safeName(s: string): string {
 const webxdcAppRegistry = new Map<number, { app: WebXDCApp; chatId: number }>()
 const webxdcLastSerial = new Map<number, number>()
 
+// ── Coach turn serialization ───────────────────────────────────────────
+// Per-chat in-process lock for coach turns. Without this, two messages
+// arriving in quick succession both read the same starting state and the
+// second's `advanceCoach` mutation overwrites the first — the question's
+// answer is silently dropped. Mirrors the per-chat queue in
+// dispatcher/subagent-cache.ts. The map grows by chatId; entries are
+// pruned implicitly when the in-flight promise settles back to the same
+// reference (cleanup happens on chat teardown via cleanupChatState).
+const coachLocks = new Map<number, Promise<unknown>>()
+
+async function withCoachLock<T>(chatId: number, fn: () => Promise<T>): Promise<T> {
+  const prev = coachLocks.get(chatId) ?? Promise.resolve()
+  // Run fn whether prev resolved or rejected — we don't want one chat's
+  // failed coach turn to block subsequent ones.
+  const next = prev.then(fn, fn)
+  // Store a non-throwing tail so future awaits don't see the rejection
+  // routed through the chain.
+  coachLocks.set(chatId, next.catch(() => {}))
+  return next
+}
+
 // ── Dispatcher ──────────────────────────────────────────────────────────
 
 const DISPATCHER_SOCKET = join(STATE_DIR, 'dispatcher.sock')
@@ -1870,6 +1891,10 @@ async function cleanupChatState(
     logf('dc channel: cleanup familiar error: %v', err)
   }
   tutorial.clearTutorial(chatId)
+  // Drop any in-progress coach session + lock so an unpaired or deleted
+  // mid-build chat doesn't leak the in-memory entry.
+  coachSessions.delete(chatId)
+  coachLocks.delete(chatId)
   try {
     const n = scheduleStore.deleteForChat(chatId)
     if (n > 0) logf('dc channel: cleanup deleted %d schedules for chat %d', n, chatId)
@@ -2226,9 +2251,16 @@ async function main(): Promise<void> {
     // by the agent-setup wall's "Build now"), advance the state machine
     // instead of dispatching to the subagent. The chat has no agent /
     // binding yet — `graduateAgent` writes both when the coach finishes.
-    {
-      const session = coachSessions.get(enrichedMsg.chatId)
-      if (session) {
+    //
+    // Serialized per-chat via withCoachLock: two messages arriving in
+    // quick succession would otherwise both read the same starting state
+    // and the second's advance would clobber the first's. The inner
+    // re-read of coachSessions handles the race where graduation in turn
+    // N deletes the session before turn N+1 enters the critical section.
+    if (coachSessions.has(enrichedMsg.chatId)) {
+      await withCoachLock(enrichedMsg.chatId, async () => {
+        const session = coachSessions.get(enrichedMsg.chatId)
+        if (!session) return  // graduated between checks; fall through cleanly
         try {
           session.coachState = advanceCoach(session.coachState, enrichedMsg.text ?? '')
           if (session.coachState.lastReflection?.text) {
@@ -2242,8 +2274,8 @@ async function main(): Promise<void> {
         } catch (err) {
           logf('coach: advance failed chat=%d: %v', enrichedMsg.chatId, err)
         }
-        return
-      }
+      })
+      return
     }
 
     const chatId = msg.chatId
