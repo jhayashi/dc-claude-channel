@@ -2709,7 +2709,13 @@ process.on('uncaughtException', err => {
   process.stderr.write(`deltachat channel: uncaught exception: ${err}\n`)
 })
 
-main().catch(err => {
-  process.stderr.write(`deltachat channel: fatal: ${err}\n`)
-  process.exit(1)
-})
+// Only auto-run main() when this file is the process entry point.
+// Importing server.ts from tests (e.g. for symbol access) must NOT kick off
+// the dispatcher — otherwise unrelated tests can land their async errors in
+// our catch-all and abort the suite.
+if (import.meta.main) {
+  main().catch(err => {
+    process.stderr.write(`deltachat channel: fatal: ${err}\n`)
+    process.exit(1)
+  })
+}
