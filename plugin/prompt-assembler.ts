@@ -16,7 +16,6 @@ export interface AssembleInputs {
   sliders: SliderState
   preferences: string[]
   tools: string[]
-  parameters: Record<string, string>
   identityPreamble: string
 }
 

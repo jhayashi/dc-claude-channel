@@ -18,7 +18,6 @@ describe('System-prompt assembler', () => {
         'Always require Sam to show their work.',
       ],
       tools: ['gmail'],
-      parameters: { tutor: 'Algebra II' },
       identityPreamble: 'You are an Algebra II tutor for Sam, an 8th grader.',
     }
     const prompt = assembleSystemPrompt(input)
@@ -41,7 +40,6 @@ describe('System-prompt assembler', () => {
         'Be honest, but precede hard observations with reflection of what the user shared.',
       ],
       tools: ['oura'],
-      parameters: {},
       identityPreamble:
         'You are a wellness partner who unifies sleep, stress, and mindfulness ' +
         'into one coherent practice. Sleep is the lead lens.',
@@ -63,7 +61,6 @@ describe('System-prompt assembler', () => {
       sliders: {},
       preferences: [],
       tools: [],
-      parameters: {},
       identityPreamble: 'You are a sleep coach.',
     })
     expect(prompt).toContain('not a licensed clinician')
@@ -76,7 +73,6 @@ describe('System-prompt assembler', () => {
       sliders: {},
       preferences: ['Be patient with Sam.'],
       tools: [],
-      parameters: { tutor: 'Algebra II' },
       identityPreamble: 'You are a tutor.',
     })
     const paragraphs = prompt.split(/\n\s*\n/).filter(p => p.trim())
@@ -90,7 +86,6 @@ describe('System-prompt assembler', () => {
       sliders: {},
       preferences: [],
       tools: [],
-      parameters: { tutor: 'Algebra II' },
       identityPreamble: 'You are a tutor.',
     })
     expect(prompt).not.toContain('Specific preferences')
@@ -105,7 +100,6 @@ describe('System-prompt assembler', () => {
       sliders: {},
       preferences: [longPref],
       tools: [],
-      parameters: {},
       identityPreamble: 'You are a tutor.',
     })
     // Truncate-then-escape: first 500 chars are kept, the embedded "
@@ -123,7 +117,6 @@ describe('System-prompt assembler', () => {
       sliders: {},
       preferences: [],
       tools: [],
-      parameters: {},
       identityPreamble: 'You are a tutor.',
     })).toThrow(/unknown leaf ids.*no-such-leaf/)
   })
