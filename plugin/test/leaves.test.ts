@@ -1,5 +1,16 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { LeafSchema, type Leaf } from '../leaves.js'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import {
+  loadAllLeaves,
+  setLeavesDir,
+  findLeaf,
+  leavesByPath,
+  leavesByL2,
+  symmetricCombines,
+} from '../leaves.js'
 
 describe('LeafSchema', () => {
   test('parses a minimal leaf', () => {
@@ -48,5 +59,56 @@ describe('LeafSchema', () => {
     expect(() =>
       LeafSchema.parse({ id: 'x', path: 'Expert', l2: 'X', name: 'X', pitch: 'X', expertise: 'X', liability: 'fishery' })
     ).toThrow()
+  })
+})
+
+describe('Leaves loader', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'leaves-test-'))
+    setLeavesDir(tmpDir)
+  })
+  afterEach(() => { rmSync(tmpDir, { recursive: true, force: true }) })
+
+  function writeLeaf(yaml: string, name: string) {
+    writeFileSync(join(tmpDir, `${name}.yaml`), yaml)
+  }
+
+  test('loads multiple leaves', () => {
+    writeLeaf(`id: a\npath: Expert\nl2: X\nname: A\npitch: a\nexpertise: a\n`, 'a')
+    writeLeaf(`id: b\npath: Service\nl2: Service\nname: B\npitch: b\nexpertise: b\n`, 'b')
+    const all = loadAllLeaves()
+    expect(all).toHaveLength(2)
+  })
+
+  test('findLeaf returns by id', () => {
+    writeLeaf(`id: tutor\npath: Expert\nl2: Education\nname: Tutor\nparameter: subject\npitch: t\nexpertise: t\n`, 'tutor')
+    const found = findLeaf('tutor')
+    expect(found?.name).toBe('Tutor')
+    expect(findLeaf('missing')).toBeNull()
+  })
+
+  test('symmetric closure adds reverse edges', () => {
+    writeLeaf(`id: a\npath: Expert\nl2: X\nname: A\npitch: a\nexpertise: a\ncombinesWith: [b]\n`, 'a')
+    writeLeaf(`id: b\npath: Expert\nl2: X\nname: B\npitch: b\nexpertise: b\n`, 'b')
+    const sym = symmetricCombines()
+    expect(sym.get('a')).toEqual(new Set(['b']))
+    expect(sym.get('b')).toEqual(new Set(['a']))
+  })
+
+  test('leavesByPath groups correctly', () => {
+    writeLeaf(`id: a\npath: Expert\nl2: X\nname: A\npitch: a\nexpertise: a\n`, 'a')
+    writeLeaf(`id: b\npath: Service\nl2: Service\nname: B\npitch: b\nexpertise: b\n`, 'b')
+    const groups = leavesByPath()
+    expect(groups.Expert).toHaveLength(1)
+    expect(groups.Service).toHaveLength(1)
+    expect(groups.Goal).toHaveLength(0)
+  })
+
+  test('rejects duplicate id', () => {
+    writeLeaf(`id: a\npath: Expert\nl2: X\nname: A\npitch: a\nexpertise: a\n`, 'a')
+    writeLeaf(`id: a\npath: Service\nl2: Service\nname: A2\npitch: x\nexpertise: x\n`, 'a2')
+    expect(() => loadAllLeaves()).toThrow(/duplicate leaf id/)
   })
 })

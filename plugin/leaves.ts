@@ -12,6 +12,9 @@
  */
 
 import { z } from 'zod'
+import { readFileSync, readdirSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
+import YAML from 'yaml'
 
 /**
  * The three top-level paths a leaf belongs to. An agent is built by
@@ -59,3 +62,67 @@ export const LeafSchema = z.object({
 })
 
 export type Leaf = z.infer<typeof LeafSchema>
+
+let LEAVES_DIR = join(import.meta.dir, 'leaves')
+let CACHE: { leaves: Leaf[]; sym: Map<string, Set<string>> } | null = null
+
+export function setLeavesDir(dir: string): void {
+  LEAVES_DIR = dir
+  CACHE = null
+}
+
+export function loadAllLeaves(): Leaf[] {
+  if (CACHE) return CACHE.leaves
+  if (!existsSync(LEAVES_DIR)) return []
+  const files = readdirSync(LEAVES_DIR).filter(f => f.endsWith('.yaml'))
+  const leaves: Leaf[] = []
+  const seen = new Set<string>()
+  for (const f of files) {
+    const raw = YAML.parse(readFileSync(join(LEAVES_DIR, f), 'utf-8'))
+    const parsed = LeafSchema.parse(raw)
+    if (seen.has(parsed.id)) {
+      throw new Error(`duplicate leaf id: ${parsed.id}`)
+    }
+    seen.add(parsed.id)
+    leaves.push(parsed)
+  }
+  const sym = computeSymmetricClosure(leaves)
+  CACHE = { leaves, sym }
+  return leaves
+}
+
+function computeSymmetricClosure(leaves: Leaf[]): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>()
+  for (const l of leaves) out.set(l.id, new Set())
+  for (const l of leaves) {
+    for (const partner of l.combinesWith) {
+      out.get(l.id)?.add(partner)
+      out.get(partner)?.add(l.id)
+    }
+  }
+  return out
+}
+
+export function symmetricCombines(): Map<string, Set<string>> {
+  loadAllLeaves()
+  return CACHE!.sym
+}
+
+export function findLeaf(id: string): Leaf | null {
+  return loadAllLeaves().find(l => l.id === id) ?? null
+}
+
+export function leavesByPath(): Record<Path, Leaf[]> {
+  const out: Record<Path, Leaf[]> = { Expert: [], Service: [], Goal: [] }
+  for (const l of loadAllLeaves()) out[l.path].push(l)
+  return out
+}
+
+export function leavesByL2(): Map<string, Leaf[]> {
+  const out = new Map<string, Leaf[]>()
+  for (const l of loadAllLeaves()) {
+    if (!out.has(l.l2)) out.set(l.l2, [])
+    out.get(l.l2)!.push(l)
+  }
+  return out
+}
