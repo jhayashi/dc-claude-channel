@@ -14,12 +14,16 @@ import * as bindings from '../bindings.js'
 import * as access from '../access/index.js'
 import * as resume from '../resume.js'
 import * as templates from '../templates.js'
-import { loadAllLeaves, symmetricCombines, type Leaf, type Path } from '../leaves.js'
+import { loadAllLeaves, symmetricCombines, getDefaultCatalog, type Catalog, type Leaf, type Path } from '../leaves.js'
 import { decideCleanup, CONTACT_SELF } from '../cleanup.js'
 import { ALL_BUILTIN_TOOLS, BUILTIN_TOOL_DESCRIPTIONS } from '../dispatcher/subagent-process.js'
+import { startCoach, advanceCoach, isCoachDone, collectAnswers, type CoachState, type CoachAnswers } from '../coach.js'
+import { assembleSystemPrompt } from '../prompt-assembler.js'
+import { logLifecycleEvent } from '../events-lifecycle.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { randomUUID } from 'node:crypto'
 
 function availableToolsPayload(ctx: AppContext) {
   return {
@@ -207,6 +211,26 @@ function loadSessions(): Session[] {
     return []
   }
 }
+
+/**
+ * Per-chat coach interview state. Populated when the user taps "Build now"
+ * on the new-agent wall (`build-agent` payload), torn down when the coach
+ * finishes and the chat graduates to a real agent. The dispatcher reads
+ * this map BEFORE running normal subagent dispatch — see runSubagentTurn.
+ *
+ * In-memory only on purpose: a coach interview is a short interactive
+ * dialog the user runs to completion in one sitting. If the dispatcher
+ * restarts mid-coach, falling back to the (already-existing) bare DC
+ * chat without an agent is acceptable — the user can just re-open the
+ * setup card and try again.
+ */
+export interface CoachSession {
+  coachState: CoachState
+  leafIds: string[]
+  sessionId: string
+}
+
+export const coachSessions = new Map<number, CoachSession>()
 
 /** Baseline draft for a fresh "create agent" form. The client populates
  *  these values when the user navigates to the create screen from home. */
@@ -426,6 +450,248 @@ export async function decorateAgentChat(
   }
 }
 
+/**
+ * Compose the Identity preamble for an agent's system prompt from the
+ * leaves the user picked plus the coach's collected answers. Single-leaf
+ * agents get a one-sentence "You are a <leaf>" line (with parameter when
+ * present); mash-ups list every leaf and call out the lead lens.
+ *
+ * Exported for unit testing — composition is a pure transform.
+ */
+export function composeIdentityPreamble(
+  leafIds: string[],
+  answers: CoachAnswers,
+  catalog: Catalog,
+): string {
+  const leaves = leafIds
+    .map(id => catalog.findLeaf(id))
+    .filter((l): l is Leaf => l !== null)
+  if (leaves.length === 0) return 'You are a helpful assistant.'
+  if (leaves.length === 1) {
+    const l = leaves[0]
+    const param = answers.parameters[l.id]
+    if (l.parameter && param) {
+      return `You are a ${l.name.toLowerCase()} (${param}).`
+    }
+    return `You are a ${l.name.toLowerCase()}.`
+  }
+  const lead = answers.leadLeafId ? catalog.findLeaf(answers.leadLeafId) : null
+  const names = leaves.map(l => l.name).join(', ')
+  if (lead) {
+    return `You are a unified agent combining ${names}. ${lead.name} is the lead lens — when topics intersect, frame through ${lead.name}.`
+  }
+  return `You are a unified agent combining ${names}. Treat all specialties as equal partners.`
+}
+
+/**
+ * Compose the human-readable agent name from leaves + answers. Single-leaf
+ * agents use the leaf name directly (with parameter suffix when present);
+ * mash-ups use "Lead leaf + N more". Exported for unit testing.
+ */
+export function composeAgentName(
+  leafIds: string[],
+  answers: CoachAnswers,
+  catalog: Catalog,
+): string {
+  const leaves = leafIds
+    .map(id => catalog.findLeaf(id))
+    .filter((l): l is Leaf => l !== null)
+  if (leaves.length === 0) return 'New agent'
+  if (leaves.length === 1) {
+    const param = answers.parameters[leaves[0].id]
+    return param ? `${leaves[0].name} (${param})` : leaves[0].name
+  }
+  const lead = answers.leadLeafId ? catalog.findLeaf(answers.leadLeafId) : leaves[0]
+  return `${lead.name} + ${leaves.length - 1} more`
+}
+
+/**
+ * Create a new DC chat that will host a coach interview, add the owner,
+ * and seed the access list. Returns the new chat id. The provisional title
+ * is "New agent" — `graduateAgent` renames it once the agent is named.
+ */
+async function createNewAgentChat(ctx: AppContext, sourceChatId: number, ownerContactId: number): Promise<number> {
+  const newChatId = await ctx.client.createGroup('New agent')
+  await ctx.client.addContactToChat(newChatId, ownerContactId)
+  access.addChat(newChatId, ownerContactId)
+  ctx.logf('agent-setup: created new-agent chat %d for owner %d (source %d)', newChatId, ownerContactId, sourceChatId)
+  return newChatId
+}
+
+/**
+ * Handle the `build-agent` payload from the WebXDC wall. Creates a new
+ * DC chat, kicks off a coach interview in `coachSessions`, and posts the
+ * first question. If the coach has nothing to ask (degenerate leaf
+ * shape), graduates immediately.
+ */
+async function handleBuildAgent(
+  ctx: AppContext,
+  sourceChatId: number,
+  leafIds: string[],
+  resolveOwner: () => Promise<number | null>,
+): Promise<void> {
+  // Validate against the catalog up front so we don't create a dead chat.
+  const catalog = getDefaultCatalog()
+  const validIds = leafIds.filter(id => catalog.findLeaf(id) !== null)
+  if (validIds.length === 0) {
+    ctx.logf('agent-setup: build-agent rejected — no valid leaf ids in %v', leafIds)
+    return
+  }
+
+  const ownerContactId = await resolveOwner()
+  if (!ownerContactId) {
+    ctx.logf('agent-setup: build-agent could not resolve owner for source chat %d', sourceChatId)
+    return
+  }
+
+  const newChatId = await createNewAgentChat(ctx, sourceChatId, ownerContactId)
+  const sessionId = randomUUID()
+
+  let coachState: CoachState
+  try {
+    coachState = startCoach({
+      leafIds: validIds,
+      preset: 'mentor',
+      sliders: {},
+      catalog,
+    })
+  } catch (err) {
+    ctx.logf('agent-setup: startCoach failed for chat %d: %v', newChatId, err)
+    return
+  }
+
+  coachSessions.set(newChatId, { coachState, leafIds: validIds, sessionId })
+
+  if (coachState.nextQuestion) {
+    const skipHint = '\n\n_(Or just say "let\'s go" and I\'ll use defaults.)_'
+    try {
+      await ctx.client.send(newChatId, coachState.nextQuestion + skipHint)
+    } catch (err) {
+      ctx.logf('agent-setup: build-agent first-question send failed: %v', err)
+    }
+  } else {
+    // No questions for this leaf shape — graduate immediately.
+    await graduateAgent(ctx, newChatId)
+  }
+}
+
+/**
+ * Finalize a coach interview: compose Identity preamble, assemble the
+ * full system prompt, write the AgentDef + Binding, refresh the chat
+ * badge, log the lifecycle event, clear the coach session, and bootstrap
+ * the new agent's first turn via subagent dispatch.
+ *
+ * Exported for the dispatcher's coach-interception path.
+ */
+export async function graduateAgent(ctx: AppContext, chatId: number): Promise<void> {
+  const session = coachSessions.get(chatId)
+  if (!session) return
+
+  const catalog = getDefaultCatalog()
+  const answers = collectAnswers(session.coachState)
+
+  const identityPreamble = composeIdentityPreamble(session.leafIds, answers, catalog)
+  const agentName = composeAgentName(session.leafIds, answers, catalog)
+
+  let systemPrompt: string
+  try {
+    systemPrompt = assembleSystemPrompt({
+      leafIds: session.leafIds,
+      // assembleSystemPrompt rejects leadLeafId on single-leaf agents.
+      leadLeafId: session.leafIds.length > 1 ? answers.leadLeafId : undefined,
+      preset: 'mentor',
+      sliders: {},
+      preferences: answers.preferences,
+      tools: answers.tools,
+      identityPreamble,
+      catalog,
+    })
+  } catch (err) {
+    ctx.logf('agent-setup: assembleSystemPrompt failed for chat %d: %v', chatId, err)
+    coachSessions.delete(chatId)
+    return
+  }
+
+  const agentId = agents.synthesizeAgentId(agentName)
+  const newAgent: agents.AgentDef = {
+    id: agentId,
+    name: agentName,
+    model: agents.DEFAULT_MODEL,
+    description: '',
+    system: systemPrompt,
+    // Forward-compat hook (per CLAUDE.md): tools[] is a no-op marker; per-agent
+    // tool capabilities use allowedBuiltinTools/allowedMcpServers (not derived
+    // from coach answers in v1).
+    tools: [],
+    metadata: {
+      'x-dc-leaves': session.leafIds,
+      'x-dc-personality-preset': 'mentor',
+      'x-dc-personality-sliders': {},
+      'x-dc-coach-answers': answers as unknown as Record<string, unknown>,
+      'x-dc-pattern': 'checker',
+      // Legacy compat — drives existing badge palette / archetype-aware logic.
+      'x-dc-archetype': 'role',
+    },
+  }
+  // Roll a random orientation so same-model agents are visually
+  // differentiable (mirrors the templated/create paths).
+  agents.setIconMirror(newAgent, Math.random() < 0.5)
+
+  try {
+    agents.saveAgent(newAgent)
+  } catch (err) {
+    ctx.logf('agent-setup: saveAgent failed during graduation chat=%d: %v', chatId, err)
+    coachSessions.delete(chatId)
+    return
+  }
+
+  // First-time binding for this chat — coach lived only in `coachSessions`
+  // until now. Persist the same sessionId so claude --resume can be used
+  // by the subagent on first spawn.
+  bindings.saveBinding({
+    chatId,
+    agentId,
+    sessionId: session.sessionId,
+    inheritClaudeMd: agents.inheritClaudeMdForModel(newAgent.model),
+    workingDir: process.cwd(),
+    createdAt: new Date().toISOString(),
+  })
+
+  // Rename the chat to the agent name + install the agent badge so the
+  // chat avatar swaps from the placeholder to the real agent.
+  try {
+    await ctx.client.setChatName(chatId, agentName)
+  } catch (err) {
+    ctx.logf('agent-setup: graduation rename failed chat=%d: %v', chatId, err)
+  }
+  try {
+    await setAgentIcon(ctx, chatId, newAgent)
+  } catch (err) {
+    ctx.logf('agent-setup: graduation icon refresh failed chat=%d: %v', chatId, err)
+  }
+
+  coachSessions.delete(chatId)
+
+  logLifecycleEvent({
+    kind: 'graduation',
+    chatId,
+    agentId,
+    sessionId: session.sessionId,
+    leafIds: session.leafIds,
+    fromCoach: true,
+  })
+
+  // Post a graduation message and bootstrap the agent's first turn so the
+  // chat doesn't sit silent waiting for the user to speak first. The
+  // synthetic system turn lets the model introduce itself in-character;
+  // we fire-and-forget so a slow first spawn doesn't block return.
+  try {
+    await ctx.client.send(chatId, `Ready! I'm your "${agentName}" agent. Anything you say from here on lands with me.`)
+  } catch (err) {
+    ctx.logf('agent-setup: graduation greeting failed chat=%d: %v', chatId, err)
+  }
+}
+
 export const agentSetupApp: WebXDCApp = {
   id: 'agent-setup',
 
@@ -573,6 +839,25 @@ export const agentSetupApp: WebXDCApp = {
           ctx.logf('agent-setup: getChatContacts failed for chat %d: %v', session!.sourceChatId, err)
           return null
         }
+      }
+
+      if (payload.type === 'build-agent') {
+        const rawLeafIds = (payload as { leafIds?: unknown }).leafIds
+        if (!Array.isArray(rawLeafIds) || rawLeafIds.length === 0) {
+          ctx.logf('agent-setup: build-agent payload missing or empty leafIds')
+          continue
+        }
+        const leafIds = rawLeafIds.filter((x): x is string => typeof x === 'string' && x.length > 0)
+        if (leafIds.length === 0) {
+          ctx.logf('agent-setup: build-agent payload had no string leafIds')
+          continue
+        }
+        try {
+          await handleBuildAgent(ctx, session.sourceChatId, leafIds, resolveOwner)
+        } catch (err) {
+          ctx.logf('agent-setup: build-agent failed: %v', err)
+        }
+        continue
       }
 
       if (payload.type === 'editRequest') {

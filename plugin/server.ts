@@ -28,7 +28,8 @@ import * as familiarRuntime from './familiar-runtime.js'
 import { apps } from './apps.js'
 import type { WebXDCApp, AppContext } from './webxdc-app.js'
 import { filterUpdatesByOwner } from './webxdc-filter.js'
-import { decorateAgentChat, setAgentIcon } from './apps/agent-setup-app.js'
+import { decorateAgentChat, setAgentIcon, coachSessions, graduateAgent } from './apps/agent-setup-app.js'
+import { advanceCoach, isCoachDone } from './coach.js'
 import * as tutorial from './tutorial.js'
 import { decideCleanup } from './cleanup.js'
 import { SocketServer, type SocketRequest } from './dispatcher/socket-server.js'
@@ -2220,6 +2221,30 @@ async function main(): Promise<void> {
     const transcribeResult = await tryTranscribeVoice(msg)
     if (transcribeResult === 'drop') return
     const enrichedMsg = transcribeResult ?? msg
+
+    // Coach interception: when this chat is mid-coach-interview (created
+    // by the agent-setup wall's "Build now"), advance the state machine
+    // instead of dispatching to the subagent. The chat has no agent /
+    // binding yet — `graduateAgent` writes both when the coach finishes.
+    {
+      const session = coachSessions.get(enrichedMsg.chatId)
+      if (session) {
+        try {
+          session.coachState = advanceCoach(session.coachState, enrichedMsg.text ?? '')
+          if (session.coachState.lastReflection?.text) {
+            await client.send(enrichedMsg.chatId, session.coachState.lastReflection.text)
+          }
+          if (isCoachDone(session.coachState)) {
+            await graduateAgent(ctx, enrichedMsg.chatId)
+          } else if (session.coachState.nextQuestion) {
+            await client.send(enrichedMsg.chatId, session.coachState.nextQuestion)
+          }
+        } catch (err) {
+          logf('coach: advance failed chat=%d: %v', enrichedMsg.chatId, err)
+        }
+        return
+      }
+    }
 
     const chatId = msg.chatId
     activityReactor.setTurnTarget(chatId, msg.id)
