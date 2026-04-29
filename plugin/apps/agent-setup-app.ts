@@ -302,8 +302,7 @@ async function sendInit(
   await sweepDeadChats(ctx)
   const existing = sessions.get(sourceChatId)
   const draft = blankDraft()
-  const leaves = loadAllLeaves()
-  const sym = symmetricCombines()
+  const newAgentFlowEnabled = process.env.DC_NEW_AGENT_FLOW === '1'
   const payload = {
     type: 'init' as const,
     version: agentSetup.getAgentSetupVersion(),
@@ -318,20 +317,26 @@ async function sendInit(
     availableModels: models.MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier })),
     defaultModel: models.DEFAULT_MODEL,
     ...availableToolsPayload(ctx),
-    newAgentFlow: {
-      enabled: process.env.DC_NEW_AGENT_FLOW === '1',
-      leaves: leaves.map(l => ({
-        id: l.id,
-        path: l.path,
-        l2: l.l2,
-        name: l.name,
-        parameter: l.parameter,
-        liability: l.liability,
-        pitch: l.pitch,
-        combinesWith: [...(sym.get(l.id) ?? new Set<string>())].sort(),
-      })),
-      l2Summary: buildL2Summary(leaves),
-    },
+    newAgentFlow: newAgentFlowEnabled
+      ? (() => {
+          const leaves = loadAllLeaves()
+          const sym = symmetricCombines()
+          return {
+            enabled: true as const,
+            leaves: leaves.map(l => ({
+              id: l.id,
+              path: l.path,
+              l2: l.l2,
+              name: l.name,
+              parameter: l.parameter,
+              liability: l.liability,
+              pitch: l.pitch,
+              combinesWith: [...(sym.get(l.id) ?? new Set<string>())].sort(),
+            })),
+            l2Summary: buildL2Summary(leaves),
+          }
+        })()
+      : { enabled: false as const },
   }
   const update = JSON.stringify({
     payload,
