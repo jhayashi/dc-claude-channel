@@ -14,6 +14,7 @@ import * as bindings from '../bindings.js'
 import * as access from '../access/index.js'
 import * as resume from '../resume.js'
 import * as templates from '../templates.js'
+import { loadAllLeaves, symmetricCombines, type Leaf, type Path } from '../leaves.js'
 import { decideCleanup, CONTACT_SELF } from '../cleanup.js'
 import { ALL_BUILTIN_TOOLS, BUILTIN_TOOL_DESCRIPTIONS } from '../dispatcher/subagent-process.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
@@ -64,6 +65,32 @@ function templatesPayload(ctx: AppContext): Array<{
       available,
     }
   })
+}
+
+/**
+ * Per-L2 summary for the new-agent-flow wall: one entry per distinct
+ * `l2` group, with leaf count and up to 3 sample names. Server-side so
+ * the WebXDC card doesn't have to re-iterate the full leaf catalog to
+ * render the tile grid.
+ */
+interface L2Summary {
+  path: Path
+  l2: string
+  count: number
+  sample: string[]
+}
+
+function buildL2Summary(leaves: Leaf[]): L2Summary[] {
+  const map = new Map<string, L2Summary>()
+  for (const l of leaves) {
+    if (!map.has(l.l2)) {
+      map.set(l.l2, { path: l.path, l2: l.l2, count: 0, sample: [] })
+    }
+    const e = map.get(l.l2)!
+    e.count++
+    if (e.sample.length < 3) e.sample.push(l.name)
+  }
+  return [...map.values()]
 }
 
 interface Session {
@@ -275,6 +302,8 @@ async function sendInit(
   await sweepDeadChats(ctx)
   const existing = sessions.get(sourceChatId)
   const draft = blankDraft()
+  const leaves = loadAllLeaves()
+  const sym = symmetricCombines()
   const payload = {
     type: 'init' as const,
     version: agentSetup.getAgentSetupVersion(),
@@ -289,6 +318,20 @@ async function sendInit(
     availableModels: models.MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier })),
     defaultModel: models.DEFAULT_MODEL,
     ...availableToolsPayload(ctx),
+    newAgentFlow: {
+      enabled: process.env.DC_NEW_AGENT_FLOW === '1',
+      leaves: leaves.map(l => ({
+        id: l.id,
+        path: l.path,
+        l2: l.l2,
+        name: l.name,
+        parameter: l.parameter,
+        liability: l.liability,
+        pitch: l.pitch,
+        combinesWith: [...(sym.get(l.id) ?? new Set<string>())].sort(),
+      })),
+      l2Summary: buildL2Summary(leaves),
+    },
   }
   const update = JSON.stringify({
     payload,
