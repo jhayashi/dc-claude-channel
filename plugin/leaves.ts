@@ -79,15 +79,29 @@ export function loadAllLeaves(): Leaf[] {
   }
   const files = readdirSync(LEAVES_DIR).filter(f => f.endsWith('.yaml'))
   const leaves: Leaf[] = []
-  const seen = new Set<string>()
+  const seen = new Map<string, string>() // id -> filename, for duplicate-error context
   for (const f of files) {
     const raw = YAML.parse(readFileSync(join(LEAVES_DIR, f), 'utf-8'))
-    const parsed = LeafSchema.parse(raw)
-    if (seen.has(parsed.id)) {
-      throw new Error(`duplicate leaf id: ${parsed.id}`)
+    let parsed: Leaf
+    try {
+      parsed = LeafSchema.parse(raw)
+    } catch (e) {
+      throw new Error(`leaves/${f}: ${e instanceof Error ? e.message : String(e)}`)
     }
-    seen.add(parsed.id)
+    if (seen.has(parsed.id)) {
+      throw new Error(`duplicate leaf id: ${parsed.id} (in ${seen.get(parsed.id)} and ${f})`)
+    }
+    seen.set(parsed.id, f)
     leaves.push(parsed)
+  }
+  // Validate combinesWith references resolve to known leaves.
+  const knownIds = new Set(leaves.map(l => l.id))
+  for (const l of leaves) {
+    for (const partner of l.combinesWith) {
+      if (!knownIds.has(partner)) {
+        throw new Error(`leaves/${l.id}.yaml: combinesWith references unknown leaf "${partner}"`)
+      }
+    }
   }
   const sym = computeSymmetricClosure(leaves)
   CACHE = { leaves, sym }

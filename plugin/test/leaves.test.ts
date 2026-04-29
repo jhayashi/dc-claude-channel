@@ -112,6 +112,26 @@ describe('Leaves loader', () => {
     expect(() => loadAllLeaves()).toThrow(/duplicate leaf id/)
   })
 
+  test('loadAllLeaves error includes filename for malformed YAML', () => {
+    writeLeaf(`id: ok\npath: Expert\nl2: X\nname: Ok\npitch: p\nexpertise: e\n`, 'ok')
+    writeLeaf(`id: bad\npath: NotAPath\nl2: X\nname: Bad\npitch: p\nexpertise: e\n`, 'bad')
+    expect(() => loadAllLeaves()).toThrow(/leaves\/bad\.yaml/)
+  })
+
+  test('loadAllLeaves throws when combinesWith references unknown leaf', () => {
+    writeLeaf(`id: a\npath: Expert\nl2: X\nname: A\npitch: p\nexpertise: e\ncombinesWith: [zzz-unknown]\n`, 'a')
+    expect(() => loadAllLeaves()).toThrow(/combinesWith.*zzz-unknown/)
+  })
+
+  test('duplicate-id error names both files', () => {
+    writeLeaf(`id: dup\npath: Expert\nl2: X\nname: A\npitch: p\nexpertise: e\n`, 'first')
+    writeLeaf(`id: dup\npath: Service\nl2: Service\nname: B\npitch: p\nexpertise: e\n`, 'second')
+    // readdirSync order is filesystem-dependent; assert both filenames appear
+    // somewhere in the message, not a particular order.
+    expect(() => loadAllLeaves()).toThrow(/first\.yaml/)
+    expect(() => loadAllLeaves()).toThrow(/second\.yaml/)
+  })
+
   test('symmetricCombines returns empty Map when leaves dir is missing', () => {
     setLeavesDir('/nonexistent/path/that/does/not/exist')
     expect(loadAllLeaves()).toEqual([])

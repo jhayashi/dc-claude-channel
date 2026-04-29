@@ -50,23 +50,21 @@ const text = readFileSync(csvPath, 'utf-8')
 const rows = parseCsv(text)
 
 const outDir = join(import.meta.dir, 'leaves')
-mkdirSync(outDir, { recursive: true })
 
-// Clean stale outputs so renames/removals in the CSV don't leave phantom leaves.
-for (const f of readdirSync(outDir)) {
-  if (f.endsWith('.yaml')) unlinkSync(join(outDir, f))
-}
-
-const seen = new Set<string>()
-let written = 0
+// 1. Parse + validate all rows into a map; bail before any disk writes if
+//    anything is wrong. A bad CSV (zero rows, duplicate slug, etc.) must NOT
+//    destroy the existing catalog — build the full output in memory first,
+//    then swap atomically below.
+const out = new Map<string, string>()      // slug -> YAML string
+const seen = new Map<string, string>()     // slug -> original row.leaf for duplicate-error context
 for (const r of rows) {
   const id = slugify(r.leaf || '')
   if (!id) continue
   if (seen.has(id)) {
-    console.error(`duplicate slug: ${id} for "${r.leaf}"`)
+    console.error(`duplicate slug: ${id} (rows "${seen.get(id)}" and "${r.leaf}")`)
     process.exit(1)
   }
-  seen.add(id)
+  seen.set(id, r.leaf)
 
   const partners = (r.combines_with || '').split(';').map(s => s.trim()).filter(Boolean).map(slugify)
 
@@ -82,7 +80,19 @@ for (const r of rows) {
   if (r.liability) leaf.liability = r.liability
   if (partners.length) leaf.combinesWith = partners
 
-  writeFileSync(join(outDir, `${id}.yaml`), YAML.stringify(leaf))
-  written++
+  out.set(id, YAML.stringify(leaf))
 }
-console.log(`wrote ${written} leaves to ${outDir}`)
+if (out.size === 0) {
+  console.error(`refusing to wipe catalog: 0 rows parsed from ${csvPath}`)
+  process.exit(1)
+}
+
+// 2. NOW swap: clean stale yamls and write the new ones.
+mkdirSync(outDir, { recursive: true })
+for (const f of readdirSync(outDir)) {
+  if (f.endsWith('.yaml')) unlinkSync(join(outDir, f))
+}
+for (const [id, yaml] of out) {
+  writeFileSync(join(outDir, `${id}.yaml`), yaml)
+}
+console.log(`wrote ${out.size} leaves to ${outDir}`)
