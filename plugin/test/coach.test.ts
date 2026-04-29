@@ -96,6 +96,42 @@ describe('Coach state machine', () => {
     })
     expect(s.nextQuestion?.toLowerCase()).not.toMatch(/which|lead|bigger pain/)
   })
+
+  test('advanceCoach does not mutate prior state', () => {
+    const s0 = startCoach({ leafIds: ['tutor'], preset: 'mentor', sliders: {} })
+    const s0AnswersBefore = JSON.stringify(s0.answers)
+    const s1 = advanceCoach(s0, 'Algebra II for my 8th grader')
+    // Prior state's answers must be unchanged
+    expect(JSON.stringify(s0.answers)).toBe(s0AnswersBefore)
+    // Prior state's parameters must NOT contain the new tutor entry
+    expect(s0.answers.parameters.tutor).toBeUndefined()
+    // New state has the captured answer
+    expect(s1.answers.parameters.tutor).toBeDefined()
+    // The two answer objects are different references
+    expect(s0.answers).not.toBe(s1.answers)
+  })
+
+  test('reflect preserves bare affirmatives instead of swallowing them', () => {
+    // Direct unit test — exercises the function without going through advanceCoach
+    const { reflect } = require('../coach.js')
+    expect(reflect('yes').kind).toBe('echo')
+    expect(reflect('yes').text.toLowerCase()).toContain('yes')
+    expect(reflect('sure').kind).toBe('echo')
+    expect(reflect('ok').kind).toBe('echo')
+    // The strip-prefix behavior still works for compound input:
+    expect(reflect('yes, watch my Gmail').text.toLowerCase()).toContain('gmail')
+    expect(reflect('yes, watch my Gmail').text.toLowerCase()).not.toContain('yes,')
+  })
+
+  test('startCoach throws when all leaf ids are unknown', () => {
+    expect(() => startCoach({ leafIds: ['no-such-leaf'], preset: 'mentor', sliders: {} }))
+      .toThrow(/unknown leaf ids|no valid leaf ids/)
+  })
+
+  test('startCoach throws when some leaf ids are unknown', () => {
+    expect(() => startCoach({ leafIds: ['tutor', 'no-such-leaf'], preset: 'mentor', sliders: {} }))
+      .toThrow(/unknown leaf ids.*no-such-leaf/)
+  })
 })
 
 describe('detectTools (exported helper)', () => {

@@ -4,7 +4,7 @@ import type { PresetId, SliderState } from './personality-presets.js'
 interface QuestionStep {
   id: string
   question: (ctx: CoachInputs) => string
-  capture: (s: CoachState, answer: string) => void
+  capture: (a: CoachAnswers, answer: string) => CoachAnswers
 }
 
 export interface CoachInputs {
@@ -56,7 +56,9 @@ export function reflect(text: string): Reflection {
   // Compact echo of the user's answer for the reflect-always pattern.
   // Returns a structured object so tests can assert on `kind` rather
   // than fuzzy substring-matching the rendered string.
-  const clean = text.trim().replace(/^(yes,?\s*|sure,?\s*|ok,?\s*)/i, '')
+  const trimmed = text.trim()
+  const stripped = trimmed.replace(/^(yes,?\s*|sure,?\s*|ok,?\s*)/i, '')
+  const clean = stripped.length === 0 ? trimmed : stripped
   if (clean.length === 0) return { kind: 'skip', text: '' }
   if (clean.length <= 60) return { kind: 'echo', text: `Got it: ${clean}.` }
   return { kind: 'short', text: 'Got it.' }
@@ -77,23 +79,29 @@ function buildSteps(inputs: CoachInputs): QuestionStep[] {
       steps.push({
         id: 'parameter',
         question: () => `Got it — a ${l.name.toLowerCase()}. ${parameterPrompt(l.parameter!, l.name)}`,
-        capture: (s, a) => { s.answers.parameters[l.id] = a },
+        capture: (a, ans) => ({
+          ...a,
+          parameters: { ...a.parameters, [l.id]: ans },
+        }),
       })
     } else if (l.path === 'Service') {
       steps.push({
         id: 'service',
         question: () => `What topics, sources, or schedule do you want for the ${l.name.toLowerCase()}?`,
-        capture: (s, a) => { s.answers.preferences.push(a) },
+        capture: (a, ans) => ({ ...a, preferences: [...a.preferences, ans] }),
       })
     }
   } else {
     steps.push({
       id: 'lead',
       question: () => `Which of these specialties is the bigger pain right now: ${leaves.map(l => l.name).join(', ')}?`,
-      capture: (s, a) => {
-        const matched = leaves.find(l => a.toLowerCase().includes(l.name.split(/\s/)[0].toLowerCase()))
-        if (matched) s.answers.leadLeafId = matched.id
-        s.answers.preferences.push(`User said the lead concern is: ${a}`)
+      capture: (a, ans) => {
+        const matched = leaves.find(l => ans.toLowerCase().includes(l.name.split(/\s/)[0].toLowerCase()))
+        return {
+          ...a,
+          leadLeafId: matched?.id ?? a.leadLeafId,
+          preferences: [...a.preferences, `User said the lead concern is: ${ans}`],
+        }
       },
     })
   }
@@ -102,17 +110,18 @@ function buildSteps(inputs: CoachInputs): QuestionStep[] {
   steps.push({
     id: 'voice',
     question: () => `How direct should I be — gentle nudge, or pull no punches?`,
-    capture: (s, a) => { s.answers.preferences.push(`Tone preference: ${a}`) },
+    capture: (a, ans) => ({ ...a, preferences: [...a.preferences, `Tone preference: ${ans}`] }),
   })
 
   // Q3 — tools / monitoring
   steps.push({
     id: 'tools',
     question: () => `Are there services I should connect to (Gmail, calendar, Oura, etc.) or skip?`,
-    capture: (s, a) => {
-      s.answers.tools.push(...detectTools(a))
-      s.answers.preferences.push(`Tools/monitoring: ${a}`)
-    },
+    capture: (a, ans) => ({
+      ...a,
+      tools: [...a.tools, ...detectTools(ans)],
+      preferences: [...a.preferences, `Tools/monitoring: ${ans}`],
+    }),
   })
 
   return steps
@@ -135,6 +144,17 @@ function parameterPrompt(parameter: string, leafName: string): string {
 }
 
 export function startCoach(inputs: CoachInputs): CoachState {
+  // Defense-in-depth: dispatcher should validate first, but if a leaf
+  // disappears between validation and coach-start, fail loud rather than
+  // produce a malformed mash-up question.
+  const validLeafIds = inputs.leafIds.filter(id => findLeaf(id) !== null)
+  if (validLeafIds.length === 0) {
+    throw new Error(`startCoach: no valid leaf ids in ${inputs.leafIds.join(', ') || '(empty)'}`)
+  }
+  if (validLeafIds.length !== inputs.leafIds.length) {
+    const missing = inputs.leafIds.filter(id => findLeaf(id) === null)
+    throw new Error(`startCoach: unknown leaf ids: ${missing.join(', ')}`)
+  }
   const remaining = buildSteps(inputs)
   const warnings: string[] = []
   if (inputs.leafIds.length >= 4) {
@@ -163,10 +183,10 @@ export function advanceCoach(s: CoachState, userMessage: string): CoachState {
   }
   const step = s.remaining[0]
   if (!step) return s
-  step.capture(s, userMessage)
+  const answers = step.capture(s.answers, userMessage)
   const remaining = s.remaining.slice(1)
   const nextQuestion = remaining[0]?.question(s.inputs) ?? null
-  return { ...s, remaining, nextQuestion, lastReflection: reflect(userMessage) }
+  return { ...s, answers, remaining, nextQuestion, lastReflection: reflect(userMessage) }
 }
 
 export function isCoachDone(s: CoachState): boolean {
