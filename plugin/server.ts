@@ -30,7 +30,8 @@ import type { WebXDCApp, AppContext } from './webxdc-app.js'
 import { filterUpdatesByOwner } from './webxdc-filter.js'
 import { decorateAgentChat, setAgentIcon, coachSessions, graduateAgent } from './apps/agent-setup-app.js'
 import { advanceCoach, isCoachDone } from './coach.js'
-import { classifyIntent, shouldClassify, type Intent } from './nl-intents.js'
+import { classifyIntent, shouldClassify } from './nl-intents.js'
+import { handleNlIntent } from './nl-intent-handler.js'
 import * as tutorial from './tutorial.js'
 import { decideCleanup } from './cleanup.js'
 import { SocketServer, type SocketRequest } from './dispatcher/socket-server.js'
@@ -2244,78 +2245,21 @@ async function main(): Promise<void> {
     }
   }
 
-  /**
-   * Act on a non-null Intent classified from a chat message. Mutates the
-   * bound agent's AgentDef and sends a confirmation reply. Caller must
-   * skip subagent dispatch when this runs — the user's text was a
-   * meta-command, not a request to the agent.
-   *
-   * Refine is currently a placeholder; the full Refine flow lands in a
-   * later phase (re-opens coach with the existing prompt as context).
-   */
-  const handleNlIntent = async (intent: Intent, chatId: number): Promise<void> => {
-    if (!intent) return
-    switch (intent.kind) {
-      case 'model-switch': {
-        const binding = bindings.getBinding(chatId)
-        if (!binding?.agentId) {
-          await client.send(chatId, "I'm not bound to an agent yet, so model-switch doesn't apply here.").catch(() => {})
-          return
-        }
-        try {
-          agents.setAgentModel(binding.agentId, intent.tier)
-          await client.send(chatId, `Switched to ${intent.tier}. The change takes effect on the next turn.`)
-          // Best-effort badge refresh so the tier color updates immediately.
-          // Errors are logged but never block the confirmation.
-          const updated = agents.getAgent(binding.agentId)
-          if (updated) {
-            setAgentIcon({ client, logf }, chatId, updated).catch((err) =>
-              logf('nl-intent: model-switch icon refresh failed chat=%d: %v', chatId, err),
-            )
-          }
-        } catch (err) {
-          logf('nl-intent: model-switch failed chat=%d tier=%s: %v', chatId, intent.tier, err)
-          await client.send(chatId, `Couldn't switch to ${intent.tier}: ${err instanceof Error ? err.message : 'unknown error'}`).catch(() => {})
-        }
-        return
-      }
-      case 'trust-toggle': {
-        const binding = bindings.getBinding(chatId)
-        if (!binding?.agentId) {
-          await client.send(chatId, "I'm not bound to an agent yet, so trust-toggle doesn't apply here.").catch(() => {})
-          return
-        }
-        try {
-          agents.setAgentTrust(binding.agentId, intent.value)
-          await client.send(
-            chatId,
-            intent.value
-              ? "Trust on — I'll skip permission prompts for tools."
-              : "Trust off — I'll ask before running tools.",
-          )
-          // Refresh the badge so the trust ring/pattern updates immediately.
-          const updated = agents.getAgent(binding.agentId)
-          if (updated) {
-            setAgentIcon({ client, logf }, chatId, updated).catch((err) =>
-              logf('nl-intent: trust-toggle icon refresh failed chat=%d: %v', chatId, err),
-            )
-          }
-        } catch (err) {
-          logf('nl-intent: trust-toggle failed chat=%d value=%s: %v', chatId, intent.value, err)
-          await client.send(chatId, `Couldn't update trust: ${err instanceof Error ? err.message : 'unknown error'}`).catch(() => {})
-        }
-        return
-      }
-      case 'refine': {
-        // Placeholder. The full Refine flow (reopen coach with the
-        // existing prompt as context) lands in a later phase.
-        await client.send(
-          chatId,
-          "Refine flow is coming in a later release. For now, you can edit the agent via the agent settings card.",
-        ).catch(() => {})
-        return
-      }
-    }
+  // Deps for the extracted NL intent handler. refreshIcon wraps
+  // setAgentIcon under best-effort error handling so the dispatcher's
+  // confirmation reply isn't blocked by a renderer hiccup.
+  const refreshAgentIcon = (chatId: number, agentId: string): void => {
+    const def = agents.getAgent(agentId)
+    if (!def) return
+    setAgentIcon({ client, logf }, chatId, def).catch((err) =>
+      logf('nl-intent: icon refresh failed chat=%d: %v', chatId, err),
+    )
+  }
+  const nlIntentDeps = {
+    send: (chatId: number, text: string) => client.send(chatId, text),
+    evictChat: (chatId: number) => subagentCache.evictChat(chatId),
+    refreshIcon: refreshAgentIcon,
+    logf,
   }
 
   const runSubagentTurn = async (msg: Message): Promise<void> => {
@@ -2381,7 +2325,7 @@ async function main(): Promise<void> {
     if (shouldClassify(enrichedMsg.chatId, coachSessions)) {
       const intent = classifyIntent(enrichedMsg.text ?? '')
       if (intent !== null) {
-        await handleNlIntent(intent, enrichedMsg.chatId)
+        await handleNlIntent(nlIntentDeps, intent, enrichedMsg.chatId)
         return
       }
     }
