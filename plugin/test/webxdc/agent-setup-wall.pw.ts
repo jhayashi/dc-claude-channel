@@ -229,4 +229,174 @@ test.describe("agent-setup wall navigation (Phase 6)", () => {
     // Tile still renders — the malicious string is escaped, not dropped.
     await expect(h.page.locator(".wall-tile")).toHaveCount(1);
   });
+
+  test.describe("Mash-up (Phase 7)", () => {
+    test("build pill appears after first add and shows count", async () => {
+      h = await createHarness(findAgentSetupXdc());
+      await openWall(h);
+
+      // Drill into Health to find Sleep coach
+      await h.page.click('.wall-tile:has-text("Health, wellness, caregiving")');
+      await h.page.click('.leaf-row:has-text("Sleep coach")');
+
+      // Pill not yet visible (build is empty)
+      await expect(h.page.locator("#build-pill")).toBeHidden();
+
+      // Tap "+ Add to mash-up"
+      await h.page.click('button[data-pair-add]:has-text("Add to mash-up")');
+
+      await expect(h.page.locator("#build-pill")).toBeVisible();
+      await expect(h.page.locator("#build-pill .glyph")).toHaveText("1");
+      await expect(h.page.locator("#build-pill .build-pill-title")).toHaveText(
+        "Building 1 specialist",
+      );
+      await expect(h.page.locator("#build-pill .build-pill-sub")).toContainText(
+        "Sleep coach",
+      );
+    });
+
+    test("pair-chip add updates pill count AND flips chip in same render", async () => {
+      h = await createHarness(findAgentSetupXdc());
+      await openWall(h);
+      await h.page.click('.wall-tile:has-text("Health, wellness, caregiving")');
+      await h.page.click('.leaf-row:has-text("Sleep coach")');
+
+      // First add (via the secondary CTA)
+      await h.page.click('button[data-pair-add]:has-text("Add to mash-up")');
+      await expect(h.page.locator("#build-pill .glyph")).toHaveText("1");
+
+      // Tap a pair-chip in the SAME render (Sleep coach is still open)
+      // Stress-management coach is in Sleep coach's combinesWith.
+      const stressChip = h.page.locator(".pair-chip", {
+        hasText: "Stress-management coach",
+      });
+      await expect(stressChip).toHaveCount(1);
+      await stressChip.click();
+
+      // Pill count should update to 2 in the same render.
+      await expect(h.page.locator("#build-pill .glyph")).toHaveText("2");
+
+      // Critical regression check (Alice review fix): the chip itself should
+      // flip to the .added class without requiring re-navigation.
+      await expect(stressChip).toHaveClass(/added/);
+    });
+
+    test("cap-warn shows when build reaches 4", async () => {
+      // Use a richer fixture for this test — need 4+ leaves with cross-references.
+      const FIXTURE_4 = buildInit({
+        newAgentFlow: {
+          enabled: true,
+          leaves: [
+            {
+              id: "a",
+              path: "Expert",
+              l2: "Health, wellness, caregiving",
+              name: "A",
+              parameter: null,
+              liability: null,
+              pitch: "Pitch a.",
+              combinesWith: ["b", "c", "d"],
+            },
+            {
+              id: "b",
+              path: "Expert",
+              l2: "Health, wellness, caregiving",
+              name: "B",
+              parameter: null,
+              liability: null,
+              pitch: "Pitch b.",
+              combinesWith: ["a", "c", "d"],
+            },
+            {
+              id: "c",
+              path: "Expert",
+              l2: "Health, wellness, caregiving",
+              name: "C",
+              parameter: null,
+              liability: null,
+              pitch: "Pitch c.",
+              combinesWith: ["a", "b", "d"],
+            },
+            {
+              id: "d",
+              path: "Expert",
+              l2: "Health, wellness, caregiving",
+              name: "D",
+              parameter: null,
+              liability: null,
+              pitch: "Pitch d.",
+              combinesWith: ["a", "b", "c"],
+            },
+          ],
+          l2Summary: [
+            {
+              path: "Expert",
+              l2: "Health, wellness, caregiving",
+              count: 4,
+              sample: ["A", "B", "C"],
+            },
+          ],
+        },
+      });
+
+      h = await createHarness(findAgentSetupXdc());
+      await openWall(h, FIXTURE_4);
+
+      // Drill in and add the first leaf
+      await h.page.click('.wall-tile:has-text("Health, wellness, caregiving")');
+      await h.page.click('.leaf-row:has-text("A")');
+      await h.page.click('button[data-pair-add]:has-text("Add to mash-up")');
+
+      // Cap-warn should NOT be visible at 1 leaf
+      await expect(h.page.locator("#cap-warn")).toBeHidden();
+
+      // Tap chips B, C, D to grow build to 4
+      await h.page.locator(".pair-chip", { hasText: "B" }).click();
+      await h.page.locator(".pair-chip", { hasText: "C" }).click();
+      // Still 3 — cap-warn hidden
+      await expect(h.page.locator("#cap-warn")).toBeHidden();
+
+      // 4th add — cap-warn should appear
+      await h.page.locator(".pair-chip", { hasText: "D" }).click();
+      await expect(h.page.locator("#cap-warn")).toBeVisible();
+      await expect(h.page.locator("#cap-warn")).toContainText("dilute");
+    });
+
+    test("removing leaf from review screen syncs back to chip state", async () => {
+      h = await createHarness(findAgentSetupXdc());
+      await openWall(h);
+      await h.page.click('.wall-tile:has-text("Health, wellness, caregiving")');
+      await h.page.click('.leaf-row:has-text("Sleep coach")');
+
+      // Add Sleep + Stress
+      await h.page.click('button[data-pair-add]:has-text("Add to mash-up")');
+      await h.page
+        .locator(".pair-chip", { hasText: "Stress-management coach" })
+        .click();
+      await expect(h.page.locator("#build-pill .glyph")).toHaveText("2");
+
+      // Open review screen
+      await h.page.click("#build-pill");
+      await expect(h.page.locator(".review-screen")).toBeVisible();
+
+      // Remove Stress from the review (the × button)
+      const stressItem = h.page.locator(".review-item", {
+        hasText: "Stress-management coach",
+      });
+      await stressItem.locator(".x").click();
+
+      // Build is now 1
+      await expect(h.page.locator("#build-pill .glyph")).toHaveText("1");
+
+      // Reopen Sleep coach detail; the Stress chip should NOT be in .added state.
+      await h.page.click('button:has-text("+ Add another")');
+      await h.page.click('.wall-tile:has-text("Health, wellness, caregiving")');
+      await h.page.click('.leaf-row:has-text("Sleep coach")');
+
+      const stressChip = h.page.locator(".pair-chip", {
+        hasText: "Stress-management coach",
+      });
+      await expect(stressChip).not.toHaveClass(/added/);
+    });
+  });
 });
