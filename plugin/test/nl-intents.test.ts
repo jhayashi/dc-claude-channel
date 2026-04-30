@@ -6,12 +6,34 @@ describe('NL intent classifier — positive cases', () => {
     ['switch to sonnet', { kind: 'model-switch', tier: 'sonnet' }],
     ['use opus please', { kind: 'model-switch', tier: 'opus' }],
     ['can you downgrade to haiku', { kind: 'model-switch', tier: 'haiku' }],
+    // Broadened (Joe smoke-test feedback): natural model-switch phrasings
+    // that previously fell through to the subagent and got hallucinated.
+    ['switch model to opus', { kind: 'model-switch', tier: 'opus' }],
+    ['switch the model to opus', { kind: 'model-switch', tier: 'opus' }],
+    ['change tier to haiku', { kind: 'model-switch', tier: 'haiku' }],
+    ["let's switch to opus", { kind: 'model-switch', tier: 'opus' }],
+    ["let's use opus", { kind: 'model-switch', tier: 'opus' }],
+    ['I want to use sonnet', { kind: 'model-switch', tier: 'sonnet' }],
+    ['we should use opus', { kind: 'model-switch', tier: 'opus' }],
+    ['go ahead and run sonnet', { kind: 'model-switch', tier: 'sonnet' }],
+    ['I want haiku', { kind: 'model-switch', tier: 'haiku' }],
+    ['give me opus', { kind: 'model-switch', tier: 'opus' }],
+    ['make it sonnet', { kind: 'model-switch', tier: 'sonnet' }],
+    ["let's go with opus", { kind: 'model-switch', tier: 'opus' }],
+    ['I prefer haiku', { kind: 'model-switch', tier: 'haiku' }],
     ['trust me', { kind: 'trust-toggle', value: true }],
     ['turn on trust', { kind: 'trust-toggle', value: true }],
     ['skip permissions', { kind: 'trust-toggle', value: true }],
+    // Broadened trust phrasings.
+    ['trust this agent', { kind: 'trust-toggle', value: true }],
+    ['trust this chat', { kind: 'trust-toggle', value: true }],
+    ['I trust this', { kind: 'trust-toggle', value: true }],
     ['be safer', { kind: 'trust-toggle', value: false }],
     ['turn off trust', { kind: 'trust-toggle', value: false }],
     ['ask before tools', { kind: 'trust-toggle', value: false }],
+    ['untrust this agent', { kind: 'trust-toggle', value: false }],
+    ["I don't trust you", { kind: 'trust-toggle', value: false }],
+    ['stop trusting yourself', { kind: 'trust-toggle', value: false }],
     ["let's refine you", { kind: 'refine' }],
     ['I want to tweak your prompt', { kind: 'refine' }],
     ['be sharper on the math', { kind: 'refine' }],
@@ -54,6 +76,14 @@ describe('NL intent classifier — negative corpus', () => {
     'I quote: "trust me, switch to opus" — that\'s what they said',
     'let\'s tweak the budget projection',
     'sharper picture quality on this monitor',
+    // Defenses against the broadened regexes (Joe smoke-test feedback).
+    'I want to write a haiku',                  // not "use/run/prefer haiku"
+    'we use claude haiku for fast tasks',       // declarative "we use" not in prefix list
+    'I read a haiku about mountains today',     // "I read" not a preference verb
+    'make a haiku for me',                      // "make a" ≠ "make it/this"
+    "let's go with the team to the meeting",    // "let's go with the" but no tier
+    'I trust her judgment',                     // "I trust her" not "you/this/it"
+    'building trust takes time',                // bare "trust" with no anchor verb
   ])('negative: "%s" returns null', (input) => {
     expect(classifyIntent(input)).toBeNull()
   })

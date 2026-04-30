@@ -16,15 +16,21 @@ export type Intent =
   | { kind: 'refine' }
   | null
 
-// Match commands like "switch to opus", "use opus please" — the user is
-// directing the agent. Required: an action verb in front of the tier,
-// plus a connector like "to" / "the" / "claude" within ~3 words. Keeps
-// "I switched majors in college" and "switch hands when you tire" out.
-const MODEL_RE = /\b(?:switch|change|swap|set|move|downgrade|upgrade)\s+(?:to|over\s+to)\s+(?:claude\s+)?(haiku|sonnet|opus)\b/i
-// Standalone "use <tier>" / "run <tier>" — imperative form only. Anchored
-// to start (after optional politeness/auxiliary like "can you" / "please")
-// so "we use claude haiku for fast tasks" stays out.
-const MODEL_USE_RE = /^(?:please\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+)?(?:use|run)\s+(?:claude\s+)?(haiku|sonnet|opus)\b/i
+// Match commands like "switch to opus", "switch model to opus" — the
+// user is directing the agent. Required: an action verb followed by a
+// "to"/"model to"/"tier to" connector and the tier within ~3 words.
+// Keeps "I switched majors in college" and "switch hands when you tire"
+// out (the verb pattern uses `\s+` after, so past-tense "switched" can't
+// match the bare "switch" alternative).
+const MODEL_RE = /\b(?:switch|change|swap|set|move|downgrade|upgrade)\s+(?:to|over\s+to|(?:the\s+)?(?:model|tier)\s+to)\s+(?:claude\s+)?(haiku|sonnet|opus)\b/i
+// Imperative "use <tier>" / "run <tier>" — anchored to start so
+// "we use claude haiku for fast tasks" stays out. Prefix list covers
+// the common imperative leaders ("let's", "I want to", "we should", etc).
+const MODEL_USE_RE = /^(?:please\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+|let'?s\s+|i\s+(?:want\s+to\s+|would\s+like\s+to\s+|'d\s+like\s+to\s+|just\s+want\s+to\s+)|we\s+(?:should\s+|could\s+|need\s+to\s+)|go\s+ahead\s+and\s+)?(?:use|run|go\s+with)\s+(?:claude\s+)?(haiku|sonnet|opus)\b/i
+// "I want haiku" / "give me opus" / "make it sonnet" — preference style
+// (no use/run verb). Anchored so "I read a haiku about mountains" stays
+// out (sentence starts with "I read", not a preference verb).
+const MODEL_PREFER_RE = /^(?:please\s+)?(?:i\s+(?:want|need|prefer|would\s+like|'d\s+like|just\s+want)|give\s+me|make\s+(?:it|this)|let'?s\s+(?:do|go\s+with))\s+(?:claude\s+)?(haiku|sonnet|opus)\b/i
 
 // Trust on/off — explicit imperatives. The phrase must stand alone (whole
 // utterance, optionally with punctuation), so "build trust" / "trust fund"
@@ -32,8 +38,8 @@ const MODEL_USE_RE = /^(?:please\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+)?
 // don't match. We do, however, allow trailing clauses ("trust me, switch
 // to opus") via a non-capturing trailing-clause clause so trust takes
 // precedence over a co-occurring model-switch phrase.
-const TRUST_ON_CORE = String.raw`(?:trust\s+me|turn\s+on\s+(?:your\s+)?trust|enable\s+(?:your\s+)?trust|skip\s+(?:my\s+)?permission(?:s)?)`
-const TRUST_OFF_CORE = String.raw`(?:be\s+safer|turn\s+off\s+(?:your\s+)?trust|disable\s+(?:your\s+)?trust|stop\s+skipping\s+permissions?|ask\s+(?:me\s+)?before(?:\s+(?:running\s+)?tools?)?|require\s+permissions?)`
+const TRUST_ON_CORE = String.raw`(?:trust\s+me|trust\s+this(?:\s+(?:agent|chat))?|i\s+trust\s+(?:you|this|it)|turn\s+on\s+(?:your\s+)?trust|enable\s+(?:your\s+)?trust|skip\s+(?:my\s+)?permission(?:s)?)`
+const TRUST_OFF_CORE = String.raw`(?:be\s+safer|untrust(?:\s+this(?:\s+(?:agent|chat))?)?|i\s+don'?t\s+trust\s+(?:you|this|it)|stop\s+trusting(?:\s+(?:yourself|this))?|remove\s+(?:your\s+)?trust|turn\s+off\s+(?:your\s+)?trust|disable\s+(?:your\s+)?trust|stop\s+skipping\s+permissions?|ask\s+(?:me\s+)?before(?:\s+(?:running\s+)?tools?)?|require\s+permissions?)`
 const TRUST_ON_RE = new RegExp(String.raw`^(?:please\s+)?` + TRUST_ON_CORE + String.raw`(?:\s+now)?(?:\s*[,.;!?].*)?$`, 'i')
 const TRUST_OFF_RE = new RegExp(String.raw`^(?:please\s+)?` + TRUST_OFF_CORE + String.raw`(?:\s*[,.;!?].*)?$`, 'i')
 
@@ -75,6 +81,10 @@ export function classifyIntent(text: string): Intent {
     return { kind: 'model-switch', tier: m[1].toLowerCase() as 'haiku' | 'sonnet' | 'opus' }
   }
   m = MODEL_USE_RE.exec(t)
+  if (m && !isInQuotes(t, m.index, m.index + m[0].length)) {
+    return { kind: 'model-switch', tier: m[1].toLowerCase() as 'haiku' | 'sonnet' | 'opus' }
+  }
+  m = MODEL_PREFER_RE.exec(t)
   if (m && !isInQuotes(t, m.index, m.index + m[0].length)) {
     return { kind: 'model-switch', tier: m[1].toLowerCase() as 'haiku' | 'sonnet' | 'opus' }
   }
