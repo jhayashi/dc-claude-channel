@@ -111,6 +111,27 @@ describe('System-prompt assembler', () => {
     expect(prompt).not.toContain('B'.repeat(50))
   })
 
+  test('escapes backslashes BEFORE quotes (no \\\\" injection escape)', () => {
+    // A preference ending in `\` followed by a `"` would, if the quote
+    // were escaped first, produce `…\\"` — a model treating the
+    // attribution wrap as JSON-ish reads `\\"` as an escaped quote and
+    // consumes the closing wrapper. Backslash-first means `\` -> `\\`,
+    // then `"` -> `\"`, yielding `…\\\\"\\"` — both literally escaped.
+    const tricky = 'pref ending with backslash\\'
+    const prompt = assembleSystemPrompt({
+      leafIds: ['tutor'],
+      preset: 'mentor',
+      sliders: {},
+      preferences: [tricky],
+      tools: [],
+      identityPreamble: 'You are a tutor.',
+    })
+    // The literal `\` in the preference must appear as `\\` inside the
+    // quoted attribution — i.e. the runtime string contains a real
+    // double-backslash before the closing wrap.
+    expect(prompt).toContain('backslash\\\\"')
+  })
+
   test('throws with descriptive message when any leaf id is unknown', () => {
     expect(() => assembleSystemPrompt({
       leafIds: ['tutor', 'no-such-leaf'],

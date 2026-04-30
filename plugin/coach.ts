@@ -40,7 +40,7 @@ export interface CoachAnswers {
 }
 
 export interface Reflection {
-  kind: 'echo' | 'short' | 'skip'
+  kind: 'echo' | 'short'
   text: string
 }
 
@@ -68,14 +68,15 @@ const TOOL_HINTS: Array<[RegExp, string]> = [
   [/\bslack\b/i, 'slack'],
 ]
 
-export function reflect(text: string): Reflection {
+export function reflect(text: string): Reflection | null {
   // Compact echo of the user's answer for the reflect-always pattern.
-  // Returns a structured object so tests can assert on `kind` rather
-  // than fuzzy substring-matching the rendered string.
+  // Returns null when there's nothing meaningful to reflect (empty
+  // input after stripping leading affirmations) — caller suppresses
+  // the chat-side reflection in that case.
   const trimmed = text.trim()
   const stripped = trimmed.replace(/^(yes,?\s*|sure,?\s*|ok,?\s*)/i, '')
   const clean = stripped.length === 0 ? trimmed : stripped
-  if (clean.length === 0) return { kind: 'skip', text: '' }
+  if (clean.length === 0) return null
   if (clean.length <= 60) return { kind: 'echo', text: `Got it: ${clean}.` }
   return { kind: 'short', text: 'Got it.' }
 }

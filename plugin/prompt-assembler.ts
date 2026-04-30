@@ -95,9 +95,13 @@ export function assembleSystemPrompt(input: AssembleInputs): string {
   return paragraphs.join('\n\n')
 }
 
-/** Truncate-then-escape one preference string for the quoted attribution. */
+/** Truncate-then-escape one preference string for the quoted attribution.
+ *  Escapes backslash BEFORE quote so a preference ending in `\` doesn't
+ *  produce `\\"`, which a model treating the wrap as JSON-ish reads as
+ *  an escaped quote and consumes the closing wrapper. */
 function quotePreference(p: string): string {
-  return `"${p.slice(0, MAX_PREFERENCE_CHARS).replace(/"/g, '\\"')}"`
+  const escaped = p.slice(0, MAX_PREFERENCE_CHARS).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  return `"${escaped}"`
 }
 
 /** Build the full Preferences paragraph from an ordered list of preferences. */
