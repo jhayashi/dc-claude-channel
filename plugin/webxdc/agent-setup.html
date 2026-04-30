@@ -1732,7 +1732,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.99;
+var APP_VERSION = 2.00;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -2171,6 +2171,91 @@ function renderManageList() {
   }
   var empty = document.getElementById('manage-empty');
   if (empty) empty.style.display = existingAgents.length === 0 ? '' : 'none';
+}
+
+// Phase 12 — reuse picker rows (Task 12.2). Same avatar + meta as the
+// manage list, but tap routes to confirmReuseAgent (Task 12.3) instead
+// of edit. Sort: bound agents first (most-used surfaces near top),
+// then alphabetical.
+function renderReusePickList() {
+  var listEl = document.getElementById('reuse-list');
+  var emptyEl = document.getElementById('reuse-empty');
+  if (!listEl || !emptyEl) return;
+  if (!existingAgents || existingAgents.length === 0) {
+    listEl.style.display = 'none';
+    emptyEl.style.display = '';
+    return;
+  }
+  listEl.style.display = '';
+  emptyEl.style.display = 'none';
+  listEl.textContent = '';
+  var sorted = existingAgents.slice().sort(function(a, b) {
+    var aBound = (a.bindingCount > 0) ? 0 : 1;
+    var bBound = (b.bindingCount > 0) ? 0 : 1;
+    if (aBound !== bBound) return aBound - bBound;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+  for (var i = 0; i < sorted.length; i++) {
+    var a = sorted[i];
+    var row = document.createElement('div');
+    row.className = 'agent-row';
+    row.onclick = (function(id){ return function(){ confirmReuseAgent(id); }; })(a.id);
+
+    var avatar = document.createElement('div');
+    avatar.className = 'avatar';
+    if (a.iconDataUri) {
+      var img = document.createElement('img');
+      img.src = a.iconDataUri;
+      img.alt = '';
+      avatar.appendChild(img);
+    } else {
+      setBadgeSvg(avatar, renderPreviewSvg(a.tier || 'sonnet', !!a.isTrusted, a.glyph || 'user-round', a.pattern || 'checker'));
+    }
+    row.appendChild(avatar);
+
+    var info = document.createElement('div');
+    info.className = 'info';
+    var name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = a.name;
+    info.appendChild(name);
+
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    var tierDot = document.createElement('span');
+    tierDot.className = 'tier-dot ' + (a.tier || 'sonnet');
+    meta.appendChild(tierDot);
+    var modelText = document.createElement('span');
+    modelText.textContent = TIER_LABEL[a.tier] || (MODEL_TIERS[a.model] || a.model);
+    meta.appendChild(modelText);
+    if (a.isTrusted) {
+      var sep1 = document.createElement('span');
+      sep1.className = 'sep';
+      sep1.textContent = '•';
+      meta.appendChild(sep1);
+      var trustText = document.createElement('span');
+      trustText.className = 'trusted';
+      trustText.textContent = 'Trusted';
+      meta.appendChild(trustText);
+    }
+    info.appendChild(meta);
+    row.appendChild(info);
+
+    var chev = document.createElement('span');
+    chev.className = 'home-action-chev';
+    chev.setAttribute('aria-hidden', 'true');
+    chev.innerHTML = '&rsaquo;';
+    row.appendChild(chev);
+
+    listEl.appendChild(row);
+  }
+}
+
+// Stub for Task 12.2 — confirmation modal lands in 12.3.
+function confirmReuseAgent(agentId) {
+  webxdc.sendUpdate({
+    payload: { type: 'start-reuse-chat', agentId: agentId, senderAddr: webxdc.selfAddr },
+  }, '');
 }
 
 function renderPickList() {
@@ -2793,10 +2878,8 @@ function gotoBuildCustom() {
   show('new-chat');
 }
 
-// Stubs — wired to dispatcher in Tasks 12.4 and 12.5. For Task 12.1 we
-// just show that the mode picker reaches them.
 function gotoReusePicker() {
-  // Real list rendering lands in Task 12.2.
+  renderReusePickList();
   show('reuse-picker');
 }
 
