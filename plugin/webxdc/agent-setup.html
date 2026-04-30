@@ -351,7 +351,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 }
 .btn-ghost:hover { background: var(--surface-2); }
 #step0, #new-chat, #wall-screen, #manage, #step2, #step3, #outdated, #loading, #resume-import { display: none; }
-#step0.visible, #new-chat.visible, #wall-screen.visible, #manage.visible, #step2.visible, #step3.visible, #outdated.visible, #loading.visible, #resume-import.visible { display: block; }
+#step0.visible, #new-chat.visible, #wall-screen.visible, #new-chat-mode.visible, #reuse-picker.visible, #manage.visible, #step2.visible, #step3.visible, #outdated.visible, #loading.visible, #resume-import.visible { display: block; }
 #resume-import.visible { display: flex; flex-direction: column; max-height: calc(100vh - 40px); }
 #resume-import .body { flex: 1; overflow-y: auto; min-height: 0; }
 .screen-heading { font-size: 16px; font-weight: 600; color: #c9d1d9; margin: 0 0 12px; }
@@ -1304,6 +1304,72 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     </div>
   </div>
 
+  <!-- Phase 12 — intermediate mode-picker. Lands one tap below "Start a
+       new chat" on the home, three cards: default agent (one-tap),
+       reuse a saved agent (opens #reuse-picker), build custom (the
+       wall flow). Visual matches the home action cards. -->
+  <div id="new-chat-mode">
+    <div class="title-bar">
+      <button class="crumb" type="button" onclick="show('step0')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Home
+      </button>
+      <div class="title">Start a new chat</div>
+    </div>
+    <div class="body">
+      <div class="home-actions">
+        <button class="home-action" onclick="gotoDefaultAgent()">
+          <span class="home-action-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </span>
+          <span class="home-action-body">
+            <span class="home-action-label">Default agent</span>
+            <span class="home-action-desc">Just chat with Claude. No setup.</span>
+          </span>
+          <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
+        </button>
+        <button class="home-action" onclick="gotoReusePicker()">
+          <span class="home-action-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </span>
+          <span class="home-action-body">
+            <span class="home-action-label">Reuse a saved agent</span>
+            <span class="home-action-desc">Start a chat with one of your existing agents.</span>
+          </span>
+          <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
+        </button>
+        <button class="home-action" onclick="gotoBuildCustom()">
+          <span class="home-action-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8 19 13"/><path d="M15 9h0"/><path d="M17.8 6.2 19 5"/><path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/></svg>
+          </span>
+          <span class="home-action-body">
+            <span class="home-action-label">Build a custom agent</span>
+            <span class="home-action-desc">Coach-led setup from a 155-leaf catalog.</span>
+          </span>
+          <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Phase 12 — reuse picker scaffold. List rendering lands in 12.2. -->
+  <div id="reuse-picker">
+    <div class="title-bar">
+      <button class="crumb" type="button" onclick="show('new-chat-mode')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <div class="title">Pick an agent</div>
+    </div>
+    <div class="body">
+      <div id="reuse-empty" class="results-empty" style="display:none;">
+        No saved agents yet.
+        <div style="margin-top:12px"><button class="btn-primary" onclick="gotoBuildCustom()">Build one</button></div>
+      </div>
+      <div id="reuse-list"></div>
+    </div>
+  </div>
+
   <div id="manage">
     <div class="title-bar">
       <button class="crumb" type="button" onclick="show('step0')">
@@ -1666,7 +1732,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.98;
+var APP_VERSION = 1.99;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -1905,7 +1971,7 @@ function wireSeg(segEl, onChange) {
 }
 
 function show(id) {
-  var ids = ['loading', 'step0', 'new-chat', 'wall-screen', 'manage', 'step2', 'step3', 'outdated', 'resume-import', 'teleport-out', 'paired-devices'];
+  var ids = ['loading', 'step0', 'new-chat', 'wall-screen', 'new-chat-mode', 'reuse-picker', 'manage', 'step2', 'step3', 'outdated', 'resume-import', 'teleport-out', 'paired-devices'];
   for (var i = 0; i < ids.length; i++) {
     var el = document.getElementById(ids[i]);
     if (ids[i] === id) el.classList.add('visible'); else el.classList.remove('visible');
@@ -2702,7 +2768,16 @@ function gotoCreate() {
   show('step2');
 }
 
+// Phase 12 — entry point from the home card. Lands on the mode picker
+// instead of going straight to the wall, so the user can pick between
+// the default agent, reusing a saved agent, or building a custom one.
 function gotoNewChat() {
+  show('new-chat-mode');
+}
+
+// Build-from-leaves path. The wall flow that v1.2.0 wired straight to
+// "Start a new chat"; now reached from the mode picker's third card.
+function gotoBuildCustom() {
   if (state.newAgentFlow && state.newAgentFlow.enabled) {
     show('wall-screen');
     installWallDelegates();
@@ -2716,6 +2791,18 @@ function gotoNewChat() {
   renderPickList();
   renderTemplates();
   show('new-chat');
+}
+
+// Stubs — wired to dispatcher in Tasks 12.4 and 12.5. For Task 12.1 we
+// just show that the mode picker reaches them.
+function gotoReusePicker() {
+  // Real list rendering lands in Task 12.2.
+  show('reuse-picker');
+}
+
+function gotoDefaultAgent() {
+  // Real handler lands in Task 12.5.
+  webxdc.sendUpdate({ payload: { type: 'start-default-chat', senderAddr: webxdc.selfAddr } }, '');
 }
 
 // ----- Wall navigation (Phase 6) ----------------------------------------
