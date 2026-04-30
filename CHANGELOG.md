@@ -4,6 +4,22 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.2.1] — 2026-04-30
+
+Re-adds the "start a chat with the default agent" and "reuse a saved agent" flows that v1.2.0 collapsed into the wall path. New intermediate screen between the home and the wall, plus a confirmation modal with a processing state.
+
+### Added
+
+- **Intermediate "Start a new chat" screen.** Three cards: Default agent (one-tap with the built-in default), Reuse a saved agent (opens a picker), Build a custom agent (the existing wall flow). Visual matches the home action cards. Spec at `plugin/docs/superpowers/specs/2026-04-30-new-chat-picker-design.md`.
+- **Reuse picker.** Scrollable list of every saved agent with badge avatars (pattern-correct via the v1.2.0 fix). Sorted by binding count (most-used first) then alphabetical. Empty state offers a "Build one" CTA for brand-new installs.
+- **Confirmation modal with processing state.** Doesn't auto-dismiss — agent-binding takes a few seconds (DC group create + addContact + setChatName + badge install + binding write). Shows "Setting up your chat…" while waiting; flips to an error state with a Retry button on failure. Used for both reuse and default-agent paths.
+- **Default-agent quick path.** Maps to the existing built-in `claude-code` agent (auto-seeded by `agents.ensureDefaultAgent` on first call). Tap "Default agent" on the mode picker → modal shows processing → new chat ready. Re-creates if the user deleted the default from Manage. Files: `plugin/apps/agent-setup-app.ts` (`start-default-chat` + `start-reuse-chat` handlers, `createReuseChat` helper, `sendChatReady` / `sendChatFailed`), `plugin/webxdc/agent-setup.html` (`#new-chat-mode`, `#reuse-picker`, reuse-confirm modal).
+
+### Changed
+
+- **"Start a new chat" routing.** Tap from the home card now lands on the mode picker instead of going straight to the wall. The wall flow is unchanged in behavior — reached via the third card on the mode picker. Existing wall test harness updated to navigate the extra step.
+- **APP_VERSION 1.98 → 2.02** across the five Phase 12 commits + a stray `*.log` ignore added to `.gitignore` so debug logs don't sneak into commits.
+
 ## [1.2.0] — 2026-04-29
 
 Agent creation redesign — the new wall + coach + mash-up flow is now the default. Replaces the v1.x template-grid create path with a 155-leaf catalog, a coach-led interview, and a coach-led "refine" path for editing existing agents in chat. NL meta-commands ("switch to opus", "trust me", "let's refine you") get intercepted before subagent dispatch and act on the bound agent's definition.
