@@ -545,8 +545,14 @@ async function createNewAgentChat(ctx: AppContext, sourceChatId: number, ownerCo
  * DC chat, kicks off a coach interview in `coachSessions`, and posts the
  * first question. If the coach has nothing to ask (degenerate leaf
  * shape), graduates immediately.
+ *
+ * Exported for the agent-creation E2E test (`agent-creation-e2e.test.ts`),
+ * which drives the full build flow end to end without going through the
+ * WebXDC `onWebXDCUpdate` plumbing — that path simply unwraps a
+ * `build-agent` payload and calls this function with the same arguments.
+ * Production callers still go through `onWebXDCUpdate`.
  */
-async function handleBuildAgent(
+export async function handleBuildAgent(
   ctx: AppContext,
   sourceChatId: number,
   leafIds: string[],
