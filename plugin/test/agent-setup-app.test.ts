@@ -1,11 +1,18 @@
-import { describe, test, expect, beforeEach } from 'bun:test'
+import { describe, test, expect, beforeEach, mock } from 'bun:test'
+import { existsSync, mkdtempSync, readdirSync, rmSync, unlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setLeavesDir, getDefaultCatalog } from '../leaves.js'
 import {
   composeIdentityPreamble,
   composeAgentName,
+  createReuseChat,
 } from '../apps/agent-setup-app.js'
 import type { CoachAnswers } from '../coach.js'
+import * as agents from '../agents.js'
+import * as bindings from '../bindings.js'
+import * as access from '../access/index.js'
+import type { AppContext } from '../webxdc-app.js'
 
 beforeEach(() => {
   setLeavesDir(join(import.meta.dir, '..', 'leaves'))
@@ -114,5 +121,117 @@ describe('composeAgentName', () => {
   test('empty leafIds returns generic name', () => {
     const name = composeAgentName([], empty, getDefaultCatalog())
     expect(name).toBe('New agent')
+  })
+})
+
+// Phase 12 — reuse chat handler. Stubs the DC client with the surface
+// createReuseChat actually touches (createGroup, addContactToChat,
+// setChatProfileImage, send). Verifies the chat is created with the
+// agent's name, the binding is persisted, and decorate runs through
+// (badge attempt + intro send).
+describe('createReuseChat', () => {
+  const agentsDir = mkdtempSync(join(tmpdir(), 'dc-reuse-agents-'))
+  const bindingsDir = mkdtempSync(join(tmpdir(), 'dc-reuse-bindings-'))
+  const accessDir = mkdtempSync(join(tmpdir(), 'dc-reuse-access-'))
+
+  beforeEach(() => {
+    agents.setAgentsDir(agentsDir)
+    bindings.setBindingsDir(bindingsDir)
+    access.setApprovedDir(accessDir)
+    for (const dir of [agentsDir, bindingsDir, accessDir]) {
+      if (existsSync(dir)) {
+        for (const f of readdirSync(dir)) {
+          try { unlinkSync(join(dir, f)) } catch { /* ignore directories */ }
+        }
+      }
+    }
+  })
+
+  function makeStubCtx(newChatId: number): {
+    ctx: AppContext
+    createGroup: ReturnType<typeof mock>
+    addContactToChat: ReturnType<typeof mock>
+    setChatProfileImage: ReturnType<typeof mock>
+    send: ReturnType<typeof mock>
+  } {
+    const createGroup = mock(async (_name: string) => newChatId)
+    const addContactToChat = mock(async () => {})
+    const setChatProfileImage = mock(async () => {})
+    const send = mock(async () => 1)
+    const client = {
+      createGroup,
+      addContactToChat,
+      setChatProfileImage,
+      send,
+    } as unknown as AppContext['client']
+    const ctx: AppContext = {
+      client,
+      mcp: {} as unknown as AppContext['mcp'],
+      isAllowed: (chatId: number) => access.isAllowed(chatId),
+      allowedChats: () => access.allowedChats(),
+      logf: () => {},
+      safeName: (s: string) => s,
+      registerWebXDCMsg: () => {},
+      unregisterWebXDCMsg: () => {},
+      evictSubagent: async () => {},
+      getAvailableMcpServers: () => [],
+      getConnectedMcpServers: () => [],
+      scheduleStore: {} as unknown as AppContext['scheduleStore'],
+      subagentCache: { evictChat: async () => {} },
+      cleanupChatState: async () => {},
+    }
+    return { ctx, createGroup, addContactToChat, setChatProfileImage, send }
+  }
+
+  function seedAgent(): agents.AgentDef {
+    const def: agents.AgentDef = {
+      id: 'reuse-test-agent',
+      name: 'Reuse Test Agent',
+      model: 'claude-sonnet-4-6',
+      description: '',
+      system: 'you are helpful',
+      tools: [],
+    }
+    agents.saveAgent(def)
+    return def
+  }
+
+  test('creates DC chat with the agent name and adds the owner contact', async () => {
+    const agent = seedAgent()
+    const { ctx, createGroup, addContactToChat } = makeStubCtx(500)
+    await createReuseChat(ctx, agent, 11)
+    expect(createGroup).toHaveBeenCalledTimes(1)
+    expect(createGroup.mock.calls[0]).toEqual(['Reuse Test Agent'])
+    expect(addContactToChat).toHaveBeenCalledTimes(1)
+    expect(addContactToChat.mock.calls[0]).toEqual([500, 11])
+  })
+
+  test('persists the binding linking the new chat to the agent', async () => {
+    const agent = seedAgent()
+    const { ctx } = makeStubCtx(500)
+    const returnedChatId = await createReuseChat(ctx, agent, 11)
+    expect(returnedChatId).toBe(500)
+    const binding = bindings.getBinding(500)
+    expect(binding).not.toBeNull()
+    expect(binding!.agentId).toBe(agent.id)
+  })
+
+  test('approves the new chat for the owner', async () => {
+    const agent = seedAgent()
+    const { ctx } = makeStubCtx(500)
+    await createReuseChat(ctx, agent, 11)
+    expect(access.isAllowed(500)).toBe(true)
+    expect(access.getOwner(500)).toBe(11)
+  })
+
+  test('sends the intro greeting in the new chat', async () => {
+    const agent = seedAgent()
+    const { ctx, send } = makeStubCtx(500)
+    await createReuseChat(ctx, agent, 11)
+    // decorateAgentChat -> ctx.client.send with the intro line.
+    expect(send).toHaveBeenCalled()
+    const greeting = send.mock.calls.find((c) => c[0] === 500)
+    expect(greeting).toBeDefined()
+    expect(String(greeting![1])).toMatch(/Reuse Test Agent/)
   })
 })

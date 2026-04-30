@@ -474,6 +474,75 @@ export async function decorateAgentChat(
 }
 
 /**
+ * Phase-12 reuse flow — provision a new DC chat bound to an existing
+ * agent. Mirrors the legacy `bind` payload's chat-create + addContact +
+ * addChat + bindAgent + decorate sequence; pulled out as a named helper
+ * so it's testable with a stub AppContext (the existing handler is
+ * deeply nested in the WebXDC update dispatch loop).
+ *
+ * Returns the new chat id on success; throws on any of the chat-create /
+ * addContact / bindAgent steps. Caller is responsible for emitting the
+ * chat-ready / chat-failed update back to the source setup card.
+ */
+export async function createReuseChat(
+  ctx: AppContext,
+  agent: agents.AgentDef,
+  ownerContactId: number,
+): Promise<number> {
+  const newChatId = await ctx.client.createGroup(agent.name)
+  await ctx.client.addContactToChat(newChatId, ownerContactId)
+  access.addChat(newChatId, ownerContactId)
+  bindings.bindAgent(newChatId, agent.id, {
+    inheritClaudeMd: agents.inheritClaudeMdForModel(agent.model),
+  })
+  await decorateAgentChat(ctx, newChatId, agent)
+  return newChatId
+}
+
+/**
+ * Reply to a Phase-12 mode-picker flow on the source setup card with the
+ * new chat's id. The card listens for chat-ready in setUpdateListener,
+ * closes the confirmation modal, and routes back to the home screen.
+ */
+async function sendChatReady(
+  session: Session,
+  ctx: AppContext,
+  newChatId: number,
+): Promise<void> {
+  const update = JSON.stringify({
+    payload: { type: 'chat-ready', chatId: newChatId, senderAddr: 'server' },
+    summary: 'Chat created',
+  })
+  try {
+    await ctx.client.sendWebXDCUpdate(session.msgId, update)
+  } catch (err) {
+    ctx.logf('agent-setup: chat-ready dispatch failed: %v', err)
+  }
+}
+
+/**
+ * Reply with a chat-failed update so the card flips its modal into the
+ * error state. Caller passes a user-readable error string — preserved
+ * verbatim in the modal sub-line, so keep it short and non-technical
+ * where possible.
+ */
+async function sendChatFailed(
+  session: Session,
+  ctx: AppContext,
+  error: string,
+): Promise<void> {
+  const update = JSON.stringify({
+    payload: { type: 'chat-failed', error, senderAddr: 'server' },
+    summary: 'Chat creation failed',
+  })
+  try {
+    await ctx.client.sendWebXDCUpdate(session.msgId, update)
+  } catch (err) {
+    ctx.logf('agent-setup: chat-failed dispatch failed: %v', err)
+  }
+}
+
+/**
  * Compose the Identity preamble for an agent's system prompt from the
  * leaves the user picked plus the coach's collected answers. Single-leaf
  * agents get a one-sentence "You are a <leaf>" line (with parameter when
@@ -1827,6 +1896,40 @@ export const agentSetupApp: WebXDCApp = {
           // Session stays alive — user may keep using the settings card.
         } catch (err) {
           ctx.logf('agent-setup: bind failed: %v', err)
+        }
+        continue
+      }
+
+      // Phase 12 — reuse-an-agent flow from the new mode picker. Same
+      // chat-create + bind sequence as the legacy `bind` handler above,
+      // but emits chat-ready / chat-failed (which the modal listens for)
+      // instead of `created` (which closes the create-form flow). Kept
+      // as a separate payload type so future divergence (e.g. richer
+      // processing-state UX) doesn't have to thread through the legacy
+      // path.
+      if (payload.type === 'start-reuse-chat') {
+        const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
+        if (!agentId) {
+          await sendChatFailed(session, ctx, 'Missing agent id.')
+          continue
+        }
+        const agent = agents.getAgent(agentId)
+        if (!agent) {
+          await sendChatFailed(session, ctx, `Agent "${agentId}" no longer exists.`)
+          continue
+        }
+        const ownerContactId = await resolveOwner()
+        if (!ownerContactId) {
+          await sendChatFailed(session, ctx, "I can't tell who owns this chat — try unpairing and re-pairing.")
+          continue
+        }
+        try {
+          const newChatId = await createReuseChat(ctx, agent, ownerContactId)
+          ctx.logf('agent-setup: reuse-chat bound %s to chat %d for owner %d', agent.id, newChatId, ownerContactId)
+          await sendChatReady(session, ctx, newChatId)
+        } catch (err) {
+          ctx.logf('agent-setup: start-reuse-chat failed for agent %s: %v', agentId, err)
+          await sendChatFailed(session, ctx, err instanceof Error ? err.message : 'unknown error')
         }
         continue
       }
