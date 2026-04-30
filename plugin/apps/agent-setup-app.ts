@@ -1907,6 +1907,29 @@ export const agentSetupApp: WebXDCApp = {
       // as a separate payload type so future divergence (e.g. richer
       // processing-state UX) doesn't have to thread through the legacy
       // path.
+      // Phase 12 — default-agent quick path. Same chat-create flow as
+      // start-reuse-chat, but the agent is the built-in default
+      // (auto-seeded by ensureDefaultAgent on first use). The default
+      // is editable / deletable via Manage like any other agent;
+      // tapping this card again just re-seeds and creates another chat.
+      if (payload.type === 'start-default-chat') {
+        const ownerContactId = await resolveOwner()
+        if (!ownerContactId) {
+          await sendChatFailed(session, ctx, "I can't tell who owns this chat — try unpairing and re-pairing.")
+          continue
+        }
+        try {
+          const defaultAgent = agents.ensureDefaultAgent()
+          const newChatId = await createReuseChat(ctx, defaultAgent, ownerContactId)
+          ctx.logf('agent-setup: default-chat bound %s to chat %d for owner %d', defaultAgent.id, newChatId, ownerContactId)
+          await sendChatReady(session, ctx, newChatId)
+        } catch (err) {
+          ctx.logf('agent-setup: start-default-chat failed: %v', err)
+          await sendChatFailed(session, ctx, err instanceof Error ? err.message : 'unknown error')
+        }
+        continue
+      }
+
       if (payload.type === 'start-reuse-chat') {
         const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
         if (!agentId) {

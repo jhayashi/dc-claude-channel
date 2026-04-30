@@ -234,4 +234,34 @@ describe('createReuseChat', () => {
     expect(greeting).toBeDefined()
     expect(String(greeting![1])).toMatch(/Reuse Test Agent/)
   })
+
+  test('default-agent path: ensureDefaultAgent + createReuseChat lazy-creates and binds', async () => {
+    // No seedAgent here — ensureDefaultAgent should auto-create the
+    // built-in default. Mirrors what the start-default-chat handler
+    // does end-to-end.
+    expect(agents.getAgent(agents.DEFAULT_AGENT_ID)).toBeNull()
+    const defaultAgent = agents.ensureDefaultAgent()
+    expect(defaultAgent.id).toBe(agents.DEFAULT_AGENT_ID)
+    const { ctx } = makeStubCtx(600)
+    const newChatId = await createReuseChat(ctx, defaultAgent, 11)
+    expect(newChatId).toBe(600)
+    const binding = bindings.getBinding(600)
+    expect(binding).not.toBeNull()
+    expect(binding!.agentId).toBe(agents.DEFAULT_AGENT_ID)
+  })
+
+  test('default-agent path: re-creates the default if the user deleted it', async () => {
+    // Create + delete to simulate "user removed Default agent in Manage".
+    agents.ensureDefaultAgent()
+    expect(agents.getAgent(agents.DEFAULT_AGENT_ID)).not.toBeNull()
+    // Note: deleteAgent throws on undeletable; this is just a paranoia
+    // path. In practice ensureDefaultAgent re-seeds from a missing-file
+    // state.
+    // Force-remove the on-disk file manually.
+    rmSync(join(agentsDir, `${agents.DEFAULT_AGENT_ID}.yaml`), { force: true })
+    expect(agents.getAgent(agents.DEFAULT_AGENT_ID)).toBeNull()
+    const reseeded = agents.ensureDefaultAgent()
+    expect(reseeded.id).toBe(agents.DEFAULT_AGENT_ID)
+    expect(agents.getAgent(agents.DEFAULT_AGENT_ID)).not.toBeNull()
+  })
 })

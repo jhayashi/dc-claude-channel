@@ -1755,7 +1755,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 2.01;
+var APP_VERSION = 2.02;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -2274,15 +2274,20 @@ function renderReusePickList() {
   }
 }
 
-// Reuse confirmation modal (Task 12.3). Three-state machine:
-// idle → processing → (chat-ready: close + return home) | (chat-failed: error)
-// from error, Retry returns to processing.
+// Reuse / default confirmation modal (Tasks 12.3, 12.5). Three-state
+// machine: idle → processing → (chat-ready: close + home) | (chat-failed:
+// error). From error, Retry returns to processing. The 'mode' field
+// tracks whether we're reusing a saved agent (with agentId) or kicking
+// off the default-agent quick path — Retry uses it to re-fire the
+// correct payload.
 var reuseConfirmAgentId = null;
+var reuseConfirmMode = null;  // 'reuse' | 'default'
 
 function confirmReuseAgent(agentId) {
   var agent = (existingAgents || []).find(function(a){ return a.id === agentId; });
   if (!agent) return;
   reuseConfirmAgentId = agentId;
+  reuseConfirmMode = 'reuse';
   document.getElementById('reuse-confirm-heading').textContent =
     'Start a new chat with "' + agent.name + '"?';
   document.getElementById('reuse-confirm-sub').textContent = '';
@@ -2291,15 +2296,21 @@ function confirmReuseAgent(agentId) {
 }
 
 function reuseConfirmOk() {
-  if (!reuseConfirmAgentId) return;
-  setReuseConfirmState('processing');
-  webxdc.sendUpdate({
-    payload: {
-      type: 'start-reuse-chat',
-      agentId: reuseConfirmAgentId,
-      senderAddr: webxdc.selfAddr,
-    },
-  }, '');
+  if (reuseConfirmMode === 'reuse' && reuseConfirmAgentId) {
+    setReuseConfirmState('processing');
+    webxdc.sendUpdate({
+      payload: {
+        type: 'start-reuse-chat',
+        agentId: reuseConfirmAgentId,
+        senderAddr: webxdc.selfAddr,
+      },
+    }, '');
+  } else if (reuseConfirmMode === 'default') {
+    setReuseConfirmState('processing');
+    webxdc.sendUpdate({
+      payload: { type: 'start-default-chat', senderAddr: webxdc.selfAddr },
+    }, '');
+  }
 }
 
 function setReuseConfirmState(s) {
@@ -2314,6 +2325,7 @@ function setReuseConfirmState(s) {
 function closeReuseConfirm() {
   document.getElementById('reuse-confirm-modal').classList.remove('visible');
   reuseConfirmAgentId = null;
+  reuseConfirmMode = null;
 }
 
 // Called from the WebXDC update listener when the dispatcher reports
@@ -2957,7 +2969,17 @@ function gotoReusePicker() {
 }
 
 function gotoDefaultAgent() {
-  // Real handler lands in Task 12.5.
+  // Default agent is a one-tap path — no confirmation needed (the user
+  // already tapped through Home -> "Start a new chat" -> "Default
+  // agent"). Open the same modal directly in processing state so the
+  // user sees something is happening; chat-ready / chat-failed land in
+  // the existing listener and close / flip to error like the reuse flow.
+  reuseConfirmAgentId = null;
+  reuseConfirmMode = 'default';
+  document.getElementById('reuse-confirm-heading').textContent = 'Setting up your default chat';
+  document.getElementById('reuse-confirm-sub').textContent = '';
+  setReuseConfirmState('processing');
+  document.getElementById('reuse-confirm-modal').classList.add('visible');
   webxdc.sendUpdate({ payload: { type: 'start-default-chat', senderAddr: webxdc.selfAddr } }, '');
 }
 
