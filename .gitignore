@@ -8,3 +8,4 @@ dev/
 .claude/settings.local.json
 docs/
 /scripts/
+*.log
