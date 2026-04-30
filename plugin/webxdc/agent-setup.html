@@ -1697,7 +1697,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.95;
+var APP_VERSION = 1.96;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -2685,7 +2685,10 @@ function gotoNewChat() {
     renderWall();
     return;
   }
-  // Existing v1.x path (unchanged below)
+  // LEGACY (v1.x). Default-off as of v1.2.0 — only reached when the
+  // user has set DC_NEW_AGENT_FLOW=0 to opt out of the wall flow.
+  // Slated for removal in a future release. The wall flow above is
+  // the supported path; do not add new features below this line.
   renderPickList();
   renderTemplates();
   show('new-chat');

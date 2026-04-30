@@ -344,7 +344,10 @@ async function sendInit(
   await sweepDeadChats(ctx)
   const existing = sessions.get(sourceChatId)
   const draft = blankDraft()
-  const newAgentFlowEnabled = process.env.DC_NEW_AGENT_FLOW === '1'
+  // Default-on as of Task 11.3 (v1.2.0). Set DC_NEW_AGENT_FLOW=0 to
+  // fall back to the v1.x template-grid create path. The legacy path
+  // is kept for users who want it but is slated for removal.
+  const newAgentFlowEnabled = process.env.DC_NEW_AGENT_FLOW !== '0'
   const payload = {
     type: 'init' as const,
     version: agentSetup.getAgentSetupVersion(),
