@@ -234,7 +234,9 @@ body {
   font: 500 11px/1 inherit;
   color: var(--ink-faint);
 }
-.home-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.home-actions { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+.home-group { display: flex; flex-direction: column; gap: 8px; }
+.home-group + .home-group { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 4px; }
 .home-action {
   display: flex; align-items: center; gap: 12px;
   width: 100%;
@@ -349,7 +351,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 }
 .btn-ghost:hover { background: var(--surface-2); }
 #step0, #new-chat, #wall-screen, #manage, #step2, #step3, #outdated, #loading, #resume-import { display: none; }
-#step0.visible, #new-chat.visible, #wall-screen.visible, #manage.visible, #step2.visible, #step3.visible, #outdated.visible, #loading.visible, #resume-import.visible { display: block; }
+#step0.visible, #new-chat.visible, #wall-screen.visible, #refine-picker.visible, #manage.visible, #step2.visible, #step3.visible, #outdated.visible, #loading.visible, #resume-import.visible { display: block; }
 #resume-import.visible { display: flex; flex-direction: column; max-height: calc(100vh - 40px); }
 #resume-import .body { flex: 1; overflow-y: auto; min-height: 0; }
 .screen-heading { font-size: 16px; font-weight: 600; color: #c9d1d9; margin: 0 0 12px; }
@@ -1195,56 +1197,70 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       </div>
       <div class="section-label">What would you like to do?</div>
       <div class="home-actions">
-        <button class="home-action" onclick="gotoNewChat()">
-          <span class="home-action-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          </span>
-          <span class="home-action-body">
-            <span class="home-action-label">Start a new chat</span>
-            <span class="home-action-desc">Pick an agent or create a new one.</span>
-          </span>
-          <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
-        </button>
-        <button class="home-action" id="home-manage-btn" onclick="gotoManage()">
-          <span class="home-action-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          </span>
-          <span class="home-action-body">
-            <span class="home-action-label">Manage agents</span>
-            <span class="home-action-desc">Edit, export, or delete saved agents.</span>
-          </span>
-          <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
-        </button>
-        <button class="home-action" onclick="gotoResume()">
-          <span class="home-action-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
-          </span>
-          <span class="home-action-body">
-            <span class="home-action-label">Resume terminal session</span>
-            <span class="home-action-desc">Continue a recent Claude session as a chat.</span>
-          </span>
-          <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
-        </button>
-        <button class="home-action" onclick="gotoTeleportOut()">
-          <span class="home-action-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-          </span>
-          <span class="home-action-body">
-            <span class="home-action-label">Send chat to terminal</span>
-            <span class="home-action-desc">Continue this chat in your local terminal.</span>
-          </span>
-          <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
-        </button>
-        <button class="home-action" onclick="gotoPairedDevices()">
-          <span class="home-action-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-          </span>
-          <span class="home-action-body">
-            <span class="home-action-label">Paired devices</span>
-            <span class="home-action-desc">Review or unpair devices that can command this agent.</span>
-          </span>
-          <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
-        </button>
+        <div class="home-group">
+          <button class="home-action" onclick="gotoNewChat()">
+            <span class="home-action-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </span>
+            <span class="home-action-body">
+              <span class="home-action-label">Start a new chat</span>
+              <span class="home-action-desc">Pick an agent or create a new one.</span>
+            </span>
+            <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="home-action" id="home-manage-btn" onclick="gotoManage()">
+            <span class="home-action-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </span>
+            <span class="home-action-body">
+              <span class="home-action-label">Manage agents</span>
+              <span class="home-action-desc">Edit, export, or delete saved agents.</span>
+            </span>
+            <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="home-action" onclick="gotoRefine()">
+            <span class="home-action-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+            </span>
+            <span class="home-action-body">
+              <span class="home-action-label">Refine an agent</span>
+              <span class="home-action-desc">Coach-guided shaping of an existing agent.</span>
+            </span>
+            <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
+          </button>
+        </div>
+        <div class="home-group">
+          <button class="home-action" onclick="gotoResume()">
+            <span class="home-action-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
+            </span>
+            <span class="home-action-body">
+              <span class="home-action-label">Resume terminal session</span>
+              <span class="home-action-desc">Continue a recent Claude session as a chat.</span>
+            </span>
+            <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="home-action" onclick="gotoTeleportOut()">
+            <span class="home-action-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            </span>
+            <span class="home-action-body">
+              <span class="home-action-label">Send chat to terminal</span>
+              <span class="home-action-desc">Continue this chat in your local terminal.</span>
+            </span>
+            <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
+          </button>
+          <button class="home-action" onclick="gotoPairedDevices()">
+            <span class="home-action-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+            </span>
+            <span class="home-action-body">
+              <span class="home-action-label">Paired devices</span>
+              <span class="home-action-desc">Review or unpair devices that can command this agent.</span>
+            </span>
+            <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -1295,6 +1311,27 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       <div id="wall-results" style="display:none"></div>
       <div id="wall-l2"></div>
       <div id="wall-leaf-detail"></div>
+    </div>
+  </div>
+
+  <!-- Refine picker placeholder (Task 11.1). The full agent picker +
+       coach-led refine flow lands in Task 11.2; until then the home
+       card leads here so the entrypoint is reachable but the user
+       sees a clear "preview" message rather than a broken screen. -->
+  <div id="refine-picker">
+    <div class="title-bar">
+      <button class="crumb" type="button" onclick="show('step0')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Home
+      </button>
+      <div class="title">Refine an agent</div>
+    </div>
+    <div class="body">
+      <div class="results-empty">
+        <strong style="color: var(--ink);">Preview</strong><br>
+        Coach-led refine isn't wired up yet — coming in the next release.
+        For now, edit agents from the Manage screen.
+      </div>
     </div>
   </div>
 
@@ -1660,7 +1697,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.94;
+var APP_VERSION = 1.95;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -1844,7 +1881,7 @@ function wireSeg(segEl, onChange) {
 }
 
 function show(id) {
-  var ids = ['loading', 'step0', 'new-chat', 'wall-screen', 'manage', 'step2', 'step3', 'outdated', 'resume-import', 'teleport-out', 'paired-devices'];
+  var ids = ['loading', 'step0', 'new-chat', 'wall-screen', 'refine-picker', 'manage', 'step2', 'step3', 'outdated', 'resume-import', 'teleport-out', 'paired-devices'];
   for (var i = 0; i < ids.length; i++) {
     var el = document.getElementById(ids[i]);
     if (ids[i] === id) el.classList.add('visible'); else el.classList.remove('visible');
@@ -3102,6 +3139,13 @@ function gotoManage() {
   if (existingAgents.length === 0) return;
   renderManageList();
   show('manage');
+}
+
+// Refine entrypoint (Task 11.1). The picker (refine-picker screen and
+// renderRefinePickList) lands in Task 11.2 — for now this surfaces a
+// preview placeholder so the home card has somewhere to lead.
+function gotoRefine() {
+  show('refine-picker');
 }
 
 function gotoResume() {
