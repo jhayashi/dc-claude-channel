@@ -3,12 +3,15 @@ import { join } from 'node:path'
 import { setLeavesDir } from '../leaves.js'
 import {
   startCoach,
+  startRefineCoach,
   advanceCoach,
   isCoachDone,
   collectAnswers,
   detectTools,
+  isObviousLead,
   type CoachState,
 } from '../coach.js'
+import { getDefaultCatalog } from '../leaves.js'
 
 beforeEach(() => {
   setLeavesDir(join(import.meta.dir, '..', 'leaves'))
@@ -88,16 +91,17 @@ describe('Coach state machine', () => {
     expect(s.nextQuestion?.toLowerCase()).toMatch(/which|lead|bigger pain/)
   })
 
-  // Skipped until §17 #3 lead-obvious heuristic ships. Pins the contract:
-  // when one leaf clearly leads (has the others in its `combinesWith` and
-  // is not present in theirs), the coach should NOT ask the lead question.
-  test.skip('lead question is skipped when one leaf is the obvious primary', () => {
-    // TODO: enable when isObviousLead() lands
+  test('lead question is skipped when one leaf is the obvious primary', () => {
+    // daily-news-feed-briefing is a Service leaf; analyst is Expert. The
+    // Service is the obvious lead — coach should NOT ask the lead question.
     const s = startCoach({
-      leafIds: ['placeholder-primary', 'placeholder-junior-1', 'placeholder-junior-2'],
+      leafIds: ['daily-news-feed-briefing', 'analyst'],
       preset: 'mentor', sliders: {},
     })
-    expect(s.nextQuestion?.toLowerCase()).not.toMatch(/which|lead|bigger pain/)
+    expect(s.answers.leadLeafId).toBe('daily-news-feed-briefing')
+    // The remaining steps should not include a lead question — the next
+    // question is for the Service leaf's parameter (topics).
+    expect(s.nextQuestion?.toLowerCase()).not.toMatch(/which.*specialties.*bigger pain/)
   })
 
   test('advanceCoach does not mutate prior state', () => {
@@ -182,6 +186,82 @@ describe('Coach state machine', () => {
     expect(s.answers.leadLeafId).toBe('stress-management-coach')
     // Should NOT have the "guessed" annotation.
     expect(s.answers.preferences.some(p => p.toLowerCase().includes('coach guessed'))).toBe(false)
+  })
+})
+
+describe('isObviousLead predicate', () => {
+  test('returns null for a single leaf', () => {
+    const catalog = getDefaultCatalog()
+    const tutor = catalog.findLeaf('tutor')!
+    expect(isObviousLead([tutor])).toBeNull()
+  })
+
+  test('returns the Service leaf when one Service mixes with non-Service leaves', () => {
+    const catalog = getDefaultCatalog()
+    const news = catalog.findLeaf('daily-news-feed-briefing')!  // Service
+    const analyst = catalog.findLeaf('analyst')!                // Expert
+    expect(isObviousLead([news, analyst])).toBe('daily-news-feed-briefing')
+    // Order-independent.
+    expect(isObviousLead([analyst, news])).toBe('daily-news-feed-briefing')
+  })
+
+  test('returns null when no leaf is on the Service path', () => {
+    const catalog = getDefaultCatalog()
+    const sleep = catalog.findLeaf('sleep-coach')!
+    const stress = catalog.findLeaf('stress-management-coach')!
+    expect(isObviousLead([sleep, stress])).toBeNull()
+  })
+
+  test('returns null when more than one leaf is on the Service path', () => {
+    const catalog = getDefaultCatalog()
+    const news = catalog.findLeaf('daily-news-feed-briefing')!
+    const inbox = catalog.findLeaf('inbox-notification-triage')!
+    expect(isObviousLead([news, inbox])).toBeNull()
+  })
+})
+
+describe('startRefineCoach', () => {
+  test('asks one open-ended refine question', () => {
+    const s = startRefineCoach({
+      agentId: 'alice',
+      existingPrompt: 'You are alice. How you sound. Be brief.',
+    })
+    expect(s.remaining.length).toBe(1)
+    expect(s.nextQuestion?.toLowerCase()).toMatch(/change|how i work/)
+  })
+
+  test('captures the user answer into preferences', () => {
+    let s = startRefineCoach({
+      agentId: 'alice',
+      existingPrompt: 'You are alice.',
+    })
+    s = advanceCoach(s, 'be sharper on follow-up questions')
+    expect(isCoachDone(s)).toBe(true)
+    const ans = collectAnswers(s)
+    expect(ans.preferences).toEqual(['be sharper on follow-up questions'])
+    expect(ans.parameters).toEqual({})
+    expect(ans.tools).toEqual([])
+  })
+
+  test('stashes refineContext on the returned state', () => {
+    const s = startRefineCoach({
+      agentId: 'alice',
+      existingPrompt: 'You are alice.',
+    })
+    expect(s.refineContext).toEqual({
+      agentId: 'alice',
+      existingPrompt: 'You are alice.',
+    })
+  })
+
+  test('one user turn marks coach done', () => {
+    let s = startRefineCoach({
+      agentId: 'alice',
+      existingPrompt: 'You are alice.',
+    })
+    expect(isCoachDone(s)).toBe(false)
+    s = advanceCoach(s, 'use more concrete examples')
+    expect(isCoachDone(s)).toBe(true)
   })
 })
 
