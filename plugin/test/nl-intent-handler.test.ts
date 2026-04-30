@@ -31,14 +31,22 @@ interface Spy {
   sendCalls: Array<{ chatId: number; text: string }>
   evictCalls: number[]
   refreshCalls: Array<{ chatId: number; agentId: string }>
+  refineCalls: Array<{ chatId: number; agentId: string }>
   logCalls: string[]
   deps: NlIntentDeps
 }
 
-function makeSpy(opts: { evictThrows?: boolean; sendThrows?: boolean } = {}): Spy {
+function makeSpy(opts: {
+  evictThrows?: boolean
+  sendThrows?: boolean
+  refineThrows?: boolean
+  refineReturnsNull?: boolean
+  refineQuestion?: string
+} = {}): Spy {
   const sendCalls: Array<{ chatId: number; text: string }> = []
   const evictCalls: number[] = []
   const refreshCalls: Array<{ chatId: number; agentId: string }> = []
+  const refineCalls: Array<{ chatId: number; agentId: string }> = []
   const logCalls: string[] = []
   const deps: NlIntentDeps = {
     send: async (chatId, text) => {
@@ -55,8 +63,14 @@ function makeSpy(opts: { evictThrows?: boolean; sendThrows?: boolean } = {}): Sp
     logf: (fmt, ...args) => {
       logCalls.push(`${fmt} ${args.map(String).join(' ')}`)
     },
+    startRefineSession: async (chatId, agentId) => {
+      refineCalls.push({ chatId, agentId })
+      if (opts.refineThrows) throw new Error('refine boom')
+      if (opts.refineReturnsNull) return null
+      return opts.refineQuestion ?? 'What would you like to change about how I work?'
+    },
   }
-  return { sendCalls, evictCalls, refreshCalls, logCalls, deps }
+  return { sendCalls, evictCalls, refreshCalls, refineCalls, logCalls, deps }
 }
 
 function seedAgent(id: string, model = 'claude-sonnet-4-6'): void {
@@ -173,16 +187,36 @@ describe('handleNlIntent — trust-toggle success', () => {
   })
 })
 
-describe('handleNlIntent — refine stub', () => {
-  test('refine with bound agent replies with preview placeholder', async () => {
+describe('handleNlIntent — refine flow', () => {
+  test('refine with bound agent starts a refine session and sends the first question', async () => {
     seedAgent('carol')
     seedBinding(70, 'carol')
-    const spy = makeSpy()
+    const spy = makeSpy({ refineQuestion: 'What would you like to change about how I work?' })
     await handleNlIntent(spy.deps, { kind: 'refine' }, 70)
+    expect(spy.refineCalls).toEqual([{ chatId: 70, agentId: 'carol' }])
     expect(spy.sendCalls).toHaveLength(1)
-    // Message must be unambiguously transitional, not finished-feature copy.
-    expect(spy.sendCalls[0]!.text).toMatch(/preview/i)
-    // Must not call evict — refine is a no-op for now.
+    expect(spy.sendCalls[0]!.text.toLowerCase()).toMatch(/change|how i work/)
+    // Refine must NOT evict — the existing subagent stays bound to the
+    // same session; the prompt rewrite happens at coach-done.
     expect(spy.evictCalls).toHaveLength(0)
+  })
+
+  test('refine while another session is in flight tells the user to finish first', async () => {
+    seedAgent('carol')
+    seedBinding(70, 'carol')
+    const spy = makeSpy({ refineReturnsNull: true })
+    await handleNlIntent(spy.deps, { kind: 'refine' }, 70)
+    expect(spy.refineCalls).toHaveLength(1)
+    expect(spy.sendCalls).toHaveLength(1)
+    expect(spy.sendCalls[0]!.text.toLowerCase()).toMatch(/middle of something|finish/)
+  })
+
+  test('refine with a thrown startRefineSession surfaces the error to chat', async () => {
+    seedAgent('carol')
+    seedBinding(70, 'carol')
+    const spy = makeSpy({ refineThrows: true })
+    await handleNlIntent(spy.deps, { kind: 'refine' }, 70)
+    expect(spy.sendCalls[0]!.text.toLowerCase()).toMatch(/couldn't start refine/)
+    expect(spy.logCalls.some((l) => /refine start failed/.test(l))).toBe(true)
   })
 })

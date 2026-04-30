@@ -18,6 +18,16 @@ export interface NlIntentDeps {
   evictChat: (chatId: number) => Promise<unknown>
   refreshIcon: (chatId: number, agentId: string) => void
   logf: (fmt: string, ...args: unknown[]) => void
+  /**
+   * Start a Refine coach session for `chatId` over the named agent.
+   * Wired in production to startRefineCoach + coachSessions.set in
+   * server.ts. Returns the first question (already sent? caller's
+   * choice — we send it from handleNlIntent via `send` to keep the
+   * confirmation-reply pattern consistent across intents).
+   * Returns null if the session couldn't be started (e.g. one already
+   * exists for this chat).
+   */
+  startRefineSession: (chatId: number, agentId: string) => Promise<string | null>
 }
 
 /**
@@ -26,15 +36,15 @@ export interface NlIntentDeps {
  * subagent — we just persist the change, evict the cached subagent so
  * it picks up the new config on next dispatch, and confirm in chat.
  *
- * Refine is currently a placeholder; the full Refine flow lands in a
- * later phase (re-opens coach with the existing prompt as context).
+ * Refine kicks off a single-question coach session over the existing
+ * bound agent — see startRefineCoach + graduateRefineSession.
  */
 export async function handleNlIntent(
   deps: NlIntentDeps,
   intent: Exclude<Intent, null>,
   chatId: number,
 ): Promise<void> {
-  const { send, evictChat, refreshIcon, logf } = deps
+  const { send, evictChat, refreshIcon, logf, startRefineSession } = deps
   switch (intent.kind) {
     case 'model-switch': {
       const binding = bindings.getBinding(chatId)
@@ -89,12 +99,23 @@ export async function handleNlIntent(
         await send(chatId, "I'm not bound to an agent yet, so refine doesn't apply here.").catch(() => {})
         return
       }
-      // Placeholder — the full Refine flow (reopen coach with the
-      // existing prompt as context) lands in a later phase.
-      await send(
-        chatId,
-        "(preview) Refine isn't wired up yet — coming in the next release. Until then, edit the agent via the agent settings card.",
-      ).catch(() => {})
+      try {
+        const firstQuestion = await startRefineSession(chatId, binding.agentId)
+        if (firstQuestion === null) {
+          await send(
+            chatId,
+            "I'm in the middle of something else right now — let's finish that first.",
+          ).catch(() => {})
+          return
+        }
+        await send(chatId, firstQuestion)
+      } catch (err) {
+        logf('nl-intent: refine start failed chat=%d agent=%s: %v', chatId, binding.agentId, err)
+        await send(
+          chatId,
+          `Couldn't start refine: ${err instanceof Error ? err.message : 'unknown error'}`,
+        ).catch(() => {})
+      }
       return
     }
   }

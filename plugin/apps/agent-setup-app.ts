@@ -232,8 +232,14 @@ export interface CoachSession {
   /** Badge pattern picked by the user on the review screen (Phase 9.2).
    *  Validated against PATTERN_IDS at intake; fallback to 'checker' if
    *  the client sent an unknown id. Written to metadata['x-dc-pattern']
-   *  by graduateAgent. */
-  pattern: PatternId
+   *  by graduateAgent. Optional because Refine sessions reuse the
+   *  existing agent's pattern — no new badge to pick. */
+  pattern?: PatternId
+  /** When true, this is a Refine session over an already-bound chat:
+   *  on coach-done the dispatcher dispatches to graduateRefineSession
+   *  instead of graduateAgent — no new agent / binding is created;
+   *  the existing agent's system prompt is rewritten in place. */
+  refining?: boolean
 }
 
 export const coachSessions = new Map<number, CoachSession>()
@@ -646,9 +652,10 @@ export async function graduateAgent(ctx: AppContext, chatId: number): Promise<vo
         'x-dc-personality-preset': 'mentor',
         'x-dc-personality-sliders': {},
         'x-dc-coach-answers': answers as unknown as Record<string, unknown>,
-        // session.pattern is typed PatternId so it's always a valid id —
-        // the prior `|| 'checker'` defense is no longer needed.
-        'x-dc-pattern': session.pattern,
+        // graduateAgent is only invoked for build-new (non-refine)
+        // sessions, where session.pattern is set by the review screen.
+        // Fall back to 'checker' for safety.
+        'x-dc-pattern': session.pattern ?? 'checker',
         // Legacy compat — drives existing badge palette / archetype-aware logic.
         'x-dc-archetype': 'role',
       },
@@ -734,6 +741,54 @@ export async function graduateAgent(ctx: AppContext, chatId: number): Promise<vo
       )
     } catch (sendErr) {
       ctx.logf('agent-setup: graduation-failure notice send failed chat=%d: %v', chatId, sendErr)
+    }
+  }
+}
+
+/**
+ * Finalize a Refine coach session: load the bound agent, splice the
+ * coach's new preferences into its system prompt, write back. Unlike
+ * graduateAgent, this path does NOT create a new agent or binding —
+ * the chat stays attached to the same agent (and same session UUID),
+ * and there's no badge/icon swap. Caller (server.ts coach-interception)
+ * is responsible for clearing coachSessions before this returns.
+ */
+export async function graduateRefineSession(ctx: AppContext, chatId: number): Promise<void> {
+  const session = coachSessions.get(chatId)
+  if (!session) return
+  const refineCtx = session.coachState.refineContext
+  if (!refineCtx) {
+    ctx.logf('agent-setup: graduateRefineSession called without refineContext chat=%d', chatId)
+    coachSessions.delete(chatId)
+    return
+  }
+  try {
+    const { refineSystemPrompt } = await import('../prompt-assembler.js')
+    const agent = agents.getAgent(refineCtx.agentId)
+    if (!agent) {
+      throw new Error(`agent ${refineCtx.agentId} disappeared during refine`)
+    }
+    const answers = collectAnswers(session.coachState)
+    const newSystem = refineSystemPrompt(agent.system, answers)
+    if (newSystem !== agent.system) {
+      agents.saveAgent({ ...agent, system: newSystem })
+    }
+    coachSessions.delete(chatId)
+    try {
+      await ctx.client.send(chatId, 'Done — incorporated.')
+    } catch (err) {
+      ctx.logf('agent-setup: refine confirmation send failed chat=%d: %v', chatId, err)
+    }
+  } catch (err) {
+    ctx.logf('agent-setup: refine graduation failed chat=%d: %v', chatId, err)
+    coachSessions.delete(chatId)
+    try {
+      await ctx.client.send(
+        chatId,
+        "Sorry — I couldn't apply that refinement. The agent is unchanged.",
+      )
+    } catch (sendErr) {
+      ctx.logf('agent-setup: refine-failure notice send failed chat=%d: %v', chatId, sendErr)
     }
   }
 }

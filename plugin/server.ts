@@ -28,8 +28,8 @@ import * as familiarRuntime from './familiar-runtime.js'
 import { apps } from './apps.js'
 import type { WebXDCApp, AppContext } from './webxdc-app.js'
 import { filterUpdatesByOwner } from './webxdc-filter.js'
-import { decorateAgentChat, setAgentIcon, coachSessions, graduateAgent } from './apps/agent-setup-app.js'
-import { advanceCoach, isCoachDone } from './coach.js'
+import { decorateAgentChat, setAgentIcon, coachSessions, graduateAgent, graduateRefineSession } from './apps/agent-setup-app.js'
+import { advanceCoach, isCoachDone, startRefineCoach } from './coach.js'
 import { classifyIntent, shouldClassify } from './nl-intents.js'
 import { handleNlIntent } from './nl-intent-handler.js'
 import * as tutorial from './tutorial.js'
@@ -2255,11 +2255,33 @@ async function main(): Promise<void> {
       logf('nl-intent: icon refresh failed chat=%d: %v', chatId, err),
     )
   }
+  // Set up a Refine coach session for `chatId` over the bound agent
+  // and return the first question to send (or null if a session is
+  // already in flight for this chat — the user is mid-something).
+  const startRefineSessionForChat = async (chatId: number, agentId: string): Promise<string | null> => {
+    if (coachSessions.has(chatId)) return null
+    const def = agents.getAgent(agentId)
+    if (!def) throw new Error(`agent ${agentId} not found`)
+    const coachState = startRefineCoach({ agentId, existingPrompt: def.system })
+    coachSessions.set(chatId, {
+      coachState,
+      leafIds: [],
+      // Reuse the binding's session UUID for parity with build-new — no
+      // new claude session is created for refine, but having one on the
+      // CoachSession keeps the shape consistent for any downstream
+      // observability that reads sessionId.
+      sessionId: bindings.getBinding(chatId)?.sessionId ?? '',
+      refining: true,
+    })
+    return coachState.nextQuestion ?? "What would you like to change about how I work?"
+  }
+
   const nlIntentDeps = {
     send: (chatId: number, text: string) => client.send(chatId, text),
     evictChat: (chatId: number) => subagentCache.evictChat(chatId),
     refreshIcon: refreshAgentIcon,
     logf,
+    startRefineSession: startRefineSessionForChat,
   }
 
   const runSubagentTurn = async (msg: Message): Promise<void> => {
@@ -2303,7 +2325,11 @@ async function main(): Promise<void> {
             await client.send(enrichedMsg.chatId, session.coachState.lastReflection.text)
           }
           if (isCoachDone(session.coachState)) {
-            await graduateAgent(ctx, enrichedMsg.chatId)
+            if (session.refining) {
+              await graduateRefineSession(ctx, enrichedMsg.chatId)
+            } else {
+              await graduateAgent(ctx, enrichedMsg.chatId)
+            }
             // Graduation succeeded — drop the lock so the map doesn't
             // accumulate one settled-promise tail per graduated chat.
             coachLocks.delete(enrichedMsg.chatId)
