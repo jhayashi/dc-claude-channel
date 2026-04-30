@@ -68,6 +68,22 @@ future release. Every agent carries `x-dc-archetype` (`role` /
 `utility` / `project`) — drives the runtime badge palette ("Agent
 badges" below).
 
+**New-chat mode picker (v1.2.1+):** "Start a new chat" from the home
+card lands on an intermediate three-card screen (`#new-chat-mode`)
+before the wall: **Default agent** (one-tap, binds the built-in
+default), **Reuse a saved agent** (opens `#reuse-picker` with every
+saved agent's badge + binding count), **Build a custom agent** (the
+v1.2.0 wall flow, unchanged). All three paths funnel through the same
+confirmation modal with a processing spinner — emits `start-default-
+chat` / `start-reuse-chat` / `build-agent` payloads, dispatcher replies
+with `chat-ready` / `chat-failed`. Custom-build paths (single-leaf
+"Build now" + mash-up "Build & start chatting") gained the same
+modal in v1.2.1 — dispatcher's `handleBuildAgent` now returns the new
+chat id so the source card can confirm. The default agent is an
+undeletable built-in (`agents.ensureDefaultAgent`) auto-seeded on
+first use; manage / edit / delete behave like any other agent.
+Spec at `plugin/docs/superpowers/specs/2026-04-30-new-chat-picker-design.md`.
+
 **Refine flow (v1.2.0+):** after an agent is bound to a chat, saying
 "let's refine you" / "be sharper on X" / similar (`plugin/nl-intents.ts`
 classifier) opens a one-question coach session over the existing agent.
