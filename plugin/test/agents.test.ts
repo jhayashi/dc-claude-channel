@@ -357,6 +357,54 @@ describe('skipPermissions helpers', () => {
     expect(loaded).not.toBeNull()
     expect(agents.getSkipPermissions(loaded!)).toBe(true)
   })
+
+  test('setSkipPermissions(true) on a previously-untrusted agent rolls a random pattern', () => {
+    const def = makeDef()
+    expect(def.metadata?.['x-dc-pattern']).toBeUndefined()
+    agents.setSkipPermissions(def, true)
+    const p = def.metadata!['x-dc-pattern']
+    expect(typeof p).toBe('string')
+    // Must be one of the known PATTERN_IDS (from agent-icons/palettes).
+    const valid = ['checker', 'mini-checker', 'stripes', 'v-stripes', 'quartered', 'quartered-x', 'dots', 'big-dots']
+    expect(valid).toContain(p as string)
+  })
+
+  test('setSkipPermissions(true) on an already-trusted agent does NOT re-roll the pattern', () => {
+    const def = makeDef({
+      metadata: {
+        'x-dc-skipPermissions': true,
+        'x-dc-pattern': 'stripes',
+      },
+    })
+    agents.setSkipPermissions(def, true)
+    expect(def.metadata!['x-dc-pattern']).toBe('stripes')
+  })
+
+  test('setSkipPermissions(false) does not touch pattern', () => {
+    const def = makeDef({
+      metadata: {
+        'x-dc-skipPermissions': true,
+        'x-dc-pattern': 'dots',
+      },
+    })
+    agents.setSkipPermissions(def, false)
+    expect(def.metadata!['x-dc-pattern']).toBe('dots')
+  })
+
+  test('off → on → off → on rolls a new pattern on each enable', () => {
+    const def = makeDef()
+    // Run a bounded number of toggles; collect the patterns. With 8 ids
+    // and 30 toggles the chance of seeing only one distinct pattern is
+    // 8 * (1/8)^29 — astronomically small, so a flake here means the
+    // randomization is broken, not unlucky.
+    const seen = new Set<string>()
+    for (let i = 0; i < 30; i++) {
+      agents.setSkipPermissions(def, true)
+      seen.add(def.metadata!['x-dc-pattern'] as string)
+      agents.setSkipPermissions(def, false)
+    }
+    expect(seen.size).toBeGreaterThan(1)
+  })
 })
 
 describe('allowedBuiltinTools and allowedMcpServers schema fields', () => {

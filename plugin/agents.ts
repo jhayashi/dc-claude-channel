@@ -28,6 +28,7 @@ import {
   ARCHETYPE_PALETTES,
   ARCHETYPE_DEFAULT_GLYPH,
   PATTERN_IDS,
+  randomPatternId,
   type PatternId,
 } from './agent-icons/palettes.js'
 
@@ -418,6 +419,18 @@ export function patternForAgent(def: AgentDef): PatternId {
   return 'checker'
 }
 
+/**
+ * Write a background pattern into an agent's metadata bag in place.
+ * Does not persist — callers must call saveAgent(def) afterwards.
+ * Used by setSkipPermissions to roll a fresh random pattern when trust
+ * transitions from off to on, so visually-similar same-tier agents
+ * diverge each time they're trusted.
+ */
+export function setPattern(def: AgentDef, pattern: PatternId): void {
+  if (!def.metadata) def.metadata = {}
+  def.metadata[PATTERN_META_KEY] = pattern
+}
+
 /** Metadata key used to store the skipPermissions flag inside an agent's metadata bag. */
 export const SKIP_PERMISSIONS_META_KEY = 'x-dc-skipPermissions'
 
@@ -438,11 +451,19 @@ export function getSkipPermissions(def: AgentDef): boolean {
  * Setting false removes the key entirely so exported YAML stays minimal;
  * other metadata entries are preserved. Does not persist — callers must
  * call saveAgent(def) afterwards.
+ *
+ * Side effect: when trust transitions from off → on, also rolls a fresh
+ * random background pattern. Pattern is only visually meaningful while
+ * trust is on, and re-rolling each enable gives visually-distinct
+ * badges to repeat trust toggles. Idempotent re-saves (already-true
+ * staying true) do NOT roll a new pattern.
  */
 export function setSkipPermissions(def: AgentDef, value: boolean): void {
+  const prev = getSkipPermissions(def)
   if (value) {
     if (!def.metadata) def.metadata = {}
     def.metadata[SKIP_PERMISSIONS_META_KEY] = true
+    if (!prev) setPattern(def, randomPatternId())
     return
   }
   if (!def.metadata) return

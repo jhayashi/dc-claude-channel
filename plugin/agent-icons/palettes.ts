@@ -72,3 +72,14 @@ export const PATTERN_IDS = [
 ] as const
 
 export type PatternId = (typeof PATTERN_IDS)[number]
+
+/**
+ * Pick one of PATTERN_IDS uniformly at random. Used at the moment trust
+ * (skip-permissions) is enabled on an agent — each trust-on transition
+ * rolls a fresh pattern so visually-similar same-tier agents diverge.
+ * Trust-off agents render as a solid color regardless of pattern, so
+ * the value is only visually meaningful while trust is on.
+ */
+export function randomPatternId(): PatternId {
+  return PATTERN_IDS[Math.floor(Math.random() * PATTERN_IDS.length)]
+}
