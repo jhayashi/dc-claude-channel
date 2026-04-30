@@ -3246,6 +3246,552 @@ git tag v1.2.0
 
 ---
 
+## Phase 12: New-chat mode picker + reuse flow (added 2026-04-30, post-1.2.0)
+
+**Why this phase exists.** v1.2.0 collapsed "Start a new chat" directly into the wall flow. Joe noticed during smoke-testing that this lost two flows the v1.x card had: (1) start a chat with a built-in default agent, no setup, and (2) reuse an existing saved agent. The legacy template-grid path is still reachable behind `DC_NEW_AGENT_FLOW=0`, but that's an env-var fallback, not a discoverable UX.
+
+This phase adds an intermediate mode-picker screen between the home and the wall, with three cards: **Default agent** (one-tap start), **Reuse a saved agent** (opens a picker), and **Build a custom agent** (opens the wall flow that already exists).
+
+Spec at `plugin/docs/superpowers/specs/2026-04-30-new-chat-picker-design.md` (the design doc Joe approved). Open-question decisions baked into the tasks below: option A for default semantics (one persisted default agent, lazy-created on first tap), reuse list shows all (no filter), middle card always enabled, confirmation modal has a processing state and does not auto-dismiss, visual matches the home screen.
+
+### Task 12.1: `#new-chat-mode` intermediate screen
+
+**Files:**
+- Modify: `plugin/webxdc/agent-setup.html`
+
+- [ ] **Step 1: Add the screen + three cards**
+
+Insert `<div id="new-chat-mode">` between `#wall-screen` and `#manage`. Three home-action style buttons (icon + label + sub-text + chevron, same surface as the home cards):
+
+```html
+<div id="new-chat-mode">
+  <div class="title-bar">
+    <button class="crumb" type="button" onclick="show('step0')">
+      <svg viewBox="0 0 24 24" ...><polyline points="15 18 9 12 15 6"/></svg>
+      Home
+    </button>
+    <div class="title">Start a new chat</div>
+  </div>
+  <div class="body">
+    <div class="home-actions">
+      <button class="home-action" onclick="gotoDefaultAgent()">
+        <span class="home-action-icon">[Lucide message-circle SVG]</span>
+        <span class="home-action-body">
+          <span class="home-action-label">Default agent</span>
+          <span class="home-action-desc">Just chat with Claude. No setup.</span>
+        </span>
+        <span class="home-action-chev">&rsaquo;</span>
+      </button>
+      <button class="home-action" onclick="gotoReusePicker()">
+        <span class="home-action-icon">[Lucide users SVG]</span>
+        <span class="home-action-body">
+          <span class="home-action-label">Reuse a saved agent</span>
+          <span class="home-action-desc">Start a chat with one of your existing agents.</span>
+        </span>
+        <span class="home-action-chev">&rsaquo;</span>
+      </button>
+      <button class="home-action" onclick="gotoBuildCustom()">
+        <span class="home-action-icon">[Lucide wand-2 or grid-2x2 SVG]</span>
+        <span class="home-action-body">
+          <span class="home-action-label">Build a custom agent</span>
+          <span class="home-action-desc">Coach-led setup from a 155-leaf catalog.</span>
+        </span>
+        <span class="home-action-chev">&rsaquo;</span>
+      </button>
+    </div>
+  </div>
+</div>
+```
+
+- [ ] **Step 2: Wire the goto functions**
+
+```javascript
+function gotoNewChat() {
+  show('new-chat-mode');
+}
+
+function gotoBuildCustom() {
+  if (state.newAgentFlow && state.newAgentFlow.enabled) {
+    show('wall-screen');
+    installWallDelegates();
+    renderWall();
+    return;
+  }
+  // LEGACY (DC_NEW_AGENT_FLOW=0)
+  renderPickList();
+  renderTemplates();
+  show('new-chat');
+}
+
+function gotoReusePicker() {
+  renderReusePickList();  // implemented in Task 12.2
+  show('reuse-picker');
+}
+
+function gotoDefaultAgent() {
+  // Stub for now — real impl in Task 12.5.
+  showProcessingModal('Setting up your chat…');
+  webxdc.sendUpdate({ payload: { type: 'start-default-chat', senderAddr: webxdc.selfAddr } }, '');
+}
+```
+
+The existing wall-flow body in `gotoNewChat` moves into `gotoBuildCustom` verbatim.
+
+- [ ] **Step 3: Update `show()` ids array + CSS**
+
+Add `'new-chat-mode'` and `'reuse-picker'` to the ids array in `show(id)` and to the `.visible` selector list in CSS. Bump APP_VERSION (1.98 → 1.99 or whatever the current is at the time of the task).
+
+- [ ] **Step 4: Smoke test**
+
+Build and send the XDC. Tap "Start a new chat" on the home → see the three cards. Tap "Build a custom agent" → wall renders (regression check). Default + Reuse cards lead to placeholder/processing states (real impl in 12.2 / 12.5).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugin/webxdc/agent-setup.html
+git commit -m "feat(agent-setup): #new-chat-mode intermediate picker (Task 12.1)"
+```
+
+### Task 12.2: `#reuse-picker` screen + render
+
+**Files:**
+- Modify: `plugin/webxdc/agent-setup.html`
+
+- [ ] **Step 1: Add the screen scaffold**
+
+```html
+<div id="reuse-picker">
+  <div class="title-bar">
+    <button class="crumb" type="button" onclick="show('new-chat-mode')">
+      <svg viewBox="0 0 24 24" ...><polyline points="15 18 9 12 15 6"/></svg>
+      Back
+    </button>
+    <div class="title">Pick an agent</div>
+  </div>
+  <div class="body">
+    <div id="reuse-empty" class="results-empty" style="display:none;">
+      No saved agents yet.
+      <div style="margin-top:12px"><button class="btn-primary" onclick="gotoBuildCustom()">Build one</button></div>
+    </div>
+    <div id="reuse-list"></div>
+  </div>
+</div>
+```
+
+The empty-state hint appears only when `existingAgents.length === 0` — covers the brand-new install case. The reuse card on the intermediate screen is always tappable (per Joe's decision); the empty state is the safety net.
+
+- [ ] **Step 2: Implement `renderReusePickList()`**
+
+Reuse the same row component the manage-screen list uses, so the badge avatar goes through the patched `renderPreviewSvg(tier, trust, glyph, pattern)` path with the correct pattern. Sort: most-recently-bound first (by `bindingCount > 0` then alphabetical), then alphabetical for unbound agents. Tap a row → call `confirmReuseAgent(agentId)` (implemented in Task 12.3).
+
+```javascript
+function renderReusePickList() {
+  var listEl = document.getElementById('reuse-list');
+  var emptyEl = document.getElementById('reuse-empty');
+  if (!existingAgents || existingAgents.length === 0) {
+    listEl.style.display = 'none';
+    emptyEl.style.display = '';
+    return;
+  }
+  listEl.style.display = '';
+  emptyEl.style.display = 'none';
+  // Sort: bound first, then alphabetical
+  var sorted = existingAgents.slice().sort(function(a, b) {
+    var ab = (a.bindingCount > 0) ? 0 : 1;
+    var bb = (b.bindingCount > 0) ? 0 : 1;
+    if (ab !== bb) return ab - bb;
+    return a.name.localeCompare(b.name);
+  });
+  listEl.textContent = '';
+  sorted.forEach(function(a) {
+    var row = buildAgentRow(a, function() { confirmReuseAgent(a.id); });
+    listEl.appendChild(row);
+  });
+}
+```
+
+`buildAgentRow(agent, onTap)` is a small helper — extract the row DOM construction from the existing manage-screen renderer so both can share it. (Refactor in this task; landed once, used twice.)
+
+- [ ] **Step 3: Smoke test**
+
+Tap "Reuse a saved agent" from the intermediate screen → list of agents renders with correct badge patterns. With no agents, see the empty-state hint.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add plugin/webxdc/agent-setup.html
+git commit -m "feat(agent-setup): #reuse-picker list + shared row component (Task 12.2)"
+```
+
+### Task 12.3: Confirmation modal with processing state
+
+**Files:**
+- Modify: `plugin/webxdc/agent-setup.html`
+
+- [ ] **Step 1: Add the modal scaffold**
+
+Reuse the existing modal structure (`#confirm-modal`, `showConfirm` helper) but with custom button labels and a processing/error state branch:
+
+```html
+<div id="reuse-confirm-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-icon" id="reuse-confirm-icon">&#x1F4AC;</div>
+    <div class="modal-heading" id="reuse-confirm-heading"></div>
+    <div class="modal-sub" id="reuse-confirm-sub"></div>
+    <div id="reuse-confirm-buttons" style="display:flex; gap:8px; margin-top:16px;">
+      <button class="modal-dismiss" onclick="closeReuseConfirm()" style="flex:1; background:#444;">Cancel</button>
+      <button class="modal-dismiss" id="reuse-confirm-ok" onclick="reuseConfirmOk()" style="flex:1;">Start chat</button>
+    </div>
+    <div id="reuse-confirm-processing" style="display:none; text-align:center; padding:8px;">
+      <div class="spinner"></div>
+      <div style="margin-top:8px; color:var(--ink-mute);">Setting up your chat…</div>
+    </div>
+  </div>
+</div>
+```
+
+- [ ] **Step 2: Implement the state machine**
+
+Three states: `idle` (Cancel + Start chat buttons), `processing` (spinner + message, no buttons — modal blocks), `error` (Retry + Cancel).
+
+```javascript
+function confirmReuseAgent(agentId) {
+  var agent = existingAgents.find(function(a) { return a.id === agentId; });
+  if (!agent) return;
+  state.reuseAgentId = agentId;
+  document.getElementById('reuse-confirm-heading').textContent =
+    'Start a new chat with "' + agent.name + '"?';
+  document.getElementById('reuse-confirm-sub').textContent = '';
+  setReuseConfirmState('idle');
+  document.getElementById('reuse-confirm-modal').classList.add('visible');
+}
+
+function reuseConfirmOk() {
+  setReuseConfirmState('processing');
+  webxdc.sendUpdate({
+    payload: {
+      type: 'start-reuse-chat',
+      agentId: state.reuseAgentId,
+      senderAddr: webxdc.selfAddr,
+    },
+  }, '');
+}
+
+function setReuseConfirmState(s) {
+  document.getElementById('reuse-confirm-buttons').style.display =
+    (s === 'idle' || s === 'error') ? '' : 'none';
+  document.getElementById('reuse-confirm-processing').style.display =
+    (s === 'processing') ? '' : 'none';
+  // Error state: re-show buttons but flip "Start chat" to "Retry" and add an error sub.
+  if (s === 'error') {
+    document.getElementById('reuse-confirm-ok').textContent = 'Retry';
+  } else {
+    document.getElementById('reuse-confirm-ok').textContent = 'Start chat';
+  }
+}
+
+function closeReuseConfirm() {
+  document.getElementById('reuse-confirm-modal').classList.remove('visible');
+  state.reuseAgentId = null;
+}
+```
+
+- [ ] **Step 3: Listen for `chat-ready` / `chat-failed` updates**
+
+In the existing `setUpdateListener` handler, add branches:
+
+```javascript
+case 'chat-ready':
+  closeReuseConfirm();
+  show('step0');
+  // The new chat is in the user's chatlist — they switch to it from there.
+  break;
+case 'chat-failed':
+  document.getElementById('reuse-confirm-sub').textContent = payload.error || 'Something went wrong.';
+  setReuseConfirmState('error');
+  break;
+```
+
+- [ ] **Step 4: Smoke test**
+
+Tap a row → confirmation modal opens. Cancel works. Tap Start chat → spinner, no buttons. (Backend handler still stubbed; this task only verifies the UI flow.)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugin/webxdc/agent-setup.html
+git commit -m "feat(agent-setup): reuse confirmation modal with processing state (Task 12.3)"
+```
+
+### Task 12.4: Dispatcher handler `start-reuse-chat`
+
+**Files:**
+- Modify: `plugin/apps/agent-setup-app.ts`
+
+- [ ] **Step 1: Add the payload handler**
+
+In the WebXDC update dispatch (alongside `editRequest`, `delete`, etc.), add:
+
+```typescript
+if (payload.type === 'start-reuse-chat') {
+  const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
+  if (!agentId) {
+    await sendChatFailed(session, ctx, 'missing agentId')
+    continue
+  }
+  const agent = agents.getAgent(agentId)
+  if (!agent) {
+    await sendChatFailed(session, ctx, `Agent ${agentId} not found`)
+    continue
+  }
+  try {
+    const newChatId = await createReuseChat(ctx, session.sourceChatId, agent)
+    await sendChatReady(session, ctx, newChatId)
+  } catch (err) {
+    ctx.logf('agent-setup: start-reuse-chat failed for %s: %v', agentId, err)
+    await sendChatFailed(session, ctx, err instanceof Error ? err.message : 'unknown error')
+  }
+  continue
+}
+```
+
+- [ ] **Step 2: Implement `createReuseChat`**
+
+Mirror the build-new graduation flow without the agent-creation parts: create DC chat, save binding, set chat name, install agent badge, post greeting. Reuse `setAgentIcon` for the badge.
+
+```typescript
+async function createReuseChat(ctx: AppContext, sourceChatId: number, agent: agents.AgentDef): Promise<number> {
+  const myContactId = await ctx.client.getSelfContactId()
+  const ownerContactId = await access.getOwnerForChat(sourceChatId)
+  const newChatId = await ctx.client.createGroup(agent.name)
+  await ctx.client.addContactToChat(newChatId, ownerContactId)
+  await access.approve(newChatId, ownerContactId)
+
+  const sessionId = randomUUID()
+  bindings.saveBinding({
+    chatId: newChatId,
+    agentId: agent.id,
+    sessionId,
+    inheritClaudeMd: agents.inheritClaudeMdForModel(agent.model),
+    workingDir: process.cwd(),
+    createdAt: new Date().toISOString(),
+  })
+
+  try { await setAgentIcon(ctx, newChatId, agent) } catch (err) {
+    ctx.logf('agent-setup: reuse-chat icon refresh failed chat=%d: %v', newChatId, err)
+  }
+  try {
+    await ctx.client.send(newChatId, `Ready! I'm your "${agent.name}" agent. Anything you say from here on lands with me.`)
+  } catch (err) {
+    ctx.logf('agent-setup: reuse-chat greeting failed chat=%d: %v', newChatId, err)
+  }
+  return newChatId
+}
+```
+
+- [ ] **Step 3: Implement `sendChatReady` / `sendChatFailed`**
+
+Send WebXDC updates back to the source chat's setup card:
+
+```typescript
+async function sendChatReady(session: Session, ctx: AppContext, newChatId: number): Promise<void> {
+  const update = JSON.stringify({
+    payload: { type: 'chat-ready', chatId: newChatId, senderAddr: 'server' },
+  })
+  await ctx.client.sendWebXDCUpdate(session.msgId, update)
+}
+
+async function sendChatFailed(session: Session, ctx: AppContext, error: string): Promise<void> {
+  const update = JSON.stringify({
+    payload: { type: 'chat-failed', error, senderAddr: 'server' },
+  })
+  await ctx.client.sendWebXDCUpdate(session.msgId, update)
+}
+```
+
+- [ ] **Step 4: Tests**
+
+Add `plugin/test/agent-setup-app.test.ts` cases for `createReuseChat` (binding written, chat name set, badge install attempted) using a stub AppContext like `agent-creation-e2e.test.ts` does.
+
+- [ ] **Step 5: Smoke test end-to-end**
+
+Bounce dispatcher, send card, tap Reuse → pick an agent → Start chat → modal shows spinner ~2s → modal closes, new chat appears in chatlist with correct name + badge. Send a message in the new chat → agent responds in-character.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add plugin/apps/agent-setup-app.ts plugin/test/agent-setup-app.test.ts
+git commit -m "feat(agent-setup): start-reuse-chat dispatcher handler (Task 12.4)"
+```
+
+### Task 12.5: Default-agent flow
+
+**Files:**
+- Modify: `plugin/agents.ts` (add `getOrCreateDefaultAgent`)
+- Modify: `plugin/apps/agent-setup-app.ts` (add `start-default-chat` handler)
+
+- [ ] **Step 1: Add `getOrCreateDefaultAgent` to agents.ts**
+
+```typescript
+const DEFAULT_AGENT_ID = 'default-agent'
+
+export function getOrCreateDefaultAgent(): AgentDef {
+  const existing = getAgent(DEFAULT_AGENT_ID)
+  if (existing) return existing
+  const def: AgentDef = {
+    id: DEFAULT_AGENT_ID,
+    name: 'Default agent',
+    model: DEFAULT_MODEL,
+    description: '',
+    system: 'You are a helpful assistant.',
+    tools: [],
+    metadata: {
+      'x-dc-archetype': 'role',
+      'x-dc-pattern': 'checker',
+    },
+  }
+  saveAgent(def)
+  return def
+}
+```
+
+- [ ] **Step 2: Wire `start-default-chat` handler**
+
+```typescript
+if (payload.type === 'start-default-chat') {
+  try {
+    const agent = agents.getOrCreateDefaultAgent()
+    const newChatId = await createReuseChat(ctx, session.sourceChatId, agent)
+    await sendChatReady(session, ctx, newChatId)
+  } catch (err) {
+    ctx.logf('agent-setup: start-default-chat failed: %v', err)
+    await sendChatFailed(session, ctx, err instanceof Error ? err.message : 'unknown error')
+  }
+  continue
+}
+```
+
+- [ ] **Step 3: Tests**
+
+`plugin/test/agents.test.ts`:
+- `getOrCreateDefaultAgent` creates the default on first call and returns the same instance on subsequent calls
+- Re-creates on demand if the user deleted the default
+
+- [ ] **Step 4: Smoke test deletion + re-create**
+
+Bounce, tap Default agent → chat created. Manage → delete the Default agent. Bounce again, tap Default agent → re-created, new chat works.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugin/agents.ts plugin/apps/agent-setup-app.ts plugin/test/agents.test.ts
+git commit -m "feat(agent-setup): default-agent lazy-create + start-default-chat handler (Task 12.5)"
+```
+
+### Task 12.6: Tier-1 Playwright tests
+
+**Files:**
+- Create: `plugin/test/webxdc/agent-setup-mode-picker.pw.ts`
+
+- [ ] **Step 1: Three tests covering the new flow**
+
+```typescript
+test('intermediate screen shows three cards', async ({ page }) => {
+  // Send a built XDC, simulate tap on home → "Start a new chat"
+  // Assert: three .home-action buttons visible with the right labels
+})
+
+test('reuse picker renders rows with correct badge pattern', async ({ page }) => {
+  // Inject existingAgents with two agents (one trust=true pattern=stripes,
+  // one trust=false). Open reuse picker. Assert: two rows render, the
+  // first row's badge SVG contains stripe rects.
+})
+
+test('confirmation modal cycles idle → processing → error', async ({ page }) => {
+  // Open confirmation, tap Start chat, assert spinner shown, buttons hidden.
+  // Inject chat-failed update. Assert: error message + Retry button.
+})
+```
+
+Follow the harness pattern in `plugin/test/webxdc/agent-setup-wall.pw.ts`.
+
+- [ ] **Step 2: Run tests**
+
+```bash
+cd plugin/test/webxdc && bunx playwright test agent-setup-mode-picker.pw.ts
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add plugin/test/webxdc/agent-setup-mode-picker.pw.ts
+git commit -m "test(agent-setup): mode-picker + reuse picker + confirm modal (Task 12.6)"
+```
+
+### Task 12.7: Release commit
+
+**Files:**
+- Modify: `CHANGELOG.md`
+- Modify: `plugin/.claude-plugin/plugin.json` (1.2.0 → 1.2.1)
+- Add: `plugin/webxdc-prebuilt/agent-setup-vN.NN.xdc`
+
+- [ ] **Step 1: CHANGELOG entry**
+
+```markdown
+## [1.2.1] — <date>
+
+Re-adds the "Start a chat with the default agent" and "Reuse a saved agent" flows that v1.2.0 collapsed into the wall path. New intermediate screen between the home and the wall, plus a confirmation modal with a processing state.
+
+### Added
+
+- **Intermediate "Start a new chat" screen** with three cards: Default agent (one-tap with a built-in default), Reuse a saved agent (opens a picker), Build a custom agent (the existing wall flow).
+- **Reuse picker** — scrollable list of every saved agent with badge avatars (now pattern-correct, see v1.2.0 fix). Sorted by binding-count then alphabetical.
+- **Confirmation modal with processing state** — doesn't auto-dismiss; shows "Setting up your chat…" while the dispatcher creates the DC chat (~2s), with retry on failure.
+- **Lazy-created default agent.** `agents.getOrCreateDefaultAgent` writes a vanilla AgentDef on first tap of "Default agent". Editable / deletable via Manage like any other agent; re-created on next tap if deleted.
+```
+
+- [ ] **Step 2: Bump plugin.json**
+
+```diff
+-  "version": "1.2.0",
++  "version": "1.2.1",
+```
+
+- [ ] **Step 3: Run full test sweep + rebuild prebuilts**
+
+```bash
+cd plugin && bun test && cd test/webxdc && bunx playwright test
+cd plugin && bun run build:prebuilt
+```
+
+- [ ] **Step 4: Commit + tag (owner-driven)**
+
+```bash
+git add CHANGELOG.md plugin/.claude-plugin/plugin.json plugin/webxdc-prebuilt/agent-setup-v*.xdc
+git commit -m "release: new-chat mode picker v1.2.1"
+# Tagging happens after merge to main (per release checklist).
+```
+
+---
+
+## Phase 12 self-review
+
+**Spec coverage.** Walked the design doc section-by-section against the tasks above:
+- Goal (3-card intermediate screen): Task 12.1.
+- Reuse picker (show all, no filter, badge-correct rows): Task 12.2.
+- Confirmation with processing state (no auto-dismiss): Task 12.3.
+- Default-agent semantics (option A, lazy-create on first tap): Task 12.5.
+- Visual matches home screen: Task 12.1 reuses `.home-action` styling.
+- Empty state hint (always-on middle card backed by the empty-state safety net): Task 12.2.
+
+**Type consistency.** `createReuseChat(ctx, sourceChatId, agent)` is referenced from both `start-reuse-chat` (Task 12.4) and `start-default-chat` (Task 12.5). Defined once in 12.4. `sendChatReady` / `sendChatFailed` likewise — defined once in 12.4, used in both handlers.
+
+**Bite-sized.** Each task lands on its own commit and ships working software. 12.1 alone is "intermediate screen shows up, default + reuse cards lead to placeholder/processing states; build-custom still routes correctly to the wall." 12.2 adds the reuse list (still stub-confirms). 12.3 adds the modal UI. 12.4 wires the dispatcher backend. 12.5 adds the default-agent flow on top. 12.6 adds tests. 12.7 ships.
+
+**Out of scope (per design doc):** Multi-account default-agent sharing, inline agent editing from the reuse picker, search/filter inside the picker, animations between screens.
+
+---
+
 ## Self-Review
 
 **Spec coverage check.** Walked the spec section-by-section against this plan:
