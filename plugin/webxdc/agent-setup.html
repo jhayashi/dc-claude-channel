@@ -1731,8 +1731,31 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   </div>
 </div>
 
+<!-- Phase 12 — reuse confirmation modal. Three states:
+     idle       → Cancel + Start chat buttons
+     processing → spinner + "Setting up your chat…" (no buttons)
+     error      → Cancel + Retry, with the error in #reuse-confirm-sub.
+     Don't auto-dismiss on Start — agent-binding takes a few seconds
+     (DC group create + addContact + setChatName + badge + binding).
+     Closes on chat-ready update from dispatcher (Task 12.4). -->
+<div id="reuse-confirm-modal" class="modal-overlay">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-icon" id="reuse-confirm-icon">&#x1F4AC;</div>
+    <div class="modal-heading" id="reuse-confirm-heading"></div>
+    <div class="modal-sub" id="reuse-confirm-sub"></div>
+    <div id="reuse-confirm-buttons" style="display:flex; gap:8px; margin-top:16px;">
+      <button class="modal-dismiss" onclick="closeReuseConfirm()" style="flex:1; background:#444;">Cancel</button>
+      <button class="modal-dismiss" id="reuse-confirm-ok" onclick="reuseConfirmOk()" style="flex:1; background:var(--orange);">Start chat</button>
+    </div>
+    <div id="reuse-confirm-processing" style="display:none; text-align:center; padding:8px; margin-top:16px;">
+      <div class="spinner"></div>
+      <div style="margin-top:8px; color:var(--ink-mute);">Setting up your chat&hellip;</div>
+    </div>
+  </div>
+</div>
+
 <script>
-var APP_VERSION = 2.00;
+var APP_VERSION = 2.01;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -2251,11 +2274,61 @@ function renderReusePickList() {
   }
 }
 
-// Stub for Task 12.2 — confirmation modal lands in 12.3.
+// Reuse confirmation modal (Task 12.3). Three-state machine:
+// idle → processing → (chat-ready: close + return home) | (chat-failed: error)
+// from error, Retry returns to processing.
+var reuseConfirmAgentId = null;
+
 function confirmReuseAgent(agentId) {
+  var agent = (existingAgents || []).find(function(a){ return a.id === agentId; });
+  if (!agent) return;
+  reuseConfirmAgentId = agentId;
+  document.getElementById('reuse-confirm-heading').textContent =
+    'Start a new chat with "' + agent.name + '"?';
+  document.getElementById('reuse-confirm-sub').textContent = '';
+  setReuseConfirmState('idle');
+  document.getElementById('reuse-confirm-modal').classList.add('visible');
+}
+
+function reuseConfirmOk() {
+  if (!reuseConfirmAgentId) return;
+  setReuseConfirmState('processing');
   webxdc.sendUpdate({
-    payload: { type: 'start-reuse-chat', agentId: agentId, senderAddr: webxdc.selfAddr },
+    payload: {
+      type: 'start-reuse-chat',
+      agentId: reuseConfirmAgentId,
+      senderAddr: webxdc.selfAddr,
+    },
   }, '');
+}
+
+function setReuseConfirmState(s) {
+  var buttons = document.getElementById('reuse-confirm-buttons');
+  var processing = document.getElementById('reuse-confirm-processing');
+  var ok = document.getElementById('reuse-confirm-ok');
+  buttons.style.display = (s === 'idle' || s === 'error') ? '' : 'none';
+  processing.style.display = (s === 'processing') ? '' : 'none';
+  ok.textContent = (s === 'error') ? 'Retry' : 'Start chat';
+}
+
+function closeReuseConfirm() {
+  document.getElementById('reuse-confirm-modal').classList.remove('visible');
+  reuseConfirmAgentId = null;
+}
+
+// Called from the WebXDC update listener when the dispatcher reports
+// the new chat is ready. Close the modal and route back to home — the
+// new chat is in the user's chatlist and they switch to it from there.
+function handleChatReady() {
+  closeReuseConfirm();
+  show('step0');
+}
+
+// Called from the WebXDC update listener on chat-failed. Flip the
+// modal to its error state with the dispatcher's error message.
+function handleChatFailed(errorMessage) {
+  document.getElementById('reuse-confirm-sub').textContent = errorMessage || 'Something went wrong.';
+  setReuseConfirmState('error');
 }
 
 function renderPickList() {
@@ -4324,6 +4397,21 @@ window.webxdc.setUpdateListener(function(update) {
     renderTemplates();
     renderHomeCount();
     show('step0');
+  }
+
+  // Phase 12 — reuse / default-agent flow callbacks. Sent by the
+  // dispatcher's start-reuse-chat / start-default-chat handlers
+  // (Tasks 12.4 / 12.5). chat-ready closes the confirmation modal
+  // and routes the card back home; chat-failed flips the modal to
+  // its error state with a Retry button.
+  if (d.type === 'chat-ready') {
+    handleChatReady();
+    return;
+  }
+
+  if (d.type === 'chat-failed') {
+    handleChatFailed(typeof d.error === 'string' ? d.error : '');
+    return;
   }
 
   if (d.type === 'edit') {
