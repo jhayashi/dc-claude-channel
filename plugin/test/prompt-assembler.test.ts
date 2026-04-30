@@ -1,7 +1,8 @@
 import { describe, test, expect, beforeEach } from 'bun:test'
 import { join } from 'node:path'
 import { setLeavesDir, type Leaf } from '../leaves.js'
-import { assembleSystemPrompt, type AssembleInputs } from '../prompt-assembler.js'
+import { assembleSystemPrompt, refineSystemPrompt, type AssembleInputs } from '../prompt-assembler.js'
+import { startRefineCoach, advanceCoach, collectAnswers } from '../coach.js'
 
 beforeEach(() => {
   setLeavesDir(join(import.meta.dir, '..', 'leaves'))
@@ -158,5 +159,114 @@ describe('System-prompt assembler', () => {
     })
     expect(prompt).toContain('Sleep coach (lead)')
     expect(prompt).toContain('Stress-management coach')
+  })
+})
+
+describe('refineSystemPrompt — incremental rewrite', () => {
+  test('appends Also: clause to an existing Preferences paragraph', () => {
+    const existing = assembleSystemPrompt({
+      leafIds: ['tutor'],
+      preset: 'mentor',
+      sliders: {},
+      preferences: ['Be patient with Sam.'],
+      tools: [],
+      identityPreamble: 'You are a tutor.',
+    })
+    const refined = refineSystemPrompt(existing, {
+      parameters: {},
+      preferences: ['be sharper on follow-up questions'],
+      tools: [],
+    })
+    expect(refined).toContain('Be patient with Sam.')
+    expect(refined).toContain('Also: "be sharper on follow-up questions"')
+    // Identity / Expertise / Scope untouched.
+    expect(refined).toContain('You are a tutor.')
+    // Still 5 paragraphs (Identity/Expertise/Voice/Preferences/Scope).
+    expect(refined.split(/\n\s*\n/).filter(p => p.trim()).length).toBe(5)
+  })
+
+  test('inserts a new Preferences paragraph when none exists', () => {
+    const existing = assembleSystemPrompt({
+      leafIds: ['tutor'],
+      preset: 'mentor',
+      sliders: {},
+      preferences: [],
+      tools: [],
+      identityPreamble: 'You are a tutor.',
+    })
+    expect(existing).not.toContain('Specific preferences')
+    expect(existing.split(/\n\s*\n/).filter(p => p.trim()).length).toBe(4)
+
+    const refined = refineSystemPrompt(existing, {
+      parameters: {},
+      preferences: ['use more concrete examples'],
+      tools: [],
+    })
+    expect(refined).toContain('Specific preferences')
+    expect(refined).toContain('use more concrete examples')
+    // Now 5 paragraphs — Preferences inserted between Voice and Scope.
+    const paragraphs = refined.split(/\n\s*\n/).filter(p => p.trim())
+    expect(paragraphs.length).toBe(5)
+    // Voice should come before Preferences which should come before Scope.
+    const voiceIdx = paragraphs.findIndex(p => p.startsWith('How you sound.'))
+    const prefIdx = paragraphs.findIndex(p => p.startsWith('Specific preferences'))
+    const scopeIdx = paragraphs.findIndex(p => p.startsWith('What is in and out of scope.'))
+    expect(voiceIdx).toBeLessThan(prefIdx)
+    expect(prefIdx).toBeLessThan(scopeIdx)
+  })
+
+  test('returns input unchanged when changes have no preferences', () => {
+    const existing = assembleSystemPrompt({
+      leafIds: ['tutor'],
+      preset: 'mentor',
+      sliders: {},
+      preferences: ['Be patient with Sam.'],
+      tools: [],
+      identityPreamble: 'You are a tutor.',
+    })
+    const refined = refineSystemPrompt(existing, {
+      parameters: {},
+      preferences: [],
+      tools: [],
+    })
+    expect(refined).toBe(existing)
+  })
+
+  test('caps each new preference at 500 chars and escapes embedded quotes', () => {
+    const existing = assembleSystemPrompt({
+      leafIds: ['tutor'],
+      preset: 'mentor',
+      sliders: {},
+      preferences: ['Be patient with Sam.'],
+      tools: [],
+      identityPreamble: 'You are a tutor.',
+    })
+    const longPref = 'A'.repeat(498) + '"' + 'B'.repeat(100)
+    const refined = refineSystemPrompt(existing, {
+      parameters: {},
+      preferences: [longPref],
+      tools: [],
+    })
+    expect(refined).toContain('A'.repeat(498) + '\\"' + 'B')
+    expect(refined).not.toContain('B'.repeat(50))
+  })
+
+  test('round-trip: startRefineCoach → advanceCoach → refineSystemPrompt', () => {
+    // Integration: build an initial prompt, run a refine coach turn, splice.
+    const existing = assembleSystemPrompt({
+      leafIds: ['tutor'],
+      preset: 'mentor',
+      sliders: {},
+      preferences: [],
+      tools: [],
+      identityPreamble: 'You are a tutor for Sam.',
+    })
+    let s = startRefineCoach({ agentId: 'sam-tutor', existingPrompt: existing })
+    s = advanceCoach(s, 'always show your work explicitly')
+    const refined = refineSystemPrompt(existing, collectAnswers(s))
+    expect(refined).toContain('You are a tutor for Sam.')
+    expect(refined).toContain('always show your work explicitly')
+    // Identity preamble preserved exactly.
+    expect(refined.split('\n\n')[0]).toBe('You are a tutor for Sam.')
   })
 })
