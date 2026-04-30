@@ -2676,9 +2676,10 @@ async function main(): Promise<void> {
       updates.push(...passthrough)
 
       // Owner verification: in owned chats, only forward updates from the owner.
-      // For 1:1 chats the filter takes a fast path (any non-bot sender IS the owner)
-      // because dc-core ≥ 2.48 returns webxdc selfAddr as an anonymized hash that
-      // lookupContactByAddr can't resolve.
+      // 1:1 chats fast-path; group chats use TOFU on the deterministic-hash
+      // senderAddr that dc-core ≥ 2.48 emits (we can't reverse-lookup the
+      // hash to a contact, so the first update we see seeds the cache as
+      // the owner's hash for that chat). See plugin/webxdc-filter.ts.
       const chatContacts = await client.getChatContacts(entry.chatId).catch(() => [])
       const filtered = await filterUpdatesByOwner(updates, {
         owner: access.getOwner(entry.chatId),
@@ -2686,7 +2687,6 @@ async function main(): Promise<void> {
         msgId,
         appId: entry.app.id,
         chatContactCount: chatContacts.length,
-        lookupContactByAddr: (addr) => client.lookupContactByAddr(addr),
         logf,
       })
       // Trace every inbound update (pass or drop) for post-hoc analysis.
