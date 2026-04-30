@@ -106,12 +106,19 @@ async function openWall(h: HarnessHandle, init: unknown = buildInit()) {
   const appVersion = await h.getAppVersion();
   // Match the app's own version so the version-mismatch path doesn't fire.
   await h.push({ ...(init as object), version: appVersion });
-  // Wait for step0 (home) to render so the click target is mountable.
+  // Phase 12 — "Start a new chat" lands on the mode picker now, not
+  // directly on the wall. Navigate through: home → mode picker →
+  // "Build a custom agent" → wall.
   await h.page.waitForSelector('button.home-action:has-text("Start a new chat")', {
     state: "visible",
     timeout: 5_000,
   });
   await h.page.click('button.home-action:has-text("Start a new chat")');
+  await h.page.waitForSelector('#new-chat-mode button.home-action:has-text("Build a custom agent")', {
+    state: "visible",
+    timeout: 2_000,
+  });
+  await h.page.click('#new-chat-mode button.home-action:has-text("Build a custom agent")');
   await h.page.waitForSelector("#wall-screen", { state: "visible", timeout: 2_000 });
   // Grid renders synchronously inside renderWall(); wait for the first tile.
   await h.page.waitForSelector(".wall-tile", { timeout: 2_000 });
