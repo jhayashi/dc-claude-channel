@@ -48,12 +48,43 @@ mappings) are not exported — the user creates a new chat via the
 agent-setup card after importing. Round-trip compatible with Claude
 Managed Agents API YAML format.
 
-**Templates + archetypes (v1.0.2+):** agent creation opens on a template
-gallery (Scheduler, News Briefing, Personal Assistant, …). Each template
-seeds the system prompt, recommended model tier, and default tool
-allowlist. Every agent also carries the `x-dc-archetype` metadata field
-(`role` / `utility` / `project`) that drives its runtime badge palette —
-see "Agent badges" below. Library lives in `plugin/templates.ts`.
+**Wall + coach + mash-up (v1.2.0+, default-on):** agent creation opens
+on a 26-tile specialty wall (155 leaves grouped by L2). The user
+filters or drills into a tile, opens a leaf detail card, optionally
+stacks 1–3 leaves via "pairs with" chips into a mash-up, then taps
+Build & start chatting. A coach state machine then asks 1–3 short
+questions (parameter / lead / voice / tools) and graduates by
+assembling a plain-prose 5-paragraph system prompt: Identity, Expertise
+(per leaf), Voice (preset+sliders), Preferences (the user's own words,
+quoted as data not directives), Scope (tools + per-leaf liability
+frames). Spec at `plugin/docs/superpowers/specs/2026-04-28-agent-creation-redesign-design.md`.
+Files: `plugin/leaves.ts` + `plugin/leaves/*.yaml` (catalog), `plugin/coach.ts`
+(state machine), `plugin/prompt-assembler.ts` (5-paragraph composer +
+incremental refine), `plugin/personality-presets.ts`, `plugin/liability-frames.ts`,
+`plugin/webxdc/agent-setup.html` (wall + coach UI). The legacy v1.x
+template-grid flow (`plugin/templates.ts`) is still reachable behind
+`DC_NEW_AGENT_FLOW=0` for users who want it; slated for removal in a
+future release. Every agent carries `x-dc-archetype` (`role` /
+`utility` / `project`) — drives the runtime badge palette ("Agent
+badges" below).
+
+**Refine flow (v1.2.0+):** after an agent is bound to a chat, saying
+"let's refine you" / "be sharper on X" / similar (`plugin/nl-intents.ts`
+classifier) opens a one-question coach session over the existing agent.
+The user's answer becomes a new preference; `refineSystemPrompt`
+splices it into the existing system prompt's Preferences paragraph in
+place (no new agent, no badge swap, no session rebind). The cached
+subagent is evicted so the next message cold-spawns under the rewritten
+prompt. Triggers `refine-complete` lifecycle event. Files:
+`plugin/coach.ts:startRefineCoach`, `plugin/prompt-assembler.ts:refineSystemPrompt`,
+`plugin/apps/agent-setup-app.ts:graduateRefineSession`.
+
+**NL meta-commands (v1.2.0+):** in any bound chat, three intents short-
+circuit before subagent dispatch — model-switch ("switch to opus"),
+trust-toggle ("trust me" / "be safer"), refine ("let's refine you").
+Classifier in `plugin/nl-intents.ts`; dispatcher wiring in
+`plugin/nl-intent-handler.ts`. All three evict the cached subagent on
+success so the next message picks up the change immediately.
 
 **Per-agent tool access (v0.10+):** Each agent definition can restrict
 which built-in tools and MCP servers its subagent is allowed to use via

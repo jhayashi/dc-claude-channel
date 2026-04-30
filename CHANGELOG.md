@@ -4,6 +4,27 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.2.0] — 2026-04-29
+
+Agent creation redesign — the new wall + coach + mash-up flow is now the default. Replaces the v1.x template-grid create path with a 155-leaf catalog, a coach-led interview, and a coach-led "refine" path for editing existing agents in chat. NL meta-commands ("switch to opus", "trust me", "let's refine you") get intercepted before subagent dispatch and act on the bound agent's definition.
+
+### Added
+
+- **Wall + coach + mash-up agent creation.** Default-on. Agent setup now opens on a 26-tile specialty wall (155 leaves grouped by L2). The user filters or drills into a tile, opens a leaf detail card, optionally stacks 1–3 leaves via "pairs with" chips into a mash-up, then taps Build & start chatting. A coach state machine asks 1–3 short questions (parameter / lead / voice / tools) and graduates by assembling a plain-prose 5-paragraph system prompt: Identity, Expertise (per leaf), Voice, Preferences (the user's own words, quoted as data not directives), Scope (tools + per-leaf liability frames). Spec at `plugin/docs/superpowers/specs/2026-04-28-agent-creation-redesign-design.md`. Files: `plugin/leaves.ts` + `plugin/leaves/*.yaml` (catalog), `plugin/coach.ts` (state machine), `plugin/prompt-assembler.ts` (composer), `plugin/personality-presets.ts`, `plugin/liability-frames.ts`. Legacy template-grid path stays reachable behind `DC_NEW_AGENT_FLOW=0`; slated for removal in a future release.
+- **Refine flow.** "Let's refine you" / "be sharper on X" (and other phrasings the NL classifier picks up) opens a one-question coach session over the bound agent. The user's answer becomes a new preference; `refineSystemPrompt` splices it into the existing system prompt's Preferences paragraph in place — no new agent, no badge swap, no session rebind. The cached subagent is evicted so the next message picks up the rewritten prompt. Triggers `refine-complete` lifecycle event. Files: `plugin/coach.ts:startRefineCoach`, `plugin/prompt-assembler.ts:refineSystemPrompt`, `plugin/apps/agent-setup-app.ts:graduateRefineSession`.
+- **NL meta-commands.** In any bound chat, three intents short-circuit before subagent dispatch — model-switch ("switch to opus"), trust-toggle ("trust me" / "be safer"), refine ("let's refine you"). Classifier in `plugin/nl-intents.ts`; dispatcher wiring in `plugin/nl-intent-handler.ts`. All three evict the cached subagent on success so the change takes effect on the next message.
+- **Refine card on the agent-setup home.** New "Refine an agent" entry in the agent-shaping group (alongside New chat / Manage), separated from session-device actions (Resume / Send-to-terminal / Paired devices) by a hairline rule. The home picker for refine is a placeholder in v1.2.0 — entry is via the NL command in chat. A full picker UI is planned for a follow-up release.
+- **Badge pattern picker (Phase 9).** Eight pattern variants (checker, mini-checker, stripes, v-stripes, quartered, quartered-x, dots, big-dots) selectable on the review screen during agent build. Persisted via `metadata['x-dc-pattern']`.
+- **`refine-complete` lifecycle event.** Emitted on successful refine save alongside the existing `graduation` / `graduation-failed` variants.
+
+### Changed
+
+- **CLAUDE.md project section** updated to describe the new flow and the legacy fallback.
+- **`DC_NEW_AGENT_FLOW`** flips from default-off (v1.x → v1.1.5) to default-on (v1.2.0+). Set `DC_NEW_AGENT_FLOW=0` to opt back into the legacy template-grid path.
+- **Voice paragraph + Preferences paragraph prefixes** factored to named constants (`VOICE_PREFIX`, `PREFERENCES_PREFIX`) shared between the assembler and refine path so prefix drift can't silently break parsing.
+- **Preference quoting** now escapes backslash before quote (`\` → `\\`, then `"` → `\"`) so a preference ending in `\` can't break out of the quoted attribution wrap.
+- **`Reflection.kind`** drops the unused `'skip'` variant; `reflect()` now returns `Reflection | null` and empty input collapses to `null`.
+
 ## [1.1.5] — 2026-04-27
 
 Test infrastructure + Phase 2 identity foundations. No user-visible behavior change. The principals store starts populating on every pair so Phase 3 (read-side wiring) has a real on-disk record to consume.
