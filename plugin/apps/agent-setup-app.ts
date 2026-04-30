@@ -616,6 +616,12 @@ async function createNewAgentChat(ctx: AppContext, sourceChatId: number, ownerCo
  * first question. If the coach has nothing to ask (degenerate leaf
  * shape), graduates immediately.
  *
+ * Returns the new chat id on success so the WebXDC payload handler can
+ * relay a chat-ready update back to the source setup card. Throws on
+ * upstream failures (no valid leaves, missing owner, group-create
+ * failure, startCoach failure) — caller turns those into chat-failed
+ * updates with a user-readable message.
+ *
  * Exported for the agent-creation E2E test (`agent-creation-e2e.test.ts`),
  * which drives the full build flow end to end without going through the
  * WebXDC `onWebXDCUpdate` plumbing — that path simply unwraps a
@@ -628,19 +634,17 @@ export async function handleBuildAgent(
   leafIds: string[],
   pattern: PatternId,
   resolveOwner: () => Promise<number | null>,
-): Promise<void> {
+): Promise<number> {
   // Validate against the catalog up front so we don't create a dead chat.
   const catalog = getDefaultCatalog()
   const validIds = leafIds.filter(id => catalog.findLeaf(id) !== null)
   if (validIds.length === 0) {
-    ctx.logf('agent-setup: build-agent rejected — no valid leaf ids in %v', leafIds)
-    return
+    throw new Error('No valid specialties were picked.')
   }
 
   const ownerContactId = await resolveOwner()
   if (!ownerContactId) {
-    ctx.logf('agent-setup: build-agent could not resolve owner for source chat %d', sourceChatId)
-    return
+    throw new Error("I can't tell who owns this chat — try unpairing and re-pairing.")
   }
 
   const newChatId = await createNewAgentChat(ctx, sourceChatId, ownerContactId)
@@ -656,7 +660,7 @@ export async function handleBuildAgent(
     })
   } catch (err) {
     ctx.logf('agent-setup: startCoach failed for chat %d: %v', newChatId, err)
-    return
+    throw new Error('Could not start the coach interview.')
   }
 
   coachSessions.set(newChatId, { coachState, leafIds: validIds, sessionId, pattern })
@@ -672,6 +676,7 @@ export async function handleBuildAgent(
     // No questions for this leaf shape — graduate immediately.
     await graduateAgent(ctx, newChatId)
   }
+  return newChatId
 }
 
 /**
@@ -1054,12 +1059,12 @@ export const agentSetupApp: WebXDCApp = {
       if (payload.type === 'build-agent') {
         const rawLeafIds = (payload as { leafIds?: unknown }).leafIds
         if (!Array.isArray(rawLeafIds) || rawLeafIds.length === 0) {
-          ctx.logf('agent-setup: build-agent payload missing or empty leafIds')
+          await sendChatFailed(session, ctx, 'No specialties were sent.')
           continue
         }
         const leafIds = rawLeafIds.filter((x): x is string => typeof x === 'string' && x.length > 0)
         if (leafIds.length === 0) {
-          ctx.logf('agent-setup: build-agent payload had no string leafIds')
+          await sendChatFailed(session, ctx, 'No specialties were sent.')
           continue
         }
         // Phase 9.2: pattern picker on review screen. Validate against
@@ -1071,9 +1076,11 @@ export const agentSetupApp: WebXDCApp = {
             ? (rawPattern as PatternId)
             : 'checker'
         try {
-          await handleBuildAgent(ctx, session.sourceChatId, leafIds, validPattern, resolveOwner)
+          const newChatId = await handleBuildAgent(ctx, session.sourceChatId, leafIds, validPattern, resolveOwner)
+          await sendChatReady(session, ctx, newChatId)
         } catch (err) {
           ctx.logf('agent-setup: build-agent failed: %v', err)
+          await sendChatFailed(session, ctx, err instanceof Error ? err.message : 'unknown error')
         }
         continue
       }

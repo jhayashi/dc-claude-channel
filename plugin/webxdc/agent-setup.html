@@ -1364,7 +1364,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     <div class="body">
       <div id="reuse-empty" class="results-empty" style="display:none;">
         No saved agents yet.
-        <div style="margin-top:12px"><button class="btn-primary" onclick="gotoBuildCustom()">Build one</button></div>
+        <div style="margin-top:12px"><button class="btn btn-primary" onclick="gotoBuildCustom()">Build one</button></div>
       </div>
       <div id="reuse-list"></div>
     </div>
@@ -1755,7 +1755,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 2.03;
+var APP_VERSION = 2.04;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -2281,7 +2281,11 @@ function renderReusePickList() {
 // off the default-agent quick path — Retry uses it to re-fire the
 // correct payload.
 var reuseConfirmAgentId = null;
-var reuseConfirmMode = null;  // 'reuse' | 'default'
+var reuseConfirmMode = null;  // 'reuse' | 'default' | 'custom'
+// For 'custom': the leaf ids the user picked on the wall + the pattern.
+// Held here so Retry can re-fire the same payload.
+var reuseConfirmCustomLeafIds = null;
+var reuseConfirmCustomPattern = null;
 
 function confirmReuseAgent(agentId) {
   var agent = (existingAgents || []).find(function(a){ return a.id === agentId; });
@@ -2291,6 +2295,34 @@ function confirmReuseAgent(agentId) {
   document.getElementById('reuse-confirm-heading').textContent =
     'Start a new chat with "' + agent.name + '"?';
   document.getElementById('reuse-confirm-sub').textContent = '';
+  setReuseConfirmState('idle');
+  document.getElementById('reuse-confirm-modal').classList.add('visible');
+}
+
+// Confirm before kicking off the custom-build flow (single-leaf "Build now"
+// from the leaf detail card, OR the mash-up "Build & start chatting" CTA on
+// the review screen). Same modal as reuse — just dispatches a `build-agent`
+// payload on OK instead of `start-reuse-chat`.
+function confirmCustomBuild(leafIds, pattern) {
+  if (!leafIds || leafIds.length === 0) return;
+  var leaves = (state.newAgentFlow && state.newAgentFlow.leaves) || [];
+  var byId = {};
+  leaves.forEach(function(l) { byId[l.id] = l; });
+  var resolved = leafIds.map(function(id){ return byId[id]; }).filter(Boolean);
+  if (resolved.length === 0) return;
+  reuseConfirmCustomLeafIds = leafIds.slice();
+  reuseConfirmCustomPattern = pattern || 'checker';
+  reuseConfirmMode = 'custom';
+  reuseConfirmAgentId = null;
+  var heading;
+  if (resolved.length === 1) {
+    heading = 'Start a new chat with the ' + resolved[0].name + ' specialist?';
+  } else {
+    heading = 'Start a new chat blending ' + resolved.length + ' specialists?';
+  }
+  document.getElementById('reuse-confirm-heading').textContent = heading;
+  document.getElementById('reuse-confirm-sub').textContent =
+    "I'll set it up and ask you a few quick questions to tailor it.";
   setReuseConfirmState('idle');
   document.getElementById('reuse-confirm-modal').classList.add('visible');
 }
@@ -2310,6 +2342,16 @@ function reuseConfirmOk() {
     webxdc.sendUpdate({
       payload: { type: 'start-default-chat', senderAddr: webxdc.selfAddr },
     }, '');
+  } else if (reuseConfirmMode === 'custom' && reuseConfirmCustomLeafIds) {
+    setReuseConfirmState('processing');
+    webxdc.sendUpdate({
+      payload: {
+        type: 'build-agent',
+        leafIds: reuseConfirmCustomLeafIds.slice(),
+        pattern: reuseConfirmCustomPattern,
+        senderAddr: webxdc.selfAddr,
+      },
+    }, '');
   }
 }
 
@@ -2326,6 +2368,8 @@ function closeReuseConfirm() {
   document.getElementById('reuse-confirm-modal').classList.remove('visible');
   reuseConfirmAgentId = null;
   reuseConfirmMode = null;
+  reuseConfirmCustomLeafIds = null;
+  reuseConfirmCustomPattern = null;
 }
 
 // Called from the WebXDC update listener when the dispatcher reports
@@ -3113,15 +3157,15 @@ function showLeafDetail(leafId) {
   var ctaHtml;
   if (inBuild) {
     ctaHtml = '<button class="btn-secondary" data-pair-add="' + escapeHtml(l.id) + '">✓ In your mash-up</button>' +
-              '<button class="btn-primary" data-action="review">Review →</button>';
+              '<button class="btn btn-primary" data-action="review">Review →</button>';
   } else if (state.build.length === 0) {
     ctaHtml = '<button class="btn-secondary" data-pair-add="' + escapeHtml(l.id) + '">+ Add to mash-up</button>' +
-              '<button class="btn-primary" data-action="build-now" data-leaf-id-build="' + escapeHtml(l.id) + '">Build now</button>';
+              '<button class="btn btn-primary" data-action="build-now" data-leaf-id-build="' + escapeHtml(l.id) + '">Build now</button>';
   } else {
     // "Add & review" needs a single delegate target; use a dedicated action
     // so the click handler doesn't have to peek at state.build itself.
     ctaHtml = '<button class="btn-secondary" data-pair-add="' + escapeHtml(l.id) + '">+ Add to mash-up</button>' +
-              '<button class="btn-primary" data-action="add-and-review" data-leaf-id-add="' + escapeHtml(l.id) + '">Add &amp; review</button>';
+              '<button class="btn btn-primary" data-action="add-and-review" data-leaf-id-add="' + escapeHtml(l.id) + '">Add &amp; review</button>';
   }
 
   // Same display-restoration concern as enterL2 — renderWall() hid the
@@ -3144,11 +3188,10 @@ function hideLeafDetail() {
   document.getElementById('wall-leaf-detail').innerHTML = '';
 }
 
-// Single-leaf build — emits a build-agent payload to the dispatcher.
-// Phase 8 wires the dispatcher side (coach handoff). senderAddr is
-// MANDATORY per project owner-verification convention (CLAUDE.md).
+// Single-leaf build — opens the confirm modal first; the modal's OK
+// path dispatches the build-agent payload via reuseConfirmOk.
 function buildSingleLeaf(leafId) {
-  webxdc.sendUpdate({ payload: { type: 'build-agent', leafIds: [leafId], pattern: state.pattern, senderAddr: webxdc.selfAddr } }, '');
+  confirmCustomBuild([leafId], state.pattern);
 }
 
 // ----- Phase 7 mash-up state machine -----------------------------------
@@ -3363,11 +3406,11 @@ function composeMergedPitch(leaves) {
   return '"I am a single agent who ' + firstSentences.join('; also ') + '. Tell me which side of me you need today."';
 }
 
-// Final commit. Same payload shape as buildSingleLeaf but with the full
-// queue. Phase 8 wires the dispatcher's coach handoff. senderAddr is
-// MANDATORY per project owner-verification convention (CLAUDE.md).
+// Final commit. Same flow as buildSingleLeaf — opens the confirm modal,
+// which dispatches the build-agent payload on OK with the full queue.
 function buildMashup() {
-  webxdc.sendUpdate({ payload: { type: 'build-agent', leafIds: state.build.slice(), pattern: state.pattern, senderAddr: webxdc.selfAddr } }, '');
+  if (state.build.length === 0) return;
+  confirmCustomBuild(state.build.slice(), state.pattern);
 }
 // ----- End Phase 7 mash-up state machine -------------------------------
 
