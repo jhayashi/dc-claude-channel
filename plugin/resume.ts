@@ -13,10 +13,10 @@
  *   - bindings injected via plugin/bindings.ts (setBindingsDir).
  */
 
-import { existsSync, readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync, openSync, readSync, closeSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as bindings from './bindings.js'
 
@@ -152,16 +152,46 @@ export interface ListOptions {
 }
 
 /**
- * Check whether any process has a file open using fuser(1).
- * Returns true if at least one process holds the file.
+ * Check whether any process is currently using a session `.jsonl` file.
+ *
+ * Two-stage detection because Claude Code does NOT keep the session file
+ * open between writes — it appends one line and closes — so fuser only
+ * catches a session during the brief moment of an active write. Without
+ * the cmdline fallback, the dispatcher's own parent Claude session
+ * (running `claude --resume <uuid>`) gets listed as a teleport target,
+ * which would deadlock on attach.
+ *
+ * 1. fuser — wins for files that ARE held open (subagents that piped
+ *    claude's stdio open the jsonl indirectly via the project store
+ *    update path).
+ * 2. /proc/<pid>/cmdline scan for the session UUID — catches the
+ *    parent Claude case (and any other claude --resume <uuid> on the
+ *    host) even between writes.
+ *
+ * Linux-only (the /proc scan). On other platforms only fuser is
+ * consulted, which is best-effort but doesn't claim more than that.
  */
 function isFileInUse(path: string): boolean {
+  // Stage 1 — fuser
   try {
     const result = spawnSync('fuser', [path], { timeout: 3000, stdio: 'pipe' })
-    return result.status === 0
-  } catch {
-    return false
-  }
+    if (result.status === 0) return true
+  } catch { /* fuser unavailable — fall through */ }
+
+  // Stage 2 — /proc cmdline scan for the session UUID
+  if (process.platform !== 'linux') return false
+  const sessionId = basename(path).replace(/\.jsonl$/, '')
+  if (!sessionId) return false
+  try {
+    for (const entry of readdirSync('/proc')) {
+      if (!/^\d+$/.test(entry)) continue
+      try {
+        const cmdline = readFileSync(`/proc/${entry}/cmdline`, 'utf-8')
+        if (cmdline.includes(sessionId)) return true
+      } catch { /* process exited mid-scan, or EACCES from a foreign uid */ }
+    }
+  } catch { /* /proc unavailable */ }
+  return false
 }
 
 /**

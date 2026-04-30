@@ -307,6 +307,50 @@ describe('listResumeCandidates', () => {
     }
   })
 
+  it.skipIf(process.platform !== 'linux')(
+    'excludes sessions whose UUID appears in another process cmdline (parent claude case)',
+    async () => {
+      // Reproduces the dispatcher's parent Claude session case: claude
+      // doesn't keep the .jsonl open between writes, so fuser misses
+      // it. The cmdline-scan fallback in isFileInUse catches it.
+      const liveId = 'cmdl0000-0000-0000-0000-000000000000'
+      const idleId = 'idle1111-0000-0000-0000-000000000000'
+      writeSession('-p', liveId, 60 * 1000, {})
+      writeSession('-p', idleId, 60 * 1000, {})
+
+      // Spawn `sleep 30 <liveId>` — sleep ignores extra args, but the
+      // UUID lands in /proc/<pid>/cmdline where the scanner will find
+      // it. We're NOT touching the .jsonl, so fuser would miss it
+      // even on a host where it's installed.
+      const { spawn } = await import('node:child_process')
+      const { readFileSync } = await import('node:fs')
+      // Spawn a bun process that just stays alive — pass the session
+      // id as an extra argv so it lands in /proc/<pid>/cmdline. Plain
+      // `sleep 30 <id>` and `bash -c 'sleep 30' <id>` both fail:
+      // sleep treats trailing args as durations (exit 1), and bash
+      // exec-replaces itself into the lone sleep so the UUID gets
+      // dropped from cmdline. A bun setTimeout doesn't do either.
+      const child = spawn(process.execPath, ['-e', 'setTimeout(()=>{},30000)', liveId], { stdio: 'ignore', detached: false })
+      try {
+        // Wait for /proc/<pid>/cmdline to be populated. fork()→execve()
+        // can take a few hundred ms under load — poll up to 2s.
+        const deadline = Date.now() + 2000
+        while (Date.now() < deadline) {
+          try {
+            const cmdline = readFileSync(`/proc/${child.pid}/cmdline`, 'utf-8')
+            if (cmdline.includes(liveId)) break
+          } catch { /* not yet */ }
+          await new Promise(r => setTimeout(r, 50))
+        }
+        const out = resume.listResumeCandidates({ limit: 10 })
+        expect(out.find(c => c.sessionId === liveId)).toBeUndefined()
+        expect(out.find(c => c.sessionId === idleId)).toBeDefined()
+      } finally {
+        child.kill('SIGKILL')
+      }
+    },
+  )
+
   it('estimates messageCount from file size without reading entire file', () => {
     const sessionId = 'size0000-0000-0000-0000-000000000000'
     const dir = join(projectsRoot, '-p')
