@@ -228,7 +228,12 @@ function loadSessions(): Session[] {
 export interface CoachSession {
   coachState: CoachState
   leafIds: string[]
-  sessionId: string
+  /** Claude session UUID. Required for build-new sessions (persisted into
+   *  the new binding so the subagent's first --resume hits the same
+   *  on-disk .jsonl). Refine sessions don't need it — they're acting on
+   *  an already-bound chat whose session is owned by the existing
+   *  binding — so leave it undefined for those. */
+  sessionId?: string
   /** Badge pattern picked by the user on the review screen (Phase 9.2).
    *  Validated against PATTERN_IDS at intake; fallback to 'checker' if
    *  the client sent an unknown id. Written to metadata['x-dc-pattern']
@@ -601,6 +606,15 @@ async function handleBuildAgent(
 export async function graduateAgent(ctx: AppContext, chatId: number): Promise<void> {
   const session = coachSessions.get(chatId)
   if (!session) return
+  // Build-new sessions always have sessionId (set by handleBuildAgent).
+  // Refine sessions don't and shouldn't reach this function — the
+  // dispatcher branches to graduateRefineSession on session.refining.
+  if (!session.sessionId) {
+    ctx.logf('agent-setup: graduateAgent reached with no sessionId chat=%d (refine session leaked into build-new path?)', chatId)
+    coachSessions.delete(chatId)
+    return
+  }
+  const sessionId = session.sessionId
 
   // Wrap the entire post-validation graduation body in a single try/catch.
   // Previous structure had narrow try/catches around assembleSystemPrompt
@@ -672,7 +686,7 @@ export async function graduateAgent(ctx: AppContext, chatId: number): Promise<vo
     bindings.saveBinding({
       chatId,
       agentId,
-      sessionId: session.sessionId,
+      sessionId,
       inheritClaudeMd: agents.inheritClaudeMdForModel(newAgent.model),
       workingDir: process.cwd(),
       createdAt: new Date().toISOString(),
@@ -699,7 +713,7 @@ export async function graduateAgent(ctx: AppContext, chatId: number): Promise<vo
       kind: 'graduation',
       chatId,
       agentId,
-      sessionId: session.sessionId,
+      sessionId,
       leafIds: session.leafIds,
       fromCoach: true,
     })
@@ -727,7 +741,7 @@ export async function graduateAgent(ctx: AppContext, chatId: number): Promise<vo
     logLifecycleEvent({
       kind: 'graduation-failed',
       chatId,
-      sessionId: session.sessionId,
+      sessionId,
       leafIds: session.leafIds,
       reason,
     })
@@ -772,6 +786,22 @@ export async function graduateRefineSession(ctx: AppContext, chatId: number): Pr
     const newSystem = refineSystemPrompt(agent.system, answers)
     if (newSystem !== agent.system) {
       agents.saveAgent({ ...agent, system: newSystem })
+      // Evict the cached subagent so the next message cold-spawns under
+      // the new system prompt. Without this the user gets the "Done"
+      // reply but keeps talking to a process whose prompt was baked in
+      // at spawn — change wouldn't take effect until idle timeout / LRU
+      // eviction (up to 15 minutes). Best-effort: a failed evict
+      // shouldn't suppress the confirmation reply.
+      await ctx.evictSubagent(chatId).catch((err) =>
+        ctx.logf('agent-setup: refine evict failed chat=%d: %v', chatId, err),
+      )
+      const refineSessionId = bindings.getBinding(chatId)?.sessionId ?? ''
+      logLifecycleEvent({
+        kind: 'refine-complete',
+        chatId,
+        agentId: refineCtx.agentId,
+        sessionId: refineSessionId,
+      })
     }
     coachSessions.delete(chatId)
     try {

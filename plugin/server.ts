@@ -2263,14 +2263,13 @@ async function main(): Promise<void> {
     const def = agents.getAgent(agentId)
     if (!def) throw new Error(`agent ${agentId} not found`)
     const coachState = startRefineCoach({ agentId, existingPrompt: def.system })
+    // Refine sessions don't need their own sessionId — the chat's
+    // existing binding owns the claude session UUID. Leaving sessionId
+    // undefined here (CoachSession.sessionId is optional) makes that
+    // explicit; graduateAgent never fires on refining=true sessions.
     coachSessions.set(chatId, {
       coachState,
       leafIds: [],
-      // Reuse the binding's session UUID for parity with build-new — no
-      // new claude session is created for refine, but having one on the
-      // CoachSession keeps the shape consistent for any downstream
-      // observability that reads sessionId.
-      sessionId: bindings.getBinding(chatId)?.sessionId ?? '',
       refining: true,
     })
     return coachState.nextQuestion ?? "What would you like to change about how I work?"

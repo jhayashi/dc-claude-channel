@@ -67,7 +67,7 @@ export function assembleSystemPrompt(input: AssembleInputs): string {
   }
 
   // Paragraph 3 — Voice
-  const voice = `How you sound. ${renderVoice(input.preset, input.sliders)}`
+  const voice = `${VOICE_PREFIX} ${renderVoice(input.preset, input.sliders)}`
 
   // Paragraph 4 — Specific preferences (omitted if empty).
   // SECURITY: user preferences come from raw chat messages and could
