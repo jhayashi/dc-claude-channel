@@ -262,7 +262,7 @@ function blankDraft(): agents.DraftAgent {
 }
 
 /** Summarize agents for the picker screen. */
-async function listExistingForPicker(sourceChatId: number): Promise<Array<{ id: string; name: string; model: string; archetype: string; icon: string; glyph: string; tier: string; isTrusted: boolean; iconDataUri: string; bindingCount: number; isCurrentAgent: boolean; isUndeletable: boolean }>> {
+async function listExistingForPicker(sourceChatId: number): Promise<Array<{ id: string; name: string; model: string; archetype: string; icon: string; glyph: string; pattern: PatternId; tier: string; isTrusted: boolean; iconDataUri: string; bindingCount: number; isCurrentAgent: boolean; isUndeletable: boolean }>> {
   const { renderAgentBadge } = await import('../agent-icon-render.js')
   const sourceBinding = bindings.getBinding(sourceChatId)
   const { readFileSync } = await import('node:fs')
@@ -285,6 +285,7 @@ async function listExistingForPicker(sourceChatId: number): Promise<Array<{ id: 
       model: a.model,
       archetype,
       icon: agents.iconForAgent(a),
+      pattern,
       glyph,
       tier,
       isTrusted: trust,
@@ -1032,6 +1033,7 @@ export const agentSetupApp: WebXDCApp = {
           icon: agents.iconForAgent(agent),
           explicitIcon: agents.getExplicitIcon(agent),
           glyph: agents.glyphForAgent(agent),
+          pattern: agents.patternForAgent(agent),
           allowedBuiltinTools: agent.allowedBuiltinTools ?? null,
           allowedMcpServers: agent.allowedMcpServers ?? null,
         }

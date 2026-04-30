@@ -1697,7 +1697,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.96;
+var APP_VERSION = 1.97;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -1705,22 +1705,72 @@ var PREVIEW_PALETTE = {
   opus:   { solid: '#D97757', checker: '#F2A778' },
 };
 
-function renderPreviewSvg(modelFamily, trust, glyph) {
+// Build the inner shape XML for a pattern variant on a 256x256 canvas,
+// given solid + accent colors. Mirrors the server-side renderer in
+// agent-icon-render.ts and the picker thumb in renderPatternThumb so
+// all three render the same pattern for a given (id, palette).
+function renderPatternBg(pattern, solid, accent) {
+  var rects, i, r, c;
+  switch (pattern) {
+    case 'mini-checker':
+      rects = '';
+      for (i = 0; i < 64; i++) { r = Math.floor(i / 8); c = i % 8;
+        rects += '<rect x="' + (c * 32) + '" y="' + (r * 32) + '" width="32" height="32" fill="' + ((r + c) % 2 === 0 ? solid : accent) + '"/>';
+      }
+      return rects;
+    case 'stripes':
+      return '<rect width="256" height="64" fill="' + solid + '"/><rect y="64" width="256" height="64" fill="' + accent + '"/>'
+           + '<rect y="128" width="256" height="64" fill="' + solid + '"/><rect y="192" width="256" height="64" fill="' + accent + '"/>';
+    case 'v-stripes':
+      return '<rect width="64" height="256" fill="' + solid + '"/><rect x="64" width="64" height="256" fill="' + accent + '"/>'
+           + '<rect x="128" width="64" height="256" fill="' + solid + '"/><rect x="192" width="64" height="256" fill="' + accent + '"/>';
+    case 'quartered':
+      return '<rect width="128" height="128" fill="' + solid + '"/><rect x="128" width="128" height="128" fill="' + accent + '"/>'
+           + '<rect y="128" width="128" height="128" fill="' + accent + '"/><rect x="128" y="128" width="128" height="128" fill="' + solid + '"/>';
+    case 'quartered-x':
+      return '<rect width="256" height="256" fill="' + solid + '"/>'
+           + '<polygon points="0,0 256,0 128,128" fill="' + accent + '"/><polygon points="0,256 256,256 128,128" fill="' + accent + '"/>'
+           + '<polygon points="0,0 0,256 128,128" fill="' + solid + '"/><polygon points="256,0 256,256 128,128" fill="' + solid + '"/>';
+    case 'dots':
+      var dots = '';
+      for (var dy = 32; dy < 256; dy += 64) {
+        for (var dx = 32; dx < 256; dx += 64) {
+          dots += '<circle cx="' + dx + '" cy="' + dy + '" r="20" fill="' + accent + '"/>';
+        }
+      }
+      return '<rect width="256" height="256" fill="' + solid + '"/>' + dots;
+    case 'big-dots':
+      var bdots = '';
+      for (var by = 64; by < 256; by += 128) {
+        for (var bx = 64; bx < 256; bx += 128) {
+          bdots += '<circle cx="' + bx + '" cy="' + by + '" r="40" fill="' + accent + '"/>';
+        }
+      }
+      return '<rect width="256" height="256" fill="' + solid + '"/>' + bdots;
+    case 'checker':
+    default:
+      // 4x4 grid of 64px alternating cells.
+      rects = '';
+      for (i = 0; i < 16; i++) { r = Math.floor(i / 4); c = i % 4;
+        rects += '<rect x="' + (c * 64) + '" y="' + (r * 64) + '" width="64" height="64" fill="' + ((r + c) % 2 === 0 ? solid : accent) + '"/>';
+      }
+      return rects;
+  }
+}
+
+function renderPreviewSvg(modelFamily, trust, glyph, pattern) {
   var p = PREVIEW_PALETTE[modelFamily] || PREVIEW_PALETTE.sonnet;
   var inner = GLYPHS[glyph] || GLYPHS['user-round'] || '';
-  var defsPattern = trust
-    ? '<pattern id="c" patternUnits="userSpaceOnUse" width="128" height="128">'
-      + '<rect width="64" height="64" fill="' + p.solid + '"/>'
-      + '<rect x="64" width="64" height="64" fill="' + p.checker + '"/>'
-      + '<rect y="64" width="64" height="64" fill="' + p.checker + '"/>'
-      + '<rect x="64" y="64" width="64" height="64" fill="' + p.solid + '"/>'
-      + '</pattern>'
-    : '';
-  var bg = trust ? 'url(#c)' : p.solid;
+  // Trust-off agents render solid color regardless of pattern (mirrors
+  // the server renderer — pattern is only visually meaningful when trust
+  // is on, since both colors collapse to the model accent otherwise).
+  var bgShapes = trust
+    ? renderPatternBg(pattern || 'checker', p.solid, p.checker)
+    : '<rect width="256" height="256" fill="' + p.solid + '"/>';
   return '<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">'
-    + '<defs>' + defsPattern + '<clipPath id="k"><circle cx="128" cy="128" r="128"/></clipPath></defs>'
+    + '<defs><clipPath id="k"><circle cx="128" cy="128" r="128"/></clipPath></defs>'
     + '<g clip-path="url(#k)">'
-      + '<rect width="256" height="256" fill="' + bg + '"/>'
+      + bgShapes
       + '<g transform="translate(64,64) scale(5.333)" stroke="#FAF9F5" stroke-width="3" '
         + 'fill="none" stroke-linecap="round" stroke-linejoin="round">' + inner + '</g>'
     + '</g>'
@@ -1771,13 +1821,18 @@ function refreshLivePreview(scope) {
   var trustInput = document.getElementById(trustId);
   var rawName = (nameInput && nameInput.value.trim()) || '';
   var trust = !!(trustInput && trustInput.checked);
-  var glyph;
+  var glyph, pattern;
   if (scope === 'edit') {
     glyph = (draft && draft.glyph) || ARCHETYPE_DEFAULT_GLYPH[editArchetype] || 'user-round';
+    // Pattern picked at build time (review screen). Edit dialog can't
+    // change it but should display the current one. Default to checker
+    // for legacy agents that pre-date the pattern field.
+    pattern = (draft && draft.pattern) || 'checker';
   } else {
     glyph = ARCHETYPE_DEFAULT_GLYPH[createArchetype] || 'user-round';
+    pattern = 'checker';
   }
-  setBadgeSvg(badge, renderPreviewSvg(tier, trust, glyph));
+  setBadgeSvg(badge, renderPreviewSvg(tier, trust, glyph, pattern));
   if (scope === 'create' && !rawName) {
     nameEl.textContent = 'Unnamed agent';
     nameEl.style.color = 'var(--ink-mute)';
@@ -1984,7 +2039,7 @@ function renderManageList() {
       img.alt = '';
       avatar.appendChild(img);
     } else {
-      setBadgeSvg(avatar, renderPreviewSvg(a.tier || 'sonnet', !!a.isTrusted, a.glyph || 'user-round'));
+      setBadgeSvg(avatar, renderPreviewSvg(a.tier || 'sonnet', !!a.isTrusted, a.glyph || 'user-round', a.pattern || 'checker'));
     }
     row.appendChild(avatar);
 
@@ -2104,7 +2159,7 @@ function renderPickList() {
       img.alt = '';
       avatar.appendChild(img);
     } else {
-      setBadgeSvg(avatar, renderPreviewSvg(a.tier || 'sonnet', !!a.isTrusted, a.glyph || 'user-round'));
+      setBadgeSvg(avatar, renderPreviewSvg(a.tier || 'sonnet', !!a.isTrusted, a.glyph || 'user-round', a.pattern || 'checker'));
     }
     row.appendChild(avatar);
 
