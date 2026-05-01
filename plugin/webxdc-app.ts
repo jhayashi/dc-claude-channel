@@ -16,6 +16,23 @@ export interface ToolDef {
     properties: Record<string, unknown>
     required?: string[]
   }
+  /**
+   * Capability category required to invoke this tool (v1.3+).
+   *
+   * Resolved against the originator's capability bundle by
+   * `plugin/access/capabilities.ts:evaluateCapability`. Tools without
+   * an annotation are treated as `chat`-tier (the safest default for
+   * tools that read non-private data and post chat-shaped messages).
+   *
+   * Vocabulary (v1.3.0): `chat` | `low_stakes_chat` | `private_data_read`
+   * | `private_data_write` | `real_world_action` | `infrastructure`.
+   * See `plugin/access/capability-bundles.ts` for the role → bundle map.
+   *
+   * Slice 3 (observability): the dispatcher logs every tool call with
+   * the resolved decision (`allow` / `would_deny`) but does NOT enforce.
+   * Slice 4 flips `would_deny` to a hard refuse.
+   */
+  requiresCapability?: string
 }
 
 export interface ToolResult {
