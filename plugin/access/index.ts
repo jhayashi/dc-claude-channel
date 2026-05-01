@@ -18,3 +18,4 @@ export * from "./principals.js";
 export * from "./principals-policy.js";
 export * from "./capability-bundles.js";
 export * from "./capabilities.js";
+export * from "./gate.js";
