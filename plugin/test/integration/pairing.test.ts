@@ -146,9 +146,21 @@ async function pair(dispatcher: Dispatcher, sim: ClientSim): Promise<PairedRecor
 }
 
 function isChatApproved(home: string, chatId: number): boolean {
-  const dir = join(home, ".claude", "channels", "deltachat", "approved");
-  if (!existsSync(dir)) return false;
-  return readdirSync(dir).some((f) => f === String(chatId));
+  // v1.3+: approved/ is retired to approved.legacy/ at first boot. The
+  // principal record + dc-core membership is the live source of truth,
+  // but for the reuse-the-fixture optimization we just need a hint that
+  // a previous pair existed — either dir is enough.
+  const root = join(home, ".claude", "channels", "deltachat");
+  for (const dir of [join(root, "approved"), join(root, "approved.legacy")]) {
+    if (!existsSync(dir)) continue;
+    if (readdirSync(dir).some((f) => f === String(chatId))) return true;
+  }
+  // Final fallback: principal record exists. If the dispatcher booted
+  // and re-derived the allowlist from membership, neither approved/
+  // nor approved.legacy/ may be present at all — but the principal
+  // is.
+  const principalsDir = join(root, "principals", "humans");
+  return existsSync(principalsDir) && readdirSync(principalsDir).length > 0;
 }
 
 function loadPairedRecord(): PairedRecord | null {
