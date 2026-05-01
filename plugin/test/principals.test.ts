@@ -285,6 +285,30 @@ describe("principals — isContactPermissioned (#66 Option A)", () => {
     expect(access.chatsForOwner(42)).toEqual([]);
     expect(access.isContactPermissioned(42)).toBe(true);
   });
+
+  test("permissioned-contacts cache invalidates on write/remove (v1.3 review fix)", () => {
+    // Elena HURT 2 fix: isContactPermissioned hits an in-memory Set on
+    // the hot path. The cache must be transparent — invalidation on
+    // write/remove ensures the next read sees the mutation.
+    expect(access.isContactPermissioned(42)).toBe(false); // populates empty cache
+    access.recordContactPair(42);
+    expect(access.isContactPermissioned(42)).toBe(true);  // cache rebuild after write
+    access.removeContact(42);
+    expect(access.isContactPermissioned(42)).toBe(false); // cache rebuild after remove
+  });
+
+  test("permissioned-contacts cache invalidates on setPrincipalsDir", () => {
+    // setPrincipalsDir is a test-isolation hook — it changes the on-disk
+    // root the cache reads from. Must invalidate so subsequent reads
+    // don't return stale data from the prior dir.
+    access.recordContactPair(42);
+    expect(access.isContactPermissioned(42)).toBe(true);
+    // Switch to a fresh empty dir.
+    const newDir = mkdtempSync(join(tmpdir(), "dc-cache-isolate-"));
+    access.setPrincipalsDir(newDir);
+    expect(access.isContactPermissioned(42)).toBe(false);
+    rmSync(newDir, { recursive: true, force: true });
+  });
 });
 
 describe("principals — hasAnyPermissionedContact", () => {

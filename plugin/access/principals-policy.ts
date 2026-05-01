@@ -23,7 +23,39 @@
 
 import { chatsForOwner, hasAnyOwner, isKnownOwner, listPaired } from "./chat-allowlist.js";
 import { bundleFor } from "./capability-bundles.js";
-import { listContacts, loadContact, writeContact, type Principal } from "./principals.js";
+import { _setPrincipalsMutateCallback, listContacts, loadContact, writeContact, type Principal } from "./principals.js";
+
+// ── Permissioned-contacts cache (v1.3 review fix — Elena HURT 2) ────────────
+//
+// `isContactPermissioned` is called on every inbound message via the
+// router's isAuthorized predicate (slice 5). Before this cache, every
+// call did a sync FS stat + JSON read via loadContact — millisecond-
+// scale latency on the hot path.
+//
+// The cache is a Set<contactId> populated lazily from listContacts on
+// first access. Invalidated on every principal write/remove/dir-change
+// via the callback registered with principals.ts. Subsequent reads
+// rebuild on next access.
+//
+// `isKnownOwner` is still consulted as a legacy fallback for the brief
+// boot window before backfillFromAllowlist runs (matches the v1.2.2
+// contract).
+let _permissionedContactIds: Set<number> | null = null;
+
+function getPermissionedContactIds(): Set<number> {
+  if (_permissionedContactIds === null) {
+    _permissionedContactIds = new Set<number>();
+    for (const c of listContacts()) _permissionedContactIds.add(c.contactId);
+  }
+  return _permissionedContactIds;
+}
+
+// Register the invalidation callback at module load. principals-policy
+// imports principals (above), so principals-policy's module evaluates
+// after principals — the callback is set before any principal write.
+_setPrincipalsMutateCallback(() => {
+  _permissionedContactIds = null;
+});
 
 /**
  * Chats this principal currently has access to. Phase 2 derives this
@@ -40,12 +72,16 @@ export function chatsFor(p: Principal): number[] {
 /**
  * Is this contact a trusted principal of the bot?
  *
- * Source of truth as of v1.2.2 (#66 Option A): the on-disk principal
- * record. Falls back to the legacy `isKnownOwner` chat-allowlist scan
- * to cover pre-Phase-2 installs that haven't yet backfilled.
- * `backfillFromAllowlist()` runs at dispatcher startup before message
- * routing begins, so the legacy fallback only matters during the boot
- * window or for state that predates Phase 2 entirely.
+ * Hot-path predicate — called from the slice-5 multi-user-dispatch
+ * gate on every inbound message AND from the per-tool capability gate
+ * via `getCapabilitiesFor`. Sync `Set.has` on the in-memory
+ * `permissionedContactIds` cache (lazy-rebuilt from `listContacts` on
+ * invalidation). Reviewer Elena HURT 2 flagged the pre-fix FS-stat-
+ * per-message regression; this cache restores v1.2.2-class latency.
+ *
+ * Falls back to the legacy `isKnownOwner` chat-allowlist scan for the
+ * brief boot window before `backfillFromAllowlist` runs (covers pre-
+ * Phase-2 installs that haven't yet backfilled). Same shape as v1.2.2.
  *
  * Used as the auth gate for incoming messages: any chat where a
  * permissioned contact sends a message is auto-paired without
@@ -53,7 +89,7 @@ export function chatsFor(p: Principal): number[] {
  * the trust fully, so a fully-unpaired contact reads false here.
  */
 export function isContactPermissioned(contactId: number): boolean {
-  return loadContact(contactId) !== null || isKnownOwner(contactId);
+  return getPermissionedContactIds().has(contactId) || isKnownOwner(contactId);
 }
 
 /**

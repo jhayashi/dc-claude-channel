@@ -89,7 +89,24 @@ let _principalsDir = process.env.DC_TEST_PRINCIPALS_DIR ?? join(
 export function getPrincipalsDir(): string { return _principalsDir }
 
 /** Override the principals directory (for testing). */
-export function setPrincipalsDir(dir: string): void { _principalsDir = dir }
+export function setPrincipalsDir(dir: string): void {
+  _principalsDir = dir;
+  // Cache invalidation hook (v1.3 review fix #3 — Elena HURT 2):
+  // principals-policy maintains a derived `permissionedContactIds` Set
+  // for O(1) `isContactPermissioned` on the inbound-message hot path.
+  // Changing the principals dir invalidates the entire cache.
+  _onMutate();
+}
+
+/**
+ * Cache invalidation hook. principals-policy registers itself here at
+ * module load so it can drop its `permissionedContactIds` cache on
+ * every write / remove / dir change. Stays a function-pointer (rather
+ * than a static import from principals-policy) to avoid the
+ * principals ↔ principals-policy cycle the slice-2 review broke.
+ */
+let _onMutate: () => void = () => { /* no-op until policy registers */ };
+export function _setPrincipalsMutateCallback(cb: () => void): void { _onMutate = cb; }
 
 function contactPath(contactId: number): string {
   return join(_principalsDir, "humans", `${contactId}.json`);
@@ -158,6 +175,7 @@ export function loadContact(contactId: number): ContactPrincipal | null {
 /** Atomically persist a human principal record. */
 export function writeContact(p: ContactPrincipal): void {
   atomicWriteJson(contactPath(p.contactId), p);
+  _onMutate();
 }
 
 /**
@@ -206,6 +224,7 @@ export function listContacts(): ContactPrincipal[] {
 export function removeContact(contactId: number): void {
   try {
     unlinkSync(contactPath(contactId));
+    _onMutate();
   } catch (err) {
     const code = (err as { code?: string }).code;
     if (code === "ENOENT") return; // expected — no record to remove
