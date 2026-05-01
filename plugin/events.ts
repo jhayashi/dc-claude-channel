@@ -204,10 +204,23 @@ export type PermissionVerdict = 'allow' | 'deny'
 
 /**
  * Why the verdict was reached.
- *   user_allow / user_deny — the owner tapped Allow or Deny in the WebXDC card
- *   skip_auto             — bypassed by skip-permissions mode (no user prompt)
+ *   user_allow / user_deny       — the owner tapped Allow or Deny in the WebXDC card
+ *   skip_auto                    — bypassed by skip-permissions mode (no user prompt)
+ *   capability_deny              — v1.3 capability gate refused the call:
+ *                                  originator's bundle didn't cover the tool's
+ *                                  requiresCapability annotation
+ *   capability_lookup_error      — v1.3 capability gate fail-closed on a
+ *                                  principal-store error (corrupt JSON, EACCES,
+ *                                  etc.). Same outcome as deny; the separate
+ *                                  reason makes the operator's `jq` queries
+ *                                  honest about what actually failed.
  */
-export type PermissionReason = 'user_allow' | 'user_deny' | 'skip_auto'
+export type PermissionReason =
+  | 'user_allow'
+  | 'user_deny'
+  | 'skip_auto'
+  | 'capability_deny'
+  | 'capability_lookup_error'
 
 export interface PermissionEvent {
   ts: string
@@ -222,6 +235,12 @@ export interface PermissionEvent {
   timedOut: boolean
   /** Wall-clock ms from prompt arrival to verdict (0 for skip_auto). */
   durationMs: number
+  /** v1.3 capability gate: contact whose caps were checked (null for terminal). */
+  originatorContactId?: number | null
+  /** v1.3 capability gate: capability the tool annotation declared. */
+  requiredCapability?: string
+  /** v1.3 capability gate: originator's resolved bundle at the moment of decision. */
+  originatorCapabilities?: string[]
 }
 
 /** Append one permission-decision event line. Swallows errors. */

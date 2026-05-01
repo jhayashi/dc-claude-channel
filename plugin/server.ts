@@ -753,6 +753,57 @@ const socketServer = new SocketServer({
         emit(false, 'chat_mismatch')
         return { kind: 'toolError', id: frame.id, error: { code: 'chat_mismatch', message: 'tool call chat_id does not match subagent binding' } }
       }
+      // v1.3 slice 4 — capability gate. Refuse calls where the originator's
+      // bundle doesn't cover the tool's requiresCapability annotation.
+      // The subagent socket frame's originator is the chat's pairing contact
+      // (slice 4 commit 2 will add `requestor_contact_id` for relay cases).
+      // Wrapped in try/catch per security review T4: principal-store errors
+      // fail-closed with `capability_lookup_error` reason.
+      const gateOriginator = access.firstPermissionedContact(req.chatId)
+      const gateRequired = requiredCapabilityFor(frame.tool)
+      let gateDecision: 'allow' | 'would_deny' = 'allow'
+      let gateReason: 'capability_deny' | 'capability_lookup_error' | null = null
+      let gateCaps: readonly string[] = []
+      try {
+        const ev = access.evaluateCapability(gateOriginator, gateRequired)
+        gateDecision = ev.decision
+        gateCaps = ev.originatorCapabilities
+        if (gateDecision === 'would_deny') gateReason = 'capability_deny'
+      } catch (err) {
+        // Fail-closed: any unexpected lookup error denies the call.
+        logf('capability gate: evaluateCapability threw for chat=%d tool=%s: %v', req.chatId, frame.tool, err)
+        gateDecision = 'would_deny'
+        gateReason = 'capability_lookup_error'
+        gateCaps = []
+      }
+      if (gateReason !== null) {
+        const binding = bindings.getBinding(req.chatId)
+        logPermission({
+          ts: new Date().toISOString(),
+          chatId: req.chatId,
+          agentId: binding?.agentId ?? null,
+          tool: frame.tool,
+          inputPreview: buildArgPreview(frame.args as Record<string, unknown>),
+          verdict: 'deny',
+          reason: gateReason,
+          timedOut: false,
+          durationMs: 0,
+          originatorContactId: gateOriginator,
+          requiredCapability: gateRequired ?? 'chat',
+          originatorCapabilities: [...gateCaps],
+        }, (err) => logf('events: permission log failed: %v', err))
+        emit(false, gateReason)
+        return {
+          kind: 'toolError',
+          id: frame.id,
+          error: {
+            code: gateReason,
+            message: gateReason === 'capability_lookup_error'
+              ? `capability lookup error for ${frame.tool}; refused for safety`
+              : `${frame.tool} requires capability "${gateRequired ?? 'chat'}"; originator (contact ${gateOriginator ?? 'null'}) lacks it`,
+          },
+        }
+      }
       if (!rateLimiter.check(req.chatId)) {
         logf('rate-limit: chat=%d exceeded %d calls/min', req.chatId, RATE_LIMIT)
         emit(false, 'rate_limited')

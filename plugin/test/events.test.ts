@@ -301,18 +301,39 @@ describe('events.logPermission', () => {
     ])
   })
 
-  it('accepts all three permission-reason values', () => {
-    const reasons: PermissionEvent['reason'][] = ['user_allow', 'user_deny', 'skip_auto']
+  it('accepts all five permission-reason values (v1.3 adds capability_deny + capability_lookup_error)', () => {
+    const reasons: PermissionEvent['reason'][] = [
+      'user_allow', 'user_deny', 'skip_auto', 'capability_deny', 'capability_lookup_error',
+    ]
     for (const r of reasons) {
       logPermission(basePermission({
         reason: r,
-        verdict: r === 'user_deny' ? 'deny' : 'allow',
+        verdict: r === 'user_allow' || r === 'skip_auto' ? 'allow' : 'deny',
       }))
     }
     const lines = readFileSync(join(dir, 'permissions-2026-04-20.log'), 'utf-8')
       .split('\n').filter(Boolean)
-    expect(lines.length).toBe(3)
+    expect(lines.length).toBe(reasons.length)
     expect(lines.map((l) => JSON.parse(l).reason)).toEqual(reasons)
+  })
+
+  it('persists v1.3 capability fields on capability_deny entries (slice 4)', () => {
+    logPermission(basePermission({
+      tool: 'dc_send_file',
+      verdict: 'deny',
+      reason: 'capability_deny',
+      durationMs: 0,
+      originatorContactId: 50,
+      requiredCapability: 'private_data_write',
+      originatorCapabilities: ['chat', 'low_stakes_*'],
+    }))
+    const files = readdirSync(dir)
+    const parsed = JSON.parse(readFileSync(join(dir, files[0]), 'utf-8').trim())
+    expect(parsed.reason).toBe('capability_deny')
+    expect(parsed.verdict).toBe('deny')
+    expect(parsed.originatorContactId).toBe(50)
+    expect(parsed.requiredCapability).toBe('private_data_write')
+    expect(parsed.originatorCapabilities).toEqual(['chat', 'low_stakes_*'])
   })
 
   it('swallows write errors', () => {
