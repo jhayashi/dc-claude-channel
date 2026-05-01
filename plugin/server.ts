@@ -51,6 +51,7 @@ import { parseSince, queryEvents, renderEventsMarkdown, ALL_STREAMS, type EventS
 import * as resume from './resume.js'
 import * as models from './models.js'
 import { ScheduleStore, type ScheduledJob } from './dispatcher/schedule-store.js'
+import { serializeSchedules, parseSchedulesYaml } from './schedule-import-export.js'
 import { Scheduler, countFiresIn7Days } from './dispatcher/scheduler.js'
 import { CronExpressionParser } from 'cron-parser'
 import type { ServerMessage } from './shared/protocol.js'
@@ -2285,6 +2286,104 @@ async function main(): Promise<void> {
   }
 
   /**
+   * Schedules export: produce a `.schedules.yaml` of all recurring
+   * schedules currently bound to `chatId`, post it as an attachment.
+   * One-shot schedules are skipped because their date-specific
+   * targetMs rarely transports cleanly. (#67)
+   */
+  const handleExportSchedulesCommand = async (chatId: number): Promise<void> => {
+    const jobs = scheduleStore.loadForChat(chatId)
+    if (jobs.length === 0) {
+      await client.send(chatId, 'No schedules to export from this chat.').catch(() => {})
+      return
+    }
+    const { yaml, included, skippedOneShots } = serializeSchedules(jobs, { sourceChatId: chatId })
+    if (included === 0) {
+      await client.send(
+        chatId,
+        `No recurring schedules to export — found ${skippedOneShots} one-shot schedule(s), which aren't included in exports (their date-specific firing times rarely make sense after migration). Recreate one-shots manually with dc_schedule.`,
+      ).catch(() => {})
+      return
+    }
+    const { mkdtempSync, writeFileSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dir = mkdtempSync(join(tmpdir(), 'dc-schedules-export-'))
+    const filename = `chat-${chatId}.schedules.yaml`
+    const path = join(dir, filename)
+    writeFileSync(path, yaml)
+    const caption = skippedOneShots > 0
+      ? `${included} recurring schedule(s) exported. ${skippedOneShots} one-shot(s) omitted. Drop this file into any paired chat to import.`
+      : `${included} schedule(s) exported. Drop this file into any paired chat to import.`
+    try {
+      await client.sendAttachment(chatId, path, caption)
+      logf('export-schedules: chat=%d included=%d skippedOneShots=%d', chatId, included, skippedOneShots)
+    } catch (err) {
+      logf('export-schedules: send failed chat=%d: %v', chatId, err)
+      await client.send(chatId, `⚠️ Couldn't send schedules export: ${err instanceof Error ? err.message : err}`).catch(() => {})
+    }
+  }
+
+  /**
+   * Schedules import: detect `.schedules.yaml` / `.schedules.yml`
+   * attachments, validate, and create the schedules in the receiving
+   * chat. Each entry gets a fresh jobId — duplicates aren't deduped,
+   * dedup-by-(cron, prompt) is fragile and the user has dc_schedule_list
+   * + dc_schedule_delete to prune. Returns true when handled (subagent
+   * skips the message). (#67)
+   */
+  const tryImportSchedulesAttachment = async (msg: Message): Promise<boolean> => {
+    if (!msg.file || !msg.fileName) return false
+    const lower = msg.fileName.toLowerCase()
+    if (!lower.endsWith('.schedules.yaml') && !lower.endsWith('.schedules.yml')) return false
+
+    const chatId = msg.chatId
+    const MAX_IMPORT_BYTES = 256 * 1024
+
+    try {
+      const { readFileSync, statSync } = await import('node:fs')
+      const actualSize = msg.fileBytes || statSync(msg.file).size
+      if (actualSize > MAX_IMPORT_BYTES) {
+        await client.send(chatId, '⚠️ Schedule import failed: file too large (max 256 KB).')
+        return true
+      }
+      const yamlStr = readFileSync(msg.file, 'utf-8')
+      if (yamlStr.length > MAX_IMPORT_BYTES) {
+        await client.send(chatId, '⚠️ Schedule import failed: file too large (max 256 KB).')
+        return true
+      }
+
+      const { jobs, skippedExpired, sourceChatId } = parseSchedulesYaml(yamlStr, chatId)
+      let created = 0
+      const failures: string[] = []
+      for (const job of jobs) {
+        try {
+          scheduler.add(job)
+          created++
+        } catch (err) {
+          failures.push(`"${job.cron}": ${err instanceof Error ? err.message : err}`)
+        }
+      }
+
+      const noteSource = sourceChatId !== null && sourceChatId !== chatId ? ` (from chat ${sourceChatId})` : ''
+      const skippedNote = skippedExpired > 0 ? ` ${skippedExpired} expired one-shot(s) skipped.` : ''
+      const failNote = failures.length > 0 ? ` ${failures.length} failed: ${failures.slice(0, 3).join('; ')}` : ''
+      await client.send(
+        chatId,
+        `✅ Imported ${created} schedule(s) into this chat${noteSource}.${skippedNote}${failNote}`,
+      )
+      logf('import: %d schedule(s) imported from attachment in chat %d (skipped %d expired, %d failed)', created, chatId, skippedExpired, failures.length)
+      return true
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      const short = message.length > 200 ? message.slice(0, 200) + '...' : message
+      await client.send(chatId, `⚠️ Couldn't import schedules from "${msg.fileName}": ${short}`)
+      logf('import: schedule import failed for chat %d file=%s: %v', chatId, msg.fileName, err)
+      return false
+    }
+  }
+
+  /**
    * Attempt to transcribe a voice message. Returns an enriched copy of
    * the message with the transcript prepended to text, null if STT is
    * unavailable/the message isn't a voice message/transcription fails
@@ -2388,6 +2487,10 @@ async function main(): Promise<void> {
   const runSubagentTurn = async (msg: Message): Promise<void> => {
     // Intercept .familiar.yaml/.familiar.yml attachments as familiar imports.
     if (await tryImportFamiliarAttachment(msg)) return
+    // Intercept .schedules.yaml/.schedules.yml — must run BEFORE the
+    // generic .yaml agent-import intercept (which would otherwise
+    // match first and try to parse as an agent definition).
+    if (await tryImportSchedulesAttachment(msg)) return
     // Intercept .yaml/.yml attachments as agent imports.
     if (await tryImportAgentAttachment(msg)) return
 
@@ -2619,6 +2722,18 @@ async function main(): Promise<void> {
         logf('dispatch: chat=%d path=tour-command text=%s', msg.chatId, trimmed)
         tutorial.clearTutorial(msg.chatId)
         startTutorialForChat(msg.chatId)
+        return
+      }
+      // Schedules export: dispatcher generates a .schedules.yaml from
+      // this chat's recurring schedules and posts it as an attachment.
+      // Symmetric to the import attachment intercept further below
+      // (.schedules.yaml dropped into any paired chat). Zero token
+      // cost — no MCP tool, no subagent involvement. (#67)
+      if (trimmed === '/export-schedules' || trimmed === '/export-schedule') {
+        logf('dispatch: chat=%d path=export-schedules', msg.chatId)
+        await handleExportSchedulesCommand(msg.chatId).catch((err) => {
+          logf('export-schedules: failed for chat=%d: %v', msg.chatId, err)
+        })
         return
       }
       // Tutorial intercept runs in the dispatcher, not the subagent —
