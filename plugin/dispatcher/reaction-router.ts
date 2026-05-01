@@ -21,8 +21,8 @@ import type { ReactionEvent } from '../dc-client.js'
 export interface ReactionRouterOptions {
   /** True if the chat is paired / on the access allowlist. */
   isAllowed: (chatId: number) => boolean
-  /** Returns the owner contact id for a chat, or null if unowned / legacy. */
-  getOwner: (chatId: number) => number | null
+  /** Returns the responsible contact id for a chat, or null if unowned. */
+  firstPermissionedContact: (chatId: number) => number | null
   /** True if a live subagent is cached for the chat. */
   hasLiveSubagent: (chatId: number) => boolean
   /** Dispatch a synthetic user turn through the subagent cache. */
@@ -64,7 +64,7 @@ export class ReactionRouter {
       this.logf('reaction: drop chat=%d not paired', ev.chatId)
       return
     }
-    const owner = this.opts.getOwner(ev.chatId)
+    const owner = this.opts.firstPermissionedContact(ev.chatId)
     if (owner !== null && ev.fromId !== owner) {
       this.logf('reaction: drop chat=%d non-owner fromId=%d owner=%d', ev.chatId, ev.fromId, owner)
       return

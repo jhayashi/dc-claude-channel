@@ -398,7 +398,7 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
       : undefined
   // Resolve the owner's display name from their DC contact card.
   let userName: string | undefined
-  const ownerContactId = access.getOwner(chatId)
+  const ownerContactId = access.firstPermissionedContact(chatId)
   if (ownerContactId) {
     userName = (await client.getContactName(ownerContactId)) ?? undefined
   }
@@ -733,9 +733,9 @@ const socketServer = new SocketServer({
           source: 'subagent',
           tool: frame.tool,
           callerChatId: req.chatId,
-          callerContactId: access.getOwner(req.chatId),
+          callerContactId: access.firstPermissionedContact(req.chatId),
           argChatId,
-          targetOwner: argChatId !== null ? access.getOwner(argChatId) : null,
+          targetOwner: argChatId !== null ? access.firstPermissionedContact(argChatId) : null,
           durationMs: Date.now() - start,
           ok,
           errorCode,
@@ -1571,7 +1571,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         const ownedChats = access.chatsForOwner(contactId)
         const info = await client.getContact(contactId).catch(() => null)
         const isPairingContactOfQueriedChat = chatIdQ != null
-          ? access.getOwner(chatIdQ) === contactId
+          ? access.firstPermissionedContact(chatIdQ) === contactId
           : false
         const result = {
           contactId,
@@ -1900,7 +1900,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       callerChatId: null,
       callerContactId: null,
       argChatId: argChatId !== null && !Number.isNaN(argChatId) ? argChatId : null,
-      targetOwner: argChatId !== null && !Number.isNaN(argChatId) ? access.getOwner(argChatId) : null,
+      targetOwner: argChatId !== null && !Number.isNaN(argChatId) ? access.firstPermissionedContact(argChatId) : null,
       durationMs: Date.now() - start,
       ok,
       errorCode,
@@ -2744,7 +2744,7 @@ async function main(): Promise<void> {
     isPaired: (chatId) => access.isAllowed(chatId),
     isAuthorized: (msg) => {
       if (!msg.fromId) return true
-      const owner = access.getOwner(msg.chatId)
+      const owner = access.firstPermissionedContact(msg.chatId)
       if (!owner) return true
       if (msg.fromId === owner) return true
       // Non-owner in a group: silently ignore (router logs).
@@ -2844,7 +2844,7 @@ async function main(): Promise<void> {
   // Reaction event router — see dispatcher/reaction-router.ts.
   const reactionRouter = new ReactionRouter({
     isAllowed: (chatId) => access.isAllowed(chatId),
-    getOwner: (chatId) => access.getOwner(chatId),
+    firstPermissionedContact: (chatId) => access.firstPermissionedContact(chatId),
     hasLiveSubagent: (chatId) => subagentCache.hasLive(chatId),
     dispatchSynthetic: async (chatId, text) => {
       try {
@@ -2939,7 +2939,7 @@ async function main(): Promise<void> {
       // the owner's hash for that chat). See plugin/webxdc-filter.ts.
       const chatContacts = await client.getChatContacts(entry.chatId).catch(() => [])
       const filtered = await filterUpdatesByOwner(updates, {
-        owner: access.getOwner(entry.chatId),
+        owner: access.firstPermissionedContact(entry.chatId),
         chatId: entry.chatId,
         msgId,
         appId: entry.app.id,

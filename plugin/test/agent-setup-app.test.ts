@@ -221,7 +221,7 @@ describe('createReuseChat', () => {
     const { ctx } = makeStubCtx(500)
     await createReuseChat(ctx, agent, 11)
     expect(access.isAllowed(500)).toBe(true)
-    expect(access.getOwner(500)).toBe(11)
+    expect(access.firstPermissionedContact(500)).toBe(11)
   })
 
   test('sends the intro greeting in the new chat', async () => {

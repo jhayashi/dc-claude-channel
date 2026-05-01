@@ -1040,7 +1040,7 @@ export const agentSetupApp: WebXDCApp = {
       // Resolve the owner contact for the new chat (1:1 source: extract from
       // contacts; group source: use the stored owner).
       const resolveOwner = async (): Promise<number | null> => {
-        let ownerContactId = access.getOwner(session!.sourceChatId)
+        let ownerContactId = access.firstPermissionedContact(session!.sourceChatId)
         if (ownerContactId) return ownerContactId
         try {
           const contacts = await ctx.client.getChatContacts(session!.sourceChatId)

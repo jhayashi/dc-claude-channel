@@ -31,7 +31,7 @@ function makeRouter(overrides: {
   const timers: FakeTimer[] = []
   const router = new ReactionRouter({
     isAllowed: (id) => allowed.has(id),
-    getOwner: (id) => owners.get(id) ?? null,
+    firstPermissionedContact: (id) => owners.get(id) ?? null,
     hasLiveSubagent: (id) => live.has(id),
     dispatchSynthetic: async (chatId, text) => { dispatched.push({ chatId, text }) },
     debounceMs: 100,
