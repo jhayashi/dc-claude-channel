@@ -19,7 +19,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { chatsForOwner, isKnownOwner, listPaired } from "./chat-allowlist.js";
+import { chatsForOwner, hasAnyOwner, isKnownOwner, listPaired } from "./chat-allowlist.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -125,12 +125,24 @@ export function listHumans(): HumanPrincipal[] {
   return out;
 }
 
-/** Remove a human principal record. Silently ignores missing files. */
+/**
+ * Remove a human principal record. Silently ignores missing files.
+ *
+ * Other I/O errors (EACCES on a read-only FS, etc.) are surfaced via
+ * stderr — the caller path is per-contact unpair, where a silent
+ * failure would mean the user sees a "deleted" toast but the
+ * principal stays put and `isContactApproved` keeps returning true.
+ * Stderr lets the dispatcher's debug.log capture it.
+ */
 export function removeHuman(contactId: number): void {
   try {
     unlinkSync(humanPath(contactId));
-  } catch {
-    // ignore
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === "ENOENT") return; // expected — no record to remove
+    // Real failure (EACCES, EBUSY, EROFS, etc.) — log so the unpair
+    // operator notices the principal didn't actually go away.
+    console.error(`principals.removeHuman(${contactId}) failed:`, err);
   }
 }
 
@@ -200,7 +212,10 @@ export function chatsFor(p: Principal): number[] {
  * Source of truth as of v1.2.2 (#66 Option A): the on-disk human
  * principal record. Falls back to the legacy `isKnownOwner` chat-
  * allowlist scan to cover pre-Phase-2 installs that haven't yet
- * backfilled and edge cases where backfill hasn't run.
+ * backfilled. `backfillFromAllowlist()` runs at dispatcher startup
+ * (server.ts main()) before message routing begins, so the legacy
+ * fallback only matters during the boot window or for state that
+ * predates Phase 2 entirely.
  *
  * Used as the auth gate for incoming messages: any chat where an
  * approved contact sends a message is auto-paired without ceremony.
@@ -209,4 +224,24 @@ export function chatsFor(p: Principal): number[] {
  */
 export function isContactApproved(contactId: number): boolean {
   return loadHuman(contactId) !== null || isKnownOwner(contactId);
+}
+
+/**
+ * Is the bot in "fresh-install" mode (no contacts have ever paired)?
+ *
+ * The principal-aware counterpart to `chat-allowlist.hasAnyOwner()`.
+ * Returns true if ANY layer (principal record OR chat-allowlist
+ * entry with an owner) shows a paired contact. Auth gates that
+ * gate on "stranger lockout vs fresh-install" must use this — the
+ * legacy `hasAnyOwner` reads only the chat-allowlist, so a contact
+ * that exists as a principal-only record (Option A's new edge case:
+ * unpair-via-removeChat-only, or a future tool that creates a
+ * principal without chats) would falsely register as "no owners
+ * exist" and let a stranger pair through.
+ */
+export function hasAnyApprovedContact(): boolean {
+  if (hasAnyOwner()) return true;
+  // listHumans does one readdir; cheap. Returns the union of chat-
+  // allowlist owners and principal records.
+  return listHumans().length > 0;
 }

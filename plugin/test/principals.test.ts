@@ -240,4 +240,67 @@ describe("principals — isContactApproved (#66 Option A)", () => {
     expect(access.isContactApproved(42)).toBe(false);
     expect(access.isContactApproved(99)).toBe(true);
   });
+
+  test("removeChat alone (principal stays) — Option A's actual new state", () => {
+    // Symmetric to "removeHuman alone (chats stay)" in auto-pair.test.
+    // After Phase A unpair runs cleanupChatState (which removes chat
+    // entries) and BEFORE removeHuman fires, this is the live state:
+    // principal exists, no chats. isContactApproved must read true via
+    // the principal.
+    access.recordHumanPair(42);
+    access.addChat(7, 42);
+    access.removeChat(7);
+    expect(access.loadHuman(42)).not.toBeNull();
+    expect(access.chatsForOwner(42)).toEqual([]);
+    expect(access.isContactApproved(42)).toBe(true);
+  });
+});
+
+describe("principals — hasAnyApprovedContact", () => {
+  test("false when both layers are empty (fresh install)", () => {
+    expect(access.hasAnyApprovedContact()).toBe(false);
+  });
+
+  test("true when only a chat-allowlist entry exists (legacy install)", () => {
+    access.addChat(7, 42);
+    expect(access.hasAnyApprovedContact()).toBe(true);
+  });
+
+  test("true when only a principal record exists (Option A new state)", () => {
+    // The asymmetry the reviewer flagged: a contact with a principal
+    // but no chats was invisible to the legacy hasAnyOwner. The new
+    // helper sees them.
+    access.recordHumanPair(42);
+    expect(access.hasAnyApprovedContact()).toBe(true);
+  });
+
+  test("true when both layers have entries", () => {
+    access.recordHumanPair(42);
+    access.addChat(7, 42);
+    expect(access.hasAnyApprovedContact()).toBe(true);
+  });
+
+  test("returns false after every contact is fully unpaired", () => {
+    access.recordHumanPair(42);
+    access.addChat(7, 42);
+    expect(access.hasAnyApprovedContact()).toBe(true);
+    access.removeChat(7);
+    access.removeHuman(42);
+    expect(access.hasAnyApprovedContact()).toBe(false);
+  });
+});
+
+describe("principals — removeHuman error handling (P2.5)", () => {
+  test("missing file is silent (expected — idempotent unpair)", () => {
+    // Capture stderr to ensure no spurious log.
+    const origErr = console.error;
+    let logged = false;
+    console.error = () => { logged = true; };
+    try {
+      access.removeHuman(99999); // never existed
+      expect(logged).toBe(false);
+    } finally {
+      console.error = origErr;
+    }
+  });
 });

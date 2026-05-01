@@ -1496,10 +1496,14 @@ export const agentSetupApp: WebXDCApp = {
         }
 
         const chatIds = access.chatsForOwner(contactId)
-        if (chatIds.length === 0) {
-          await sendErr('No paired chats for this contact')
+        const principalExists = access.loadHuman(contactId) !== null
+        if (chatIds.length === 0 && !principalExists) {
+          await sendErr('No paired chats or principal record for this contact')
           continue
         }
+        // chatIds.length === 0 && principalExists is the Option A edge
+        // case — orphan principal with no chats. Fall through; the
+        // loop below is a no-op, removeHuman wipes the orphan record.
 
         // Send the "done" response first so the card can update its UI before
         // cleanup tears down the chats — if the source chat is among those

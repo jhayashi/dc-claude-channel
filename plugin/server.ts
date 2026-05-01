@@ -1281,9 +1281,13 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           return { content: [{ type: 'text' as const, text: `invalid contact_id: ${contactIdStr}` }], isError: true }
         }
         const chatIds = access.chatsForOwner(contactId)
-        if (chatIds.length === 0) {
-          return { content: [{ type: 'text' as const, text: `No paired chats for contact ${contactId}.` }], isError: true }
+        const principalExists = access.loadHuman(contactId) !== null
+        if (chatIds.length === 0 && !principalExists) {
+          return { content: [{ type: 'text' as const, text: `No paired chats or principal record for contact ${contactId}.` }], isError: true }
         }
+        // chatIds.length === 0 && principalExists is the Option A edge
+        // case — orphan principal with no chats. Fall through, the loop
+        // is a no-op and removeHuman wipes the orphan record.
 
         const info = await client.getContact(contactId).catch(() => null)
         const display = info?.displayName || info?.name || info?.address || `contact ${contactId}`
@@ -2396,7 +2400,7 @@ async function main(): Promise<void> {
   const handleUnpairedMessage = async (msg: Message): Promise<void> => {
     // Once a principal is established, only known principals can initiate new pairings.
     // (#66 Option A — auth gate is contact identity, not chat allowlist.)
-    if (access.hasAnyOwner() && msg.fromId && !access.isContactApproved(msg.fromId)) {
+    if (access.hasAnyApprovedContact() && msg.fromId && !access.isContactApproved(msg.fromId)) {
       logf('dc channel: ignoring pairing request from unknown contact %d in chat %d', msg.fromId, msg.chatId)
       return
     }
@@ -2568,7 +2572,7 @@ async function main(): Promise<void> {
       // initiate new pairings even within the armed window. This prevents
       // a stray stale-QR scan from a stranger from hijacking the flow.
       // (#66 Option A — checks principals + chat-allowlist.)
-      if (access.hasAnyOwner() && !access.isContactApproved(contactId)) {
+      if (access.hasAnyApprovedContact() && !access.isContactApproved(contactId)) {
         logf('dc channel: securejoin armed but contact=%d is not an approved principal; ignoring', contactId)
         return
       }
