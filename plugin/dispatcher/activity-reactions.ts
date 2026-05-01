@@ -3,41 +3,47 @@
  *
  * Holds per-chat "current turn target message" state and emits a
  * single DC reaction per tool class, debounced so that e.g. five Read
- * calls in a row only produce one 🔍. Reactions fire for ALL agents
- * (skip-permissions and permission-card) so the user always sees what
- * Claude is doing. A random thinking emoji is emitted at turn start
- * before any tool fires.
+ * calls in a row only produce one reaction. Reactions fire for ALL
+ * agents (skip-permissions and permission-card) so the user always
+ * sees what Claude is doing. A random thinking emoji is emitted at
+ * turn start before any tool fires.
+ *
+ * Palette (#65, v1.2.2):
+ *   thinking   — turn-start indicator AND merged read/plan tools.
+ *                Read/Grep/Glob/LS and EnterPlanMode/ExitPlanMode are
+ *                indistinguishable from "subagent is figuring something
+ *                out" from the user's POV; collapsing them lets the
+ *                richer pool stay visible without competing classes.
+ *   coding     — Edit/Write/MultiEdit/NotebookEdit
+ *   running   — Bash
+ *   web       — WebFetch/WebSearch
+ *   delegating — Agent/Task
+ *   todo-step  — TodoWrite (one class per index, never debounced)
+ *
+ * AI-magic emojis (✨ 🔮 🪄) intentionally NOT in any pool — they
+ * undercut the "actually doing work" tone of the rest of the palette.
+ *
+ * Note on user-visible firing rate: REACTION_DEBOUNCE_MS (60s) caps
+ * reactions to one per chat per minute, so on a fast multi-tool turn
+ * (most turns) only the turn-start thinking emoji fires. Class diversity
+ * matters for slow turns (>60s with mixed tools) and for visual
+ * differentiation when the time-window opens.
  */
 
 export const CODING_EMOJIS = [
   '\u{1FAA1}',   // 🪡 Sewing needle
-  '\u{1FA84}',   // 🪄 Magic wand
-  '\u270F\uFE0F', // ✏️ Pencil
-  '\u{1F58A}\uFE0F', // 🖊️ Pen
+  '✏️', // ✏️ Pencil
+  '\u{1F58A}️', // 🖊️ Pen
   '\u{1F3A8}',   // 🎨 Artist palette
 ]
-export const READING_EMOJIS = [
-  '\u{1F50D}',   // 🔍 Magnifying glass left
-  '\u{1F50E}',   // 🔎 Magnifying glass right
-  '\u{1F440}',   // 👀 Eyes
-  '\u{1F9D0}',   // 🧐 Monocle face
-  '\u{1F441}\uFE0F', // 👁️ Single eye
-]
 export const RUNNING_EMOJIS = [
-  '\u2699\uFE0F', // ⚙️ Gear
+  '⚙️', // ⚙️ Gear
   '\u{1F4A5}',   // 💥 Collision
   '\u{1F528}',   // 🔨 Hammer
   '\u{1F527}',   // 🔧 Wrench
-  '\u26CF\uFE0F', // ⛏️ Pick
+  '⛏️', // ⛏️ Pick
 ]
 const EMOJI_WEB = '\u{1F310}'                        // 🌐
-export const PLANNING_EMOJIS = [
-  '\u270D\uFE0F', // ✍️ Writing hand
-  '\u{1F5FA}\uFE0F', // 🗺️ World map
-  '\u{1F9ED}',   // 🧭 Compass
-  '\u{1F52C}',   // 🔬 Microscope
-  '\u{1F575}\uFE0F', // 🕵️ Detective
-]
 const EMOJI_DELEGATING = '\u{1F91D}'                 // 🤝
 export const THINKING_EMOJIS = [
   '\u{1F914}',                    // 🤔
@@ -47,10 +53,14 @@ export const THINKING_EMOJIS = [
   '\u{1F9D1}\u{200D}\u{1F373}',  // 🧑‍🍳
   '\u{1F4A1}',                    // 💡
   '\u{1F937}',                    // 🤷
-  '\u2728',                       // ✨
-  '\u26A1',                       // ⚡
-  '\u{1F52E}',                    // 🔮
+  '⚡',                       // ⚡
   '\u{1F47E}',                    // 👾
+  // Merged-in reading set (#65): Read/Grep/Glob/LS map here.
+  '\u{1F50D}',                    // 🔍 Magnifying glass left
+  '\u{1F50E}',                    // 🔎 Magnifying glass right
+  '\u{1F440}',                    // 👀 Eyes
+  '\u{1F9D0}',                    // 🧐 Monocle face
+  '\u{1F441}️',              // 👁️ Single eye
 ]
 
 const CODING_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
@@ -70,10 +80,10 @@ function pick(pool: string[]): string {
 export function computeEmoji(toolName: string, toolInput: unknown): { cls: string; emoji: string } | null {
   if (toolName.startsWith('dc_')) return null
   if (CODING_TOOLS.has(toolName)) return { cls: 'coding', emoji: pick(CODING_EMOJIS) }
-  if (READING_TOOLS.has(toolName)) return { cls: 'reading', emoji: pick(READING_EMOJIS) }
+  if (READING_TOOLS.has(toolName)) return { cls: 'thinking', emoji: pick(THINKING_EMOJIS) }
   if (toolName === 'Bash') return { cls: 'running', emoji: pick(RUNNING_EMOJIS) }
   if (WEB_TOOLS.has(toolName)) return { cls: 'web', emoji: EMOJI_WEB }
-  if (toolName === 'EnterPlanMode' || toolName === 'ExitPlanMode') return { cls: 'planning', emoji: pick(PLANNING_EMOJIS) }
+  if (toolName === 'EnterPlanMode' || toolName === 'ExitPlanMode') return { cls: 'thinking', emoji: pick(THINKING_EMOJIS) }
   if (toolName === 'Agent' || toolName === 'Task') return { cls: 'delegating', emoji: EMOJI_DELEGATING }
   if (toolName === 'TodoWrite') { const e = todoStepEmoji(toolInput); return e ? { cls: `todo-${e}`, emoji: e } : null }
   return null
@@ -95,7 +105,7 @@ export function todoStepEmoji(input: unknown): string | null {
   if (idx < 0) return null
   if (idx < 9) {
     // Keycap sequence: DIGIT + VS16 + COMBINING ENCLOSING KEYCAP
-    return `${String(idx + 1)}\uFE0F\u20E3`
+    return `${String(idx + 1)}️⃣`
   }
   const letterIdx = idx - 9
   if (letterIdx >= 26) return null
@@ -126,6 +136,8 @@ export interface ActivityReactorDeps {
   sendReaction: (msgId: number, emoji: string) => Promise<void>
   /** Injectable clock for tests; defaults to Date.now. */
   now?: () => number
+  /** Optional logf for diagnostics; ignored by current implementation. */
+  logf?: (format: string, ...args: unknown[]) => void
 }
 
 /**

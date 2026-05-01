@@ -6,14 +6,11 @@ import {
   THINKING_EMOJIS,
   CODING_EMOJIS,
   RUNNING_EMOJIS,
-  READING_EMOJIS,
-  PLANNING_EMOJIS,
 } from '../dispatcher/activity-reactions'
 
 const codingSet = new Set(CODING_EMOJIS)
 const runningSet = new Set(RUNNING_EMOJIS)
-const readingSet = new Set(READING_EMOJIS)
-const planningSet = new Set(PLANNING_EMOJIS)
+const thinkingSet = new Set(THINKING_EMOJIS)
 
 describe('computeEmoji tool classes', () => {
   test('coding tools → coding class, random from coding pool', () => {
@@ -24,11 +21,11 @@ describe('computeEmoji tool classes', () => {
     }
   })
 
-  test('reading tools → reading class, random from reading pool', () => {
+  test('reading tools → thinking class, random from thinking pool (#65 merge)', () => {
     for (const tool of ['Read', 'Grep', 'Glob', 'LS']) {
       const r = computeEmoji(tool, {})!
-      expect(r.cls).toBe('reading')
-      expect(readingSet.has(r.emoji)).toBe(true)
+      expect(r.cls).toBe('thinking')
+      expect(thinkingSet.has(r.emoji)).toBe(true)
     }
   })
 
@@ -43,13 +40,13 @@ describe('computeEmoji tool classes', () => {
     expect(computeEmoji('WebSearch', {})).toEqual({ cls: 'web', emoji: '\u{1F310}' })
   })
 
-  test('EnterPlanMode / ExitPlanMode → planning class, random from planning pool', () => {
+  test('EnterPlanMode / ExitPlanMode → thinking class (#65 merge)', () => {
     const r1 = computeEmoji('EnterPlanMode', {})!
     const r2 = computeEmoji('ExitPlanMode', {})!
-    expect(r1.cls).toBe('planning')
-    expect(planningSet.has(r1.emoji)).toBe(true)
-    expect(r2.cls).toBe('planning')
-    expect(planningSet.has(r2.emoji)).toBe(true)
+    expect(r1.cls).toBe('thinking')
+    expect(thinkingSet.has(r1.emoji)).toBe(true)
+    expect(r2.cls).toBe('thinking')
+    expect(thinkingSet.has(r2.emoji)).toBe(true)
   })
 
   test('Agent / Task → 🤝', () => {
@@ -65,6 +62,14 @@ describe('computeEmoji tool classes', () => {
 
   test('unknown tool returns null', () => {
     expect(computeEmoji('SomeFutureTool', {})).toBeNull()
+  })
+
+  test('AI-magic emojis (✨ 🔮 🪄) are NOT in any pool (#65)', () => {
+    // Sanity guard: the pruned three should never resurface.
+    const all = [...CODING_EMOJIS, ...RUNNING_EMOJIS, ...THINKING_EMOJIS]
+    expect(all).not.toContain('✨')      // ✨
+    expect(all).not.toContain('\u{1F52E}')   // 🔮
+    expect(all).not.toContain('\u{1FA84}')   // 🪄
   })
 })
 
@@ -91,7 +96,7 @@ describe('todoStepEmoji', () => {
 
   test('first in_progress at index 0 → 1️⃣', () => {
     const todos = [{ status: 'in_progress', content: 'a' }]
-    expect(todoStepEmoji({ todos })).toBe('1\uFE0F\u20E3')
+    expect(todoStepEmoji({ todos })).toBe('1️⃣')
   })
 
   test('in_progress at index 5 → 6️⃣', () => {
@@ -100,14 +105,14 @@ describe('todoStepEmoji', () => {
       { status: 'completed' }, { status: 'completed' },
       { status: 'completed' }, { status: 'in_progress' },
     ]
-    expect(todoStepEmoji({ todos })).toBe('6\uFE0F\u20E3')
+    expect(todoStepEmoji({ todos })).toBe('6️⃣')
   })
 
   test('in_progress at index 8 → 9️⃣', () => {
     const todos = Array.from({ length: 9 }, (_, i) => ({
       status: i === 8 ? 'in_progress' : 'completed',
     }))
-    expect(todoStepEmoji({ todos })).toBe('9\uFE0F\u20E3')
+    expect(todoStepEmoji({ todos })).toBe('9️⃣')
   })
 
   test('in_progress at index 9 → 🇦 (regional indicator A)', () => {
@@ -136,7 +141,23 @@ describe('todoStepEmoji', () => {
       { status: 'in_progress', content: 'first' },
       { status: 'in_progress', content: 'second' },
     ]
-    expect(todoStepEmoji({ todos })).toBe('1\uFE0F\u20E3')
+    expect(todoStepEmoji({ todos })).toBe('1️⃣')
+  })
+
+  test('TodoWrite per-step class is unique per index — never debounced', () => {
+    // Doc test: confirm the issue's premise that step indicators don't
+    // collapse via the class-debounce. Each in_progress index produces
+    // a distinct class string `todo-${emoji}`, so consecutive TodoWrite
+    // calls advancing the in_progress pointer always have different
+    // classes. (Whether the user SEES them in practice is gated by the
+    // 60s time-debounce, which is a separate concern.)
+    const t1 = computeEmoji('TodoWrite', { todos: [{ status: 'in_progress' }] })!
+    const t2 = computeEmoji('TodoWrite', { todos: [
+      { status: 'completed' }, { status: 'in_progress' },
+    ] })!
+    expect(t1.cls).not.toBe(t2.cls)
+    expect(t1.cls).toBe('todo-1️⃣')
+    expect(t2.cls).toBe('todo-2️⃣')
   })
 })
 
@@ -165,7 +186,6 @@ describe('createActivityReactor', () => {
     expect(calls).toEqual([])
   })
 
-  const thinkingSet = new Set(THINKING_EMOJIS)
   function isThinking(emoji: string) { return thinkingSet.has(emoji) }
 
   test('setTurnTarget emits immediate thinking indicator', async () => {
@@ -202,48 +222,51 @@ describe('createActivityReactor', () => {
     expect(isThinking(calls[0].emoji)).toBe(true)
   })
 
-  test('debounces repeated same class', async () => {
+  test('reading tools collapse into the initial thinking emoji (#65)', async () => {
+    // After #65, Read/Grep/Glob/LS all map to class='thinking'. The
+    // turn-start thinking emoji already set lastClass='thinking', so
+    // any subsequent reading-tool reaction is class-debounced — no
+    // new emoji fires regardless of how many reading tools follow,
+    // even after the time-debounce window opens. This is intentional:
+    // the user already sees the thinking indicator at turn start.
     const { reactor, calls, clock } = makeReactor()
     reactor.setTurnTarget(1, 100)
     clock.t += 60_000
     reactor.reactForTool(1, 'Read', {})
     reactor.reactForTool(1, 'Grep', {})
     reactor.reactForTool(1, 'Glob', {})
+    reactor.reactForTool(1, 'EnterPlanMode', {})
     await new Promise((r) => setTimeout(r, 0))
-    expect(calls).toHaveLength(2)
+    expect(calls).toHaveLength(1)
     expect(isThinking(calls[0].emoji)).toBe(true)
-    expect(calls[1].msgId).toBe(100); expect(readingSet.has(calls[1].emoji)).toBe(true)
   })
 
   test('class changes still rate-limited to one fire per 60s', async () => {
     const { reactor, calls, clock } = makeReactor()
     reactor.setTurnTarget(1, 100)
     clock.t += 60_000
-    reactor.reactForTool(1, 'Read', {})   // fires 🔍
-    clock.t += 60_000
     reactor.reactForTool(1, 'Bash', {})   // fires running emoji
     clock.t += 60_000
     reactor.reactForTool(1, 'Edit', {})   // fires coding emoji
     await new Promise((r) => setTimeout(r, 0))
-    expect(calls).toHaveLength(4)
+    expect(calls).toHaveLength(3)
     expect(isThinking(calls[0].emoji)).toBe(true)
-    expect(readingSet.has(calls[1].emoji)).toBe(true)
-    expect(runningSet.has(calls[2].emoji)).toBe(true)
-    expect(codingSet.has(calls[3].emoji)).toBe(true)
+    expect(runningSet.has(calls[1].emoji)).toBe(true)
+    expect(codingSet.has(calls[2].emoji)).toBe(true)
   })
 
   test('skips unknown tools without disturbing debounce state', async () => {
     const { reactor, calls, clock } = makeReactor()
     reactor.setTurnTarget(1, 100)
     clock.t += 60_000
-    reactor.reactForTool(1, 'Read', {})
-    reactor.reactForTool(1, 'dc_send', {})   // skipped
-    reactor.reactForTool(1, 'Unknown', {})   // skipped
-    reactor.reactForTool(1, 'Grep', {})      // class debounced (still 🔍)
+    reactor.reactForTool(1, 'Bash', {})        // fires running
+    reactor.reactForTool(1, 'dc_send', {})     // skipped
+    reactor.reactForTool(1, 'Unknown', {})     // skipped
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toHaveLength(2)
     expect(isThinking(calls[0].emoji)).toBe(true)
-    expect(calls[1].msgId).toBe(100); expect(readingSet.has(calls[1].emoji)).toBe(true)
+    expect(calls[1].msgId).toBe(100)
+    expect(runningSet.has(calls[1].emoji)).toBe(true)
   })
 
   test('clearTurnTarget drops state so subsequent calls no-op', async () => {
@@ -286,17 +309,16 @@ describe('createActivityReactor', () => {
     reactor.setTurnTarget(1, 100)
     reactor.setTurnTarget(2, 200)
     clock.t += 60_000
-    reactor.reactForTool(1, 'Read', {})
-    reactor.reactForTool(2, 'Bash', {})
+    reactor.reactForTool(1, 'Bash', {})
+    reactor.reactForTool(2, 'Edit', {})
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toHaveLength(4)
     expect(isThinking(calls[0].emoji)).toBe(true)
     expect(calls[0].msgId).toBe(100)
     expect(isThinking(calls[1].emoji)).toBe(true)
     expect(calls[1].msgId).toBe(200)
-    expect(calls[2].msgId).toBe(100); expect(readingSet.has(calls[2].emoji)).toBe(true)
-    expect(calls[3].msgId).toBe(200)
-    expect(runningSet.has(calls[3].emoji)).toBe(true)
+    expect(calls[2].msgId).toBe(100); expect(runningSet.has(calls[2].emoji)).toBe(true)
+    expect(calls[3].msgId).toBe(200); expect(codingSet.has(calls[3].emoji)).toBe(true)
   })
 
   test('swallows sendReaction failures silently', async () => {
