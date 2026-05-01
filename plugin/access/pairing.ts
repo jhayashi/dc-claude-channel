@@ -11,7 +11,7 @@
  */
 
 import { addChat } from "./chat-allowlist.js";
-import { recordHumanPair } from "./principals.js";
+import { recordContactPair } from "./principals.js";
 
 // --- Constants ---
 
@@ -166,9 +166,9 @@ export function completePairing(code: string): number {
 
   pending.delete(code);
   addChat(p.chatId, p.contactId);
-  // Phase 2: also write a HumanPrincipal record. Idempotent — preserves
+  // Phase 2: also write a ContactPrincipal record. Idempotent — preserves
   // firstPairedAt on re-pair.
-  recordHumanPair(p.contactId);
+  recordContactPair(p.contactId);
   return p.chatId;
 }
 

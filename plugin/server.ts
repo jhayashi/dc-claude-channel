@@ -1299,13 +1299,13 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           return { content: [{ type: 'text' as const, text: `invalid contact_id: ${contactIdStr}` }], isError: true }
         }
         const chatIds = access.chatsForOwner(contactId)
-        const principalExists = access.loadHuman(contactId) !== null
+        const principalExists = access.loadContact(contactId) !== null
         if (chatIds.length === 0 && !principalExists) {
           return { content: [{ type: 'text' as const, text: `No paired chats or principal record for contact ${contactId}.` }], isError: true }
         }
         // chatIds.length === 0 && principalExists is the Option A edge
         // case — orphan principal with no chats. Fall through, the loop
-        // is a no-op and removeHuman wipes the orphan record.
+        // is a no-op and removeContact wipes the orphan record.
 
         const info = await client.getContact(contactId).catch(() => null)
         const display = info?.displayName || info?.name || info?.address || `contact ${contactId}`
@@ -1330,7 +1330,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         // Wipe the principal record so backfill on next startup doesn't
         // resurrect the contact, and so isContactPermissioned returns false.
         // (#66 Option A — full per-contact unpair wipes both layers.)
-        access.removeHuman(contactId)
+        access.removeContact(contactId)
         logf('dc channel: terminal-unpaired contact %d (%s, %d chat(s))', contactId, mode, chatIds.length)
         const verb = mode === 'delete' ? 'deleted' : 'frozen (read-only)'
         return { content: [{ type: 'text' as const, text: `Unpaired ${display} (contact ${contactId}): ${chatIds.length} chat(s) ${verb}.` }] }
@@ -1567,7 +1567,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         const chatIdRaw = (args.chat_id as string | undefined)?.trim()
         const chatIdQ = chatIdRaw ? Number(chatIdRaw) : null
         const permissioned = access.isContactPermissioned(contactId)
-        const principal = access.loadHuman(contactId)
+        const principal = access.loadContact(contactId)
         const ownedChats = access.chatsForOwner(contactId)
         const info = await client.getContact(contactId).catch(() => null)
         const isPairingContactOfQueriedChat = chatIdQ != null

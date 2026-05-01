@@ -1,19 +1,31 @@
 /**
  * Principal records — the on-disk source of truth for "who exists" in
- * the channel.  Phase 2 of the identity/teams migration:
+ * the channel. Per the identity/teams migration:
  * `docs/specs/2026-04-20-identity-and-teams-design.md`.
+ *
+ * A `ContactPrincipal` represents any DC contact in the bot's address
+ * book — human or third-party bot. The two are indistinguishable to the
+ * auth model; the role field (subscriber / family-member / trusted-agent
+ * / untrusted-agent / guest) carries the trust-tier distinction. The
+ * "humans/" subdirectory is a v1.2.2 historical artifact; we keep the
+ * path for on-disk backwards compat (a v1.4 cleanup may rename to
+ * "contacts/" with a one-release migration).
  *
  * Schema:
  *   ~/.claude/channels/deltachat/principals/
  *   └── humans/<contactId>.json
- *         { kind: "human", contactId, displayName?, firstPairedAt }
+ *         { kind: "human", contactId, displayName?, firstPairedAt,
+ *           role?, capabilities? }
  *
- * Phase 2 scope: we WRITE these records on pair (so the store starts
- * populating). Reads land in Phase 3 when the compatibility shim
- * routes `isAllowed` through here. Until then, `chat-allowlist.ts` is
- * still the auth gate.
+ * `kind: "human"` on disk is preserved for backwards compat — a v1.4+
+ * `kind: "bot"` may be added if surfacing the human/bot distinction in
+ * UX becomes useful, but the auth model should never read it.
  *
- * `agents/<agentId>.json` arrives in Phase 3 — see the design doc.
+ * `AgentPrincipal` (separate from `ContactPrincipal`) is the v1.4+
+ * managed-agent concept: a bot the dispatcher provisions chatmail for,
+ * with an `agentId` distinct from any `contactId`. Distinct from
+ * "third-party bot in your address book" — those are ContactPrincipals
+ * with role `trusted-agent` / `untrusted-agent`.
  */
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
@@ -26,7 +38,7 @@ import { bundleFor } from "./capability-bundles.js";
 
 export type PrincipalKind = "human" | "agent";
 
-export interface HumanPrincipal {
+export interface ContactPrincipal {
   kind: "human";
   contactId: number;
   displayName?: string;
@@ -62,7 +74,7 @@ export interface AgentPrincipal {
   dispatcherBinding: "main" | string;
 }
 
-export type Principal = HumanPrincipal | AgentPrincipal;
+export type Principal = ContactPrincipal | AgentPrincipal;
 
 // ── Directory plumbing ───────────────────────────────────────────────────────
 
@@ -80,7 +92,7 @@ export function getPrincipalsDir(): string { return _principalsDir }
 /** Override the principals directory (for testing). */
 export function setPrincipalsDir(dir: string): void { _principalsDir = dir }
 
-function humanPath(contactId: number): string {
+function contactPath(contactId: number): string {
   return join(_principalsDir, "humans", `${contactId}.json`);
 }
 
@@ -100,12 +112,12 @@ function atomicWriteJson(path: string, data: unknown): void {
 // ── Human principals ─────────────────────────────────────────────────────────
 
 /** Read a human principal by contact id, or null if missing/corrupt. */
-export function loadHuman(contactId: number): HumanPrincipal | null {
-  const path = humanPath(contactId);
+export function loadContact(contactId: number): ContactPrincipal | null {
+  const path = contactPath(contactId);
   if (!existsSync(path)) return null;
   try {
     const raw = readFileSync(path, "utf-8");
-    const parsed = JSON.parse(raw) as Partial<HumanPrincipal>;
+    const parsed = JSON.parse(raw) as Partial<ContactPrincipal>;
     if (parsed.kind !== "human" || typeof parsed.contactId !== "number" || typeof parsed.firstPairedAt !== "string") {
       return null;
     }
@@ -127,15 +139,15 @@ export function loadHuman(contactId: number): HumanPrincipal | null {
 }
 
 /** Atomically persist a human principal record. */
-export function writeHuman(p: HumanPrincipal): void {
-  atomicWriteJson(humanPath(p.contactId), p);
+export function writeContact(p: ContactPrincipal): void {
+  atomicWriteJson(contactPath(p.contactId), p);
 }
 
 /**
  * List all human principals on disk, sorted by `firstPairedAt` (oldest first)
  * with `contactId` as tiebreaker.
  */
-export function listHumans(): HumanPrincipal[] {
+export function listContacts(): ContactPrincipal[] {
   const dir = join(_principalsDir, "humans");
   let entries: string[];
   try {
@@ -143,12 +155,12 @@ export function listHumans(): HumanPrincipal[] {
   } catch {
     return [];
   }
-  const out: HumanPrincipal[] = [];
+  const out: ContactPrincipal[] = [];
   for (const name of entries) {
     if (!name.endsWith(".json")) continue;
     const id = parseInt(name.slice(0, -5), 10);
     if (Number.isNaN(id)) continue;
-    const p = loadHuman(id);
+    const p = loadContact(id);
     if (p) out.push(p);
   }
   out.sort((a, b) => a.firstPairedAt.localeCompare(b.firstPairedAt) || a.contactId - b.contactId);
@@ -164,15 +176,15 @@ export function listHumans(): HumanPrincipal[] {
  * principal stays put and `isContactPermissioned` keeps returning true.
  * Stderr lets the dispatcher's debug.log capture it.
  */
-export function removeHuman(contactId: number): void {
+export function removeContact(contactId: number): void {
   try {
-    unlinkSync(humanPath(contactId));
+    unlinkSync(contactPath(contactId));
   } catch (err) {
     const code = (err as { code?: string }).code;
     if (code === "ENOENT") return; // expected — no record to remove
     // Real failure (EACCES, EBUSY, EROFS, etc.) — log so the unpair
     // operator notices the principal didn't actually go away.
-    console.error(`principals.removeHuman(${contactId}) failed:`, err);
+    console.error(`principals.removeContact(${contactId}) failed:`, err);
   }
 }
 
@@ -183,15 +195,15 @@ export function removeHuman(contactId: number): void {
  *
  * Hooked into `access.completePairing()` so every pair writes a record.
  */
-export function recordHumanPair(contactId: number, displayName?: string): HumanPrincipal {
-  const existing = loadHuman(contactId);
-  const principal: HumanPrincipal = {
+export function recordContactPair(contactId: number, displayName?: string): ContactPrincipal {
+  const existing = loadContact(contactId);
+  const principal: ContactPrincipal = {
     kind: "human",
     contactId,
     displayName: displayName ?? existing?.displayName,
     firstPairedAt: existing?.firstPairedAt ?? new Date().toISOString(),
   };
-  writeHuman(principal);
+  writeContact(principal);
   return principal;
 }
 
@@ -211,8 +223,8 @@ export function recordHumanPair(contactId: number, displayName?: string): HumanP
 export function backfillFromAllowlist(): number {
   let written = 0;
   for (const dev of listPaired()) {
-    if (loadHuman(dev.contactId) !== null) continue;
-    writeHuman({
+    if (loadContact(dev.contactId) !== null) continue;
+    writeContact({
       kind: "human",
       contactId: dev.contactId,
       firstPairedAt: new Date(dev.pairedAtMs).toISOString(),
@@ -249,11 +261,11 @@ export function chatsFor(p: Principal): number[] {
  *
  * Used as the auth gate for incoming messages: any chat where a
  * permissioned contact sends a message is auto-paired without
- * ceremony. Per-contact unpair (`removeHuman` + chat cleanup) wipes
+ * ceremony. Per-contact unpair (`removeContact` + chat cleanup) wipes
  * the trust fully, so a fully-unpaired contact reads false here.
  */
 export function isContactPermissioned(contactId: number): boolean {
-  return loadHuman(contactId) !== null || isKnownOwner(contactId);
+  return loadContact(contactId) !== null || isKnownOwner(contactId);
 }
 
 /**
@@ -271,9 +283,9 @@ export function isContactPermissioned(contactId: number): boolean {
  */
 export function hasAnyPermissionedContact(): boolean {
   if (hasAnyOwner()) return true;
-  // listHumans does one readdir; cheap. Returns the union of chat-
+  // listContacts does one readdir; cheap. Returns the union of chat-
   // allowlist owners and principal records.
-  return listHumans().length > 0;
+  return listContacts().length > 0;
 }
 
 /**
@@ -292,7 +304,7 @@ export function hasAnyPermissionedContact(): boolean {
  * small JSON read; cheap.
  */
 export function getCapabilitiesFor(contactId: number): string[] {
-  const p = loadHuman(contactId);
+  const p = loadContact(contactId);
   if (!p) return [];
   if (Array.isArray(p.capabilities) && p.capabilities.length > 0) return [...p.capabilities];
   if (typeof p.role === "string" && p.role.length > 0) return [...bundleFor(p.role)];

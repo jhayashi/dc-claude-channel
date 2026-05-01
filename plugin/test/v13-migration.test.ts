@@ -42,8 +42,8 @@ describe("v1.3 migration — full happy path", () => {
 
     // Step 2: backfill writes principals for legacy owners.
     expect(access.backfillFromAllowlist()).toBe(2);
-    expect(access.loadHuman(50)).not.toBeNull();
-    expect(access.loadHuman(60)).not.toBeNull();
+    expect(access.loadContact(50)).not.toBeNull();
+    expect(access.loadContact(60)).not.toBeNull();
 
     // Step 3: membership scan confirms each chat is permissioned.
     const fakeGetChats = async () => [100, 200];
