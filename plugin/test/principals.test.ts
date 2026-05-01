@@ -411,4 +411,19 @@ describe("principals — getCapabilitiesFor (v1.3 slice 1)", () => {
     // Legacy record loaded with role=subscriber default → wildcard bundle.
     expect(access.getCapabilitiesFor(62)).toEqual(["*"]);
   });
+
+  test("explicit empty capabilities array is treated as denied-everywhere", () => {
+    // Reviewer Oliver flagged this: pre-fix, the length>0 guard in
+    // getCapabilitiesFor let `capabilities: []` fall through to the
+    // role bundle (so a `guest` with explicit `[]` got `["chat"]`
+    // instead of nothing). The fix honors the explicit array as-is.
+    access.writeContact({
+      kind: "human",
+      contactId: 70,
+      firstPairedAt: "2026-04-25T12:00:00.000Z",
+      role: "subscriber",
+      capabilities: [],
+    });
+    expect(access.getCapabilitiesFor(70)).toEqual([]);
+  });
 });

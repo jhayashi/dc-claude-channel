@@ -291,13 +291,19 @@ export function hasAnyPermissionedContact(): boolean {
 /**
  * Resolved capability set for a contact (v1.3 slice 1).
  *
- * Resolution order:
+ * Resolution order (matters for the empty-array case — reviewer Oliver
+ * flagged this; the prior `length > 0` guard let an explicit
+ * `capabilities: []` fall through to the role bundle, silently granting
+ * whatever the role grants instead of denying everything):
  *   1. Unknown contact (no principal) → `[]` (denied-everywhere; the
  *      dispatcher gate is fail-closed).
- *   2. Principal has explicit `capabilities` → use it.
- *   3. Principal has `role` only → expand the role's bundle.
- *   4. Neither → `["*"]` (legacy backfill safety; pre-v1.3 records are
- *      treated as `subscriber`).
+ *   2. Principal has explicit `capabilities` array (including `[]`) →
+ *      use it as the authoritative override. Empty array means
+ *      denied-everywhere by design.
+ *   3. Principal has `role` only (no capabilities key on disk) → expand
+ *      the role's bundle.
+ *   4. Neither → `["*"]` (legacy backfill safety; pre-v1.3 records
+ *      written without role/capabilities are treated as `subscriber`).
  *
  * Intentionally NOT memoized — role changes via `setHumanRole` (slice 6/7)
  * must take effect on the next tool call. The lookup is one stat + one
@@ -306,7 +312,7 @@ export function hasAnyPermissionedContact(): boolean {
 export function getCapabilitiesFor(contactId: number): string[] {
   const p = loadContact(contactId);
   if (!p) return [];
-  if (Array.isArray(p.capabilities) && p.capabilities.length > 0) return [...p.capabilities];
+  if (Array.isArray(p.capabilities)) return [...p.capabilities];
   if (typeof p.role === "string" && p.role.length > 0) return [...bundleFor(p.role)];
   return ["*"];
 }
