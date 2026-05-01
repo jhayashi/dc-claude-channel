@@ -341,69 +341,6 @@ x-dc-createdAt: 2026-04-09T12:34:56.000Z
 cd plugin && bun install && bun test
 ```
 
-## Testing the channel (research preview)
-
-### Primary path — marketplace install (for end users and release testing)
-
-Single Claude Code launch, then install + reload in-session:
-
-```bash
-claude --dangerously-load-development-channels plugin:deltachat@dc-claude-channel
-```
-
-```
-/plugin marketplace add jhayashi/dc-claude-channel
-/plugin install deltachat@dc-claude-channel
-/plugin reload-plugins
-```
-
-`/plugin reload-plugins` activates the newly installed plugin in the current session — no restart needed. On first install the dispatcher forks `bun install` in the background (~30–120s); DC tool calls issued during that window transparently block on the readiness gate rather than crashing on missing native modules. The SessionStart hook does not surface install state — the banner was noisy and the readiness gate makes it unnecessary.
-
-Testing against a local unpushed change: use `/plugin marketplace add /path/to/dc-claude-channel` (absolute local path) instead of the GitHub slug. Relative-path plugin sources resolve against the marketplace root (the repo root), so `./plugin` finds the right place.
-
-### Dev path — in-place editing (for active development)
-
-```bash
-claude --plugin-dir /path/to/dc-claude-channel/plugin --dangerously-load-development-channels plugin:deltachat@inline
-```
-
-Use this when iterating on `server.ts` or other source files and you want edits to take effect without running `/plugin marketplace update`.
-
-Prerequisites for the dev path:
-- `~/.claude/plugins/installed_plugins.json` must have `"deltachat@inline"` entry — add it manually or use the marketplace install path (recommended) instead
-- Do NOT add to `enabledPlugins` in settings.json (causes account lock contention)
-- No project-level `.mcp.json` defining deltachat (creates duplicate server)
-- `--plugin-dir` registers plugins with marketplace name `inline` internally
-- Plugin must be in `installed_plugins.json` (as `deltachat@inline`) for the channel flag to accept it
-- `/mcp` should show `plugin:deltachat:deltachat` not plain `deltachat` under Project MCPs
-- Never run Claude Code from inside this repo — the project-level `plugin/.mcp.json` conflicts with the plugin-installed server
-
-## Voice transcription (v1.0+)
-
-Voice messages (.m4a) are transcribed locally via `@napi-rs/whisper`
-(prebuilt native bindings to whisper.cpp) before reaching the subagent.
-No system dependencies required — no cmake, no g++, no ffmpeg. Just
-`bun install` and it works.
-
-The dispatcher intercepts voice messages in `runSubagentTurn`, decodes
-audio natively via Symphonia (`decodeAudio()`), runs whisper inference
-in-process, and prepends `[Voice transcript]: <text>` to the message
-text. The subagent sees a normal text message with `source=voice`
-metadata.
-
-Config (environment variables):
-- `DC_STT_ENABLED` — `true` (default) or `false`
-- `DC_STT_MODEL` — ggml model name (default `base.en`). Models are
-  auto-downloaded from Hugging Face on first use to `$DC_STATE_DIR/whisper-models/`.
-- `DC_STT_ECHO` — `quoted` (default, echoes transcript back to chat) or `silent`
-- `DC_STT_TIMEOUT_SEC` — max transcription runtime (default `120`)
-- `DC_STT_MAX_DURATION_SEC` — max audio length to attempt (default `300`)
-
-Files:
-- `plugin/stt.ts` — Core transcription module (config, model download,
-  native audio decoding, transcription via @napi-rs/whisper)
-- `plugin/test/stt.test.ts` — Unit tests for config parsing, voice detection
-
 ## Visual communication via WebXDC
 
 When the conversation calls for visual output — UI mockups, design
@@ -439,7 +376,7 @@ Top-level layout:
 - `plugin/webxdc/` — WebXDC HTML sources
 - State dir: `~/.claude/channels/deltachat/`
 
-For the full file inventory and component responsibilities, see [`docs/architecture.md`](docs/architecture.md).
+For the full file inventory and component responsibilities, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Subagent model (v0.9+)
 
@@ -477,6 +414,6 @@ Config:
 
 Adding a new core app to this plugin requires four pieces: an HTML source under `plugin/webxdc/`, a builder module, a `WebXDCApp` wrapper under `plugin/apps/`, and a one-line registration in `plugin/apps.ts`. Pre-built XDCs and badges are committed under `plugin/webxdc-prebuilt/` and `plugin/agent-badges-prebuilt/` and regenerated via `bun run build:xdcs` / `build:badges` before each release.
 
-For the full contributor guide (HTML rules, builder pattern, AppContext + WebXDCApp interface, auto-upgrade protocol, release-time build steps), see [`docs/contributing-webxdc.md`](docs/contributing-webxdc.md).
+For the full contributor guide (HTML rules, builder pattern, AppContext + WebXDCApp interface, auto-upgrade protocol, release-time build steps), see [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
 
 For runtime app building from a subagent (one-off apps in a user's chat), see [`plugin/skills/webxdc-builder/SKILL.md`](plugin/skills/webxdc-builder/SKILL.md).

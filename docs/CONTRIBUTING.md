@@ -1,15 +1,53 @@
-# Contributing — WebXDC apps
+# Contributing
 
-Guide for adding a new WebXDC app to the dc-claude-channel plugin. Two audiences exist for "build a WebXDC app" in this repo, and they don't read the same doc:
+Contributor guide for the dc-claude-channel plugin: how to run a development build, and how to add a new core WebXDC app.
 
-- **You're adding a new core app** that ships with the plugin (this file). You'll edit `plugin/webxdc/`, `plugin/apps/`, and `plugin/apps.ts`. You write TypeScript that runs in the dispatcher; the app is part of the release.
-- **You're a subagent at runtime** building a one-off app in a user's chat (use [`plugin/skills/webxdc-builder/SKILL.md`](../plugin/skills/webxdc-builder/SKILL.md)). You call `dc_send_webxdc` or `dc_familiar_create` — no plugin code changes.
+For the file inventory and runtime subsystems, see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-The HTML constraints are the same in both cases (`SKILL.md` has the most complete list); the rest is plugin-internal scaffolding only.
+For runtime app authoring from a subagent (one-off apps in a user's chat — not plugin development), see [`../plugin/skills/webxdc-builder/SKILL.md`](../plugin/skills/webxdc-builder/SKILL.md). It and this doc share the same WebXDC HTML constraints; that file is the canonical source for runtime authors.
 
 ---
 
-## Adding a new core app
+## Testing the channel
+
+### Primary path — marketplace install (for end users and release testing)
+
+Single Claude Code launch, then install + reload in-session:
+
+```bash
+claude --dangerously-load-development-channels plugin:deltachat@dc-claude-channel
+```
+
+```
+/plugin marketplace add jhayashi/dc-claude-channel
+/plugin install deltachat@dc-claude-channel
+/plugin reload-plugins
+```
+
+`/plugin reload-plugins` activates the newly installed plugin in the current session — no restart needed. On first install the dispatcher forks `bun install` in the background (~30–120s); DC tool calls issued during that window transparently block on the readiness gate rather than crashing on missing native modules. The SessionStart hook does not surface install state — the banner was noisy and the readiness gate makes it unnecessary.
+
+Testing against a local unpushed change: use `/plugin marketplace add /path/to/dc-claude-channel` (absolute local path) instead of the GitHub slug. Relative-path plugin sources resolve against the marketplace root (the repo root), so `./plugin` finds the right place.
+
+### Dev path — in-place editing (for active development)
+
+```bash
+claude --plugin-dir /path/to/dc-claude-channel/plugin --dangerously-load-development-channels plugin:deltachat@inline
+```
+
+Use this when iterating on `server.ts` or other source files and you want edits to take effect without running `/plugin marketplace update`.
+
+Prerequisites for the dev path:
+- `~/.claude/plugins/installed_plugins.json` must have `"deltachat@inline"` entry — add it manually or use the marketplace install path (recommended) instead
+- Do NOT add to `enabledPlugins` in settings.json (causes account lock contention)
+- No project-level `.mcp.json` defining deltachat (creates duplicate server)
+- `--plugin-dir` registers plugins with marketplace name `inline` internally
+- Plugin must be in `installed_plugins.json` (as `deltachat@inline`) for the channel flag to accept it
+- `/mcp` should show `plugin:deltachat:deltachat` not plain `deltachat` under Project MCPs
+- Never run Claude Code from inside this repo — the project-level `plugin/.mcp.json` conflicts with the plugin-installed server
+
+---
+
+## Adding a new core WebXDC app
 
 Create two files and add one import.
 

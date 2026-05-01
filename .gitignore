@@ -13,9 +13,8 @@ docs/specs/
 docs/specs/**
 docs/upstream-issues/
 docs/upstream-issues/**
-!docs/architecture.md
-!docs/contributing-webxdc.md
-!docs/release.md
+!docs/ARCHITECTURE.md
+!docs/CONTRIBUTING.md
 !docs/d4c-concept-mapping.md
 /scripts/
 *.log

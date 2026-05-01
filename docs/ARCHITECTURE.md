@@ -51,3 +51,20 @@ Full file/component inventory for the Delta Chat plugin. Updated as the codebase
 - `familiars/` — persistent Familiar app state + handler source
 - `dispatcher.sock` — Unix socket subagents connect to
 - `debug.log` — dispatcher debug stream
+
+## Voice transcription (v1.0+)
+
+Voice messages (.m4a) are transcribed locally via `@napi-rs/whisper` (prebuilt native bindings to whisper.cpp) before reaching the subagent. No system dependencies required — no cmake, no g++, no ffmpeg. Just `bun install` and it works.
+
+The dispatcher intercepts voice messages in `runSubagentTurn`, decodes audio natively via Symphonia (`decodeAudio()`), runs whisper inference in-process, and prepends `[Voice transcript]: <text>` to the message text. The subagent sees a normal text message with `source=voice` metadata.
+
+Config (environment variables):
+- `DC_STT_ENABLED` — `true` (default) or `false`
+- `DC_STT_MODEL` — ggml model name (default `base.en`). Models are auto-downloaded from Hugging Face on first use to `$DC_STATE_DIR/whisper-models/`.
+- `DC_STT_ECHO` — `quoted` (default, echoes transcript back to chat) or `silent`
+- `DC_STT_TIMEOUT_SEC` — max transcription runtime (default `120`)
+- `DC_STT_MAX_DURATION_SEC` — max audio length to attempt (default `300`)
+
+Files:
+- `plugin/stt.ts` — Core transcription module (config, model download, native audio decoding, transcription via @napi-rs/whisper)
+- `plugin/test/stt.test.ts` — Unit tests for config parsing, voice detection
