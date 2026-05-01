@@ -2,8 +2,7 @@
 plugin/node_modules/
 plugin/dist/
 plugin/webxdc/mini-crossword.html
-plugin/test/integration/.fixtures/
-plugin/test/integration/.fixtures-subagent/
+plugin/test/integration/.fixtures*/
 dev/
 .claude/settings.local.json
 docs/**
