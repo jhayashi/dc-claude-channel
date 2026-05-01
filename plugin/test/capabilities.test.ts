@@ -118,10 +118,63 @@ describe("evaluateCapability — null originator (terminal calls)", () => {
   test("null originator gets allow with would_deny=false (terminal session)", () => {
     // Terminal-CC calls have no originator contact id. Slice 3 logs them
     // as `allow` (the terminal IS the subscriber by definition); slice 4
-    // will keep this behavior — terminal calls are unrestricted.
+    // keeps this behavior — terminal calls are unrestricted.
     const decision = access.evaluateCapability(null, "infrastructure");
     expect(decision.decision).toBe("allow");
     expect(decision.required).toBe("infrastructure");
     expect(decision.originatorCapabilities).toEqual(["*"]);
+  });
+});
+
+describe("evaluateCapability — relay case (requestor_contact_id)", () => {
+  // Slice 4 commit 2: the dispatcher resolves originator from
+  // args.requestor_contact_id when present (and validates chat
+  // membership outside the helper). evaluateCapability itself just
+  // takes whichever contactId the caller chose.
+
+  test("subscriber's caps used when no requestor declared (default path)", () => {
+    access.writeContact({
+      kind: "human",
+      contactId: 100,
+      firstPairedAt: "2026-01-01T00:00:00Z",
+      role: "subscriber",
+      capabilities: ["*"],
+    });
+    expect(access.evaluateCapability(100, "private_data_write").decision).toBe("allow");
+  });
+
+  test("family-member's caps used when declared as requestor", () => {
+    access.writeContact({
+      kind: "human",
+      contactId: 100,
+      firstPairedAt: "2026-01-01T00:00:00Z",
+      role: "subscriber",
+      capabilities: ["*"],
+    });
+    access.writeContact({
+      kind: "human",
+      contactId: 200,
+      firstPairedAt: "2026-01-01T00:00:00Z",
+      role: "family-member",
+      capabilities: ["chat", "low_stakes_*"],
+    });
+    // Subscriber's chat agent declares requestor = family-member.
+    // Gate runs against family-member's bundle.
+    expect(access.evaluateCapability(200, "chat").decision).toBe("allow");
+    expect(access.evaluateCapability(200, "private_data_write").decision).toBe("would_deny");
+    expect(access.evaluateCapability(200, "real_world_action").decision).toBe("would_deny");
+  });
+
+  test("untrusted-agent declared as requestor stays in chat-tier", () => {
+    access.writeContact({
+      kind: "human",
+      contactId: 300,
+      firstPairedAt: "2026-01-01T00:00:00Z",
+      role: "untrusted-agent",
+      capabilities: ["chat"],
+    });
+    expect(access.evaluateCapability(300, "chat").decision).toBe("allow");
+    expect(access.evaluateCapability(300, "private_data_read").decision).toBe("would_deny");
+    expect(access.evaluateCapability(300, "infrastructure").decision).toBe("would_deny");
   });
 });
