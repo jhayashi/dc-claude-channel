@@ -71,6 +71,56 @@ export interface GateResult {
 
 const DEFAULT_REQUIRED = "chat";
 
+// ── Schema augmentation (v1.3 review fix #5) ───────────────────────────────
+//
+// The gate accepts an optional `requestor_contact_id` arg on every
+// annotated tool (T1 mitigation for the relay case). Pre-fix the
+// parameter was documented in the channel system prompt but absent
+// from every tool's `inputSchema`, leaving agents to discover it from
+// prompt text alone — fragile, and stricter MCP clients could strip
+// the unknown arg silently. `withRequestorParam` merges the parameter
+// into every annotated tool's schema at registration time so it
+// shows up in tool-list responses to subagents and the terminal MCP
+// client.
+//
+// Tools without `requiresCapability` skip the merge — they're not
+// gated, so the parameter would be meaningless.
+
+const REQUESTOR_PARAM_DESCRIPTION =
+  "Optional. When acting on behalf of a non-pairing contact in this chat " +
+  "(e.g., a family member relayed a request via the subscriber), declare " +
+  "their contact_id (numeric string) so the capability gate runs against " +
+  "THEIR permissions, not the pairing contact's. Validated as a current " +
+  "chat member; calls with a non-member id are refused with " +
+  "capability_invalid_requestor.";
+
+interface SchemaShape {
+  type: "object";
+  properties: Record<string, unknown>;
+  required?: string[];
+}
+
+export function withRequestorParam<
+  T extends {
+    name: string;
+    description: string;
+    inputSchema: SchemaShape;
+    requiresCapability?: string;
+  },
+>(t: T): T {
+  if (!t.requiresCapability) return t;
+  return {
+    ...t,
+    inputSchema: {
+      ...t.inputSchema,
+      properties: {
+        ...t.inputSchema.properties,
+        requestor_contact_id: { type: "string", description: REQUESTOR_PARAM_DESCRIPTION },
+      },
+    },
+  };
+}
+
 export async function applyCapabilityGate(
   chatId: number,
   toolName: string,

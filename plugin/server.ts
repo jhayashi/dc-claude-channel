@@ -22,7 +22,7 @@ import { randomBytes } from 'node:crypto'
 
 import { DCClient } from './dc-client.js'
 import * as access from './access/index.js'
-import { applyCapabilityGate } from './access/gate.js'
+import { applyCapabilityGate, withRequestorParam } from './access/gate.js'
 import * as agents from './agents.js'
 import * as bindings from './bindings.js'
 import * as familiarRuntime from './familiar-runtime.js'
@@ -377,8 +377,14 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
   const repoRoot = join(import.meta.dir, '..')
   const resolved = bindings.resolveChat(chatId)
   const toolDefs = [
-    ...coreTools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
-    ...apps.flatMap((a) => a.tools()).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+    ...coreTools.map((t) => {
+      const augmented = withRequestorParam(t)
+      return { name: augmented.name, description: augmented.description, inputSchema: augmented.inputSchema }
+    }),
+    ...apps.flatMap((a) => a.tools()).map((t) => {
+      const augmented = withRequestorParam(t)
+      return { name: augmented.name, description: augmented.description, inputSchema: augmented.inputSchema }
+    }),
   ].filter((t) => !SUBAGENT_TOOL_BLOCKLIST.has(t.name))
   // Per-agent MCP server filtering: if the agent restricts servers,
   // check whether 'dc' is in the allowed list. null/undefined = all allowed.
@@ -1153,8 +1159,8 @@ const coreTools = [
 
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
-    ...coreTools,
-    ...apps.flatMap(a => a.tools()),
+    ...coreTools.map(withRequestorParam),
+    ...apps.flatMap(a => a.tools()).map(withRequestorParam),
   ],
 }))
 

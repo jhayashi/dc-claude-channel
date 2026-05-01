@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import type { CapabilityDecision } from "../access/capabilities.js";
 import type { GateDeps, GateOutcome } from "../access/gate.js";
-import { applyCapabilityGate } from "../access/gate.js";
+import { applyCapabilityGate, withRequestorParam } from "../access/gate.js";
 
 // ── Test fixtures ────────────────────────────────────────────────────────────
 
@@ -231,5 +231,66 @@ describe("applyCapabilityGate — scrubbedArgs", () => {
       evaluateCapability: () => decision(["*"], "chat", "allow"),
     }));
     expect(result.scrubbedArgs).toEqual({ chat_id: "7", text: "hi" });
+  });
+});
+
+// ── withRequestorParam (schema augmentation) ───────────────────────────────
+
+describe("withRequestorParam", () => {
+  const baseTool = {
+    name: "dc_send",
+    description: "Send a message",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        chat_id: { type: "string", description: "Chat ID" },
+        text: { type: "string", description: "Message body" },
+      },
+      required: ["chat_id", "text"],
+    },
+    requiresCapability: "chat",
+  };
+
+  test("annotated tool gains requestor_contact_id property", () => {
+    const augmented = withRequestorParam(baseTool);
+    expect(augmented.inputSchema.properties).toHaveProperty("requestor_contact_id");
+    expect((augmented.inputSchema.properties.requestor_contact_id as { type: string }).type).toBe("string");
+  });
+
+  test("preserves all original properties", () => {
+    const augmented = withRequestorParam(baseTool);
+    expect(augmented.inputSchema.properties.chat_id).toEqual(baseTool.inputSchema.properties.chat_id);
+    expect(augmented.inputSchema.properties.text).toEqual(baseTool.inputSchema.properties.text);
+  });
+
+  test("preserves required fields (requestor_contact_id stays optional)", () => {
+    const augmented = withRequestorParam(baseTool);
+    expect(augmented.inputSchema.required).toEqual(["chat_id", "text"]);
+    expect(augmented.inputSchema.required).not.toContain("requestor_contact_id");
+  });
+
+  test("preserves name + description + requiresCapability + other top-level fields", () => {
+    const augmented = withRequestorParam(baseTool);
+    expect(augmented.name).toBe("dc_send");
+    expect(augmented.description).toBe("Send a message");
+    expect(augmented.requiresCapability).toBe("chat");
+  });
+
+  test("does not mutate the input tool", () => {
+    const original = { ...baseTool, inputSchema: { ...baseTool.inputSchema, properties: { ...baseTool.inputSchema.properties } } };
+    withRequestorParam(original);
+    expect("requestor_contact_id" in original.inputSchema.properties).toBe(false);
+  });
+
+  test("non-annotated tool is returned unchanged", () => {
+    const unannotated = {
+      name: "dc_x",
+      description: "X",
+      inputSchema: { type: "object" as const, properties: { a: { type: "string" } } },
+      // no requiresCapability
+    };
+    const result = withRequestorParam(unannotated);
+    expect(result).toBe(unannotated);
+    expect("requestor_contact_id" in result.inputSchema.properties).toBe(false);
   });
 });
