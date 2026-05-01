@@ -75,12 +75,12 @@ export function getOwner(chatId: number): number | null {
 /**
  * Check if a contact ID is the owner of any approved chat.
  *
- * @deprecated as of v1.2.2 (#66 Option A) — prefer `isContactApproved`
+ * @deprecated as of v1.2.2 (#66 Option A) — prefer `isContactPermissioned`
  * from `./principals.ts`, which reads the principal record first and
  * falls back to this scan. Kept for the legacy fallback path inside
- * `isContactApproved` itself; no other production caller. Slated for
- * removal in v1.3 (Option B), when the chat-allowlist is dropped
- * altogether in favor of contact-keyed approval.
+ * `isContactPermissioned` itself; no other production caller. Slated for
+ * removal in v1.3 (Option B / capability-based access), when the
+ * chat-allowlist is dropped altogether in favor of contact-keyed approval.
  */
 export function isKnownOwner(contactId: number): boolean {
   for (const chatId of allowedChats()) {

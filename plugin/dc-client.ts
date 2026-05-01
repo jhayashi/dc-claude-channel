@@ -659,6 +659,7 @@ export class DCClient {
         fileBytes: snap.fileBytes ? Number(snap.fileBytes) : undefined,
         fileName: snap.fileName ?? undefined,
         viewType: snap.viewType ?? undefined,
+        fromId: typeof snap.fromId === 'number' ? snap.fromId : undefined,
       });
     }
     return messages;
@@ -679,6 +680,7 @@ export class DCClient {
       fileBytes: snap.fileBytes ? Number(snap.fileBytes) : undefined,
       fileName: snap.fileName ?? undefined,
       viewType: snap.viewType ?? undefined,
+      fromId: typeof snap.fromId === 'number' ? snap.fromId : undefined,
     };
   }
 

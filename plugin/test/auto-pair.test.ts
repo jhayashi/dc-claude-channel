@@ -41,10 +41,10 @@ function decideUnpaired(chatId: number, fromId: number | undefined): 'ignored' |
   if (access.isAllowed(chatId)) throw new Error('test setup error: chat is already allowed')
   // #66 Option A — auth gate is contact identity (principal record OR
   // legacy chat-allowlist entry), not just chat-allowlist.
-  if (access.hasAnyOwner() && fromId && !access.isContactApproved(fromId)) {
+  if (access.hasAnyOwner() && fromId && !access.isContactPermissioned(fromId)) {
     return 'ignored'
   }
-  if (fromId && access.isContactApproved(fromId)) {
+  if (fromId && access.isContactPermissioned(fromId)) {
     access.addChat(chatId, fromId)
     return 'auto-paired'
   }
@@ -102,7 +102,7 @@ describe('auto-pair via principal record (#66 Option A)', () => {
     // Edge case under the new model: a principal can exist without
     // any approved chats (e.g., the user unpaired all their chats but
     // we never wiped the principal — pre-#66-fix behavior). The new
-    // gate uses isContactApproved, which reads principals first, so
+    // gate uses isContactPermissioned, which reads principals first, so
     // they auto-pair on a new chat without ceremony. Matches the
     // "contact identity is the trust boundary" intent.
     access.recordHumanPair(5)
@@ -130,14 +130,14 @@ describe('auto-pair via principal record (#66 Option A)', () => {
   test('removeHuman + removeChat fully revokes — subsequent message is ignored', () => {
     access.addChat(10, 5)
     access.recordHumanPair(5)
-    expect(access.isContactApproved(5)).toBe(true)
+    expect(access.isContactPermissioned(5)).toBe(true)
 
     // Mirror the unpair_commit / dc_access_unpair sequence: cleanupChatState
     // runs per-chat (which calls removeChat under the hood), then
     // removeHuman wipes the principal.
     access.removeChat(10)
     access.removeHuman(5)
-    expect(access.isContactApproved(5)).toBe(false)
+    expect(access.isContactPermissioned(5)).toBe(false)
 
     // Add a different contact's chat so hasAnyOwner is true (otherwise
     // we'd be in fresh-install mode and ANY contact could pair).
@@ -154,7 +154,7 @@ describe('auto-pair via principal record (#66 Option A)', () => {
     access.addChat(10, 5)
     access.recordHumanPair(5)
     access.removeHuman(5)
-    expect(access.isContactApproved(5)).toBe(true)
+    expect(access.isContactPermissioned(5)).toBe(true)
     expect(decideUnpaired(20, 5)).toBe('auto-paired')
   })
 })

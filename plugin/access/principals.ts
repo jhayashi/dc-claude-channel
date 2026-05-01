@@ -131,7 +131,7 @@ export function listHumans(): HumanPrincipal[] {
  * Other I/O errors (EACCES on a read-only FS, etc.) are surfaced via
  * stderr — the caller path is per-contact unpair, where a silent
  * failure would mean the user sees a "deleted" toast but the
- * principal stays put and `isContactApproved` keeps returning true.
+ * principal stays put and `isContactPermissioned` keeps returning true.
  * Stderr lets the dispatcher's debug.log capture it.
  */
 export function removeHuman(contactId: number): void {
@@ -217,12 +217,12 @@ export function chatsFor(p: Principal): number[] {
  * fallback only matters during the boot window or for state that
  * predates Phase 2 entirely.
  *
- * Used as the auth gate for incoming messages: any chat where an
- * approved contact sends a message is auto-paired without ceremony.
- * Per-contact unpair (`removeHuman` + chat cleanup) wipes the trust
- * fully, so a fully-unpaired contact reads false here.
+ * Used as the auth gate for incoming messages: any chat where a
+ * permissioned contact sends a message is auto-paired without
+ * ceremony. Per-contact unpair (`removeHuman` + chat cleanup) wipes
+ * the trust fully, so a fully-unpaired contact reads false here.
  */
-export function isContactApproved(contactId: number): boolean {
+export function isContactPermissioned(contactId: number): boolean {
   return loadHuman(contactId) !== null || isKnownOwner(contactId);
 }
 
@@ -239,7 +239,7 @@ export function isContactApproved(contactId: number): boolean {
  * principal without chats) would falsely register as "no owners
  * exist" and let a stranger pair through.
  */
-export function hasAnyApprovedContact(): boolean {
+export function hasAnyPermissionedContact(): boolean {
   if (hasAnyOwner()) return true;
   // listHumans does one readdir; cheap. Returns the union of chat-
   // allowlist owners and principal records.

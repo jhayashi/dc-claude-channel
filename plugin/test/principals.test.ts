@@ -189,16 +189,16 @@ describe("principals — chatsFor", () => {
   });
 });
 
-describe("principals — isContactApproved (#66 Option A)", () => {
+describe("principals — isContactPermissioned (#66 Option A)", () => {
   test("returns false when neither principal nor allowlist entry exists", () => {
-    expect(access.isContactApproved(42)).toBe(false);
+    expect(access.isContactPermissioned(42)).toBe(false);
   });
 
   test("returns true when a principal record exists, even with no chats", () => {
     // The whole point of #66: contact identity is the trust boundary,
     // independent of whether they currently own any approved chat.
     access.recordHumanPair(42, "Joe");
-    expect(access.isContactApproved(42)).toBe(true);
+    expect(access.isContactPermissioned(42)).toBe(true);
     // Sanity: no chat is owned by 42 yet.
     expect(access.chatsForOwner(42)).toEqual([]);
   });
@@ -208,62 +208,62 @@ describe("principals — isContactApproved (#66 Option A)", () => {
     // records yet (backfill hasn't run). We must still recognise them.
     access.addChat(7, 42);
     expect(access.loadHuman(42)).toBeNull();
-    expect(access.isContactApproved(42)).toBe(true);
+    expect(access.isContactPermissioned(42)).toBe(true);
   });
 
   test("returns false after removeHuman + cleanup (full unpair)", () => {
     access.recordHumanPair(42);
     access.addChat(7, 42);
-    expect(access.isContactApproved(42)).toBe(true);
+    expect(access.isContactPermissioned(42)).toBe(true);
     access.removeChat(7);
     access.removeHuman(42);
-    expect(access.isContactApproved(42)).toBe(false);
+    expect(access.isContactPermissioned(42)).toBe(false);
   });
 
   test("returns true with principal-only state if removeChat happened but principal stayed", () => {
     // The intermediate state during a per-contact unpair: chats are
     // wiped first via cleanupChatState, then removeHuman runs at the
-    // end. Between the two, isContactApproved still reads true — that
+    // end. Between the two, isContactPermissioned still reads true — that
     // window is fine because no message routing happens during it.
     access.recordHumanPair(42);
     access.addChat(7, 42);
     access.removeChat(7);
-    expect(access.isContactApproved(42)).toBe(true);
+    expect(access.isContactPermissioned(42)).toBe(true);
   });
 
   test("two contacts are independent", () => {
     access.recordHumanPair(42);
     access.addChat(8, 99);
-    expect(access.isContactApproved(42)).toBe(true);
-    expect(access.isContactApproved(99)).toBe(true);
+    expect(access.isContactPermissioned(42)).toBe(true);
+    expect(access.isContactPermissioned(99)).toBe(true);
     access.removeHuman(42);
-    expect(access.isContactApproved(42)).toBe(false);
-    expect(access.isContactApproved(99)).toBe(true);
+    expect(access.isContactPermissioned(42)).toBe(false);
+    expect(access.isContactPermissioned(99)).toBe(true);
   });
 
   test("removeChat alone (principal stays) — Option A's actual new state", () => {
     // Symmetric to "removeHuman alone (chats stay)" in auto-pair.test.
     // After Phase A unpair runs cleanupChatState (which removes chat
     // entries) and BEFORE removeHuman fires, this is the live state:
-    // principal exists, no chats. isContactApproved must read true via
+    // principal exists, no chats. isContactPermissioned must read true via
     // the principal.
     access.recordHumanPair(42);
     access.addChat(7, 42);
     access.removeChat(7);
     expect(access.loadHuman(42)).not.toBeNull();
     expect(access.chatsForOwner(42)).toEqual([]);
-    expect(access.isContactApproved(42)).toBe(true);
+    expect(access.isContactPermissioned(42)).toBe(true);
   });
 });
 
-describe("principals — hasAnyApprovedContact", () => {
+describe("principals — hasAnyPermissionedContact", () => {
   test("false when both layers are empty (fresh install)", () => {
-    expect(access.hasAnyApprovedContact()).toBe(false);
+    expect(access.hasAnyPermissionedContact()).toBe(false);
   });
 
   test("true when only a chat-allowlist entry exists (legacy install)", () => {
     access.addChat(7, 42);
-    expect(access.hasAnyApprovedContact()).toBe(true);
+    expect(access.hasAnyPermissionedContact()).toBe(true);
   });
 
   test("true when only a principal record exists (Option A new state)", () => {
@@ -271,22 +271,22 @@ describe("principals — hasAnyApprovedContact", () => {
     // but no chats was invisible to the legacy hasAnyOwner. The new
     // helper sees them.
     access.recordHumanPair(42);
-    expect(access.hasAnyApprovedContact()).toBe(true);
+    expect(access.hasAnyPermissionedContact()).toBe(true);
   });
 
   test("true when both layers have entries", () => {
     access.recordHumanPair(42);
     access.addChat(7, 42);
-    expect(access.hasAnyApprovedContact()).toBe(true);
+    expect(access.hasAnyPermissionedContact()).toBe(true);
   });
 
   test("returns false after every contact is fully unpaired", () => {
     access.recordHumanPair(42);
     access.addChat(7, 42);
-    expect(access.hasAnyApprovedContact()).toBe(true);
+    expect(access.hasAnyPermissionedContact()).toBe(true);
     access.removeChat(7);
     access.removeHuman(42);
-    expect(access.hasAnyApprovedContact()).toBe(false);
+    expect(access.hasAnyPermissionedContact()).toBe(false);
   });
 });
 
