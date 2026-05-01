@@ -2158,16 +2158,22 @@ async function main(): Promise<void> {
   }
 
   const handleChatModified = async (chatId: number): Promise<void> => {
-    // v1.3: refresh the in-memory allowlist cache before any auth-gated
-    // logic runs. Membership may have changed — a principal joined or
-    // left — and the cache needs to reflect that for subsequent
-    // isAllowed() reads.
+    // v1.3: capture pre-refresh state. Refresh updates the cache to
+    // reflect the new membership; if the chat just lost its last
+    // permissioned member, the post-refresh isAllowed is false — but
+    // we still need to run cleanup on a chat that WAS allowed and is
+    // now becoming un-allowed (cleanupChat tears down the dispatcher's
+    // bookkeeping: bindings, scheduled jobs, agent-setup pane state).
+    // Pre-v1.3 the allowlist file existed for the whole call and
+    // cleanup got to decide; v1.3's cache changes mid-call so we have
+    // to remember the prior state explicitly.
+    const wasAllowed = access.isAllowed(chatId)
     try {
       await access.refreshAllowlistForChat(chatId, (id) => client.getChatContacts(id))
     } catch (err) {
       logf('dc channel: refreshAllowlistForChat error for chat %d: %v', chatId, err)
     }
-    if (!access.isAllowed(chatId)) return
+    if (!wasAllowed) return
     try {
       const contacts = await client.getChatContacts(chatId)
       const decision = decideCleanup('ChatModified', contacts)
