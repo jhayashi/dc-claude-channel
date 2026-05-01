@@ -15,6 +15,14 @@
 
 import type { Message } from '../dc-client.js'
 
+/**
+ * DC's contact id for the bot's own account. dc-core stamps this on
+ * every outgoing message's `fromId`, so we MUST whitelist it as
+ * permissioned — otherwise the bot's own messages render
+ * [UNPERMISSIONED] in `dc_chat_history` results.
+ */
+const CONTACT_SELF = 1
+
 export interface TrustFilterDeps {
   /** Returns true when the contact is a known principal (or legacy chat-allowlist owner). */
   isContactPermissioned: (contactId: number) => boolean
@@ -47,7 +55,9 @@ export function formatHistoryLine(
   opts: FormatHistoryLineOptions = {},
 ): FormatHistoryLineResult {
   const fromId = msg.fromId ?? 0
-  const permissioned = fromId === 0 || deps.isContactPermissioned(fromId)
+  // Bot's own outgoing messages: fromId === 0 (missing) or === CONTACT_SELF (1).
+  // Both are trivially trusted — they came from us.
+  const permissioned = fromId === 0 || fromId === CONTACT_SELF || deps.isContactPermissioned(fromId)
   const tag = permissioned ? '[permissioned]' : '[UNPERMISSIONED]'
   const includeUnpermissioned = opts.includeUnpermissioned === true
 
@@ -84,7 +94,7 @@ export function evaluateAttachmentDownload(
   includeUnpermissioned: boolean,
 ): { proceed: true; revealedUnpermissioned: boolean } | { proceed: false; reason: string } {
   const id = fromId ?? 0
-  const permissioned = id === 0 || deps.isContactPermissioned(id)
+  const permissioned = id === 0 || id === CONTACT_SELF || deps.isContactPermissioned(id)
   if (permissioned) return { proceed: true, revealedUnpermissioned: false }
   if (!includeUnpermissioned) {
     return {

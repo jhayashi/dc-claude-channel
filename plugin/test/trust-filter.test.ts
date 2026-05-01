@@ -54,6 +54,21 @@ describe('formatHistoryLine — permissioned senders', () => {
     expect(r.line).toContain('I sent this')
     expect(r.revealedUnpermissioned).toBe(false)
   })
+
+  test('fromId === 1 (CONTACT_SELF — bot\'s own outgoing) reads as permissioned', () => {
+    // Regression: dc-core sets fromId=1 (CONTACT_SELF) on the bot's
+    // own outgoing messages, NOT undefined. Without the explicit
+    // CONTACT_SELF whitelist, isContactPermissioned(1) would return
+    // false (no principal for contact 1) and the bot's own replies
+    // would render [UNPERMISSIONED]. (Bug caught in v1.2.2 smoke
+    // test in chat 24.)
+    const m = makeMsg({ id: 11, fromId: 1, senderName: 'Claude', text: 'my own reply' })
+    const r = formatHistoryLine(m, deps)
+    expect(r.line).toContain('[permissioned]')
+    expect(r.line).toContain('my own reply')
+    expect(r.line).not.toContain('[UNPERMISSIONED]')
+    expect(r.line).not.toContain('redacted')
+  })
 })
 
 describe('formatHistoryLine — unpermissioned senders, default (redact)', () => {
@@ -121,6 +136,12 @@ describe('evaluateAttachmentDownload', () => {
   test('no fromId (bot self): proceeds', () => {
     const r = evaluateAttachmentDownload(undefined, deps, false)
     expect(r.proceed).toBe(true)
+  })
+
+  test('fromId === 1 (CONTACT_SELF): proceeds', () => {
+    const r = evaluateAttachmentDownload(1, deps, false)
+    expect(r.proceed).toBe(true)
+    if (r.proceed) expect(r.revealedUnpermissioned).toBe(false)
   })
 
   test('unpermissioned sender + no opt-in: refused with explanation', () => {
