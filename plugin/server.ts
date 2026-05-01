@@ -2920,10 +2920,23 @@ async function main(): Promise<void> {
     isPaired: (chatId) => access.isAllowed(chatId),
     isAuthorized: (msg) => {
       if (!msg.fromId) return true
-      const owner = access.firstPermissionedContact(msg.chatId)
-      if (!owner) return true
-      if (msg.fromId === owner) return true
-      // Non-owner in a group: silently ignore (router logs).
+      // v1.3 #70 layer 2 — multi-user dispatch. Any permissioned principal
+      // in the chat can drive a turn; the capability gate at tool dispatch
+      // (slice 4) is what enforces what they can actually do based on their
+      // assigned role. Pre-v1.3 only the chat's pairing contact could
+      // drive; the gate makes it safe to relax this.
+      //
+      // The chat-allowlist's isAllowed(chatId) gate above already
+      // guarantees this chat has at least one permissioned member; the
+      // membership-derived populateAllowlistFromMembership ensures
+      // msg.fromId is permissioned-and-in-this-chat is the common case.
+      // We still check isContactPermissioned because a chat may also have
+      // unpermissioned third parties (the chat-24 family-member shape).
+      if (access.isContactPermissioned(msg.fromId)) return true
+      // Unpermissioned contact: silently ignore. The router logs so the
+      // operator can see drops for debugging. Their content remains
+      // visible via dc_chat_history (tagged [UNPERMISSIONED]) so the
+      // chat's other principals can choose to act on it.
       return false
     },
     dispatchToSubagent: async (msg) => {
