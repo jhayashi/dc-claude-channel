@@ -35,6 +35,7 @@
 import { existsSync, readdirSync, readFileSync, renameSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { loadContact } from "./principals.js";
 
 // ── Module state ─────────────────────────────────────────────────────────────
 
@@ -202,16 +203,19 @@ export async function populateAllowlistFromMembership(
   getChats: () => Promise<number[]>,
   getChatContacts: (chatId: number) => Promise<number[]>,
 ): Promise<void> {
-  // Lazy import to avoid the circular reference at module-load time
-  // (chat-allowlist ↔ principals).
-  const { isContactPermissioned } = await import("./principals.js");
   const chats = await getChats();
   for (const chatId of chats) {
     const contacts = await getChatContacts(chatId);
     let firstPermissioned: number | null = null;
     for (const contactId of contacts) {
       if (contactId === 1) continue; // CONTACT_SELF
-      if (isContactPermissioned(contactId)) {
+      // Direct principal lookup — populate runs after backfill, so any
+      // contact in the legacy allowlist now has a principal record.
+      // The `isContactPermissioned` policy (with its legacy
+      // `isKnownOwner` fallback) lives in principals-policy and isn't
+      // needed here; using it would re-introduce the chat-allowlist ↔
+      // principals dependency cycle this split was designed to remove.
+      if (loadContact(contactId) !== null) {
         firstPermissioned = contactId;
         break;
       }
@@ -235,12 +239,11 @@ export async function refreshAllowlistForChat(
   chatId: number,
   getChatContacts: (chatId: number) => Promise<number[]>,
 ): Promise<void> {
-  const { isContactPermissioned } = await import("./principals.js");
   const contacts = await getChatContacts(chatId);
   let firstPermissioned: number | null = null;
   for (const contactId of contacts) {
     if (contactId === 1) continue;
-    if (isContactPermissioned(contactId)) {
+    if (loadContact(contactId) !== null) {
       firstPermissioned = contactId;
       break;
     }

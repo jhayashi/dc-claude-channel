@@ -3,12 +3,17 @@
  *
  * `import * as access from './access/index.js'` remains the convention.
  * Submodules:
- * - `./chat-allowlist.ts` — persistent `approved/<chatId>` store
+ * - `./chat-allowlist.ts` — in-memory permissioned-chats cache (v1.3+)
  * - `./pairing.ts` — in-memory arm window + pending codes
- * - `./principals.ts` — Phase 0 skeleton for the principal model
- *   (docs/specs/2026-04-20-identity-and-teams-design.md)
+ * - `./principals.ts` — pure I/O on principal records
+ * - `./principals-policy.ts` — derived queries combining principals +
+ *   chat-allowlist (isContactPermissioned, getCapabilitiesFor, etc.).
+ *   Split out in v1.3 to break a chat-allowlist ↔ principals cycle.
+ * - `./capability-bundles.ts` — role → capability set
  */
 
 export * from "./chat-allowlist.js";
 export * from "./pairing.js";
 export * from "./principals.js";
+export * from "./principals-policy.js";
+export * from "./capability-bundles.js";
