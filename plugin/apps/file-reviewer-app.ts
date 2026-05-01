@@ -124,6 +124,7 @@ export const fileReviewerApp: WebXDCApp = {
     return [
       {
         name: 'dc_send_file',
+        requiresCapability: 'private_data_write',
         description: 'Send a file to a Delta Chat chat as a WebXDC viewer app. Supports rendered markdown (omit language) and syntax-highlighted source code (provide language, or omit and let file_path extension auto-detect it). The first call sends the viewer app; subsequent calls to the same chat reuse it. Large files are automatically split into chunks. Provide content directly OR file_path to read from disk.',
         inputSchema: {
           type: 'object' as const,
@@ -139,6 +140,7 @@ export const fileReviewerApp: WebXDCApp = {
       },
       {
         name: 'dc_send_slides',
+        requiresCapability: 'private_data_write',
         description: 'Send a Marp-format slide deck to a Delta Chat chat. Rendered by the file reviewer with auto-detected slide mode: use YAML frontmatter `marp: true` or structure the doc as `---`-separated sections with no pre-content. Commenting still works per-block within each slide.',
         inputSchema: {
           type: 'object' as const,

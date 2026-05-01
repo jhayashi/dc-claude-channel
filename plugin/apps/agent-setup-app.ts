@@ -943,6 +943,7 @@ export const agentSetupApp: WebXDCApp = {
     return [
       {
         name: 'dc_open_agent_settings',
+        requiresCapability: 'chat',
         description:
           'Surface the Agent settings app in the user\'s chat. The app always ' +
           'opens on a home screen where the user chooses what to do: start a ' +

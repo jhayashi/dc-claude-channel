@@ -116,6 +116,7 @@ export const permissionsApp: WebXDCApp = {
     return [
       {
         name: 'dc_test_permission',
+        requiresCapability: 'infrastructure',
         description: 'Send a fake permission request to test the permissions WebXDC app. Simulates what happens when Claude Code asks for permission to use a tool.',
         inputSchema: {
           type: 'object' as const,

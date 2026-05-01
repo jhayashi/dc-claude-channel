@@ -58,6 +58,23 @@ export interface ToolCallEvent {
    * (e.g. permission auto-approve replay).
    */
   turnId?: string | null
+  /**
+   * Capability the tool annotation declares it requires (v1.3 slice 3).
+   * Null when the tool isn't annotated; absent on records older than v1.3.
+   */
+  requiredCapability?: string | null
+  /**
+   * Resolved capability bundle of the originator at call time. `["*"]` for
+   * terminal calls (the terminal IS the subscriber); `[]` for unknown
+   * contacts; otherwise the contact's role bundle or explicit override.
+   */
+  originatorCapabilities?: string[]
+  /**
+   * Slice 3: `allow` if the originator's bundle covers the required
+   * capability, `would_deny` if it doesn't. Pure observability — slice 4
+   * flips `would_deny` to a hard refuse.
+   */
+  capabilityDecision?: 'allow' | 'would_deny'
 }
 
 /** Taxonomy of subagent turn exit reasons. See plans/2026-04-20-slices-2-5-decisions.md. */

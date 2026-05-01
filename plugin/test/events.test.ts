@@ -86,6 +86,31 @@ describe('events.logToolCall', () => {
     expect(() => logToolCall(baseEvent(), (e) => { err = e })).not.toThrow()
     expect(err).not.toBe(null)
   })
+
+  it('persists v1.3 capability fields when present (slice 3)', () => {
+    logToolCall(baseEvent({
+      tool: 'dc_send_file',
+      requiredCapability: 'private_data_write',
+      originatorCapabilities: ['chat', 'low_stakes_*'],
+      capabilityDecision: 'would_deny',
+    }))
+    const files = readdirSync(dir)
+    const parsed = JSON.parse(readFileSync(join(dir, files[0]), 'utf-8').trim())
+    expect(parsed.requiredCapability).toBe('private_data_write')
+    expect(parsed.originatorCapabilities).toEqual(['chat', 'low_stakes_*'])
+    expect(parsed.capabilityDecision).toBe('would_deny')
+  })
+
+  it('omits v1.3 capability fields gracefully when absent (pre-slice-3 records)', () => {
+    // The fields are optional. logToolCall must accept events without
+    // them and the JSON line must round-trip cleanly.
+    logToolCall(baseEvent())
+    const files = readdirSync(dir)
+    const parsed = JSON.parse(readFileSync(join(dir, files[0]), 'utf-8').trim())
+    expect(parsed.requiredCapability).toBeUndefined()
+    expect(parsed.originatorCapabilities).toBeUndefined()
+    expect(parsed.capabilityDecision).toBeUndefined()
+  })
 })
 
 describe('events.buildArgPreview', () => {
