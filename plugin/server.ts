@@ -729,61 +729,100 @@ const socketServer = new SocketServer({
       // Tag this tool call against the in-flight turn (if any). Also bumps
       // the cache's per-turn tool-call counter for the turn event.
       const turnId = subagentCache.recordToolCall(req.chatId)
+      // v1.3 slice 4 — capability gate. Refuse calls where the originator's
+      // bundle doesn't cover the tool's requiresCapability annotation.
+      //
+      // Reviewer-driven design (Elena HURT 1, Oliver P2 #2): compute the
+      // gate decision ONCE here, capture it, and pass it through `emit`
+      // and `emitGateDeny` so the tools-log and permissions-log agree.
+      // The previous double-evaluation produced inconsistent audit when
+      // requestor_contact_id was declared (gate ran against family-member,
+      // emit recomputed against subscriber → two streams disagreed).
+      //
+      // Originator resolution:
+      //   - args.requestor_contact_id present (T1 relay case) → validate
+      //     positive int + chat membership, gate against THEIR caps.
+      //     Reject with capability_invalid_requestor on parse / non-member.
+      //   - Otherwise → chat's pairing contact (firstPermissionedContact).
+      //
+      // T4 fail-closed: evaluateCapability is wrapped in try/catch — any
+      // principal-store error denies with capability_lookup_error.
+      const argsObj = (frame.args ?? {}) as Record<string, unknown>
+      const gateRequired = requiredCapabilityFor(frame.tool) ?? 'chat'
+
+      // Resolve gate state into a single object so all downstream loggers
+      // see the same view. `originator`/`caps`/`decision` are populated in
+      // every branch (including the four deny paths) so emit + emitGateDeny
+      // never disagree.
+      type GateState = {
+        originator: number | null
+        caps: readonly string[]
+        decision: 'allow' | 'would_deny'
+      }
+      let gate: GateState = {
+        originator: access.firstPermissionedContact(req.chatId),
+        caps: [],
+        decision: 'allow',
+      }
+
       const emit = (ok: boolean, errorCode: string | null): void => {
-        const callerContactId = access.firstPermissionedContact(req.chatId)
-        const requiredCapability = requiredCapabilityFor(frame.tool)
-        const cap = access.evaluateCapability(callerContactId, requiredCapability)
         logToolCall({
           ts: new Date().toISOString(),
           source: 'subagent',
           tool: frame.tool,
           callerChatId: req.chatId,
-          callerContactId,
+          callerContactId: gate.originator,
           argChatId,
           targetOwner: argChatId !== null ? access.firstPermissionedContact(argChatId) : null,
           durationMs: Date.now() - start,
           ok,
           errorCode,
-          argPreview: buildArgPreview(frame.args as Record<string, unknown>),
+          argPreview: buildArgPreview(argsObj),
           turnId,
-          requiredCapability: requiredCapability ?? null,
-          originatorCapabilities: [...cap.originatorCapabilities],
-          capabilityDecision: cap.decision,
+          requiredCapability: gateRequired,
+          originatorCapabilities: [...gate.caps],
+          capabilityDecision: gate.decision,
         }, (err) => logf('events: log failed: %v', err))
       }
+
+      const emitGateDeny = (
+        reason: 'capability_deny' | 'capability_lookup_error' | 'capability_invalid_requestor',
+      ): void => {
+        const binding = bindings.getBinding(req.chatId)
+        logPermission({
+          ts: new Date().toISOString(),
+          chatId: req.chatId,
+          agentId: binding?.agentId ?? null,
+          tool: frame.tool,
+          inputPreview: buildArgPreview(argsObj),
+          verdict: 'deny',
+          reason,
+          timedOut: false,
+          durationMs: 0,
+          originatorContactId: gate.originator,
+          requiredCapability: gateRequired,
+          originatorCapabilities: [...gate.caps],
+        }, (err) => logf('events: permission log failed: %v', err))
+      }
+
       if (argChatId !== null && argChatId !== req.chatId) {
+        // Pre-gate structural check; capability state stays default.
         emit(false, 'chat_mismatch')
         return { kind: 'toolError', id: frame.id, error: { code: 'chat_mismatch', message: 'tool call chat_id does not match subagent binding' } }
       }
-      // v1.3 slice 4 — capability gate. Refuse calls where the originator's
-      // bundle doesn't cover the tool's requiresCapability annotation.
-      //
-      // Originator resolution:
-      //   - If args.requestor_contact_id is present (T1 mitigation for the
-      //     relay case — subscriber's agent acting on a non-pairing-contact's
-      //     request), validate that contact is a member of the target chat
-      //     and use THEIR caps for the gate. Refuse with
-      //     `capability_invalid_requestor` if missing/non-member.
-      //   - Otherwise, use the chat's pairing contact (firstPermissionedContact).
-      //
-      // T4 mitigation: evaluateCapability is wrapped in try/catch — any
-      // principal-store error fails closed with `capability_lookup_error`.
-      const argsObj = frame.args as Record<string, unknown>
+
       const requestorRaw = argsObj.requestor_contact_id
-      let gateOriginator: number | null = access.firstPermissionedContact(req.chatId)
       if (requestorRaw !== undefined && requestorRaw !== null) {
         const n = typeof requestorRaw === 'string'
           ? Number(requestorRaw)
           : (typeof requestorRaw === 'number' ? requestorRaw : NaN)
         if (Number.isNaN(n) || !Number.isInteger(n) || n <= 0) {
+          gate = { originator: null, caps: [], decision: 'would_deny' }
+          emitGateDeny('capability_invalid_requestor')
           emit(false, 'capability_invalid_requestor')
           return {
-            kind: 'toolError',
-            id: frame.id,
-            error: {
-              code: 'capability_invalid_requestor',
-              message: `requestor_contact_id must be a positive integer; got ${JSON.stringify(requestorRaw)}`,
-            },
+            kind: 'toolError', id: frame.id,
+            error: { code: 'capability_invalid_requestor', message: `requestor_contact_id must be a positive integer; got ${JSON.stringify(requestorRaw)}` },
           }
         }
         let members: number[]
@@ -791,68 +830,51 @@ const socketServer = new SocketServer({
           members = await client.getChatContacts(req.chatId)
         } catch (err) {
           logf('capability gate: getChatContacts threw for chat=%d: %v', req.chatId, err)
+          gate = { originator: n, caps: [], decision: 'would_deny' }
+          emitGateDeny('capability_lookup_error')
           emit(false, 'capability_lookup_error')
           return {
-            kind: 'toolError',
-            id: frame.id,
+            kind: 'toolError', id: frame.id,
             error: { code: 'capability_lookup_error', message: 'could not validate requestor membership; refused for safety' },
           }
         }
         if (!members.includes(n)) {
+          gate = { originator: n, caps: [], decision: 'would_deny' }
+          emitGateDeny('capability_invalid_requestor')
           emit(false, 'capability_invalid_requestor')
           return {
-            kind: 'toolError',
-            id: frame.id,
-            error: {
-              code: 'capability_invalid_requestor',
-              message: `requestor_contact_id ${n} is not a member of chat ${req.chatId}`,
-            },
+            kind: 'toolError', id: frame.id,
+            error: { code: 'capability_invalid_requestor', message: `requestor_contact_id ${n} is not a member of chat ${req.chatId}` },
           }
         }
-        gateOriginator = n
+        gate.originator = n
       }
-      const gateRequired = requiredCapabilityFor(frame.tool)
-      let gateDecision: 'allow' | 'would_deny' = 'allow'
-      let gateReason: 'capability_deny' | 'capability_lookup_error' | null = null
-      let gateCaps: readonly string[] = []
+
       try {
-        const ev = access.evaluateCapability(gateOriginator, gateRequired)
-        gateDecision = ev.decision
-        gateCaps = ev.originatorCapabilities
-        if (gateDecision === 'would_deny') gateReason = 'capability_deny'
+        const ev = access.evaluateCapability(gate.originator, gateRequired)
+        gate.caps = ev.originatorCapabilities
+        gate.decision = ev.decision
       } catch (err) {
-        // Fail-closed: any unexpected lookup error denies the call.
+        // Fail-closed per security review T4. Now reachable for real
+        // (loadContact propagates non-ENOENT FS errors / schema mismatch
+        // since the slice-3-5 review fix).
         logf('capability gate: evaluateCapability threw for chat=%d tool=%s: %v', req.chatId, frame.tool, err)
-        gateDecision = 'would_deny'
-        gateReason = 'capability_lookup_error'
-        gateCaps = []
-      }
-      if (gateReason !== null) {
-        const binding = bindings.getBinding(req.chatId)
-        logPermission({
-          ts: new Date().toISOString(),
-          chatId: req.chatId,
-          agentId: binding?.agentId ?? null,
-          tool: frame.tool,
-          inputPreview: buildArgPreview(frame.args as Record<string, unknown>),
-          verdict: 'deny',
-          reason: gateReason,
-          timedOut: false,
-          durationMs: 0,
-          originatorContactId: gateOriginator,
-          requiredCapability: gateRequired ?? 'chat',
-          originatorCapabilities: [...gateCaps],
-        }, (err) => logf('events: permission log failed: %v', err))
-        emit(false, gateReason)
+        gate.caps = []
+        gate.decision = 'would_deny'
+        emitGateDeny('capability_lookup_error')
+        emit(false, 'capability_lookup_error')
         return {
-          kind: 'toolError',
-          id: frame.id,
-          error: {
-            code: gateReason,
-            message: gateReason === 'capability_lookup_error'
-              ? `capability lookup error for ${frame.tool}; refused for safety`
-              : `${frame.tool} requires capability "${gateRequired ?? 'chat'}"; originator (contact ${gateOriginator ?? 'null'}) lacks it`,
-          },
+          kind: 'toolError', id: frame.id,
+          error: { code: 'capability_lookup_error', message: `capability lookup error for ${frame.tool}; refused for safety` },
+        }
+      }
+
+      if (gate.decision === 'would_deny') {
+        emitGateDeny('capability_deny')
+        emit(false, 'capability_deny')
+        return {
+          kind: 'toolError', id: frame.id,
+          error: { code: 'capability_deny', message: `${frame.tool} requires capability "${gateRequired}"; originator (contact ${gate.originator ?? 'null'}) lacks it` },
         }
       }
       if (!rateLimiter.check(req.chatId)) {

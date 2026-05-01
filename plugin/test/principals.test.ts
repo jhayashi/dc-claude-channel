@@ -62,19 +62,43 @@ describe("principals — write/read/list", () => {
     expect(files.every((f) => !f.includes(".tmp."))).toBe(true);
   });
 
-  test("loadContact tolerates a corrupted JSON file", () => {
+  test("loadContact throws on a corrupted JSON file (capability_lookup_error path)", () => {
+    // Per security review T4 / Oliver P2 #1: corrupt records throw so
+    // the capability gate distinguishes "we said no" (capability_deny)
+    // from "we couldn't decide" (capability_lookup_error). The previous
+    // null-return behavior collapsed both reasons to deny.
     mkdirSync(join(principalsDir, "humans"), { recursive: true });
     writeFileSync(join(principalsDir, "humans", "99.json"), "{ not json");
-    expect(access.loadContact(99)).toBeNull();
+    expect(() => access.loadContact(99)).toThrow();
   });
 
-  test("loadContact rejects records with the wrong kind", () => {
+  test("loadContact throws on schema-mismatch records (wrong kind)", () => {
     mkdirSync(join(principalsDir, "humans"), { recursive: true });
     writeFileSync(
       join(principalsDir, "humans", "99.json"),
       JSON.stringify({ kind: "agent", contactId: 99, firstPairedAt: "2026-01-01T00:00:00Z" }),
     );
-    expect(access.loadContact(99)).toBeNull();
+    expect(() => access.loadContact(99)).toThrow(/schema mismatch/);
+  });
+
+  test("listContacts skips corrupt records and continues (does not crash startup)", () => {
+    // listContacts is called from hot startup paths
+    // (backfillFromAllowlist, hasAnyPermissionedContact). A single bad
+    // record must not take down the dispatcher.
+    mkdirSync(join(principalsDir, "humans"), { recursive: true });
+    writeFileSync(join(principalsDir, "humans", "1.json"), "{ not json"); // corrupt
+    access.writeContact({ kind: "human", contactId: 2, firstPairedAt: "2026-04-25T12:00:00.000Z" });
+    // Silence the expected stderr noise from the skipped record.
+    const origErr = console.error;
+    let logged = false;
+    console.error = () => { logged = true; };
+    try {
+      const list = access.listContacts();
+      expect(list.map((c) => c.contactId)).toEqual([2]);
+      expect(logged).toBe(true);
+    } finally {
+      console.error = origErr;
+    }
   });
 
   test("listContacts returns empty when dir is missing", () => {

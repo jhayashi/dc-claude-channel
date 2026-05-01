@@ -110,31 +110,49 @@ function atomicWriteJson(path: string, data: unknown): void {
 
 // ── Human principals ─────────────────────────────────────────────────────────
 
-/** Read a human principal by contact id, or null if missing/corrupt. */
+/**
+ * Read a human principal by contact id.
+ *
+ * Returns null when the record is genuinely absent (ENOENT). For other
+ * I/O errors (EACCES, EROFS, EBUSY, malformed JSON, schema-mismatch),
+ * THROWS so the caller's capability gate distinguishes "we said no"
+ * (capability_deny — contact has no record) from "we couldn't decide"
+ * (capability_lookup_error — record exists but we can't read it). Per
+ * security review T4. Reviewer Oliver P2 #1 flagged that the prior
+ * blanket-catch made T4's distinction dead code.
+ */
 export function loadContact(contactId: number): ContactPrincipal | null {
   const path = contactPath(contactId);
-  if (!existsSync(path)) return null;
+  let raw: string;
   try {
-    const raw = readFileSync(path, "utf-8");
-    const parsed = JSON.parse(raw) as Partial<ContactPrincipal>;
-    if (parsed.kind !== "human" || typeof parsed.contactId !== "number" || typeof parsed.firstPairedAt !== "string") {
-      return null;
-    }
-    const role = typeof parsed.role === "string" ? parsed.role : "subscriber";
-    const capabilities = Array.isArray(parsed.capabilities)
-      ? parsed.capabilities.filter((c): c is string => typeof c === "string")
-      : (typeof parsed.role === "string" ? [...bundleFor(parsed.role)] : ["*"]);
-    return {
-      kind: "human",
-      contactId: parsed.contactId,
-      displayName: parsed.displayName,
-      firstPairedAt: parsed.firstPairedAt,
-      role,
-      capabilities,
-    };
-  } catch {
-    return null;
+    raw = readFileSync(path, "utf-8");
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === "ENOENT") return null;
+    // Real failure — propagate so the capability gate logs
+    // capability_lookup_error rather than collapsing to a misleading
+    // capability_deny.
+    throw err;
   }
+  const parsed = JSON.parse(raw) as Partial<ContactPrincipal>;
+  if (parsed.kind !== "human" || typeof parsed.contactId !== "number" || typeof parsed.firstPairedAt !== "string") {
+    // Schema mismatch — treat as corrupt rather than absent. Throwing
+    // routes this through the gate's lookup-error path, surfacing the
+    // bad record to the operator instead of silently denying.
+    throw new Error(`principals.loadContact: schema mismatch in ${path}`);
+  }
+  const role = typeof parsed.role === "string" ? parsed.role : "subscriber";
+  const capabilities = Array.isArray(parsed.capabilities)
+    ? parsed.capabilities.filter((c): c is string => typeof c === "string")
+    : (typeof parsed.role === "string" ? [...bundleFor(parsed.role)] : ["*"]);
+  return {
+    kind: "human",
+    contactId: parsed.contactId,
+    displayName: parsed.displayName,
+    firstPairedAt: parsed.firstPairedAt,
+    role,
+    capabilities,
+  };
 }
 
 /** Atomically persist a human principal record. */
@@ -143,8 +161,14 @@ export function writeContact(p: ContactPrincipal): void {
 }
 
 /**
- * List all human principals on disk, sorted by `firstPairedAt` (oldest first)
- * with `contactId` as tiebreaker.
+ * List all human principals on disk, sorted by `firstPairedAt` (oldest
+ * first) with `contactId` as tiebreaker.
+ *
+ * Skips records that fail to load — `loadContact` throws for corrupt /
+ * unreadable records (so the capability gate can log
+ * `capability_lookup_error` for one-off lookups), but the listing path
+ * is used at startup and shouldn't take down the dispatcher because of
+ * a single bad file. Errors are logged to stderr for operator visibility.
  */
 export function listContacts(): ContactPrincipal[] {
   const dir = join(_principalsDir, "humans");
@@ -159,8 +183,12 @@ export function listContacts(): ContactPrincipal[] {
     if (!name.endsWith(".json")) continue;
     const id = parseInt(name.slice(0, -5), 10);
     if (Number.isNaN(id)) continue;
-    const p = loadContact(id);
-    if (p) out.push(p);
+    try {
+      const p = loadContact(id);
+      if (p) out.push(p);
+    } catch (err) {
+      console.error(`principals.listContacts: skipping ${name} —`, err);
+    }
   }
   out.sort((a, b) => a.firstPairedAt.localeCompare(b.firstPairedAt) || a.contactId - b.contactId);
   return out;
