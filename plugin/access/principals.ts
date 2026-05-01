@@ -16,10 +16,11 @@
  * `agents/<agentId>.json` arrives in Phase 3 — see the design doc.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { chatsForOwner, hasAnyOwner, isKnownOwner, listPaired } from "./chat-allowlist.js";
+import { bundleFor } from "./capability-bundles.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,25 @@ export interface HumanPrincipal {
   displayName?: string;
   /** ISO timestamp of the *first* successful pair for this contact. */
   firstPairedAt: string;
+  /**
+   * Role assigned at pairing time (or by the subscriber via the role
+   * dropdown). Maps to a capability bundle. v1.3 slice 1 only fills this
+   * field on read for legacy records (defaults to `subscriber`,
+   * preserving binary-trust behavior on upgrade); the pairing-time role
+   * picker that asks the subscriber to classify each new contact lands
+   * in slice 6.
+   */
+  role?: string;
+  /**
+   * Resolved capability set. May be the role's bundle or an explicit
+   * override. v1.3 slice 1 fills this on read for legacy records:
+   *   - role + capabilities both missing → `["*"]` (subscriber default)
+   *   - role set, capabilities missing → `bundleFor(role)`
+   *   - capabilities set → use as-is
+   * Empty set is denied-everywhere; the dispatcher gate is fail-closed,
+   * and `getCapabilitiesFor` returns `[]` for unknown contacts.
+   */
+  capabilities?: string[];
 }
 
 export interface AgentPrincipal {
@@ -69,8 +89,12 @@ function humanPath(contactId: number): string {
 function atomicWriteJson(path: string, data: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.tmp.${process.pid}.${Date.now()}`;
-  writeFileSync(tmp, JSON.stringify(data, null, 2));
+  writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
   renameSync(tmp, path);
+  // Defensive: rename preserves the source mode, but if `path` already
+  // existed with a different mode an older Node could surprise us.
+  // Explicit chmod is idempotent and removes ambiguity.
+  try { chmodSync(path, 0o600); } catch { /* best-effort */ }
 }
 
 // ── Human principals ─────────────────────────────────────────────────────────
@@ -85,11 +109,17 @@ export function loadHuman(contactId: number): HumanPrincipal | null {
     if (parsed.kind !== "human" || typeof parsed.contactId !== "number" || typeof parsed.firstPairedAt !== "string") {
       return null;
     }
+    const role = typeof parsed.role === "string" ? parsed.role : "subscriber";
+    const capabilities = Array.isArray(parsed.capabilities)
+      ? parsed.capabilities.filter((c): c is string => typeof c === "string")
+      : (typeof parsed.role === "string" ? [...bundleFor(parsed.role)] : ["*"]);
     return {
       kind: "human",
       contactId: parsed.contactId,
       displayName: parsed.displayName,
       firstPairedAt: parsed.firstPairedAt,
+      role,
+      capabilities,
     };
   } catch {
     return null;
@@ -244,4 +274,27 @@ export function hasAnyPermissionedContact(): boolean {
   // listHumans does one readdir; cheap. Returns the union of chat-
   // allowlist owners and principal records.
   return listHumans().length > 0;
+}
+
+/**
+ * Resolved capability set for a contact (v1.3 slice 1).
+ *
+ * Resolution order:
+ *   1. Unknown contact (no principal) → `[]` (denied-everywhere; the
+ *      dispatcher gate is fail-closed).
+ *   2. Principal has explicit `capabilities` → use it.
+ *   3. Principal has `role` only → expand the role's bundle.
+ *   4. Neither → `["*"]` (legacy backfill safety; pre-v1.3 records are
+ *      treated as `subscriber`).
+ *
+ * Intentionally NOT memoized — role changes via `setHumanRole` (slice 6/7)
+ * must take effect on the next tool call. The lookup is one stat + one
+ * small JSON read; cheap.
+ */
+export function getCapabilitiesFor(contactId: number): string[] {
+  const p = loadHuman(contactId);
+  if (!p) return [];
+  if (Array.isArray(p.capabilities) && p.capabilities.length > 0) return [...p.capabilities];
+  if (typeof p.role === "string" && p.role.length > 0) return [...bundleFor(p.role)];
+  return ["*"];
 }

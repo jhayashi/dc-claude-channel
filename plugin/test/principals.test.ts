@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import * as access from "../access/index.js";
@@ -25,7 +25,7 @@ describe("principals — write/read/list", () => {
     expect(access.loadHuman(42)).toBeNull();
   });
 
-  test("writeHuman + loadHuman round-trips", () => {
+  test("writeHuman + loadHuman round-trips (v1.3: fills role/capabilities defaults)", () => {
     const p: access.HumanPrincipal = {
       kind: "human",
       contactId: 42,
@@ -33,7 +33,14 @@ describe("principals — write/read/list", () => {
       firstPairedAt: "2026-04-25T12:00:00.000Z",
     };
     access.writeHuman(p);
-    expect(access.loadHuman(42)).toEqual(p);
+    // loadHuman fills role/capabilities defaults at read time for legacy
+    // records written without them. Subscriber + wildcard preserves
+    // binary-trust behavior on upgrade.
+    expect(access.loadHuman(42)).toEqual({
+      ...p,
+      role: "subscriber",
+      capabilities: ["*"],
+    });
   });
 
   test("writeHuman creates the humans/ subdir on first write", () => {
@@ -302,5 +309,106 @@ describe("principals — removeHuman error handling (P2.5)", () => {
     } finally {
       console.error = origErr;
     }
+  });
+});
+
+describe("principals — role + capabilities (v1.3 slice 1)", () => {
+  test("loadHuman fills defaults on legacy records (no role, no capabilities)", () => {
+    // Write a v1.2.2-shape record (no role, no capabilities) directly to disk.
+    mkdirSync(join(principalsDir, "humans"), { recursive: true });
+    writeFileSync(
+      join(principalsDir, "humans", "55.json"),
+      JSON.stringify({ kind: "human", contactId: 55, firstPairedAt: "2026-04-25T12:00:00.000Z" }),
+    );
+    const p = access.loadHuman(55);
+    expect(p).not.toBeNull();
+    expect(p!.role).toBe("subscriber");
+    expect(p!.capabilities).toEqual(["*"]);
+  });
+
+  test("loadHuman preserves explicit role and capabilities when both present", () => {
+    access.writeHuman({
+      kind: "human",
+      contactId: 56,
+      firstPairedAt: "2026-04-25T12:00:00.000Z",
+      role: "family-member",
+      capabilities: ["chat", "low_stakes_*"],
+    });
+    const p = access.loadHuman(56);
+    expect(p!.role).toBe("family-member");
+    expect(p!.capabilities).toEqual(["chat", "low_stakes_*"]);
+  });
+
+  test("loadHuman fills capabilities from role bundle when only role is set", () => {
+    // Defensive: a record with role but missing capabilities (shouldn't happen
+    // in practice, but loadHuman must not return [] for such a record — that
+    // would mean denied-everywhere on-disk corruption).
+    mkdirSync(join(principalsDir, "humans"), { recursive: true });
+    writeFileSync(
+      join(principalsDir, "humans", "57.json"),
+      JSON.stringify({ kind: "human", contactId: 57, firstPairedAt: "2026-04-25T12:00:00.000Z", role: "guest" }),
+    );
+    const p = access.loadHuman(57);
+    expect(p!.role).toBe("guest");
+    expect(p!.capabilities).toEqual(["chat"]);
+  });
+
+  test("writeHuman + loadHuman round-trips role and capabilities", () => {
+    const p: access.HumanPrincipal = {
+      kind: "human",
+      contactId: 58,
+      firstPairedAt: "2026-04-25T12:00:00.000Z",
+      role: "untrusted-agent",
+      capabilities: ["chat"],
+    };
+    access.writeHuman(p);
+    expect(access.loadHuman(58)).toEqual(p);
+  });
+
+  test("writeHuman writes principal file with mode 0600", () => {
+    access.writeHuman({
+      kind: "human",
+      contactId: 59,
+      firstPairedAt: "2026-04-25T12:00:00.000Z",
+    });
+    const path = join(principalsDir, "humans", "59.json");
+    const mode = statSync(path).mode & 0o777;
+    expect(mode).toBe(0o600);
+  });
+});
+
+describe("principals — getCapabilitiesFor (v1.3 slice 1)", () => {
+  test("returns the principal's explicit capability set", () => {
+    access.writeHuman({
+      kind: "human",
+      contactId: 60,
+      firstPairedAt: "2026-04-25T12:00:00.000Z",
+      role: "family-member",
+      capabilities: ["chat", "low_stakes_*"],
+    });
+    expect(access.getCapabilitiesFor(60)).toEqual(["chat", "low_stakes_*"]);
+  });
+
+  test("returns empty for unknown contact (fail-closed)", () => {
+    expect(access.getCapabilitiesFor(9999)).toEqual([]);
+  });
+
+  test("falls back to role bundle when capabilities array is missing on disk", () => {
+    mkdirSync(join(principalsDir, "humans"), { recursive: true });
+    writeFileSync(
+      join(principalsDir, "humans", "61.json"),
+      JSON.stringify({ kind: "human", contactId: 61, firstPairedAt: "2026-04-25T12:00:00.000Z", role: "guest" }),
+    );
+    expect(access.getCapabilitiesFor(61)).toEqual(["chat"]);
+  });
+
+  test("returns wildcard for legacy records (no role, no capabilities)", () => {
+    mkdirSync(join(principalsDir, "humans"), { recursive: true });
+    writeFileSync(
+      join(principalsDir, "humans", "62.json"),
+      JSON.stringify({ kind: "human", contactId: 62, firstPairedAt: "2026-04-25T12:00:00.000Z" }),
+    );
+    // Legacy record loaded with role=subscriber default → wildcard bundle.
+    expect(access.getCapabilitiesFor(62)).toEqual(["*"]);
   });
 });
