@@ -563,6 +563,17 @@ export class DCClient {
     return await rpc.getChatContacts(accountId, chatId);
   }
 
+  /**
+   * List every chat id known to the bot's account. Used by v1.3 startup
+   * to walk membership and seed the in-memory allowlist cache.
+   * Wraps `getChatlistEntries(accountId, null, null, null)` — no
+   * filtering, every chat included.
+   */
+  async getChats(): Promise<number[]> {
+    const { rpc, accountId } = this.ensureAccount();
+    return await rpc.getChatlistEntries(accountId, null, null, null);
+  }
+
   async getFullChat(chatId: number): Promise<{
     id: number
     name: string

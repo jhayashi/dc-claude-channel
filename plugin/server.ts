@@ -2097,14 +2097,42 @@ async function main(): Promise<void> {
     logf('dc channel: orphan sweep failed: %v', err)
   }
 
-  // Phase 2 principal backfill — write a HumanPrincipal record for each
-  // owner currently in the chat-allowlist. Idempotent; run on every
-  // startup so legacy installs migrate without re-pairing.
+  // v1.3 startup sequence — make principals + chat membership the
+  // source of truth for the allowlist; retire legacy approved/ files.
+  //
+  //   1. seedFromLegacyDir   — bootstrap the cache from on-disk approved/
+  //   2. backfillFromAllowlist — write principal records for any cache
+  //      entry without one (legacy installs)
+  //   3. populateAllowlistFromMembership — re-derive from dc-core
+  //      membership (cache becomes a true derived view)
+  //   4. retireApprovedDir   — rename approved/ → approved.legacy/
+  //
+  // Each step is idempotent. Order matters: backfill needs the cache
+  // pre-populated by step 1; the membership scan in step 3 may invalidate
+  // step 1's seed if a chat lost its only permissioned member.
+  try {
+    access.seedFromLegacyDir()
+  } catch (err) {
+    logf('dc channel: seed-from-legacy-dir failed: %v', err)
+  }
   try {
     const written = access.backfillFromAllowlist()
     if (written > 0) logf('dc channel: backfilled %d principal record(s) at startup', written)
   } catch (err) {
     logf('dc channel: principal backfill failed: %v', err)
+  }
+  try {
+    await access.populateAllowlistFromMembership(
+      () => client.getChats(),
+      (chatId) => client.getChatContacts(chatId),
+    )
+  } catch (err) {
+    logf('dc channel: populate-from-membership failed: %v', err)
+  }
+  try {
+    access.retireApprovedDir()
+  } catch (err) {
+    logf('dc channel: retire-approved-dir failed: %v', err)
   }
 
   // Register event handlers BEFORE starting IO to avoid missing queued messages.
@@ -2130,6 +2158,15 @@ async function main(): Promise<void> {
   }
 
   const handleChatModified = async (chatId: number): Promise<void> => {
+    // v1.3: refresh the in-memory allowlist cache before any auth-gated
+    // logic runs. Membership may have changed — a principal joined or
+    // left — and the cache needs to reflect that for subsequent
+    // isAllowed() reads.
+    try {
+      await access.refreshAllowlistForChat(chatId, (id) => client.getChatContacts(id))
+    } catch (err) {
+      logf('dc channel: refreshAllowlistForChat error for chat %d: %v', chatId, err)
+    }
     if (!access.isAllowed(chatId)) return
     try {
       const contacts = await client.getChatContacts(chatId)
