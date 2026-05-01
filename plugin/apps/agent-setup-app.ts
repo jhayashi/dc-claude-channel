@@ -1551,6 +1551,10 @@ export const agentSetupApp: WebXDCApp = {
             ctx.logf('agent-setup: unpair cleanup failed chat=%d: %v', cid, err)
           }
         }
+        // Wipe the principal record so backfill on next startup doesn't
+        // resurrect the contact, and so isContactApproved returns false.
+        // (#66 Option A — full per-contact unpair wipes both layers.)
+        access.removeHuman(contactId)
         ctx.logf('agent-setup: unpaired contact %d (%s, %d chat(s))', contactId, mode, chatIds.length)
         continue
       }

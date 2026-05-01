@@ -39,10 +39,12 @@ afterEach(() => {
  */
 function decideUnpaired(chatId: number, fromId: number | undefined): 'ignored' | 'auto-paired' | 'pair-flow' {
   if (access.isAllowed(chatId)) throw new Error('test setup error: chat is already allowed')
-  if (access.hasAnyOwner() && fromId && !access.isKnownOwner(fromId)) {
+  // #66 Option A — auth gate is contact identity (principal record OR
+  // legacy chat-allowlist entry), not just chat-allowlist.
+  if (access.hasAnyOwner() && fromId && !access.isContactApproved(fromId)) {
     return 'ignored'
   }
-  if (fromId && access.isKnownOwner(fromId)) {
+  if (fromId && access.isContactApproved(fromId)) {
     access.addChat(chatId, fromId)
     return 'auto-paired'
   }
@@ -93,6 +95,68 @@ test('msg.fromId undefined → pair-flow (does not auto-pair)', () => {
   access.addChat(10, 5)
   expect(decideUnpaired(20, undefined)).toBe('pair-flow')
   expect(access.isAllowed(20)).toBe(false)
+})
+
+describe('auto-pair via principal record (#66 Option A)', () => {
+  test('contact with only a principal (no chats) auto-pairs on new chat message', () => {
+    // Edge case under the new model: a principal can exist without
+    // any approved chats (e.g., the user unpaired all their chats but
+    // we never wiped the principal — pre-#66-fix behavior). The new
+    // gate uses isContactApproved, which reads principals first, so
+    // they auto-pair on a new chat without ceremony. Matches the
+    // "contact identity is the trust boundary" intent.
+    access.recordHumanPair(5)
+    // hasAnyOwner is false (no chat-allowlist entries) — this branch
+    // bypasses the stranger-lockout and falls through to the auto-pair.
+    expect(decideUnpaired(10, 5)).toBe('auto-paired')
+    expect(access.getOwner(10)).toBe(5)
+  })
+
+  test('contact with chats + principal works the same as chats-only (legacy)', () => {
+    access.addChat(10, 5)
+    access.recordHumanPair(5)
+    expect(decideUnpaired(20, 5)).toBe('auto-paired')
+    expect(access.getOwner(20)).toBe(5)
+  })
+
+  test('stranger with no principal and no chats is rejected when other owners exist', () => {
+    access.addChat(10, 5)
+    access.recordHumanPair(5)
+    // A new contact (99) with no record on either layer — must be
+    // rejected because the bot is no longer in fresh-install mode.
+    expect(decideUnpaired(20, 99)).toBe('ignored')
+  })
+
+  test('removeHuman + removeChat fully revokes — subsequent message is ignored', () => {
+    access.addChat(10, 5)
+    access.recordHumanPair(5)
+    expect(access.isContactApproved(5)).toBe(true)
+
+    // Mirror the unpair_commit / dc_access_unpair sequence: cleanupChatState
+    // runs per-chat (which calls removeChat under the hood), then
+    // removeHuman wipes the principal.
+    access.removeChat(10)
+    access.removeHuman(5)
+    expect(access.isContactApproved(5)).toBe(false)
+
+    // Add a different contact's chat so hasAnyOwner is true (otherwise
+    // we'd be in fresh-install mode and ANY contact could pair).
+    access.addChat(11, 6)
+    expect(decideUnpaired(20, 5)).toBe('ignored')
+  })
+
+  test('removeHuman alone (chats stay) still leaves contact approved via legacy fallback', () => {
+    // Documents the legacy-fallback safety: while the principal is
+    // gone, isKnownOwner still finds the chat-allowlist entry. The
+    // unpair flow removes BOTH layers, so this state isn't reachable
+    // through normal use — but if a future migration leaves a chat
+    // without its principal, auth keeps working.
+    access.addChat(10, 5)
+    access.recordHumanPair(5)
+    access.removeHuman(5)
+    expect(access.isContactApproved(5)).toBe(true)
+    expect(decideUnpaired(20, 5)).toBe('auto-paired')
+  })
 })
 
 describe('auto-pair → principals contract', () => {

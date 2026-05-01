@@ -1305,6 +1305,10 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
             logf('dc channel: unpair cleanup failed chat=%d: %v', cid, err)
           }
         }
+        // Wipe the principal record so backfill on next startup doesn't
+        // resurrect the contact, and so isContactApproved returns false.
+        // (#66 Option A — full per-contact unpair wipes both layers.)
+        access.removeHuman(contactId)
         logf('dc channel: terminal-unpaired contact %d (%s, %d chat(s))', contactId, mode, chatIds.length)
         const verb = mode === 'delete' ? 'deleted' : 'frozen (read-only)'
         return { content: [{ type: 'text' as const, text: `Unpaired ${display} (contact ${contactId}): ${chatIds.length} chat(s) ${verb}.` }] }
@@ -2390,15 +2394,17 @@ async function main(): Promise<void> {
   }
 
   const handleUnpairedMessage = async (msg: Message): Promise<void> => {
-    // Once an owner is established, only known owners can initiate new pairings.
-    if (access.hasAnyOwner() && msg.fromId && !access.isKnownOwner(msg.fromId)) {
+    // Once a principal is established, only known principals can initiate new pairings.
+    // (#66 Option A — auth gate is contact identity, not chat allowlist.)
+    if (access.hasAnyOwner() && msg.fromId && !access.isContactApproved(msg.fromId)) {
       logf('dc channel: ignoring pairing request from unknown contact %d in chat %d', msg.fromId, msg.chatId)
       return
     }
-    // Auto-pair: sender is already a known owner from another chat.
-    if (msg.fromId && access.isKnownOwner(msg.fromId)) {
+    // Auto-pair: sender is already an approved contact (from a prior pair
+    // ceremony in some chat, or via principal record).
+    if (msg.fromId && access.isContactApproved(msg.fromId)) {
       access.addChat(msg.chatId, msg.fromId)
-      logf('dc channel: auto-paired chat %d to known owner %d', msg.chatId, msg.fromId)
+      logf('dc channel: auto-paired chat %d to known contact %d', msg.chatId, msg.fromId)
       // The owner has already completed the tutorial in another chat — skip
       // it for this auto-paired chat and route directly to the subagent.
       // (This was the v0.9 regression: the previous fall-through called
@@ -2558,11 +2564,12 @@ async function main(): Promise<void> {
         logf('dc channel: securejoin complete for chat=%d contact=%d (no armed window; waiting for user message)', chatId, contactId)
         return
       }
-      // Gate by owner when one exists: only previously-known owners can
+      // Gate by principal when one exists: only previously-approved contacts can
       // initiate new pairings even within the armed window. This prevents
       // a stray stale-QR scan from a stranger from hijacking the flow.
-      if (access.hasAnyOwner() && !access.isKnownOwner(contactId)) {
-        logf('dc channel: securejoin armed but contact=%d is not a known owner; ignoring', contactId)
+      // (#66 Option A — checks principals + chat-allowlist.)
+      if (access.hasAnyOwner() && !access.isContactApproved(contactId)) {
+        logf('dc channel: securejoin armed but contact=%d is not an approved principal; ignoring', contactId)
         return
       }
       if (access.isAllowed(chatId)) {

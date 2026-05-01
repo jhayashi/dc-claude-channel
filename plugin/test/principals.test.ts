@@ -188,3 +188,56 @@ describe("principals — chatsFor", () => {
     expect(access.chatsFor(agent)).toEqual([]);
   });
 });
+
+describe("principals — isContactApproved (#66 Option A)", () => {
+  test("returns false when neither principal nor allowlist entry exists", () => {
+    expect(access.isContactApproved(42)).toBe(false);
+  });
+
+  test("returns true when a principal record exists, even with no chats", () => {
+    // The whole point of #66: contact identity is the trust boundary,
+    // independent of whether they currently own any approved chat.
+    access.recordHumanPair(42, "Joe");
+    expect(access.isContactApproved(42)).toBe(true);
+    // Sanity: no chat is owned by 42 yet.
+    expect(access.chatsForOwner(42)).toEqual([]);
+  });
+
+  test("returns true via the legacy allowlist fallback (pre-Phase-2 install)", () => {
+    // A pre-Phase-2 install has chat-allowlist entries but no principal
+    // records yet (backfill hasn't run). We must still recognise them.
+    access.addChat(7, 42);
+    expect(access.loadHuman(42)).toBeNull();
+    expect(access.isContactApproved(42)).toBe(true);
+  });
+
+  test("returns false after removeHuman + cleanup (full unpair)", () => {
+    access.recordHumanPair(42);
+    access.addChat(7, 42);
+    expect(access.isContactApproved(42)).toBe(true);
+    access.removeChat(7);
+    access.removeHuman(42);
+    expect(access.isContactApproved(42)).toBe(false);
+  });
+
+  test("returns true with principal-only state if removeChat happened but principal stayed", () => {
+    // The intermediate state during a per-contact unpair: chats are
+    // wiped first via cleanupChatState, then removeHuman runs at the
+    // end. Between the two, isContactApproved still reads true — that
+    // window is fine because no message routing happens during it.
+    access.recordHumanPair(42);
+    access.addChat(7, 42);
+    access.removeChat(7);
+    expect(access.isContactApproved(42)).toBe(true);
+  });
+
+  test("two contacts are independent", () => {
+    access.recordHumanPair(42);
+    access.addChat(8, 99);
+    expect(access.isContactApproved(42)).toBe(true);
+    expect(access.isContactApproved(99)).toBe(true);
+    access.removeHuman(42);
+    expect(access.isContactApproved(42)).toBe(false);
+    expect(access.isContactApproved(99)).toBe(true);
+  });
+});

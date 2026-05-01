@@ -19,7 +19,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { chatsForOwner, listPaired } from "./chat-allowlist.js";
+import { chatsForOwner, isKnownOwner, listPaired } from "./chat-allowlist.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -192,4 +192,21 @@ export function chatsFor(p: Principal): number[] {
   // Agents land in Phase 3 — `principals.chatsFor` will read from
   // `agents/<agentId>.json` then.
   return [];
+}
+
+/**
+ * Is this contact a trusted principal of the bot?
+ *
+ * Source of truth as of v1.2.2 (#66 Option A): the on-disk human
+ * principal record. Falls back to the legacy `isKnownOwner` chat-
+ * allowlist scan to cover pre-Phase-2 installs that haven't yet
+ * backfilled and edge cases where backfill hasn't run.
+ *
+ * Used as the auth gate for incoming messages: any chat where an
+ * approved contact sends a message is auto-paired without ceremony.
+ * Per-contact unpair (`removeHuman` + chat cleanup) wipes the trust
+ * fully, so a fully-unpaired contact reads false here.
+ */
+export function isContactApproved(contactId: number): boolean {
+  return loadHuman(contactId) !== null || isKnownOwner(contactId);
 }
