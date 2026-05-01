@@ -6,6 +6,16 @@ plugin/test/integration/.fixtures/
 plugin/test/integration/.fixtures-subagent/
 dev/
 .claude/settings.local.json
-docs/
+docs/**
+docs/spec/
+docs/spec/**
+docs/specs/
+docs/specs/**
+docs/upstream-issues/
+docs/upstream-issues/**
+!docs/architecture.md
+!docs/contributing-webxdc.md
+!docs/release.md
+!docs/d4c-concept-mapping.md
 /scripts/
 *.log
