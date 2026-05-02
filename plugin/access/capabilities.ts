@@ -52,6 +52,7 @@ export interface CapabilityDecision {
  * the data the audit log needs.
  */
 export function evaluateCapability(
+  agentId: string,
   originatorContactId: number | null,
   requiredCapability: string | null | undefined,
 ): CapabilityDecision {
@@ -68,7 +69,7 @@ export function evaluateCapability(
     };
   }
 
-  const originatorCapabilities = getCapabilitiesFor(originatorContactId);
+  const originatorCapabilities = getCapabilitiesFor(agentId, originatorContactId);
   const decision = hasCapability(originatorCapabilities, required) ? "allow" : "would_deny";
   return { required, originatorCapabilities, decision };
 }

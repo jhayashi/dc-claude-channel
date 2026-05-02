@@ -7,6 +7,7 @@ import { applyCapabilityGate, withRequestorParam } from "../access/gate.js";
 
 function makeDeps(overrides: Partial<GateDeps> = {}): GateDeps {
   return {
+    agentId: 'claude-code',
     firstPermissionedContact: () => 50, // default subscriber
     evaluateCapability: () => ({
       required: "chat",
@@ -33,7 +34,7 @@ describe("applyCapabilityGate — allow paths", () => {
   test("default originator (pairing contact), capability covered → allow", async () => {
     const result = await applyCapabilityGate(7, "dc_send_file", {}, "private_data_write", makeDeps({
       firstPermissionedContact: () => 50,
-      evaluateCapability: (id, req) => {
+      evaluateCapability: (_agentId, id, req) => {
         expect(id).toBe(50);
         expect(req).toBe("private_data_write");
         return decision(["*"], "private_data_write", "allow");
@@ -51,7 +52,7 @@ describe("applyCapabilityGate — allow paths", () => {
     const result = await applyCapabilityGate(7, "dc_send", { requestor_contact_id: "200" }, "chat", makeDeps({
       firstPermissionedContact: () => 50,
       getChatContacts: async () => [1, 50, 200],
-      evaluateCapability: (id) => {
+      evaluateCapability: (_agentId, id) => {
         expect(id).toBe(200); // gate uses declared requestor, not pairing contact
         return decision(["chat", "low_stakes_*"], "chat", "allow");
       },
@@ -73,7 +74,7 @@ describe("applyCapabilityGate — allow paths", () => {
 
   test("missing requiresCapability defaults to chat tier", async () => {
     const result = await applyCapabilityGate(7, "unknown_tool", {}, undefined, makeDeps({
-      evaluateCapability: (_id, req) => {
+      evaluateCapability: (_agentId, _id, req) => {
         expect(req).toBe("chat");
         return decision(["chat"], "chat", "allow");
       },
@@ -193,7 +194,7 @@ describe("applyCapabilityGate — capability_deny", () => {
     const result = await applyCapabilityGate(7, "dc_send_file", { requestor_contact_id: 200 }, "private_data_write", makeDeps({
       firstPermissionedContact: () => 50, // subscriber, would have * caps
       getChatContacts: async () => [1, 50, 200],
-      evaluateCapability: (id) => {
+      evaluateCapability: (_agentId, id) => {
         expect(id).toBe(200); // gate must check requestor's caps, not subscriber's
         return decision(["chat"], "private_data_write", "would_deny");
       },

@@ -8,13 +8,16 @@ const root = mkdtempSync(join(tmpdir(), "dc-v13-migration-"));
 const approvedDir = join(root, "approved");
 const approvedLegacyDir = `${approvedDir}.legacy`;
 const principalsDir = join(root, "principals");
+const agentsDir = join(root, "agents");
 
 beforeEach(() => {
   rmSync(approvedDir, { recursive: true, force: true });
   rmSync(approvedLegacyDir, { recursive: true, force: true });
   rmSync(principalsDir, { recursive: true, force: true });
+  rmSync(agentsDir, { recursive: true, force: true });
   access.setApprovedDir(approvedDir);
   access.setPrincipalsDir(principalsDir);
+  access.setContactsAgentsDir(agentsDir);
 });
 
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -41,9 +44,9 @@ describe("v1.3 migration — full happy path", () => {
     expect(access.firstPermissionedContact(200)).toBe(60);
 
     // Step 2: backfill writes principals for legacy owners.
-    expect(access.backfillFromAllowlist()).toBe(2);
-    expect(access.loadContact(50)).not.toBeNull();
-    expect(access.loadContact(60)).not.toBeNull();
+    expect(access.backfillFromAllowlist(access.DEFAULT_AGENT_ID)).toBe(2);
+    expect(access.loadContact(access.DEFAULT_AGENT_ID, 50)).not.toBeNull();
+    expect(access.loadContact(access.DEFAULT_AGENT_ID, 60)).not.toBeNull();
 
     // Step 3: membership scan confirms each chat is permissioned.
     const fakeGetChats = async () => [100, 200];

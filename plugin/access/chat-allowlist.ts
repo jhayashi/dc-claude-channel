@@ -35,7 +35,7 @@
 import { existsSync, readdirSync, readFileSync, renameSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { loadContact } from "./contacts.js";
+import { DEFAULT_AGENT_ID, loadContact } from "./contacts.js";
 
 // ── Module state ─────────────────────────────────────────────────────────────
 
@@ -215,7 +215,12 @@ export async function populateAllowlistFromMembership(
       // `isKnownOwner` fallback) lives in contact-policy and isn't
       // needed here; using it would re-introduce the chat-allowlist ↔
       // contacts dependency cycle this split was designed to remove.
-      if (loadContact(contactId) !== null) {
+      let contact = null;
+      try { contact = loadContact(DEFAULT_AGENT_ID, contactId); } catch (err) {
+        console.error(`contacts.populateAllowlistFromMembership: skipping contact ${contactId} (corrupt record):`, err);
+        continue;
+      }
+      if (contact !== null) {
         firstPermissioned = contactId;
         break;
       }
@@ -243,7 +248,12 @@ export async function refreshAllowlistForChat(
   let firstPermissioned: number | null = null;
   for (const contactId of contacts) {
     if (contactId === 1) continue;
-    if (loadContact(contactId) !== null) {
+    let contact = null;
+    try { contact = loadContact(DEFAULT_AGENT_ID, contactId); } catch (err) {
+      console.error(`contacts.refreshAllowlistForChat: skipping contact ${contactId} (corrupt record):`, err);
+      continue;
+    }
+    if (contact !== null) {
       firstPermissioned = contactId;
       break;
     }

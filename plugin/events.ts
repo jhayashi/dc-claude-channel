@@ -221,6 +221,7 @@ export type PermissionReason =
   | 'skip_auto'
   | 'capability_deny'
   | 'capability_lookup_error'
+  | 'capability_invalid_requestor'
 
 export interface PermissionEvent {
   ts: string
@@ -320,4 +321,16 @@ export function logRoleAssignment(
   onWriteError?: (err: unknown) => void,
 ): void {
   appendLine('permissions', ev.ts, ev, onWriteError)
+}
+
+export interface AutoPairDenialEvent {
+  ts: string
+  type: 'auto_pair_denied'
+  chatId: number
+  contactId: number
+  role: string
+}
+
+export function logAutoPairDenial(ev: AutoPairDenialEvent): void {
+  appendLine('permissions', ev.ts, ev)
 }

@@ -301,9 +301,9 @@ describe('events.logPermission', () => {
     ])
   })
 
-  it('accepts all five permission-reason values (v1.3 adds capability_deny + capability_lookup_error)', () => {
+  it('accepts all six permission-reason values (v1.3 adds capability_deny + capability_lookup_error + capability_invalid_requestor)', () => {
     const reasons: PermissionEvent['reason'][] = [
-      'user_allow', 'user_deny', 'skip_auto', 'capability_deny', 'capability_lookup_error',
+      'user_allow', 'user_deny', 'skip_auto', 'capability_deny', 'capability_lookup_error', 'capability_invalid_requestor',
     ]
     for (const r of reasons) {
       logPermission(basePermission({

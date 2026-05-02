@@ -21,6 +21,8 @@ import { startCoach, advanceCoach, isCoachDone, collectAnswers, type CoachState,
 import { assembleSystemPrompt } from '../prompt-assembler.js'
 import { PATTERN_IDS, type PatternId } from '../agent-icons/palettes.js'
 import { logLifecycleEvent } from '../events-lifecycle.js'
+import { logRoleAssignment } from '../events.js'
+import * as sessionAgents from '../session-agents.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -474,6 +476,17 @@ export async function decorateAgentChat(
 }
 
 /**
+ * Resolve which agent to attach when importing a terminal session into DC.
+ * Priority: session-agents index (original agent from when DC last bound
+ * this session) → source chat's current agent → default agent.
+ */
+export function resolveAttachAgent(sessionId: string, sourceChatId: number): string {
+  const indexed = sessionAgents.getAgentForSession(sessionId)
+  const sourceBinding = bindings.getBinding(sourceChatId)
+  return indexed ?? sourceBinding?.agentId ?? agents.DEFAULT_AGENT_ID
+}
+
+/**
  * Phase-12 reuse flow — provision a new DC chat bound to an existing
  * agent. Mirrors the legacy `bind` payload's chat-create + addContact +
  * addChat + bindAgent + decorate sequence; pulled out as a named helper
@@ -905,6 +918,38 @@ export async function graduateRefineSession(ctx: AppContext, chatId: number): Pr
       ctx.logf('agent-setup: refine-failure notice send failed chat=%d: %v', chatId, sendErr)
     }
   }
+}
+
+export async function handleListContacts(ctx: AppContext, msgId: number): Promise<void> {
+  const contacts = access.listContacts(access.DEFAULT_AGENT_ID)
+  await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({ type: 'contacts_loaded', contacts }))
+}
+
+export async function handleAssignRole(
+  ctx: AppContext,
+  msgId: number,
+  contactId: number | null,
+  role: string | null,
+  senderAddr: string | null,
+): Promise<void> {
+  if (!contactId || !role) return
+  const previous = access.loadContact(access.DEFAULT_AGENT_ID, contactId)
+  if (!previous) return
+
+  const assignerContactId = senderAddr
+    ? await ctx.client.lookupContactByAddr(senderAddr)
+    : null
+
+  const updated = access.setContactRole(access.DEFAULT_AGENT_ID, contactId, role)
+  logRoleAssignment({
+    ts: new Date().toISOString(),
+    assigneeContactId: contactId,
+    assignedRole: role,
+    previousRole: previous.role ?? null,
+    assignerContactId,
+    reason: 'picked',
+  })
+  await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({ type: 'role_assigned', contact: updated }))
 }
 
 export const agentSetupApp: WebXDCApp = {
@@ -1473,6 +1518,22 @@ export const agentSetupApp: WebXDCApp = {
         continue
       }
 
+      if (payload.type === 'list_contacts') {
+        await handleListContacts(ctx, session.msgId)
+        continue
+      }
+
+      if (payload.type === 'assign_role') {
+        const contactId = typeof (payload as { contactId?: unknown }).contactId === 'number'
+          ? (payload as { contactId: number }).contactId : null
+        const role = typeof (payload as { role?: unknown }).role === 'string'
+          ? (payload as { role: string }).role : null
+        const senderAddr = typeof (payload as { senderAddr?: unknown }).senderAddr === 'string'
+          ? (payload as { senderAddr: string }).senderAddr : null
+        await handleAssignRole(ctx, session.msgId, contactId, role, senderAddr)
+        continue
+      }
+
       if (payload.type === 'unpair_commit') {
         const requestId = typeof (payload as { requestId?: unknown }).requestId === 'number'
           ? (payload as { requestId: number }).requestId : 0
@@ -1497,7 +1558,7 @@ export const agentSetupApp: WebXDCApp = {
         }
 
         const chatIds = access.chatsForOwner(contactId)
-        const principalExists = access.loadContact(contactId) !== null
+        const principalExists = access.loadContact(access.DEFAULT_AGENT_ID, contactId) !== null
         if (chatIds.length === 0 && !principalExists) {
           await sendErr('No paired chats or principal record for this contact')
           continue
@@ -1559,7 +1620,7 @@ export const agentSetupApp: WebXDCApp = {
         // Wipe the principal record so backfill on next startup doesn't
         // resurrect the contact, and so isContactPermissioned returns false.
         // (#66 Option A — full per-contact unpair wipes both layers.)
-        access.removeContact(contactId)
+        access.removeContact(access.DEFAULT_AGENT_ID, contactId)
         ctx.logf('agent-setup: unpaired contact %d (%s, %d chat(s))', contactId, mode, chatIds.length)
         continue
       }
@@ -1594,8 +1655,8 @@ export const agentSetupApp: WebXDCApp = {
           const candidates = resume.listResumeCandidates()
           const candidate = candidates.find(c => c.sessionId === sessionId)
 
-          const sourceBinding = bindings.getBinding(session.sourceChatId)
-          const agentId = sourceBinding?.agentId ?? 'claude-code'
+          const agentId = resolveAttachAgent(sessionId, session.sourceChatId)
+          ctx.logf('agent-setup: resume agent resolution: session=%s resolved=%s', sessionId, agentId)
           const agent = agents.getAgent(agentId)
 
           // Use terminal session name for the DC chat if available.

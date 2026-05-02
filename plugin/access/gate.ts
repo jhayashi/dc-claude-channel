@@ -32,8 +32,9 @@
 import type { CapabilityDecision } from "./capabilities.js";
 
 export interface GateDeps {
+  agentId: string;
   firstPermissionedContact: (chatId: number) => number | null;
-  evaluateCapability: (originator: number | null, required: string | null | undefined) => CapabilityDecision;
+  evaluateCapability: (agentId: string, originator: number | null, required: string | null | undefined) => CapabilityDecision;
   getChatContacts: (chatId: number) => Promise<number[]>;
   logf?: (fmt: string, ...args: unknown[]) => void;
 }
@@ -199,7 +200,7 @@ export async function applyCapabilityGate(
   // couldn't decide" (security review T4).
   let decision: CapabilityDecision;
   try {
-    decision = deps.evaluateCapability(originator, required);
+    decision = deps.evaluateCapability(deps.agentId, originator, required);
   } catch (err) {
     deps.logf?.("capability gate: evaluateCapability threw for chat=%d tool=%s: %v", chatId, toolName, err);
     return {

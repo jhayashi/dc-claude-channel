@@ -26,7 +26,7 @@
  * role `trusted-agent` / `untrusted-agent`.
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { bundleFor } from "./capability-bundles.js";
@@ -75,8 +75,31 @@ export interface AgentPrincipal {
 // contact-book annotations + a parallel managed-agent concept. Use
 // `Contact` directly. Re-introduce the union if/when v1.4 needs it.
 
+/** Singleton agent id for v1.3. v1.4 callers pass their own agent id. */
+export const DEFAULT_AGENT_ID = "claude-code";
+
 // ── Directory plumbing ───────────────────────────────────────────────────────
 
+// v1.3 slice 7 phase 3: contact records live at agents/<agentId>/contacts/.
+// _agentsDir points to the agents root; contactPath() derives the per-record
+// path from it. Kept separate from _principalsDir (the legacy source used only
+// by the migration function).
+let _agentsDir = process.env.DC_TEST_CONTACTS_DIR ?? join(
+  homedir(),
+  ".claude",
+  "channels",
+  "deltachat",
+  "agents",
+);
+
+/** Override the agents directory for contacts (for testing). */
+export function setContactsAgentsDir(dir: string): void {
+  _agentsDir = dir;
+  _onMutate();
+}
+
+// Legacy principals dir — used only by migrateContactsToAgentScoped() as the
+// migration source. Not involved in normal read/write operations.
 let _principalsDir = process.env.DC_TEST_PRINCIPALS_DIR ?? join(
   homedir(),
   ".claude",
@@ -85,16 +108,12 @@ let _principalsDir = process.env.DC_TEST_PRINCIPALS_DIR ?? join(
   "principals",
 );
 
-/** Current principals directory path. */
+/** Current principals directory path (legacy; migration source only). */
 export function getPrincipalsDir(): string { return _principalsDir }
 
-/** Override the principals directory (for testing). */
+/** Override the legacy principals directory (migration source; for testing). */
 export function setPrincipalsDir(dir: string): void {
   _principalsDir = dir;
-  // Cache invalidation hook (v1.3 review fix #3 — Elena HURT 2):
-  // contact-policy maintains a derived `permissionedContactIds` Set
-  // for O(1) `isContactPermissioned` on the inbound-message hot path.
-  // Changing the principals dir invalidates the entire cache.
   _onMutate();
 }
 
@@ -108,8 +127,8 @@ export function setPrincipalsDir(dir: string): void {
 let _onMutate: () => void = () => { /* no-op until policy registers */ };
 export function _setContactsMutateCallback(cb: () => void): void { _onMutate = cb; }
 
-function contactPath(contactId: number): string {
-  return join(_principalsDir, "humans", `${contactId}.json`);
+function contactPath(agentId: string, contactId: number): string {
+  return join(_agentsDir, agentId, "contacts", `${contactId}.json`);
 }
 
 // ── Atomic JSON write ────────────────────────────────────────────────────────
@@ -138,8 +157,8 @@ function atomicWriteJson(path: string, data: unknown): void {
  * security review T4. Reviewer Oliver P2 #1 flagged that the prior
  * blanket-catch made T4's distinction dead code.
  */
-export function loadContact(contactId: number): Contact | null {
-  const path = contactPath(contactId);
+export function loadContact(agentId: string, contactId: number): Contact | null {
+  const path = contactPath(agentId, contactId);
   let raw: string;
   try {
     raw = readFileSync(path, "utf-8");
@@ -156,7 +175,7 @@ export function loadContact(contactId: number): Contact | null {
     // Schema mismatch — treat as corrupt rather than absent. Throwing
     // routes this through the gate's lookup-error path, surfacing the
     // bad record to the operator instead of silently denying.
-    throw new Error(`principals.loadContact: schema mismatch in ${path}`);
+    throw new Error(`contacts.loadContact: schema mismatch in ${path} (agent=${agentId})`);
   }
   const role = typeof parsed.role === "string" ? parsed.role : "subscriber";
   const capabilities = Array.isArray(parsed.capabilities)
@@ -173,8 +192,8 @@ export function loadContact(contactId: number): Contact | null {
 }
 
 /** Atomically persist a human principal record. */
-export function writeContact(p: Contact): void {
-  atomicWriteJson(contactPath(p.contactId), p);
+export function writeContact(agentId: string, p: Contact): void {
+  atomicWriteJson(contactPath(agentId, p.contactId), p);
   _onMutate();
 }
 
@@ -188,8 +207,8 @@ export function writeContact(p: Contact): void {
  * is used at startup and shouldn't take down the dispatcher because of
  * a single bad file. Errors are logged to stderr for operator visibility.
  */
-export function listContacts(): Contact[] {
-  const dir = join(_principalsDir, "humans");
+export function listContacts(agentId: string): Contact[] {
+  const dir = join(_agentsDir, agentId, "contacts");
   let entries: string[];
   try {
     entries = readdirSync(dir);
@@ -202,10 +221,10 @@ export function listContacts(): Contact[] {
     const id = parseInt(name.slice(0, -5), 10);
     if (Number.isNaN(id)) continue;
     try {
-      const p = loadContact(id);
+      const p = loadContact(agentId, id);
       if (p) out.push(p);
     } catch (err) {
-      console.error(`principals.listContacts: skipping ${name} —`, err);
+      console.error(`contacts.listContacts: skipping ${name} —`, err);
     }
   }
   out.sort((a, b) => a.firstPairedAt.localeCompare(b.firstPairedAt) || a.contactId - b.contactId);
@@ -221,16 +240,16 @@ export function listContacts(): Contact[] {
  * principal stays put and `isContactPermissioned` keeps returning true.
  * Stderr lets the dispatcher's debug.log capture it.
  */
-export function removeContact(contactId: number): void {
+export function removeContact(agentId: string, contactId: number): void {
   try {
-    unlinkSync(contactPath(contactId));
+    unlinkSync(contactPath(agentId, contactId));
     _onMutate();
   } catch (err) {
     const code = (err as { code?: string }).code;
     if (code === "ENOENT") return; // expected — no record to remove
     // Real failure (EACCES, EBUSY, EROFS, etc.) — log so the unpair
     // operator notices the principal didn't actually go away.
-    console.error(`principals.removeContact(${contactId}) failed:`, err);
+    console.error(`contacts.removeContact(${agentId}, ${contactId}) failed:`, err);
   }
 }
 
@@ -251,12 +270,12 @@ export function removeContact(contactId: number): void {
  * malformed JSON / schema-mismatch principal file (slice-3-5 review fix);
  * we treat that as "no existing record" so re-pair recovers the contact.
  */
-export function recordContactPair(contactId: number, displayName?: string): Contact {
+export function recordContactPair(agentId: string, contactId: number, displayName?: string): Contact {
   let existing: Contact | null = null;
   try {
-    existing = loadContact(contactId);
+    existing = loadContact(agentId, contactId);
   } catch (err) {
-    console.error(`principals.recordContactPair(${contactId}): corrupt existing record, overwriting:`, err);
+    console.error(`contacts.recordContactPair(${agentId}, ${contactId}): corrupt existing record, overwriting:`, err);
   }
   const principal: Contact = {
     kind: "human",
@@ -266,7 +285,7 @@ export function recordContactPair(contactId: number, displayName?: string): Cont
     role: "subscriber",
     capabilities: ["*"],
   };
-  writeContact(principal);
+  writeContact(agentId, principal);
   return principal;
 }
 
@@ -286,12 +305,12 @@ export function recordContactPair(contactId: number, displayName?: string): Cont
  * cache (slice-3-5 review fix #3) invalidates and the next
  * isContactPermissioned read sees the new contact.
  */
-export function setContactRole(contactId: number, role: string, displayName?: string): Contact {
+export function setContactRole(agentId: string, contactId: number, role: string, displayName?: string): Contact {
   let existing: Contact | null = null;
   try {
-    existing = loadContact(contactId);
+    existing = loadContact(agentId, contactId);
   } catch (err) {
-    console.error(`principals.setContactRole(${contactId}): corrupt existing record, overwriting:`, err);
+    console.error(`contacts.setContactRole(${agentId}, ${contactId}): corrupt existing record, overwriting:`, err);
   }
   const principal: Contact = {
     kind: "human",
@@ -301,8 +320,71 @@ export function setContactRole(contactId: number, role: string, displayName?: st
     role,
     capabilities: [...bundleFor(role)],
   };
-  writeContact(principal);
+  writeContact(agentId, principal);
   return principal;
+}
+
+/**
+ * Migrate contact records from the legacy `principals/humans/` layout to
+ * the v1.3 agent-scoped `agents/claude-code/contacts/` layout.
+ *
+ * Per-file idempotent: a record is copied iff it is missing at the
+ * target. This handles the half-migrated case where the target dir
+ * already exists (e.g., new contacts written via `recordContactPair` or
+ * test leakage) but some legacy records were never carried over —
+ * gating purely on target-dir existence would silently strand them.
+ *
+ * After every legacy record is present at the target, renames
+ * `principals/` to `principals.legacy/` so subsequent startups short-
+ * circuit. Skips the rename if any source records are still missing at
+ * the target (so the next boot retries).
+ *
+ * Returns the number of records newly copied (0 on a no-op run).
+ */
+export function migrateContactsToAgentScoped(): number {
+  const sourceDir = join(_principalsDir, "humans");
+  if (!existsSync(sourceDir)) return 0;
+
+  const targetDir = join(_agentsDir, "claude-code", "contacts");
+  let entries: string[];
+  try {
+    entries = readdirSync(sourceDir);
+  } catch (err) {
+    console.error("contacts.migrateContactsToAgentScoped: cannot read source dir:", err);
+    return 0;
+  }
+
+  let count = 0;
+  let allPresent = true;
+  try {
+    mkdirSync(targetDir, { recursive: true });
+    for (const entry of entries) {
+      if (!entry.endsWith(".json")) continue;
+      const target = join(targetDir, entry);
+      if (existsSync(target)) continue;
+      copyFileSync(join(sourceDir, entry), target);
+      count++;
+    }
+    // Verify every source record has a target counterpart before retiring source.
+    for (const entry of entries) {
+      if (!entry.endsWith(".json")) continue;
+      if (!existsSync(join(targetDir, entry))) { allPresent = false; break; }
+    }
+  } catch (err) {
+    console.error("contacts.migrateContactsToAgentScoped: error during migration:", err);
+    return count;
+  }
+
+  if (allPresent) {
+    try {
+      const legacyPath = `${_principalsDir}.legacy`;
+      if (!existsSync(legacyPath)) renameSync(_principalsDir, legacyPath);
+    } catch (err) {
+      console.error("contacts.migrateContactsToAgentScoped: failed to rename legacy dir:", err);
+    }
+  }
+
+  return count;
 }
 
 // Derived queries (`chatsFor`, `isContactPermissioned`,
