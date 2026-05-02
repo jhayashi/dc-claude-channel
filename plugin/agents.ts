@@ -15,7 +15,8 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
-  unlinkSync,
+  rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
@@ -143,12 +144,68 @@ export type AgentDef = z.infer<typeof AgentDefSchema>
 export const DraftAgentSchema = AgentDefSchema.omit({ id: true })
 export type DraftAgent = z.infer<typeof DraftAgentSchema>
 
+/**
+ * Per-agent directory layout (v1.3 slice 7 phase 1):
+ *
+ *   agents/<id>/definition.yaml       — what's on disk today
+ *   agents/<id>/contacts/<cid>.json   — landed in phase 3
+ *   agents/<id>/memory/               — v1.4
+ *   agents/<id>/chatmail/             — v1.4
+ *
+ * `agentDir(id)` is the per-agent root; `agentPath(id)` is its definition
+ * YAML. Other per-agent subdirs hang off agentDir without colliding.
+ */
+export function agentDir(id: string): string {
+  return join(AGENTS_DIR, id)
+}
+
 function agentPath(id: string): string {
-  return join(AGENTS_DIR, `${id}.yaml`)
+  return join(agentDir(id), 'definition.yaml')
 }
 
 /**
- * List all agent definitions on disk, sorted by id. Invalid files skipped.
+ * Migrate legacy `agents/<id>.yaml` files to `agents/<id>/definition.yaml`.
+ * Runs at dispatcher startup. Idempotent: skips ids whose directory shape
+ * already exists. Safe across partial failure — never destructive, the
+ * legacy file is `renameSync`d into the new location.
+ *
+ * Returns the number of agents migrated.
+ */
+export function migrateLegacyAgentYaml(): number {
+  if (!existsSync(AGENTS_DIR)) return 0
+  let migrated = 0
+  let entries: string[]
+  try {
+    entries = readdirSync(AGENTS_DIR)
+  } catch {
+    return 0
+  }
+  for (const entry of entries) {
+    if (!entry.endsWith('.yaml')) continue
+    const id = entry.slice(0, -'.yaml'.length)
+    const oldPath = join(AGENTS_DIR, entry)
+    const newDir = agentDir(id)
+    const newPath = agentPath(id)
+    if (existsSync(newPath)) {
+      // Directory shape already exists; leave the legacy file alone for
+      // operator inspection. Don't delete — that would be destructive on
+      // an unexpected state.
+      console.error(`agents: legacy ${entry} coexists with ${id}/definition.yaml; leaving in place`)
+      continue
+    }
+    try {
+      mkdirSync(newDir, { recursive: true })
+      renameSync(oldPath, newPath)
+      migrated++
+    } catch (err) {
+      console.error(`agents: migrate ${entry} → ${id}/definition.yaml failed:`, err)
+    }
+  }
+  return migrated
+}
+
+/**
+ * List all agent definitions on disk, sorted by id. Invalid records skipped.
  * Auto-seeds the built-in default agent (DEFAULT_AGENT_ID) if it's missing,
  * so the agent list is never empty.
  */
@@ -157,9 +214,13 @@ export function listAgents(): AgentDef[] {
   ensureDefaultAgent()
   const out: AgentDef[] = []
   for (const entry of readdirSync(AGENTS_DIR)) {
-    if (!entry.endsWith('.yaml')) continue
-    const id = entry.slice(0, -'.yaml'.length)
-    const agent = getAgent(id)
+    // v1.3 slice 7 phase 1: agents are subdirectories now. Defensive
+    // skips for any leftover files (legacy YAMLs that didn't migrate).
+    const dirPath = join(AGENTS_DIR, entry)
+    let isDir = false
+    try { isDir = statSync(dirPath).isDirectory() } catch { /* ignore */ }
+    if (!isDir) continue
+    const agent = getAgent(entry)
     if (agent) out.push(agent)
   }
   return out.sort((a, b) => a.id.localeCompare(b.id))
@@ -194,7 +255,7 @@ export function getAgent(id: string): AgentDef | null {
 /** Save an agent definition. Atomic via temp + rename. */
 export function saveAgent(def: AgentDef): void {
   const validated = AgentDefSchema.parse(def)
-  mkdirSync(AGENTS_DIR, { recursive: true })
+  mkdirSync(agentDir(validated.id), { recursive: true })
   const finalPath = agentPath(validated.id)
   const tmpPath = `${finalPath}.tmp.${process.pid}`
   writeFileSync(tmpPath, YAML.stringify(validated))
@@ -202,7 +263,14 @@ export function saveAgent(def: AgentDef): void {
 }
 
 /**
- * Delete an agent. Returns true if a file was removed.
+ * Delete an agent. Returns true if anything was removed.
+ *
+ * Removes the entire `agents/<id>/` directory — that's where v1.4's
+ * per-agent contacts/, memory/, and chatmail/ subdirs will live, so
+ * deleting an agent removes ALL its associated state in one shot. v1.3
+ * has only `definition.yaml` underneath today; the recursive remove is
+ * still the right semantic.
+ *
  * Throws if `id` is the built-in undeletable default agent — that
  * definition is always resurrected by listAgents / ensureDefaultAgent
  * so a delete would be meaningless anyway.
@@ -211,9 +279,9 @@ export function deleteAgent(id: string): boolean {
   if (isUndeletableAgent(id)) {
     throw new Error(`cannot delete built-in default agent: ${id}`)
   }
-  const path = agentPath(id)
-  if (!existsSync(path)) return false
-  unlinkSync(path)
+  const dir = agentDir(id)
+  if (!existsSync(dir)) return false
+  rmSync(dir, { recursive: true, force: true })
   return true
 }
 
@@ -517,11 +585,18 @@ export function slugifyName(name: string): string {
 export function synthesizeAgentId(name: string): string {
   const base = slugifyName(name)
   if (!existsSync(AGENTS_DIR)) return base
-  const existing = new Set(
-    readdirSync(AGENTS_DIR)
-      .filter(e => e.endsWith('.yaml'))
-      .map(e => e.slice(0, -'.yaml'.length)),
-  )
+  // v1.3 slice 7 phase 1: agents are subdirectories now (each with
+  // its own definition.yaml). Collision check reads the directory
+  // listing — every entry that's a subdir AND has a definition.yaml
+  // is an existing agent id.
+  const existing = new Set<string>()
+  for (const entry of readdirSync(AGENTS_DIR)) {
+    const dirPath = join(AGENTS_DIR, entry)
+    try {
+      if (!statSync(dirPath).isDirectory()) continue
+      if (existsSync(join(dirPath, 'definition.yaml'))) existing.add(entry)
+    } catch { /* ignore */ }
+  }
   if (!existing.has(base)) return base
   let n = 2
   while (existing.has(`${base}-${n}`)) n++

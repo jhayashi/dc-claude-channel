@@ -102,6 +102,7 @@ export const familiarApp: WebXDCApp = {
     return [
       {
         name: 'dc_familiar_create',
+        requiresCapability: 'real_world_action',
         description: 'Create and send a Familiar interactive app to a Delta Chat chat. The handler is a JS string that runs server-side in a sandbox when the user interacts with the app.',
         inputSchema: {
           type: 'object' as const,
@@ -118,6 +119,7 @@ export const familiarApp: WebXDCApp = {
       },
       {
         name: 'dc_familiar_update',
+        requiresCapability: 'real_world_action',
         description: 'Send a payload update to an existing Familiar app instance.',
         inputSchema: {
           type: 'object' as const,
@@ -131,6 +133,7 @@ export const familiarApp: WebXDCApp = {
       },
       {
         name: 'dc_familiar_list',
+        requiresCapability: 'chat',
         description: 'List all Familiar app instances in a chat.',
         inputSchema: {
           type: 'object' as const,
@@ -142,6 +145,7 @@ export const familiarApp: WebXDCApp = {
       },
       {
         name: 'dc_familiar_delete',
+        requiresCapability: 'real_world_action',
         description: 'Delete a Familiar app instance (removes from registry and disk).',
         inputSchema: {
           type: 'object' as const,

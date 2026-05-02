@@ -86,6 +86,31 @@ describe('events.logToolCall', () => {
     expect(() => logToolCall(baseEvent(), (e) => { err = e })).not.toThrow()
     expect(err).not.toBe(null)
   })
+
+  it('persists v1.3 capability fields when present (slice 3)', () => {
+    logToolCall(baseEvent({
+      tool: 'dc_send_file',
+      requiredCapability: 'private_data_write',
+      originatorCapabilities: ['chat', 'low_stakes_*'],
+      capabilityDecision: 'would_deny',
+    }))
+    const files = readdirSync(dir)
+    const parsed = JSON.parse(readFileSync(join(dir, files[0]), 'utf-8').trim())
+    expect(parsed.requiredCapability).toBe('private_data_write')
+    expect(parsed.originatorCapabilities).toEqual(['chat', 'low_stakes_*'])
+    expect(parsed.capabilityDecision).toBe('would_deny')
+  })
+
+  it('omits v1.3 capability fields gracefully when absent (pre-slice-3 records)', () => {
+    // The fields are optional. logToolCall must accept events without
+    // them and the JSON line must round-trip cleanly.
+    logToolCall(baseEvent())
+    const files = readdirSync(dir)
+    const parsed = JSON.parse(readFileSync(join(dir, files[0]), 'utf-8').trim())
+    expect(parsed.requiredCapability).toBeUndefined()
+    expect(parsed.originatorCapabilities).toBeUndefined()
+    expect(parsed.capabilityDecision).toBeUndefined()
+  })
 })
 
 describe('events.buildArgPreview', () => {
@@ -276,18 +301,39 @@ describe('events.logPermission', () => {
     ])
   })
 
-  it('accepts all three permission-reason values', () => {
-    const reasons: PermissionEvent['reason'][] = ['user_allow', 'user_deny', 'skip_auto']
+  it('accepts all five permission-reason values (v1.3 adds capability_deny + capability_lookup_error)', () => {
+    const reasons: PermissionEvent['reason'][] = [
+      'user_allow', 'user_deny', 'skip_auto', 'capability_deny', 'capability_lookup_error',
+    ]
     for (const r of reasons) {
       logPermission(basePermission({
         reason: r,
-        verdict: r === 'user_deny' ? 'deny' : 'allow',
+        verdict: r === 'user_allow' || r === 'skip_auto' ? 'allow' : 'deny',
       }))
     }
     const lines = readFileSync(join(dir, 'permissions-2026-04-20.log'), 'utf-8')
       .split('\n').filter(Boolean)
-    expect(lines.length).toBe(3)
+    expect(lines.length).toBe(reasons.length)
     expect(lines.map((l) => JSON.parse(l).reason)).toEqual(reasons)
+  })
+
+  it('persists v1.3 capability fields on capability_deny entries (slice 4)', () => {
+    logPermission(basePermission({
+      tool: 'dc_send_file',
+      verdict: 'deny',
+      reason: 'capability_deny',
+      durationMs: 0,
+      originatorContactId: 50,
+      requiredCapability: 'private_data_write',
+      originatorCapabilities: ['chat', 'low_stakes_*'],
+    }))
+    const files = readdirSync(dir)
+    const parsed = JSON.parse(readFileSync(join(dir, files[0]), 'utf-8').trim())
+    expect(parsed.reason).toBe('capability_deny')
+    expect(parsed.verdict).toBe('deny')
+    expect(parsed.originatorContactId).toBe(50)
+    expect(parsed.requiredCapability).toBe('private_data_write')
+    expect(parsed.originatorCapabilities).toEqual(['chat', 'low_stakes_*'])
   })
 
   it('swallows write errors', () => {
@@ -376,5 +422,60 @@ describe('events.logWebXDC', () => {
     let err: unknown = null
     expect(() => logWebXDC(baseWebXDC(), (e) => { err = e })).not.toThrow()
     expect(err).not.toBe(null)
+  })
+})
+
+describe('events.logRoleAssignment (v1.3 slice 6)', () => {
+  let dir: string
+  let prevDir: string
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'role-events-test-'))
+    prevDir = getEventDir()
+    setEventDir(dir)
+  })
+
+  afterEach(() => {
+    setEventDir(prevDir)
+    try { rmSync(dir, { recursive: true, force: true }) } catch {}
+  })
+
+  it('writes a role-assignment line to the permissions stream', async () => {
+    const { logRoleAssignment } = await import('../events.js')
+    logRoleAssignment({
+      ts: '2026-05-01T10:00:00.000Z',
+      assigneeContactId: 60,
+      assignedRole: 'subscriber',
+      previousRole: null,
+      assignerContactId: null,
+      reason: 'terminal_pair',
+    })
+    const files = readdirSync(dir)
+    expect(files).toEqual(['permissions-2026-05-01.log'])
+    const parsed = JSON.parse(readFileSync(join(dir, files[0]), 'utf-8').trim())
+    expect(parsed).toMatchObject({
+      assigneeContactId: 60,
+      assignedRole: 'subscriber',
+      previousRole: null,
+      assignerContactId: null,
+      reason: 'terminal_pair',
+    })
+  })
+
+  it('records previousRole on transitions (downgrade/upgrade)', async () => {
+    const { logRoleAssignment } = await import('../events.js')
+    logRoleAssignment({
+      ts: '2026-05-01T10:00:00.000Z',
+      assigneeContactId: 60,
+      assignedRole: 'family-member',
+      previousRole: 'subscriber',
+      assignerContactId: 50,
+      reason: 'picked',
+    })
+    const files = readdirSync(dir)
+    const parsed = JSON.parse(readFileSync(join(dir, files[0]), 'utf-8').trim())
+    expect(parsed.previousRole).toBe('subscriber')
+    expect(parsed.assignedRole).toBe('family-member')
+    expect(parsed.reason).toBe('picked')
   })
 })

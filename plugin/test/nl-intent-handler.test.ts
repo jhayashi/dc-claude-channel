@@ -17,7 +17,8 @@ beforeAll(() => {
 beforeEach(() => {
   for (const dir of [agentsDir, bindingsDir]) {
     if (existsSync(dir)) {
-      for (const f of readdirSync(dir)) unlinkSync(join(dir, f))
+      // v1.3 slice 7: agents are subdirectories, not flat files.
+      for (const f of readdirSync(dir)) rmSync(join(dir, f), { recursive: true, force: true })
     }
   }
 })

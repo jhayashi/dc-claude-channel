@@ -58,6 +58,23 @@ export interface ToolCallEvent {
    * (e.g. permission auto-approve replay).
    */
   turnId?: string | null
+  /**
+   * Capability the tool annotation declares it requires (v1.3 slice 3).
+   * Null when the tool isn't annotated; absent on records older than v1.3.
+   */
+  requiredCapability?: string | null
+  /**
+   * Resolved capability bundle of the originator at call time. `["*"]` for
+   * terminal calls (the terminal IS the subscriber); `[]` for unknown
+   * contacts; otherwise the contact's role bundle or explicit override.
+   */
+  originatorCapabilities?: string[]
+  /**
+   * Slice 3: `allow` if the originator's bundle covers the required
+   * capability, `would_deny` if it doesn't. Pure observability — slice 4
+   * flips `would_deny` to a hard refuse.
+   */
+  capabilityDecision?: 'allow' | 'would_deny'
 }
 
 /** Taxonomy of subagent turn exit reasons. See plans/2026-04-20-slices-2-5-decisions.md. */
@@ -187,10 +204,23 @@ export type PermissionVerdict = 'allow' | 'deny'
 
 /**
  * Why the verdict was reached.
- *   user_allow / user_deny — the owner tapped Allow or Deny in the WebXDC card
- *   skip_auto             — bypassed by skip-permissions mode (no user prompt)
+ *   user_allow / user_deny       — the owner tapped Allow or Deny in the WebXDC card
+ *   skip_auto                    — bypassed by skip-permissions mode (no user prompt)
+ *   capability_deny              — v1.3 capability gate refused the call:
+ *                                  originator's bundle didn't cover the tool's
+ *                                  requiresCapability annotation
+ *   capability_lookup_error      — v1.3 capability gate fail-closed on a
+ *                                  principal-store error (corrupt JSON, EACCES,
+ *                                  etc.). Same outcome as deny; the separate
+ *                                  reason makes the operator's `jq` queries
+ *                                  honest about what actually failed.
  */
-export type PermissionReason = 'user_allow' | 'user_deny' | 'skip_auto'
+export type PermissionReason =
+  | 'user_allow'
+  | 'user_deny'
+  | 'skip_auto'
+  | 'capability_deny'
+  | 'capability_lookup_error'
 
 export interface PermissionEvent {
   ts: string
@@ -205,6 +235,12 @@ export interface PermissionEvent {
   timedOut: boolean
   /** Wall-clock ms from prompt arrival to verdict (0 for skip_auto). */
   durationMs: number
+  /** v1.3 capability gate: contact whose caps were checked (null for terminal). */
+  originatorContactId?: number | null
+  /** v1.3 capability gate: capability the tool annotation declared. */
+  requiredCapability?: string
+  /** v1.3 capability gate: originator's resolved bundle at the moment of decision. */
+  originatorCapabilities?: string[]
 }
 
 /** Append one permission-decision event line. Swallows errors. */
@@ -237,4 +273,51 @@ export function logWebXDC(
   onWriteError?: (err: unknown) => void,
 ): void {
   appendLine('webxdc', ev.ts, ev, onWriteError)
+}
+
+/**
+ * Why a role was assigned to a contact (v1.3 slice 6).
+ *   terminal_pair — recordContactPair fired during /deltachat:setup;
+ *                   role is always `subscriber` for this path.
+ *   picked        — subscriber explicitly chose the role via the XDC
+ *                   picker (slice 7).
+ */
+export type RoleAssignmentReason = 'terminal_pair' | 'picked'
+
+export interface RoleAssignmentEvent {
+  ts: string
+  /**
+   * Contact whose role was set/changed. Required.
+   */
+  assigneeContactId: number
+  /**
+   * Role assigned (subscriber / trusted-agent / family-member / untrusted-agent / guest).
+   */
+  assignedRole: string
+  /**
+   * Previous role on disk, or null if this is a fresh assignment
+   * (no principal record existed, or record had no role field).
+   */
+  previousRole: string | null
+  /**
+   * The actor responsible for the assignment. For `terminal_pair`,
+   * null (the terminal session is implicit). For `picked`, the
+   * subscriber's contactId who drove the XDC picker.
+   */
+  assignerContactId: number | null
+  reason: RoleAssignmentReason
+}
+
+/**
+ * Append one role-assignment event line. Same write discipline as the
+ * other event streams — swallows errors, observability never affects
+ * the caller. Lands in the same `permissions-<date>.log` stream as the
+ * existing capability-deny entries; an operator running
+ * `jq 'select(.assignedRole)'` filters role events.
+ */
+export function logRoleAssignment(
+  ev: RoleAssignmentEvent,
+  onWriteError?: (err: unknown) => void,
+): void {
+  appendLine('permissions', ev.ts, ev, onWriteError)
 }

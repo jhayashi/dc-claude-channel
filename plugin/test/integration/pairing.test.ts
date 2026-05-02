@@ -146,9 +146,24 @@ async function pair(dispatcher: Dispatcher, sim: ClientSim): Promise<PairedRecor
 }
 
 function isChatApproved(home: string, chatId: number): boolean {
-  const dir = join(home, ".claude", "channels", "deltachat", "approved");
-  if (!existsSync(dir)) return false;
-  return readdirSync(dir).some((f) => f === String(chatId));
+  // Best-effort fixture-reuse hint: was a previous pair recorded
+  // for this specific chatId on disk?
+  //
+  // Pre-v1.3: approved/<chatId>.
+  // Post-v1.3 first boot: approved.legacy/<chatId> (retired by the
+  //   migration; the dir is preserved for one release).
+  //
+  // No principal-only fallback — a function that takes chatId must
+  // check chatId, not "did anyone pair." The trade-off: a fresh-install
+  // fixture run with DC_REUSE_ACCOUNTS=1 won't reuse on the first run
+  // (no approved/ or approved.legacy/ exists yet), but every run after
+  // that gets the optimization. Acceptable.
+  const root = join(home, ".claude", "channels", "deltachat");
+  for (const dir of [join(root, "approved"), join(root, "approved.legacy")]) {
+    if (!existsSync(dir)) continue;
+    if (readdirSync(dir).some((f) => f === String(chatId))) return true;
+  }
+  return false;
 }
 
 function loadPairedRecord(): PairedRecord | null {

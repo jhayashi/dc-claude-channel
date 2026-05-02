@@ -1,19 +1,43 @@
 /**
- * File-based allowlist for Delta Chat channel access control.
+ * In-memory allowlist for Delta Chat channel access (v1.3 slice 2).
  *
- * Approved chat IDs are stored as files under
- * ~/.claude/channels/deltachat/approved/<chatId>.
- * The file contents = the owner's contact ID (the person who paired the
- * chat). Legacy empty files (pre-owner tracking) are treated as having
- * no owner.
+ * **Source of truth: principal records + chat membership.** This module
+ * holds a sync cache derived from those two inputs. Hot-path readers
+ * (the auth gate before every DC tool call) get a single Set.has() —
+ * no FS round-trip, no dc-core RPC.
  *
- * Persistent state — survives dispatcher restart. Pairing flow state
- * (arm window + pending codes, in-memory only) lives in `./pairing.ts`.
+ * Cache state:
+ *   - `chatsWithPermissionedMember: Set<chatId>` — chats with at least one
+ *     non-bot member who has a contact record
+ *   - `chatPrimaryContact: Map<chatId, contactId>` — first permissioned
+ *     member encountered when scanning the chat (used by audit logging
+ *     as a stable per-chat representative)
+ *
+ * Population:
+ *   - `populateAllowlistFromMembership(getChats, getChatContacts)` —
+ *     called once at dispatcher startup
+ *   - `refreshAllowlistForChat(chatId, getChatContacts)` — called from
+ *     the `ChatModified` event handler when membership changes
+ *   - `addChat(chatId, contactId)` — called from the pair-completion
+ *     path and chat-creation flows when we know a contact just landed
+ *     in the chat (avoids waiting for the next ChatModified)
+ *
+ * Migration from v1.2.2:
+ *   - The legacy `approved/<chatId>` files are walked at startup as a
+ *     fallback (in case the chat-membership population missed something
+ *     transient), then the directory is renamed to `approved.legacy/`
+ *     by `retireApprovedDir()`. v1.4 drops the legacy dir entirely.
+ *
+ * Pairing flow state (arm window + pending codes, in-memory only)
+ * lives in `./pairing.ts` — unchanged.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { loadContact } from "./contacts.js";
+
+// ── Module state ─────────────────────────────────────────────────────────────
 
 let _approvedDir = process.env.DC_TEST_APPROVED_DIR ?? join(
   homedir(),
@@ -23,113 +47,121 @@ let _approvedDir = process.env.DC_TEST_APPROVED_DIR ?? join(
   "approved",
 );
 
-/** Current approved directory path. */
+const chatsWithPermissionedMember = new Set<number>();
+const chatPrimaryContact = new Map<number, number>();
+const pairedAtMsCache = new Map<number, number>();
+
+/** Current legacy `approved/` directory path (only read at startup). */
 export function getApprovedDir(): string { return _approvedDir }
 
-/** Override the approved directory (for testing). */
-export function setApprovedDir(dir: string): void { _approvedDir = dir }
+/**
+ * Override the legacy directory (testing). Also clears the in-memory
+ * caches — tests rely on this for isolation between runs.
+ */
+export function setApprovedDir(dir: string): void {
+  _approvedDir = dir;
+  chatsWithPermissionedMember.clear();
+  chatPrimaryContact.clear();
+  pairedAtMsCache.clear();
+}
 
-/** Return all approved chat IDs. */
+// ── Read API (sync, hot path) ────────────────────────────────────────────────
+
+/** All currently permissioned chats. */
 export function allowedChats(): number[] {
-  let entries: string[];
-  try {
-    entries = readdirSync(_approvedDir);
-  } catch {
-    return [];
-  }
-  const ids: number[] = [];
-  for (const name of entries) {
-    const id = parseInt(name, 10);
-    if (!Number.isNaN(id)) {
-      ids.push(id);
-    }
-  }
-  return ids;
+  return [...chatsWithPermissionedMember].sort((a, b) => a - b);
 }
 
-/** Check whether a chat ID is in the allowlist. */
+/** Is this chat permissioned (has at least one principal in its membership)? */
 export function isAllowed(chatId: number): boolean {
-  return existsSync(join(_approvedDir, String(chatId)));
-}
-
-/** Approve a chat ID. Stores the owner's contact ID in the file. */
-export function addChat(chatId: number, ownerContactId?: number): void {
-  mkdirSync(_approvedDir, { recursive: true });
-  writeFileSync(join(_approvedDir, String(chatId)), ownerContactId ? String(ownerContactId) : "");
-}
-
-/** Get the owner contact ID for a chat, or null if unknown (legacy or no owner). */
-export function getOwner(chatId: number): number | null {
-  const path = join(_approvedDir, String(chatId));
-  if (!existsSync(path)) return null;
-  try {
-    const content = readFileSync(path, 'utf-8').trim();
-    if (!content) return null;
-    const id = parseInt(content, 10);
-    return Number.isNaN(id) ? null : id;
-  } catch {
-    return null;
-  }
+  return chatsWithPermissionedMember.has(chatId);
 }
 
 /**
- * Check if a contact ID is the owner of any approved chat.
+ * The first permissioned contact encountered when the chat was scanned.
+ * Used by audit logs as the "responsible contact" for the chat. Returns
+ * null for chats not in the cache.
+ */
+export function firstPermissionedContact(chatId: number): number | null {
+  return chatPrimaryContact.get(chatId) ?? null;
+}
+
+/**
+ * @deprecated v1.3.0 — renamed to `firstPermissionedContact`. Kept as
+ * an alias for one release; remove in v1.4.
+ */
+export function getOwner(chatId: number): number | null {
+  return firstPermissionedContact(chatId);
+}
+
+// ── Write API (cache mutations only; no FS writes) ───────────────────────────
+
+/**
+ * Mark a chat as permissioned, with `contactId` as the responsible
+ * contact. Idempotent. The first call wins for the responsible-contact
+ * record (matching pre-v1.3 semantics where the file's content was
+ * stable across re-pairs).
+ */
+export function addChat(chatId: number, ownerContactId?: number): void {
+  chatsWithPermissionedMember.add(chatId);
+  if (ownerContactId && !chatPrimaryContact.has(chatId)) {
+    chatPrimaryContact.set(chatId, ownerContactId);
+    pairedAtMsCache.set(chatId, Date.now());
+  }
+}
+
+/** Remove a chat from the allowlist. Silently ignores unknown chats. */
+export function removeChat(chatId: number): void {
+  chatsWithPermissionedMember.delete(chatId);
+  chatPrimaryContact.delete(chatId);
+  pairedAtMsCache.delete(chatId);
+}
+
+// ── Owner-derived helpers ────────────────────────────────────────────────────
+
+/**
+ * Check if a contact ID is the responsible contact for any allowed chat.
  *
- * @deprecated as of v1.2.2 (#66 Option A) — prefer `isContactPermissioned`
- * from `./principals.ts`, which reads the principal record first and
- * falls back to this scan. Kept for the legacy fallback path inside
- * `isContactPermissioned` itself; no other production caller. Slated for
- * removal in v1.3 (Option B / capability-based access), when the
- * chat-allowlist is dropped altogether in favor of contact-keyed approval.
+ * @deprecated v1.2.2 (#66 Option A) — prefer `isContactPermissioned`
+ * from `./principals.ts`. Kept as a fallback path inside
+ * `isContactPermissioned` itself; no other production caller.
  */
 export function isKnownOwner(contactId: number): boolean {
-  for (const chatId of allowedChats()) {
-    if (getOwner(chatId) === contactId) return true;
+  for (const id of chatPrimaryContact.values()) {
+    if (id === contactId) return true;
   }
   return false;
 }
 
-/** Returns true if at least one approved chat has an owner set. */
+/** True if at least one allowed chat has a recorded responsible contact. */
 export function hasAnyOwner(): boolean {
-  for (const chatId of allowedChats()) {
-    if (getOwner(chatId) !== null) return true;
-  }
-  return false;
+  return chatPrimaryContact.size > 0;
 }
 
-/** A paired device — a contact that owns at least one approved chat. */
+/** A paired device — a contact that's the responsible contact for at least one chat. */
 export interface PairedDevice {
   contactId: number;
   /** Chats this contact owns, sorted ascending. */
   chatIds: number[];
-  /** Earliest approved-file mtime across owned chats (ms since epoch). */
+  /** Earliest pair timestamp across owned chats (ms since epoch). */
   pairedAtMs: number;
 }
 
 /**
- * List all paired devices (unique owners across the allowlist) with their
- * owned chats and the earliest pair timestamp (from approved-file mtime).
- * Chats without an owner (legacy) are ignored — they pre-date the pair
- * flow and have no contact to surface.
+ * List paired devices (unique responsible contacts) with their chats and
+ * the earliest pair timestamp. Chats with no responsible contact are
+ * skipped.
  */
 export function listPaired(): PairedDevice[] {
-  const now = Date.now();
   const map = new Map<number, { chatIds: number[]; pairedAtMs: number }>();
-  for (const chatId of allowedChats()) {
-    const ownerId = getOwner(chatId);
-    if (!ownerId) continue;
-    let mtimeMs = now;
-    try {
-      mtimeMs = statSync(join(_approvedDir, String(chatId))).mtimeMs;
-    } catch {
-      /* keep fallback */
-    }
-    const entry = map.get(ownerId);
+  for (const [chatId, contactId] of chatPrimaryContact) {
+    const ms = pairedAtMsCache.get(chatId) ?? Date.now();
+    const entry = map.get(contactId);
     if (entry) {
       entry.chatIds.push(chatId);
-      if (mtimeMs < entry.pairedAtMs) entry.pairedAtMs = mtimeMs;
+      if (ms < entry.pairedAtMs) entry.pairedAtMs = ms;
     } else {
-      map.set(ownerId, { chatIds: [chatId], pairedAtMs: mtimeMs });
+      map.set(contactId, { chatIds: [chatId], pairedAtMs: ms });
     }
   }
   const out: PairedDevice[] = [];
@@ -144,20 +176,161 @@ export function listPaired(): PairedDevice[] {
   return out;
 }
 
-/** Return chatIds owned by the given contact. */
+/** Chats where `contactId` is the responsible contact. */
 export function chatsForOwner(contactId: number): number[] {
   const out: number[] = [];
-  for (const chatId of allowedChats()) {
-    if (getOwner(chatId) === contactId) out.push(chatId);
+  for (const [chatId, ownerId] of chatPrimaryContact) {
+    if (ownerId === contactId) out.push(chatId);
   }
   return out.sort((a, b) => a - b);
 }
 
-/** Revoke a chat ID. Silently ignores missing files. */
-export function removeChat(chatId: number): void {
+// ── Population (called from server.ts startup + ChatModified handler) ────────
+
+/**
+ * Walk every chat the dispatcher knows about; for each, mark it
+ * permissioned iff at least one non-bot contact has a principal record.
+ *
+ * `CONTACT_SELF` (the bot's own contact id, always 1 in dc-core) is
+ * skipped when scanning for principals. Without that skip, the bot's
+ * own self-message-count would falsely permission an empty chat.
+ *
+ * This is the v1.3 source-of-truth boot sequence: principals + dc-core
+ * membership define `isAllowed` rather than the legacy `approved/<chatId>`
+ * files. Called once after `backfillFromAllowlist`.
+ */
+export async function populateAllowlistFromMembership(
+  getChats: () => Promise<number[]>,
+  getChatContacts: (chatId: number) => Promise<number[]>,
+): Promise<void> {
+  const chats = await getChats();
+  for (const chatId of chats) {
+    const contacts = await getChatContacts(chatId);
+    let firstPermissioned: number | null = null;
+    for (const contactId of contacts) {
+      if (contactId === 1) continue; // CONTACT_SELF
+      // Direct principal lookup — populate runs after backfill, so any
+      // contact in the legacy allowlist now has a principal record.
+      // The `isContactPermissioned` policy (with its legacy
+      // `isKnownOwner` fallback) lives in contact-policy and isn't
+      // needed here; using it would re-introduce the chat-allowlist ↔
+      // contacts dependency cycle this split was designed to remove.
+      if (loadContact(contactId) !== null) {
+        firstPermissioned = contactId;
+        break;
+      }
+    }
+    if (firstPermissioned !== null) {
+      chatsWithPermissionedMember.add(chatId);
+      // Don't clobber an existing owner recorded earlier (e.g., from
+      // legacy approved/<chatId> seeding). First-seeder wins.
+      if (!chatPrimaryContact.has(chatId)) {
+        chatPrimaryContact.set(chatId, firstPermissioned);
+      }
+    }
+  }
+}
+
+/**
+ * Refresh the cache for one chat. Called from the `ChatModified` event
+ * handler when membership changes (contact joined/left/etc.).
+ */
+export async function refreshAllowlistForChat(
+  chatId: number,
+  getChatContacts: (chatId: number) => Promise<number[]>,
+): Promise<void> {
+  const contacts = await getChatContacts(chatId);
+  let firstPermissioned: number | null = null;
+  for (const contactId of contacts) {
+    if (contactId === 1) continue;
+    if (loadContact(contactId) !== null) {
+      firstPermissioned = contactId;
+      break;
+    }
+  }
+  if (firstPermissioned !== null) {
+    chatsWithPermissionedMember.add(chatId);
+    chatPrimaryContact.set(chatId, firstPermissioned);
+  } else {
+    chatsWithPermissionedMember.delete(chatId);
+    chatPrimaryContact.delete(chatId);
+    pairedAtMsCache.delete(chatId);
+  }
+}
+
+// ── Legacy `approved/` directory migration ───────────────────────────────────
+
+/**
+ * Seed the cache from the legacy `approved/<chatId>` directory at
+ * startup. Used as a transitional fallback before
+ * `populateAllowlistFromMembership` runs — covers the gap where a chat
+ * is approved on disk but the dc-core membership query hasn't returned
+ * it yet (e.g., a brand new chat in mid-pairing).
+ *
+ * Each file's content is the responsible contact's id (numeric string),
+ * or empty for legacy pre-owner files. Empty files seed the chat as
+ * allowed but with no owner — matching v1.2.2 semantics.
+ */
+export function seedFromLegacyDir(): void {
+  let entries: string[];
   try {
-    unlinkSync(join(_approvedDir, String(chatId)));
+    entries = readdirSync(_approvedDir);
   } catch {
-    // ignore
+    return; // dir missing — nothing to seed
+  }
+  for (const name of entries) {
+    const chatId = parseInt(name, 10);
+    if (Number.isNaN(chatId)) continue;
+    chatsWithPermissionedMember.add(chatId);
+    const path = join(_approvedDir, name);
+    let content = "";
+    try { content = readFileSync(path, "utf-8").trim(); } catch { /* ignore */ }
+    if (content) {
+      const ownerId = parseInt(content, 10);
+      if (!Number.isNaN(ownerId) && !chatPrimaryContact.has(chatId)) {
+        chatPrimaryContact.set(chatId, ownerId);
+      }
+    }
+    try {
+      pairedAtMsCache.set(chatId, statSync(path).mtimeMs);
+    } catch { /* keep current fallback */ }
+  }
+}
+
+/**
+ * After the in-memory cache is populated from principals + membership,
+ * rename `approved/` → `approved.legacy/`. Idempotent. Skips the rename
+ * if any `approved/<chatId>` file is not backed by a current cache entry
+ * (integrity check; preserves orphans for operator review).
+ *
+ * Drops in v1.4. The legacy dir is kept for one release as a safety net.
+ */
+export function retireApprovedDir(): void {
+  let entries: string[];
+  try {
+    entries = readdirSync(_approvedDir);
+  } catch {
+    return;
+  }
+  const orphans: string[] = [];
+  for (const name of entries) {
+    const chatId = parseInt(name, 10);
+    if (Number.isNaN(chatId)) continue;
+    if (!chatsWithPermissionedMember.has(chatId)) {
+      orphans.push(name);
+    }
+  }
+  if (orphans.length > 0) {
+    console.error(
+      `v1.3 migration: ${orphans.length} approved/ entr${orphans.length === 1 ? "y" : "ies"} not backed by principals — leaving approved/ in place. Orphans: ${orphans.join(", ")}`,
+    );
+    return;
+  }
+  const legacy = `${_approvedDir}.legacy`;
+  if (existsSync(legacy)) return; // already retired this session
+  try {
+    renameSync(_approvedDir, legacy);
+  } catch (e) {
+    console.error(`v1.3 migration: rename approved/ → approved.legacy/ failed: ${(e as Error).message}`);
   }
 }

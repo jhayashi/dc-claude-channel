@@ -60,7 +60,7 @@ test('known owner in new chat → auto-pair with same owner', () => {
   access.addChat(10, 5)
   expect(decideUnpaired(20, 5)).toBe('auto-paired')
   expect(access.isAllowed(20)).toBe(true)
-  expect(access.getOwner(20)).toBe(5)
+  expect(access.firstPermissionedContact(20)).toBe(5)
 })
 
 test('stranger in new chat with owners present → silent ignore', () => {
@@ -74,8 +74,8 @@ test('two known owners → each can auto-pair independently', () => {
   access.addChat(11, 6)
   expect(decideUnpaired(30, 5)).toBe('auto-paired')
   expect(decideUnpaired(31, 6)).toBe('auto-paired')
-  expect(access.getOwner(30)).toBe(5)
-  expect(access.getOwner(31)).toBe(6)
+  expect(access.firstPermissionedContact(30)).toBe(5)
+  expect(access.firstPermissionedContact(31)).toBe(6)
 })
 
 test('auto-pair persists owner so subsequent owner-only-rule check works', () => {
@@ -86,7 +86,7 @@ test('auto-pair persists owner so subsequent owner-only-rule check works', () =>
   // Now a non-owner message in chat 20 must be filtered by the existing
   // owner-only rule (server.ts lines 636-646). Verify the data is in
   // place for that filter:
-  expect(access.getOwner(20)).toBe(5)
+  expect(access.firstPermissionedContact(20)).toBe(5)
   // (The actual rule lives in server.ts; here we just confirm the
   // owner field is set so the rule has something to compare against.)
 })
@@ -105,38 +105,38 @@ describe('auto-pair via principal record (#66 Option A)', () => {
     // gate uses isContactPermissioned, which reads principals first, so
     // they auto-pair on a new chat without ceremony. Matches the
     // "contact identity is the trust boundary" intent.
-    access.recordHumanPair(5)
+    access.recordContactPair(5)
     // hasAnyOwner is false (no chat-allowlist entries) — this branch
     // bypasses the stranger-lockout and falls through to the auto-pair.
     expect(decideUnpaired(10, 5)).toBe('auto-paired')
-    expect(access.getOwner(10)).toBe(5)
+    expect(access.firstPermissionedContact(10)).toBe(5)
   })
 
   test('contact with chats + principal works the same as chats-only (legacy)', () => {
     access.addChat(10, 5)
-    access.recordHumanPair(5)
+    access.recordContactPair(5)
     expect(decideUnpaired(20, 5)).toBe('auto-paired')
-    expect(access.getOwner(20)).toBe(5)
+    expect(access.firstPermissionedContact(20)).toBe(5)
   })
 
   test('stranger with no principal and no chats is rejected when other owners exist', () => {
     access.addChat(10, 5)
-    access.recordHumanPair(5)
+    access.recordContactPair(5)
     // A new contact (99) with no record on either layer — must be
     // rejected because the bot is no longer in fresh-install mode.
     expect(decideUnpaired(20, 99)).toBe('ignored')
   })
 
-  test('removeHuman + removeChat fully revokes — subsequent message is ignored', () => {
+  test('removeContact + removeChat fully revokes — subsequent message is ignored', () => {
     access.addChat(10, 5)
-    access.recordHumanPair(5)
+    access.recordContactPair(5)
     expect(access.isContactPermissioned(5)).toBe(true)
 
     // Mirror the unpair_commit / dc_access_unpair sequence: cleanupChatState
     // runs per-chat (which calls removeChat under the hood), then
-    // removeHuman wipes the principal.
+    // removeContact wipes the principal.
     access.removeChat(10)
-    access.removeHuman(5)
+    access.removeContact(5)
     expect(access.isContactPermissioned(5)).toBe(false)
 
     // Add a different contact's chat so hasAnyOwner is true (otherwise
@@ -145,15 +145,15 @@ describe('auto-pair via principal record (#66 Option A)', () => {
     expect(decideUnpaired(20, 5)).toBe('ignored')
   })
 
-  test('removeHuman alone (chats stay) still leaves contact approved via legacy fallback', () => {
+  test('removeContact alone (chats stay) still leaves contact approved via legacy fallback', () => {
     // Documents the legacy-fallback safety: while the principal is
     // gone, isKnownOwner still finds the chat-allowlist entry. The
     // unpair flow removes BOTH layers, so this state isn't reachable
     // through normal use — but if a future migration leaves a chat
     // without its principal, auth keeps working.
     access.addChat(10, 5)
-    access.recordHumanPair(5)
-    access.removeHuman(5)
+    access.recordContactPair(5)
+    access.removeContact(5)
     expect(access.isContactPermissioned(5)).toBe(true)
     expect(decideUnpaired(20, 5)).toBe('auto-paired')
   })
@@ -162,7 +162,7 @@ describe('auto-pair via principal record (#66 Option A)', () => {
 describe('auto-pair → principals contract', () => {
   // Phase 2 design: principals are keyed per *contact*, not per chat.
   // The first pair for a contact goes through completePairing() which
-  // writes a HumanPrincipal record.  Auto-pair adds *another chat* for
+  // writes a Contact record.  Auto-pair adds *another chat* for
   // the same contact via addChat() — it does not (and does not need to)
   // touch the principal record, because the contact already has one.
   //
@@ -171,9 +171,9 @@ describe('auto-pair → principals contract', () => {
   // updated to reflect the new behavior.
 
   test('addChat (auto-pair primitive) does NOT write a principal directly', () => {
-    expect(access.loadHuman(5)).toBeNull()
+    expect(access.loadContact(5)).toBeNull()
     access.addChat(10, 5) // simulates auto-pair branch
-    expect(access.loadHuman(5)).toBeNull() // principal still missing
+    expect(access.loadContact(5)).toBeNull() // principal still missing
     expect(access.isAllowed(10)).toBe(true) // chat is approved though
   })
 
@@ -181,7 +181,7 @@ describe('auto-pair → principals contract', () => {
     // First pair via completePairing: principal lands on disk.
     const code = access.startPairing(10, 5)
     access.completePairing(code)
-    const first = access.loadHuman(5)
+    const first = access.loadContact(5)
     expect(first).not.toBeNull()
     const firstPairedAt = first!.firstPairedAt
 
@@ -190,7 +190,7 @@ describe('auto-pair → principals contract', () => {
 
     // Principal record is unchanged — no double-write, firstPairedAt
     // preserved (auto-pair must not bump it).
-    const second = access.loadHuman(5)
+    const second = access.loadContact(5)
     expect(second).not.toBeNull()
     expect(second!.firstPairedAt).toBe(firstPairedAt)
   })
@@ -201,18 +201,18 @@ describe('auto-pair → principals contract', () => {
     // Auto-pair into 20 + 30.
     decideUnpaired(20, 5)
     decideUnpaired(30, 5)
-    const human = access.loadHuman(5)!
+    const human = access.loadContact(5)!
     expect(access.chatsFor(human).sort((a, b) => a - b)).toEqual([10, 20, 30])
   })
 
   test('backfillFromAllowlist catches contacts paired before Phase 2 (legacy installs)', () => {
     // Simulate a pre-Phase-2 install: chat in allowlist, no principal yet.
     access.addChat(10, 5)
-    expect(access.loadHuman(5)).toBeNull()
+    expect(access.loadContact(5)).toBeNull()
 
     // Dispatcher startup runs backfill → principal lands on disk.
     expect(access.backfillFromAllowlist()).toBe(1)
-    expect(access.loadHuman(5)).not.toBeNull()
+    expect(access.loadContact(5)).not.toBeNull()
 
     // Idempotent: re-running backfill is a no-op.
     expect(access.backfillFromAllowlist()).toBe(0)
@@ -223,7 +223,7 @@ describe('auto-pair → principals contract', () => {
     access.addChat(10, 5)
     // Startup backfill writes the principal.
     access.backfillFromAllowlist()
-    const principal = access.loadHuman(5)!
+    const principal = access.loadContact(5)!
     const firstPairedAt = principal.firstPairedAt
 
     // Now contact 5 auto-pairs into chat 20.
@@ -231,7 +231,7 @@ describe('auto-pair → principals contract', () => {
 
     // Principal is still there, firstPairedAt unchanged, and chatsFor
     // sees both chats.
-    const after = access.loadHuman(5)!
+    const after = access.loadContact(5)!
     expect(after.firstPairedAt).toBe(firstPairedAt)
     expect(access.chatsFor(after).sort((a, b) => a - b)).toEqual([10, 20])
   })
@@ -242,8 +242,8 @@ describe('auto-pair → principals contract', () => {
     decideUnpaired(20, 5)
     decideUnpaired(21, 6)
 
-    expect(access.listHumans().map((h) => h.contactId).sort()).toEqual([5, 6])
-    expect(access.chatsFor(access.loadHuman(5)!).sort((a, b) => a - b)).toEqual([10, 20])
-    expect(access.chatsFor(access.loadHuman(6)!).sort((a, b) => a - b)).toEqual([11, 21])
+    expect(access.listContacts().map((h) => h.contactId).sort()).toEqual([5, 6])
+    expect(access.chatsFor(access.loadContact(5)!).sort((a, b) => a - b)).toEqual([10, 20])
+    expect(access.chatsFor(access.loadContact(6)!).sort((a, b) => a - b)).toEqual([11, 21])
   })
 })

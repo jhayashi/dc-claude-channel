@@ -30,13 +30,18 @@ beforeAll(() => {
 
 beforeEach(() => {
   // Clean all three dirs so tests start from a known state.
+  // v1.3 slice 7: agents are subdirectories now, not flat YAMLs.
   for (const d of [agentsDir, bindingsDir, approvedDir]) {
     if (existsSync(d)) {
       for (const f of readdirSync(d)) {
-        unlinkSync(join(d, f))
+        rmSync(join(d, f), { recursive: true, force: true })
       }
     }
   }
+  // v1.3 slice 2: chat-allowlist is now in-memory. setApprovedDir
+  // clears the cache too — call it between tests so state from a
+  // prior test doesn't leak.
+  access.setApprovedDir(approvedDir)
 })
 
 afterAll(() => {

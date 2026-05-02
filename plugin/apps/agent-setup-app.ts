@@ -943,6 +943,7 @@ export const agentSetupApp: WebXDCApp = {
     return [
       {
         name: 'dc_open_agent_settings',
+        requiresCapability: 'chat',
         description:
           'Surface the Agent settings app in the user\'s chat. The app always ' +
           'opens on a home screen where the user chooses what to do: start a ' +
@@ -1040,7 +1041,7 @@ export const agentSetupApp: WebXDCApp = {
       // Resolve the owner contact for the new chat (1:1 source: extract from
       // contacts; group source: use the stored owner).
       const resolveOwner = async (): Promise<number | null> => {
-        let ownerContactId = access.getOwner(session!.sourceChatId)
+        let ownerContactId = access.firstPermissionedContact(session!.sourceChatId)
         if (ownerContactId) return ownerContactId
         try {
           const contacts = await ctx.client.getChatContacts(session!.sourceChatId)
@@ -1496,14 +1497,14 @@ export const agentSetupApp: WebXDCApp = {
         }
 
         const chatIds = access.chatsForOwner(contactId)
-        const principalExists = access.loadHuman(contactId) !== null
+        const principalExists = access.loadContact(contactId) !== null
         if (chatIds.length === 0 && !principalExists) {
           await sendErr('No paired chats or principal record for this contact')
           continue
         }
         // chatIds.length === 0 && principalExists is the Option A edge
         // case — orphan principal with no chats. Fall through; the
-        // loop below is a no-op, removeHuman wipes the orphan record.
+        // loop below is a no-op, removeContact wipes the orphan record.
 
         // Send the "done" response first so the card can update its UI before
         // cleanup tears down the chats — if the source chat is among those
@@ -1558,7 +1559,7 @@ export const agentSetupApp: WebXDCApp = {
         // Wipe the principal record so backfill on next startup doesn't
         // resurrect the contact, and so isContactPermissioned returns false.
         // (#66 Option A — full per-contact unpair wipes both layers.)
-        access.removeHuman(contactId)
+        access.removeContact(contactId)
         ctx.logf('agent-setup: unpaired contact %d (%s, %d chat(s))', contactId, mode, chatIds.length)
         continue
       }
