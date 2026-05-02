@@ -33,6 +33,8 @@ import { decorateAgentChat, setAgentIcon, coachSessions, graduateAgent, graduate
 import { advanceCoach, isCoachDone, startRefineCoach } from './coach.js'
 import { classifyIntent, shouldClassify } from './nl-intents.js'
 import { handleNlIntent } from './nl-intent-handler.js'
+import { classifySlash, shouldClassifySlash } from './slash-router.js'
+import { handleSlash } from './slash-handler.js'
 import * as tutorial from './tutorial.js'
 import { decideCleanup } from './cleanup.js'
 import { SocketServer, type SocketRequest } from './dispatcher/socket-server.js'
@@ -2666,6 +2668,12 @@ async function main(): Promise<void> {
     startRefineSession: startRefineSessionForChat,
   }
 
+  const slashDeps = {
+    send: (chatId: number, text: string) => client.send(chatId, text),
+    evictChat: (chatId: number) => subagentCache.evictChat(chatId),
+    logf,
+  }
+
   const runSubagentTurn = async (msg: Message): Promise<void> => {
     // Intercept .familiar.yaml/.familiar.yml attachments as familiar imports.
     if (await tryImportFamiliarAttachment(msg)) return
@@ -2738,6 +2746,16 @@ async function main(): Promise<void> {
       const intent = classifyIntent(enrichedMsg.text ?? '')
       if (intent !== null) {
         await handleNlIntent(nlIntentDeps, intent, enrichedMsg.chatId)
+        return
+      }
+    }
+
+    // Slash-command intercept — /stop, /clear, /help, /memory, /mcp, /plugin.
+    // Same gate as NL intents: skip when a coach session is in flight.
+    if (shouldClassifySlash(enrichedMsg.chatId, coachSessions)) {
+      const slash = classifySlash(enrichedMsg.text ?? '')
+      if (slash !== null) {
+        await handleSlash(slashDeps, slash, enrichedMsg.chatId)
         return
       }
     }
