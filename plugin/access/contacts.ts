@@ -328,42 +328,60 @@ export function setContactRole(agentId: string, contactId: number, role: string,
  * Migrate contact records from the legacy `principals/humans/` layout to
  * the v1.3 agent-scoped `agents/claude-code/contacts/` layout.
  *
- * Idempotent: returns 0 immediately if the target directory already exists
- * (i.e., migration already ran on a previous boot). Safe to call on every
- * dispatcher startup.
+ * Per-file idempotent: a record is copied iff it is missing at the
+ * target. This handles the half-migrated case where the target dir
+ * already exists (e.g., new contacts written via `recordContactPair` or
+ * test leakage) but some legacy records were never carried over —
+ * gating purely on target-dir existence would silently strand them.
  *
- * After copying all records, renames `principals/` to `principals.legacy/`
- * so subsequent startups skip cleanly. The `.legacy/` directory is left for
- * one release and removed in v1.4.
+ * After every legacy record is present at the target, renames
+ * `principals/` to `principals.legacy/` so subsequent startups short-
+ * circuit. Skips the rename if any source records are still missing at
+ * the target (so the next boot retries).
  *
- * Returns the number of records migrated (0 on a no-op run).
+ * Returns the number of records newly copied (0 on a no-op run).
  */
 export function migrateContactsToAgentScoped(): number {
-  const targetDir = join(_agentsDir, "claude-code", "contacts");
-  if (existsSync(targetDir)) return 0;
-
   const sourceDir = join(_principalsDir, "humans");
   if (!existsSync(sourceDir)) return 0;
 
-  let count = 0;
+  const targetDir = join(_agentsDir, "claude-code", "contacts");
+  let entries: string[];
   try {
-    const entries = readdirSync(sourceDir);
+    entries = readdirSync(sourceDir);
+  } catch (err) {
+    console.error("contacts.migrateContactsToAgentScoped: cannot read source dir:", err);
+    return 0;
+  }
+
+  let count = 0;
+  let allPresent = true;
+  try {
     mkdirSync(targetDir, { recursive: true });
     for (const entry of entries) {
       if (!entry.endsWith(".json")) continue;
-      copyFileSync(join(sourceDir, entry), join(targetDir, entry));
+      const target = join(targetDir, entry);
+      if (existsSync(target)) continue;
+      copyFileSync(join(sourceDir, entry), target);
       count++;
+    }
+    // Verify every source record has a target counterpart before retiring source.
+    for (const entry of entries) {
+      if (!entry.endsWith(".json")) continue;
+      if (!existsSync(join(targetDir, entry))) { allPresent = false; break; }
     }
   } catch (err) {
     console.error("contacts.migrateContactsToAgentScoped: error during migration:", err);
     return count;
   }
 
-  try {
-    const legacyPath = `${_principalsDir}.legacy`;
-    if (!existsSync(legacyPath)) renameSync(_principalsDir, legacyPath);
-  } catch (err) {
-    console.error("contacts.migrateContactsToAgentScoped: failed to rename legacy dir:", err);
+  if (allPresent) {
+    try {
+      const legacyPath = `${_principalsDir}.legacy`;
+      if (!existsSync(legacyPath)) renameSync(_principalsDir, legacyPath);
+    } catch (err) {
+      console.error("contacts.migrateContactsToAgentScoped: failed to rename legacy dir:", err);
+    }
   }
 
   return count;

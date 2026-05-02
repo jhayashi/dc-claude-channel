@@ -2214,19 +2214,6 @@ async function main(): Promise<void> {
 
   await mcp.connect(new StdioServerTransport())
 
-  // One-time orphan-binding sweep: deletes binding files whose chat is
-  // no longer in the access list. These accumulate when a chat is left
-  // via a partial-cleanup path (e.g. dc_resume_in_terminal) or when a
-  // DC-side chat deletion races the dispatcher's own cleanupChat.
-  // Inflated bindings confuse the manage-agents "N chats" badge and
-  // block the manage-agents "N chats" badge from inflating.
-  try {
-    const removed = bindings.sweepOrphans()
-    if (removed > 0) logf('dc channel: swept %d orphan binding(s) at startup', removed)
-  } catch (err) {
-    logf('dc channel: orphan sweep failed: %v', err)
-  }
-
   // v1.3 slice 7 phase 1 — convert legacy `agents/<id>.yaml` files into
   // `agents/<id>/definition.yaml` so each agent has a directory of its
   // own (forward-compat for v1.4's per-agent contacts/, memory/, and
@@ -2236,6 +2223,21 @@ async function main(): Promise<void> {
     if (migrated > 0) logf('dc channel: migrated %d agent YAML file(s) to per-agent directory layout', migrated)
   } catch (err) {
     logf('dc channel: agent layout migration failed: %v', err)
+  }
+
+  // v1.3 slice 7 phase 3 — copy any contact records still at the legacy
+  // `principals/humans/<contactId>.json` path into the agent-scoped
+  // `agents/claude-code/contacts/` layout. Per-file idempotent so a
+  // half-migrated install (target dir already exists from
+  // `recordContactPair` writes or test leakage) still picks up legacy
+  // records that pre-date v1.3. MUST run before `backfillFromAllowlist`
+  // / `populateAllowlistFromMembership` so the in-memory allowlist
+  // sees every contact at boot.
+  try {
+    const moved = access.migrateContactsToAgentScoped()
+    if (moved > 0) logf('dc channel: migrated %d contact record(s) to agent-scoped layout', moved)
+  } catch (err) {
+    logf('dc channel: contact layout migration failed: %v', err)
   }
 
   // v1.3 startup sequence — make principals + chat membership the
@@ -2274,6 +2276,22 @@ async function main(): Promise<void> {
     access.retireApprovedDir()
   } catch (err) {
     logf('dc channel: retire-approved-dir failed: %v', err)
+  }
+
+  // One-time orphan-binding sweep: deletes binding files whose chat is
+  // no longer in the access list. These accumulate when a chat is left
+  // via a partial-cleanup path (e.g. dc_resume_in_terminal) or when a
+  // DC-side chat deletion races the dispatcher's own cleanupChat.
+  //
+  // MUST run after the allowlist is populated above — running before it
+  // would see an empty allowlist (transient between retireApprovedDir
+  // on a previous boot and contact records being read on this boot)
+  // and nuke every binding.
+  try {
+    const removed = bindings.sweepOrphans()
+    if (removed > 0) logf('dc channel: swept %d orphan binding(s) at startup', removed)
+  } catch (err) {
+    logf('dc channel: orphan sweep failed: %v', err)
   }
 
   // Register event handlers BEFORE starting IO to avoid missing queued messages.
