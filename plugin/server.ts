@@ -46,7 +46,7 @@ import { createMessageRouter } from './dispatcher/message-router.js'
 import { ReactionRouter } from './dispatcher/reaction-router.js'
 import { tryAutoApprove } from './dispatcher/skip-permissions.js'
 import { createActivityReactor, THINKING_EMOJIS, type ActivityReactor } from './dispatcher/activity-reactions.js'
-import { logToolCall, logTurn, logPermission, logWebXDC, buildArgPreview } from './events.js'
+import { logToolCall, logTurn, logPermission, logWebXDC, logAutoPairDenial, buildArgPreview } from './events.js'
 import { formatHistoryLine, evaluateAttachmentDownload } from './dispatcher/trust-filter.js'
 import { parseSince, queryEvents, renderEventsMarkdown, ALL_STREAMS, type EventStream } from './events-query.js'
 import * as resume from './resume.js'
@@ -2788,6 +2788,15 @@ async function main(): Promise<void> {
     // Auto-pair: sender is already an approved contact (from a prior pair
     // ceremony in some chat, or via principal record).
     if (msg.fromId && access.isContactPermissioned(access.DEFAULT_AGENT_ID, msg.fromId)) {
+      // Phase 4: only subscriber/trusted-agent roles can auto-pair into new chats.
+      // lower-trust roles (family-member, guest, untrusted-agent) are silently dropped.
+      const contact = access.loadContact(access.DEFAULT_AGENT_ID, msg.fromId)
+      const role = contact?.role ?? 'subscriber' // null = legacy; treat as subscriber
+      if (role !== 'subscriber' && role !== 'trusted-agent') {
+        logf('dc channel: auto-pair denied for contact %d (role=%s) in chat %d', msg.fromId, role, msg.chatId)
+        logAutoPairDenial({ ts: new Date().toISOString(), type: 'auto_pair_denied', chatId: msg.chatId, contactId: msg.fromId, role })
+        return
+      }
       access.addChat(msg.chatId, msg.fromId)
       logf('dc channel: auto-paired chat %d to known contact %d', msg.chatId, msg.fromId)
       // The owner has already completed the tutorial in another chat — skip

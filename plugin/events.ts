@@ -322,3 +322,15 @@ export function logRoleAssignment(
 ): void {
   appendLine('permissions', ev.ts, ev, onWriteError)
 }
+
+export interface AutoPairDenialEvent {
+  ts: string
+  type: 'auto_pair_denied'
+  chatId: number
+  contactId: number
+  role: string
+}
+
+export function logAutoPairDenial(ev: AutoPairDenialEvent): void {
+  appendLine('permissions', ev.ts, ev)
+}

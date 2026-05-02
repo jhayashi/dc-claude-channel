@@ -38,7 +38,7 @@ afterEach(() => {
  *  - 'auto-paired'— sender was a known owner; chat added
  *  - 'pair-flow'  — first-ever pairing flow would have run
  */
-function decideUnpaired(chatId: number, fromId: number | undefined): 'ignored' | 'auto-paired' | 'pair-flow' {
+function decideUnpaired(chatId: number, fromId: number | undefined): 'ignored' | 'auto-paired' | 'pair-flow' | 'role-denied' {
   if (access.isAllowed(chatId)) throw new Error('test setup error: chat is already allowed')
   // #66 Option A — auth gate is contact identity (principal record OR
   // legacy chat-allowlist entry), not just chat-allowlist.
@@ -46,6 +46,11 @@ function decideUnpaired(chatId: number, fromId: number | undefined): 'ignored' |
     return 'ignored'
   }
   if (fromId && access.isContactPermissioned(access.DEFAULT_AGENT_ID, fromId)) {
+    const contact = access.loadContact(access.DEFAULT_AGENT_ID, fromId)
+    const role = contact?.role ?? 'subscriber' // null → legacy, treat as subscriber
+    if (role !== 'subscriber' && role !== 'trusted-agent') {
+      return 'role-denied'
+    }
     access.addChat(chatId, fromId)
     return 'auto-paired'
   }
@@ -246,5 +251,50 @@ describe('auto-pair → principals contract', () => {
     expect(access.listContacts(access.DEFAULT_AGENT_ID).map((h) => h.contactId).sort()).toEqual([5, 6])
     expect(access.chatsFor(access.loadContact(access.DEFAULT_AGENT_ID, 5)!).sort((a, b) => a - b)).toEqual([10, 20])
     expect(access.chatsFor(access.loadContact(access.DEFAULT_AGENT_ID, 6)!).sort((a, b) => a - b)).toEqual([11, 21])
+  })
+})
+
+describe('auto-pair gate by role (Phase 4)', () => {
+  test('family-member does not auto-pair into a new chat (role-denied)', () => {
+    // A subscriber exists (so hasAnyOwner → stranger-lockout is active).
+    access.completePairing(access.startPairing(10, 6)) // subscriber 6 → chat 10
+    // family-member contact 5: permissioned but lower-trust role
+    access.setContactRole(access.DEFAULT_AGENT_ID, 5, 'family-member')
+    expect(decideUnpaired(20, 5)).toBe('role-denied')
+    expect(access.isAllowed(20)).toBe(false)
+  })
+
+  test('guest does not auto-pair (role-denied)', () => {
+    access.completePairing(access.startPairing(10, 6))
+    access.setContactRole(access.DEFAULT_AGENT_ID, 5, 'guest')
+    expect(decideUnpaired(20, 5)).toBe('role-denied')
+  })
+
+  test('untrusted-agent does not auto-pair (role-denied)', () => {
+    access.completePairing(access.startPairing(10, 6))
+    access.setContactRole(access.DEFAULT_AGENT_ID, 5, 'untrusted-agent')
+    expect(decideUnpaired(20, 5)).toBe('role-denied')
+  })
+
+  test('trusted-agent CAN auto-pair', () => {
+    access.completePairing(access.startPairing(10, 6))
+    access.setContactRole(access.DEFAULT_AGENT_ID, 5, 'trusted-agent')
+    expect(decideUnpaired(20, 5)).toBe('auto-paired')
+    expect(access.isAllowed(20)).toBe(true)
+  })
+
+  test('subscriber CAN auto-pair (existing behavior preserved)', () => {
+    access.completePairing(access.startPairing(10, 6))
+    access.recordContactPair(access.DEFAULT_AGENT_ID, 5)
+    expect(decideUnpaired(20, 5)).toBe('auto-paired')
+    expect(access.isAllowed(20)).toBe(true)
+  })
+
+  test('legacy contact (no principal, isKnownOwner via chat-allowlist) CAN auto-pair', () => {
+    // Pre-backfill state: chat entry exists but no principal record.
+    // loadContact returns null → role treated as subscriber (legacy compat).
+    access.addChat(10, 5) // chat-allowlist entry, no principal
+    expect(access.loadContact(access.DEFAULT_AGENT_ID, 5)).toBeNull()
+    expect(decideUnpaired(20, 5)).toBe('auto-paired')
   })
 })
