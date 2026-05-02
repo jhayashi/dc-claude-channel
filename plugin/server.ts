@@ -2225,6 +2225,17 @@ async function main(): Promise<void> {
     logf('dc channel: orphan sweep failed: %v', err)
   }
 
+  // v1.3 slice 7 phase 1 — convert legacy `agents/<id>.yaml` files into
+  // `agents/<id>/definition.yaml` so each agent has a directory of its
+  // own (forward-compat for v1.4's per-agent contacts/, memory/, and
+  // chatmail/ subdirs). Idempotent; no-op for already-migrated installs.
+  try {
+    const migrated = agents.migrateLegacyAgentYaml()
+    if (migrated > 0) logf('dc channel: migrated %d agent YAML file(s) to per-agent directory layout', migrated)
+  } catch (err) {
+    logf('dc channel: agent layout migration failed: %v', err)
+  }
+
   // v1.3 startup sequence — make principals + chat membership the
   // source of truth for the allowlist; retire legacy approved/ files.
   //

@@ -141,7 +141,8 @@ describe('createReuseChat', () => {
     for (const dir of [agentsDir, bindingsDir, accessDir]) {
       if (existsSync(dir)) {
         for (const f of readdirSync(dir)) {
-          try { unlinkSync(join(dir, f)) } catch { /* ignore directories */ }
+          // v1.3 slice 7: agents/<id>/ are directories. rmSync handles both.
+          try { rmSync(join(dir, f), { recursive: true, force: true }) } catch { /* ignore */ }
         }
       }
     }
@@ -257,8 +258,8 @@ describe('createReuseChat', () => {
     // Note: deleteAgent throws on undeletable; this is just a paranoia
     // path. In practice ensureDefaultAgent re-seeds from a missing-file
     // state.
-    // Force-remove the on-disk file manually.
-    rmSync(join(agentsDir, `${agents.DEFAULT_AGENT_ID}.yaml`), { force: true })
+    // Force-remove the agent's directory manually.
+    rmSync(join(agentsDir, agents.DEFAULT_AGENT_ID), { recursive: true, force: true })
     expect(agents.getAgent(agents.DEFAULT_AGENT_ID)).toBeNull()
     const reseeded = agents.ensureDefaultAgent()
     expect(reseeded.id).toBe(agents.DEFAULT_AGENT_ID)

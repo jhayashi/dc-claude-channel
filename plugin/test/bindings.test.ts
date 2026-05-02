@@ -30,10 +30,11 @@ beforeAll(() => {
 
 beforeEach(() => {
   // Clean all three dirs so tests start from a known state.
+  // v1.3 slice 7: agents are subdirectories now, not flat YAMLs.
   for (const d of [agentsDir, bindingsDir, approvedDir]) {
     if (existsSync(d)) {
       for (const f of readdirSync(d)) {
-        unlinkSync(join(d, f))
+        rmSync(join(d, f), { recursive: true, force: true })
       }
     }
   }

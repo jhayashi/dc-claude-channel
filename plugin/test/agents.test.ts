@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:test'
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -18,10 +19,12 @@ const testDir = mkdtempSync(join(tmpdir(), 'dc-agents-test-'))
 beforeAll(() => agents.setAgentsDir(testDir))
 beforeEach(() => {
   // Clean the test dir between tests so collision/listing tests don't
-  // see stale files from earlier runs.
+  // see stale state from earlier runs. v1.3 slice 7 phase 1: agents
+  // are subdirectories now, so recursively remove rather than
+  // unlinkSync each entry.
   if (existsSync(testDir)) {
     for (const f of readdirSync(testDir)) {
-      unlinkSync(join(testDir, f))
+      rmSync(join(testDir, f), { recursive: true, force: true })
     }
   }
 })
@@ -54,7 +57,7 @@ describe('agents registry', () => {
       system: 'be quick',
     })
     agents.saveAgent(def)
-    const contents = readFileSync(join(testDir, 'disk-agent.yaml'), 'utf-8')
+    const contents = readFileSync(join(testDir, 'disk-agent', 'definition.yaml'), 'utf-8')
     const parsed = YAML.parse(contents)
     expect(parsed).toEqual(def)
     // Sanity: it's actually YAML, not JSON
@@ -67,13 +70,15 @@ describe('agents registry', () => {
   })
 
   test('getAgent returns null for unparseable YAML', () => {
-    writeFileSync(join(testDir, 'broken.yaml'), '::: not: [valid yaml')
+    mkdirSync(join(testDir, 'broken'), { recursive: true })
+    writeFileSync(join(testDir, 'broken', 'definition.yaml'), '::: not: [valid yaml')
     expect(agents.getAgent('broken')).toBeNull()
   })
 
   test('getAgent returns null for schema-invalid YAML', () => {
+    mkdirSync(join(testDir, 'bad'), { recursive: true })
     writeFileSync(
-      join(testDir, 'bad.yaml'),
+      join(testDir, 'bad', 'definition.yaml'),
       YAML.stringify({ id: 'bad', name: 'Bad' }),
     )
     expect(agents.getAgent('bad')).toBeNull()
@@ -99,9 +104,10 @@ describe('agents registry', () => {
     expect(agents.listAgents().map(a => a.id)).toEqual(['alpha', 'claude-code', 'mike', 'zebra'])
   })
 
-  test('listAgents skips invalid files without throwing', () => {
+  test('listAgents skips invalid records without throwing', () => {
     agents.saveAgent(makeDef({ id: 'good' }))
-    writeFileSync(join(testDir, 'broken.yaml'), '::: garbage')
+    mkdirSync(join(testDir, 'broken'), { recursive: true })
+    writeFileSync(join(testDir, 'broken', 'definition.yaml'), '::: garbage')
     // claude-code is auto-seeded by listAgents.
     expect(agents.listAgents().map(a => a.id)).toEqual(['claude-code', 'good'])
   })
@@ -480,8 +486,9 @@ describe('allowedBuiltinTools and allowedMcpServers schema fields', () => {
 
   test('fields are optional — existing agents without them still load', () => {
     // Write a minimal YAML without the new fields
+    mkdirSync(join(testDir, 'legacy-agent'), { recursive: true })
     writeFileSync(
-      join(testDir, 'legacy-agent.yaml'),
+      join(testDir, 'legacy-agent', 'definition.yaml'),
       YAML.stringify({
         id: 'legacy-agent',
         name: 'Legacy Agent',
@@ -527,8 +534,9 @@ describe('allowedBuiltinTools and allowedMcpServers schema fields', () => {
 
   test('migrateToolsToServers converts legacy allowedMcpTools on load', () => {
     // Write a YAML file with the old allowedMcpTools field
+    mkdirSync(join(testDir, 'legacy-mcp'), { recursive: true })
     writeFileSync(
-      join(testDir, 'legacy-mcp.yaml'),
+      join(testDir, 'legacy-mcp', 'definition.yaml'),
       YAML.stringify({
         id: 'legacy-mcp',
         name: 'Legacy MCP',
@@ -546,8 +554,9 @@ describe('allowedBuiltinTools and allowedMcpServers schema fields', () => {
   })
 
   test('migrateToolsToServers converts empty allowedMcpTools to empty servers', () => {
+    mkdirSync(join(testDir, 'legacy-empty'), { recursive: true })
     writeFileSync(
-      join(testDir, 'legacy-empty.yaml'),
+      join(testDir, 'legacy-empty', 'definition.yaml'),
       YAML.stringify({
         id: 'legacy-empty',
         name: 'Legacy Empty',
@@ -884,5 +893,70 @@ describe('setAgentTrust', () => {
 
   test('throws on missing agent', () => {
     expect(() => agents.setAgentTrust('no-such-agent', true)).toThrow(/no agent/)
+  })
+})
+
+describe('migrateLegacyAgentYaml (v1.3 slice 7 phase 1)', () => {
+  test('moves agents/<id>.yaml to agents/<id>/definition.yaml', () => {
+    // Pre-migration v1.2.x layout: flat YAML files at the agents-dir root.
+    writeFileSync(
+      join(testDir, 'old-shape.yaml'),
+      YAML.stringify(makeDef({ id: 'old-shape', name: 'Old' })),
+    )
+    expect(agents.migrateLegacyAgentYaml()).toBe(1)
+    expect(existsSync(join(testDir, 'old-shape.yaml'))).toBe(false)
+    expect(existsSync(join(testDir, 'old-shape', 'definition.yaml'))).toBe(true)
+    // Round-trip through getAgent (which reads the new path) must still
+    // produce a valid record.
+    const loaded = agents.getAgent('old-shape')
+    expect(loaded?.id).toBe('old-shape')
+    expect(loaded?.name).toBe('Old')
+  })
+
+  test('migrates multiple agents at once', () => {
+    writeFileSync(join(testDir, 'a.yaml'), YAML.stringify(makeDef({ id: 'a' })))
+    writeFileSync(join(testDir, 'b.yaml'), YAML.stringify(makeDef({ id: 'b' })))
+    writeFileSync(join(testDir, 'c.yaml'), YAML.stringify(makeDef({ id: 'c' })))
+    expect(agents.migrateLegacyAgentYaml()).toBe(3)
+    for (const id of ['a', 'b', 'c']) {
+      expect(existsSync(join(testDir, `${id}.yaml`))).toBe(false)
+      expect(existsSync(join(testDir, id, 'definition.yaml'))).toBe(true)
+    }
+  })
+
+  test('is idempotent — second run is a no-op', () => {
+    writeFileSync(join(testDir, 'idempotent.yaml'), YAML.stringify(makeDef({ id: 'idempotent' })))
+    expect(agents.migrateLegacyAgentYaml()).toBe(1)
+    expect(agents.migrateLegacyAgentYaml()).toBe(0)
+  })
+
+  test('leaves a coexisting legacy file alone if directory shape already exists (operator inspection)', () => {
+    // Pathological state: both old and new shape exist for the same id.
+    // Migration should not destroy the legacy file — it logs and skips.
+    mkdirSync(join(testDir, 'duplicate'), { recursive: true })
+    writeFileSync(
+      join(testDir, 'duplicate', 'definition.yaml'),
+      YAML.stringify(makeDef({ id: 'duplicate', name: 'New' })),
+    )
+    writeFileSync(
+      join(testDir, 'duplicate.yaml'),
+      YAML.stringify(makeDef({ id: 'duplicate', name: 'Old' })),
+    )
+    const origErr = console.error
+    let warned = false
+    console.error = () => { warned = true }
+    try {
+      expect(agents.migrateLegacyAgentYaml()).toBe(0)
+      expect(warned).toBe(true)
+      expect(existsSync(join(testDir, 'duplicate.yaml'))).toBe(true)
+      expect(agents.getAgent('duplicate')?.name).toBe('New')
+    } finally {
+      console.error = origErr
+    }
+  })
+
+  test('handles missing agents dir gracefully', () => {
+    rmSync(testDir, { recursive: true, force: true })
+    expect(agents.migrateLegacyAgentYaml()).toBe(0)
   })
 })
