@@ -5,13 +5,13 @@ import { tmpdir } from "node:os";
 import * as access from "../access/index.js";
 
 const root = mkdtempSync(join(tmpdir(), "dc-allowlist-populate-"));
-const principalsDir = join(root, "principals");
+const agentsDir = join(root, "agents");
 const approvedDir = join(root, "approved");
 
 beforeEach(() => {
-  rmSync(principalsDir, { recursive: true, force: true });
+  rmSync(agentsDir, { recursive: true, force: true });
   rmSync(approvedDir, { recursive: true, force: true });
-  access.setPrincipalsDir(principalsDir);
+  access.setContactsAgentsDir(agentsDir);
   access.setApprovedDir(approvedDir); // also clears the in-memory cache
 });
 

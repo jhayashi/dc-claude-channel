@@ -6,13 +6,13 @@ import * as access from "../access/index.js";
 
 // Use temp directories so tests don't touch the real on-disk state.
 const testDir = mkdtempSync(join(tmpdir(), "dc-access-test-"));
-const principalsDir = join(testDir, "principals");
+const agentsDir = join(testDir, "agents");
 
 beforeAll(() => {
   // Point the access module at the temp directories.  Both required —
   // `completePairing` writes to chat-allowlist AND principals.
   access.setApprovedDir(testDir);
-  access.setPrincipalsDir(principalsDir);
+  access.setContactsAgentsDir(agentsDir);
 });
 
 afterAll(() => {

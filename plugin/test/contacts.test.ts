@@ -5,14 +5,15 @@ import { tmpdir } from "node:os";
 import * as access from "../access/index.js";
 
 const testRoot = mkdtempSync(join(tmpdir(), "dc-principals-test-"));
-const principalsDir = join(testRoot, "principals");
+const agentsDir = join(testRoot, "agents");
+const contactsDir = join(agentsDir, "claude-code", "contacts");
 const approvedDir = join(testRoot, "approved");
 
 beforeEach(() => {
   // Clean slate before each test.
-  rmSync(principalsDir, { recursive: true, force: true });
+  rmSync(agentsDir, { recursive: true, force: true });
   rmSync(approvedDir, { recursive: true, force: true });
-  access.setPrincipalsDir(principalsDir);
+  access.setContactsAgentsDir(agentsDir);
   access.setApprovedDir(approvedDir);
 });
 
@@ -43,13 +44,13 @@ describe("principals — write/read/list", () => {
     });
   });
 
-  test("writeContact creates the humans/ subdir on first write", () => {
+  test("writeContact creates the contacts/ subdir on first write", () => {
     access.writeContact({
       kind: "human",
       contactId: 1,
       firstPairedAt: "2026-04-25T12:00:00.000Z",
     });
-    expect(readdirSync(join(principalsDir, "humans"))).toContain("1.json");
+    expect(readdirSync(contactsDir)).toContain("1.json");
   });
 
   test("writeContact is atomic (no leftover .tmp files on success)", () => {
@@ -58,7 +59,7 @@ describe("principals — write/read/list", () => {
       contactId: 1,
       firstPairedAt: "2026-04-25T12:00:00.000Z",
     });
-    const files = readdirSync(join(principalsDir, "humans"));
+    const files = readdirSync(contactsDir);
     expect(files.every((f) => !f.includes(".tmp."))).toBe(true);
   });
 
@@ -67,15 +68,15 @@ describe("principals — write/read/list", () => {
     // the capability gate distinguishes "we said no" (capability_deny)
     // from "we couldn't decide" (capability_lookup_error). The previous
     // null-return behavior collapsed both reasons to deny.
-    mkdirSync(join(principalsDir, "humans"), { recursive: true });
-    writeFileSync(join(principalsDir, "humans", "99.json"), "{ not json");
+    mkdirSync(contactsDir, { recursive: true });
+    writeFileSync(join(contactsDir, "99.json"), "{ not json");
     expect(() => access.loadContact(99)).toThrow();
   });
 
   test("loadContact throws on schema-mismatch records (wrong kind)", () => {
-    mkdirSync(join(principalsDir, "humans"), { recursive: true });
+    mkdirSync(contactsDir, { recursive: true });
     writeFileSync(
-      join(principalsDir, "humans", "99.json"),
+      join(contactsDir, "99.json"),
       JSON.stringify({ kind: "agent", contactId: 99, firstPairedAt: "2026-01-01T00:00:00Z" }),
     );
     expect(() => access.loadContact(99)).toThrow(/schema mismatch/);
@@ -85,8 +86,8 @@ describe("principals — write/read/list", () => {
     // listContacts is called from hot startup paths
     // (backfillFromAllowlist, hasAnyPermissionedContact). A single bad
     // record must not take down the dispatcher.
-    mkdirSync(join(principalsDir, "humans"), { recursive: true });
-    writeFileSync(join(principalsDir, "humans", "1.json"), "{ not json"); // corrupt
+    mkdirSync(contactsDir, { recursive: true });
+    writeFileSync(join(contactsDir, "1.json"), "{ not json"); // corrupt
     access.writeContact({ kind: "human", contactId: 2, firstPairedAt: "2026-04-25T12:00:00.000Z" });
     // Silence the expected stderr noise from the skipped record.
     const origErr = console.error;
@@ -114,9 +115,9 @@ describe("principals — write/read/list", () => {
   });
 
   test("listContacts skips files that aren't .json", () => {
-    mkdirSync(join(principalsDir, "humans"), { recursive: true });
-    writeFileSync(join(principalsDir, "humans", "README.txt"), "hi");
-    writeFileSync(join(principalsDir, "humans", "stray"), "");
+    mkdirSync(contactsDir, { recursive: true });
+    writeFileSync(join(contactsDir, "README.txt"), "hi");
+    writeFileSync(join(contactsDir, "stray"), "");
     access.writeContact({ kind: "human", contactId: 1, firstPairedAt: "2026-04-25T12:00:00.000Z" });
     expect(access.listContacts().map((p) => p.contactId)).toEqual([1]);
   });
@@ -180,8 +181,8 @@ describe("principals — recordContactPair", () => {
   });
 
   test("recovers from a corrupt existing record by overwriting", () => {
-    mkdirSync(join(principalsDir, "humans"), { recursive: true });
-    writeFileSync(join(principalsDir, "humans", "50.json"), "{ not json");
+    mkdirSync(contactsDir, { recursive: true });
+    writeFileSync(join(contactsDir, "50.json"), "{ not json");
     // Capture stderr so the recovery message doesn't pollute test output.
     const origErr = console.error;
     let logged = false;
@@ -233,8 +234,8 @@ describe("principals — setContactRole (v1.3 slice 6)", () => {
   });
 
   test("recovers from a corrupt existing record by overwriting", () => {
-    mkdirSync(join(principalsDir, "humans"), { recursive: true });
-    writeFileSync(join(principalsDir, "humans", "90.json"), "{ not json");
+    mkdirSync(contactsDir, { recursive: true });
+    writeFileSync(join(contactsDir, "90.json"), "{ not json");
     const origErr = console.error;
     let logged = false;
     console.error = () => { logged = true; };
@@ -385,17 +386,17 @@ describe("principals — isContactPermissioned (#66 Option A)", () => {
     expect(access.isContactPermissioned(42)).toBe(false); // cache rebuild after remove
   });
 
-  test("permissioned-contacts cache invalidates on setPrincipalsDir", () => {
-    // setPrincipalsDir is a test-isolation hook — it changes the on-disk
-    // root the cache reads from. Must invalidate so subsequent reads
+  test("permissioned-contacts cache invalidates on setContactsAgentsDir", () => {
+    // setContactsAgentsDir is a test-isolation hook — it changes the on-disk
+    // agents root the cache reads from. Must invalidate so subsequent reads
     // don't return stale data from the prior dir.
     access.recordContactPair(42);
     expect(access.isContactPermissioned(42)).toBe(true);
-    // Switch to a fresh empty dir.
-    const newDir = mkdtempSync(join(tmpdir(), "dc-cache-isolate-"));
-    access.setPrincipalsDir(newDir);
+    // Switch to a fresh empty agents dir.
+    const newAgentsDir = mkdtempSync(join(tmpdir(), "dc-cache-isolate-"));
+    access.setContactsAgentsDir(newAgentsDir);
     expect(access.isContactPermissioned(42)).toBe(false);
-    rmSync(newDir, { recursive: true, force: true });
+    rmSync(newAgentsDir, { recursive: true, force: true });
   });
 });
 
@@ -451,9 +452,9 @@ describe("principals — removeContact error handling (P2.5)", () => {
 describe("principals — role + capabilities (v1.3 slice 1)", () => {
   test("loadContact fills defaults on legacy records (no role, no capabilities)", () => {
     // Write a v1.2.2-shape record (no role, no capabilities) directly to disk.
-    mkdirSync(join(principalsDir, "humans"), { recursive: true });
+    mkdirSync(contactsDir, { recursive: true });
     writeFileSync(
-      join(principalsDir, "humans", "55.json"),
+      join(contactsDir, "55.json"),
       JSON.stringify({ kind: "human", contactId: 55, firstPairedAt: "2026-04-25T12:00:00.000Z" }),
     );
     const p = access.loadContact(55);
@@ -479,9 +480,9 @@ describe("principals — role + capabilities (v1.3 slice 1)", () => {
     // Defensive: a record with role but missing capabilities (shouldn't happen
     // in practice, but loadContact must not return [] for such a record — that
     // would mean denied-everywhere on-disk corruption).
-    mkdirSync(join(principalsDir, "humans"), { recursive: true });
+    mkdirSync(contactsDir, { recursive: true });
     writeFileSync(
-      join(principalsDir, "humans", "57.json"),
+      join(contactsDir, "57.json"),
       JSON.stringify({ kind: "human", contactId: 57, firstPairedAt: "2026-04-25T12:00:00.000Z", role: "guest" }),
     );
     const p = access.loadContact(57);
@@ -507,7 +508,7 @@ describe("principals — role + capabilities (v1.3 slice 1)", () => {
       contactId: 59,
       firstPairedAt: "2026-04-25T12:00:00.000Z",
     });
-    const path = join(principalsDir, "humans", "59.json");
+    const path = join(contactsDir, "59.json");
     const mode = statSync(path).mode & 0o777;
     expect(mode).toBe(0o600);
   });
@@ -530,18 +531,18 @@ describe("principals — getCapabilitiesFor (v1.3 slice 1)", () => {
   });
 
   test("falls back to role bundle when capabilities array is missing on disk", () => {
-    mkdirSync(join(principalsDir, "humans"), { recursive: true });
+    mkdirSync(contactsDir, { recursive: true });
     writeFileSync(
-      join(principalsDir, "humans", "61.json"),
+      join(contactsDir, "61.json"),
       JSON.stringify({ kind: "human", contactId: 61, firstPairedAt: "2026-04-25T12:00:00.000Z", role: "guest" }),
     );
     expect(access.getCapabilitiesFor(61)).toEqual(["chat"]);
   });
 
   test("returns wildcard for legacy records (no role, no capabilities)", () => {
-    mkdirSync(join(principalsDir, "humans"), { recursive: true });
+    mkdirSync(contactsDir, { recursive: true });
     writeFileSync(
-      join(principalsDir, "humans", "62.json"),
+      join(contactsDir, "62.json"),
       JSON.stringify({ kind: "human", contactId: 62, firstPairedAt: "2026-04-25T12:00:00.000Z" }),
     );
     // Legacy record loaded with role=subscriber default → wildcard bundle.

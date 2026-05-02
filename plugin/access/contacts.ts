@@ -26,7 +26,7 @@
  * role `trusted-agent` / `untrusted-agent`.
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { bundleFor } from "./capability-bundles.js";
@@ -77,6 +77,26 @@ export interface AgentPrincipal {
 
 // ── Directory plumbing ───────────────────────────────────────────────────────
 
+// v1.3 slice 7 phase 3: contact records live at agents/<agentId>/contacts/.
+// _agentsDir points to the agents root; contactPath() derives the per-record
+// path from it. Kept separate from _principalsDir (the legacy source used only
+// by the migration function).
+let _agentsDir = process.env.DC_TEST_CONTACTS_DIR ?? join(
+  homedir(),
+  ".claude",
+  "channels",
+  "deltachat",
+  "agents",
+);
+
+/** Override the agents directory for contacts (for testing). */
+export function setContactsAgentsDir(dir: string): void {
+  _agentsDir = dir;
+  _onMutate();
+}
+
+// Legacy principals dir — used only by migrateContactsToAgentScoped() as the
+// migration source. Not involved in normal read/write operations.
 let _principalsDir = process.env.DC_TEST_PRINCIPALS_DIR ?? join(
   homedir(),
   ".claude",
@@ -85,16 +105,12 @@ let _principalsDir = process.env.DC_TEST_PRINCIPALS_DIR ?? join(
   "principals",
 );
 
-/** Current principals directory path. */
+/** Current principals directory path (legacy; migration source only). */
 export function getPrincipalsDir(): string { return _principalsDir }
 
-/** Override the principals directory (for testing). */
+/** Override the legacy principals directory (migration source; for testing). */
 export function setPrincipalsDir(dir: string): void {
   _principalsDir = dir;
-  // Cache invalidation hook (v1.3 review fix #3 — Elena HURT 2):
-  // contact-policy maintains a derived `permissionedContactIds` Set
-  // for O(1) `isContactPermissioned` on the inbound-message hot path.
-  // Changing the principals dir invalidates the entire cache.
   _onMutate();
 }
 
@@ -109,7 +125,10 @@ let _onMutate: () => void = () => { /* no-op until policy registers */ };
 export function _setContactsMutateCallback(cb: () => void): void { _onMutate = cb; }
 
 function contactPath(contactId: number): string {
-  return join(_principalsDir, "humans", `${contactId}.json`);
+  // v1.3 slice 7 phase 3: agents/<agentId>/contacts/<contactId>.json
+  // Phase 3 commit 2 will expose agentId as a parameter; for now 'claude-code'
+  // is the only agent in v1.3.
+  return join(_agentsDir, "claude-code", "contacts", `${contactId}.json`);
 }
 
 // ── Atomic JSON write ────────────────────────────────────────────────────────
@@ -189,7 +208,7 @@ export function writeContact(p: Contact): void {
  * a single bad file. Errors are logged to stderr for operator visibility.
  */
 export function listContacts(): Contact[] {
-  const dir = join(_principalsDir, "humans");
+  const dir = join(_agentsDir, "claude-code", "contacts");
   let entries: string[];
   try {
     entries = readdirSync(dir);
@@ -303,6 +322,51 @@ export function setContactRole(contactId: number, role: string, displayName?: st
   };
   writeContact(principal);
   return principal;
+}
+
+/**
+ * Migrate contact records from the legacy `principals/humans/` layout to
+ * the v1.3 agent-scoped `agents/claude-code/contacts/` layout.
+ *
+ * Idempotent: returns 0 immediately if the target directory already exists
+ * (i.e., migration already ran on a previous boot). Safe to call on every
+ * dispatcher startup.
+ *
+ * After copying all records, renames `principals/` to `principals.legacy/`
+ * so subsequent startups skip cleanly. The `.legacy/` directory is left for
+ * one release and removed in v1.4.
+ *
+ * Returns the number of records migrated (0 on a no-op run).
+ */
+export function migrateContactsToAgentScoped(): number {
+  const targetDir = join(_agentsDir, "claude-code", "contacts");
+  if (existsSync(targetDir)) return 0;
+
+  const sourceDir = join(_principalsDir, "humans");
+  if (!existsSync(sourceDir)) return 0;
+
+  let count = 0;
+  try {
+    const entries = readdirSync(sourceDir);
+    mkdirSync(targetDir, { recursive: true });
+    for (const entry of entries) {
+      if (!entry.endsWith(".json")) continue;
+      copyFileSync(join(sourceDir, entry), join(targetDir, entry));
+      count++;
+    }
+  } catch (err) {
+    console.error("contacts.migrateContactsToAgentScoped: error during migration:", err);
+    return count;
+  }
+
+  try {
+    const legacyPath = `${_principalsDir}.legacy`;
+    if (!existsSync(legacyPath)) renameSync(_principalsDir, legacyPath);
+  } catch (err) {
+    console.error("contacts.migrateContactsToAgentScoped: failed to rename legacy dir:", err);
+  }
+
+  return count;
 }
 
 // Derived queries (`chatsFor`, `isContactPermissioned`,

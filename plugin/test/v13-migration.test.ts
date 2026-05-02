@@ -8,13 +8,16 @@ const root = mkdtempSync(join(tmpdir(), "dc-v13-migration-"));
 const approvedDir = join(root, "approved");
 const approvedLegacyDir = `${approvedDir}.legacy`;
 const principalsDir = join(root, "principals");
+const agentsDir = join(root, "agents");
 
 beforeEach(() => {
   rmSync(approvedDir, { recursive: true, force: true });
   rmSync(approvedLegacyDir, { recursive: true, force: true });
   rmSync(principalsDir, { recursive: true, force: true });
+  rmSync(agentsDir, { recursive: true, force: true });
   access.setApprovedDir(approvedDir);
   access.setPrincipalsDir(principalsDir);
+  access.setContactsAgentsDir(agentsDir);
 });
 
 afterAll(() => rmSync(root, { recursive: true, force: true }));

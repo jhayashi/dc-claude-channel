@@ -20,6 +20,7 @@ beforeEach(() => {
   principalsTmpDir = mkdtempSync(join(tmpdir(), 'dc-autopair-principals-'))
   access.setApprovedDir(tmpDir)
   access.setPrincipalsDir(principalsTmpDir)
+  access.setContactsAgentsDir(principalsTmpDir)
   // Module-level pending-pairings map leaks across test files; reset.
   access.resetPendingPairings()
   access.resetArmedState()
