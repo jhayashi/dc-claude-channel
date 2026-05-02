@@ -96,7 +96,7 @@ export interface ResumeError {
  */
 export function buildResumeCommand(
   chatId: number,
-  opts: { cwd?: string; chatName?: string } = {},
+  opts: { cwd?: string; chatName?: string; model?: string } = {},
 ): ResumeCommand | ResumeError {
   const binding = bindings.getBinding(chatId)
   if (!binding) {
@@ -104,6 +104,7 @@ export function buildResumeCommand(
   }
 
   const cwd = opts.cwd ?? binding.workingDir ?? PLUGIN_DIR
+  const modelFlag = opts.model ? ` --model ${opts.model}` : ''
   const nameFlag = opts.chatName ? ` --name ${shellQuote(opts.chatName)}` : ''
 
   if (binding.sessionId) {
@@ -111,7 +112,7 @@ export function buildResumeCommand(
     if (existsSync(sessionPath)) {
       return {
         kind: 'resume',
-        command: `cd ${cwd} && claude --resume ${binding.sessionId}${nameFlag}`,
+        command: `cd ${cwd} && claude --resume ${binding.sessionId}${modelFlag}${nameFlag}`,
         sessionId: binding.sessionId,
         sessionPath,
         sessionName: opts.chatName ?? null,
@@ -121,7 +122,7 @@ export function buildResumeCommand(
 
   return {
     kind: 'fresh',
-    command: `cd ${cwd} && claude${nameFlag}`,
+    command: `cd ${cwd} && claude${modelFlag}${nameFlag}`,
     sessionId: null,
     sessionPath: null,
     sessionName: opts.chatName ?? null,

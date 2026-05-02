@@ -1903,7 +1903,8 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         }
         let chatName: string | undefined
         try { chatName = await client.getChatName(chatId) || undefined } catch { /* best effort */ }
-        const result = resume.buildResumeCommand(chatId, { chatName })
+        const resolved = bindings.resolveChat(chatId)
+        const result = resume.buildResumeCommand(chatId, { chatName, model: resolved?.agent.model })
         if ('error' in result) {
           return { content: [{ type: 'text' as const, text: `dc_resume_in_terminal: ${result.error}` }], isError: true }
         }

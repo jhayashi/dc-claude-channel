@@ -7,11 +7,13 @@ import {
   composeIdentityPreamble,
   composeAgentName,
   createReuseChat,
+  resolveAttachAgent,
 } from '../apps/agent-setup-app.js'
 import type { CoachAnswers } from '../coach.js'
 import * as agents from '../agents.js'
 import * as bindings from '../bindings.js'
 import * as access from '../access/index.js'
+import * as sessionAgents from '../session-agents.js'
 import type { AppContext } from '../webxdc-app.js'
 
 beforeEach(() => {
@@ -264,5 +266,46 @@ describe('createReuseChat', () => {
     const reseeded = agents.ensureDefaultAgent()
     expect(reseeded.id).toBe(agents.DEFAULT_AGENT_ID)
     expect(agents.getAgent(agents.DEFAULT_AGENT_ID)).not.toBeNull()
+  })
+})
+
+describe('resolveAttachAgent', () => {
+  const agentsDir2 = mkdtempSync(join(tmpdir(), 'dc-resolve-agents-'))
+  const bindingsDir2 = mkdtempSync(join(tmpdir(), 'dc-resolve-bindings-'))
+  const sessionAgentsDir = mkdtempSync(join(tmpdir(), 'dc-resolve-session-agents-'))
+
+  beforeEach(() => {
+    agents.setAgentsDir(agentsDir2)
+    bindings.setBindingsDir(bindingsDir2)
+    sessionAgents.setIndexDir(sessionAgentsDir)
+    for (const dir of [agentsDir2, bindingsDir2, sessionAgentsDir]) {
+      for (const f of readdirSync(dir)) {
+        rmSync(join(dir, f), { recursive: true, force: true })
+      }
+    }
+  })
+
+  test('prefers session-agents index when entry exists', () => {
+    // Source chat has a different agent than the index
+    bindings.saveBinding({ chatId: 10, agentId: 'source-agent', createdAt: new Date().toISOString() })
+    sessionAgents.setAgentForSession('sess-abc', 'original-agent')
+
+    expect(resolveAttachAgent('sess-abc', 10)).toBe('original-agent')
+  })
+
+  test('falls back to source binding agentId when no index entry', () => {
+    bindings.saveBinding({ chatId: 10, agentId: 'source-agent', createdAt: new Date().toISOString() })
+
+    expect(resolveAttachAgent('sess-xyz', 10)).toBe('source-agent')
+  })
+
+  test('falls back to claude-code when neither index nor source binding has an agentId', () => {
+    bindings.saveBinding({ chatId: 10, createdAt: new Date().toISOString() })
+
+    expect(resolveAttachAgent('sess-xyz', 10)).toBe(agents.DEFAULT_AGENT_ID)
+  })
+
+  test('falls back to claude-code when source chat has no binding at all', () => {
+    expect(resolveAttachAgent('sess-xyz', 999)).toBe(agents.DEFAULT_AGENT_ID)
   })
 })

@@ -184,6 +184,42 @@ describe('buildResumeCommand', () => {
     expect(result.sessionId).toBeNull()
     expect(result.command).toBe('cd /home/user/src/myproject && claude')
   })
+
+  it('includes --model flag when model is provided', () => {
+    const sessionId = 'model-test-uuid-1111-2222-333333333333'
+    const workingDir = '/home/user/src/myproject'
+    writeSessionFile(workingDir, sessionId)
+    bindings.saveBinding({ chatId: 42, sessionId, workingDir, createdAt: new Date().toISOString() })
+
+    const result = resume.buildResumeCommand(42, { model: 'claude-opus-4-6' })
+    if ('error' in result) throw new Error(`expected success: ${result.error}`)
+    expect(result.command).toContain('--model claude-opus-4-6')
+    expect(result.command).toContain(`--resume ${sessionId}`)
+  })
+
+  it('omits --model flag when model is not provided', () => {
+    const sessionId = 'no-model-uuid-1111-2222-333333333333'
+    const workingDir = '/home/user/src/myproject'
+    writeSessionFile(workingDir, sessionId)
+    bindings.saveBinding({ chatId: 42, sessionId, workingDir, createdAt: new Date().toISOString() })
+
+    const result = resume.buildResumeCommand(42)
+    if ('error' in result) throw new Error(`expected success: ${result.error}`)
+    expect(result.command).not.toContain('--model')
+  })
+
+  it('--model appears before --name in resume command', () => {
+    const sessionId = 'order-test-uuid-1111-2222-333333333333'
+    const workingDir = '/home/user/src/myproject'
+    writeSessionFile(workingDir, sessionId)
+    bindings.saveBinding({ chatId: 42, sessionId, workingDir, createdAt: new Date().toISOString() })
+
+    const result = resume.buildResumeCommand(42, { model: 'claude-sonnet-4-6', chatName: 'Coach' })
+    if ('error' in result) throw new Error(`expected success: ${result.error}`)
+    const modelIdx = result.command.indexOf('--model')
+    const nameIdx = result.command.indexOf('--name')
+    expect(modelIdx).toBeLessThan(nameIdx)
+  })
 })
 
 describe('listResumeCandidates', () => {

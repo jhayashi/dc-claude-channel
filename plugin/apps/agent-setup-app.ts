@@ -21,6 +21,7 @@ import { startCoach, advanceCoach, isCoachDone, collectAnswers, type CoachState,
 import { assembleSystemPrompt } from '../prompt-assembler.js'
 import { PATTERN_IDS, type PatternId } from '../agent-icons/palettes.js'
 import { logLifecycleEvent } from '../events-lifecycle.js'
+import * as sessionAgents from '../session-agents.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -471,6 +472,17 @@ export async function decorateAgentChat(
   } catch (err) {
     ctx.logf('agent-setup: intro message send failed: %v', err)
   }
+}
+
+/**
+ * Resolve which agent to attach when importing a terminal session into DC.
+ * Priority: session-agents index (original agent from when DC last bound
+ * this session) → source chat's current agent → default agent.
+ */
+export function resolveAttachAgent(sessionId: string, sourceChatId: number): string {
+  const indexed = sessionAgents.getAgentForSession(sessionId)
+  const sourceBinding = bindings.getBinding(sourceChatId)
+  return indexed ?? sourceBinding?.agentId ?? agents.DEFAULT_AGENT_ID
 }
 
 /**
@@ -1594,8 +1606,8 @@ export const agentSetupApp: WebXDCApp = {
           const candidates = resume.listResumeCandidates()
           const candidate = candidates.find(c => c.sessionId === sessionId)
 
-          const sourceBinding = bindings.getBinding(session.sourceChatId)
-          const agentId = sourceBinding?.agentId ?? 'claude-code'
+          const agentId = resolveAttachAgent(sessionId, session.sourceChatId)
+          ctx.logf('agent-setup: resume agent resolution: session=%s resolved=%s', sessionId, agentId)
           const agent = agents.getAgent(agentId)
 
           // Use terminal session name for the DC chat if available.
