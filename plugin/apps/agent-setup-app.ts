@@ -21,6 +21,7 @@ import { startCoach, advanceCoach, isCoachDone, collectAnswers, type CoachState,
 import { assembleSystemPrompt } from '../prompt-assembler.js'
 import { PATTERN_IDS, type PatternId } from '../agent-icons/palettes.js'
 import { logLifecycleEvent } from '../events-lifecycle.js'
+import { logRoleAssignment } from '../events.js'
 import * as sessionAgents from '../session-agents.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -919,6 +920,38 @@ export async function graduateRefineSession(ctx: AppContext, chatId: number): Pr
   }
 }
 
+export async function handleListContacts(ctx: AppContext, msgId: number): Promise<void> {
+  const contacts = access.listContacts(access.DEFAULT_AGENT_ID)
+  await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({ type: 'contacts_loaded', contacts }))
+}
+
+export async function handleAssignRole(
+  ctx: AppContext,
+  msgId: number,
+  contactId: number | null,
+  role: string | null,
+  senderAddr: string | null,
+): Promise<void> {
+  if (!contactId || !role) return
+  const previous = access.loadContact(access.DEFAULT_AGENT_ID, contactId)
+  if (!previous) return
+
+  const assignerContactId = senderAddr
+    ? await ctx.client.lookupContactByAddr(senderAddr)
+    : null
+
+  const updated = access.setContactRole(access.DEFAULT_AGENT_ID, contactId, role)
+  logRoleAssignment({
+    ts: new Date().toISOString(),
+    assigneeContactId: contactId,
+    assignedRole: role,
+    previousRole: previous.role ?? null,
+    assignerContactId,
+    reason: 'picked',
+  })
+  await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({ type: 'role_assigned', contact: updated }))
+}
+
 export const agentSetupApp: WebXDCApp = {
   id: 'agent-setup',
 
@@ -1482,6 +1515,22 @@ export const agentSetupApp: WebXDCApp = {
         } catch (err) {
           ctx.logf('agent-setup: paired_list_request failed: %v', err)
         }
+        continue
+      }
+
+      if (payload.type === 'list_contacts') {
+        await handleListContacts(ctx, session.msgId)
+        continue
+      }
+
+      if (payload.type === 'assign_role') {
+        const contactId = typeof (payload as { contactId?: unknown }).contactId === 'number'
+          ? (payload as { contactId: number }).contactId : null
+        const role = typeof (payload as { role?: unknown }).role === 'string'
+          ? (payload as { role: string }).role : null
+        const senderAddr = typeof (payload as { senderAddr?: unknown }).senderAddr === 'string'
+          ? (payload as { senderAddr: string }).senderAddr : null
+        await handleAssignRole(ctx, session.msgId, contactId, role, senderAddr)
         continue
       }
 

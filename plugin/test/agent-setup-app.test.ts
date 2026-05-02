@@ -1,5 +1,5 @@
-import { describe, test, expect, beforeEach, mock } from 'bun:test'
-import { existsSync, mkdtempSync, readdirSync, rmSync, unlinkSync } from 'node:fs'
+import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setLeavesDir, getDefaultCatalog } from '../leaves.js'
@@ -8,6 +8,8 @@ import {
   composeAgentName,
   createReuseChat,
   resolveAttachAgent,
+  handleListContacts,
+  handleAssignRole,
 } from '../apps/agent-setup-app.js'
 import type { CoachAnswers } from '../coach.js'
 import * as agents from '../agents.js'
@@ -15,6 +17,7 @@ import * as bindings from '../bindings.js'
 import * as access from '../access/index.js'
 import * as sessionAgents from '../session-agents.js'
 import type { AppContext } from '../webxdc-app.js'
+import { setEventDir } from '../events.js'
 
 beforeEach(() => {
   setLeavesDir(join(import.meta.dir, '..', 'leaves'))
@@ -307,5 +310,163 @@ describe('resolveAttachAgent', () => {
 
   test('falls back to claude-code when source chat has no binding at all', () => {
     expect(resolveAttachAgent('sess-xyz', 999)).toBe(agents.DEFAULT_AGENT_ID)
+  })
+})
+
+describe('contact management handlers', () => {
+  let tmpAccess: string
+  let tmpAgents: string
+  let tmpEvents: string
+
+  beforeEach(() => {
+    tmpAccess = mkdtempSync(join(tmpdir(), 'dc-cm-access-'))
+    tmpAgents = mkdtempSync(join(tmpdir(), 'dc-cm-agents-'))
+    tmpEvents = mkdtempSync(join(tmpdir(), 'dc-cm-events-'))
+    access.setApprovedDir(tmpAccess)
+    access.setContactsAgentsDir(tmpAgents)
+    setEventDir(tmpEvents)
+  })
+
+  afterEach(() => {
+    try { rmSync(tmpAccess, { recursive: true, force: true }) } catch {}
+    try { rmSync(tmpAgents, { recursive: true, force: true }) } catch {}
+    try { rmSync(tmpEvents, { recursive: true, force: true }) } catch {}
+  })
+
+  function makeCtx(lookupResult: number | null = null): {
+    ctx: AppContext
+    sendWebXDCUpdate: ReturnType<typeof mock>
+    lookupContactByAddr: ReturnType<typeof mock>
+  } {
+    const sendWebXDCUpdate = mock(async () => {})
+    const lookupContactByAddr = mock(async (_addr: string) => lookupResult)
+    const client = { sendWebXDCUpdate, lookupContactByAddr } as unknown as AppContext['client']
+    const ctx: AppContext = {
+      client,
+      mcp: {} as unknown as AppContext['mcp'],
+      isAllowed: () => false,
+      allowedChats: () => [],
+      logf: () => {},
+      safeName: (s: string) => s,
+      registerWebXDCMsg: () => {},
+      unregisterWebXDCMsg: () => {},
+      evictSubagent: async () => {},
+      getAvailableMcpServers: () => [],
+      getConnectedMcpServers: () => [],
+      scheduleStore: {} as unknown as AppContext['scheduleStore'],
+      subagentCache: { evictChat: async () => {} },
+      cleanupChatState: async () => {},
+    }
+    return { ctx, sendWebXDCUpdate, lookupContactByAddr }
+  }
+
+  function capturedUpdate(sendWebXDCUpdate: ReturnType<typeof mock>): unknown {
+    return JSON.parse(sendWebXDCUpdate.mock.calls[0][1] as string)
+  }
+
+  function readPermissionsLog(): unknown {
+    const files = readdirSync(tmpEvents).filter(f => f.startsWith('permissions-'))
+    if (files.length === 0) return null
+    return JSON.parse(readFileSync(join(tmpEvents, files[0]), 'utf8').trim())
+  }
+
+  // ── handleListContacts ───────────────────────────────────────────────────
+
+  test('handleListContacts sends contacts_loaded with all contacts', async () => {
+    access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
+    access.recordContactPair(access.DEFAULT_AGENT_ID, 6, 'Bob')
+    const { ctx, sendWebXDCUpdate } = makeCtx()
+
+    await handleListContacts(ctx, 99)
+
+    expect(sendWebXDCUpdate).toHaveBeenCalledTimes(1)
+    expect(sendWebXDCUpdate.mock.calls[0][0]).toBe(99)
+    const update = capturedUpdate(sendWebXDCUpdate) as { type: string; contacts: { contactId: number }[] }
+    expect(update.type).toBe('contacts_loaded')
+    expect(update.contacts.map(c => c.contactId).sort()).toEqual([5, 6])
+  })
+
+  test('handleListContacts with no contacts sends empty array', async () => {
+    const { ctx, sendWebXDCUpdate } = makeCtx()
+
+    await handleListContacts(ctx, 99)
+
+    const update = capturedUpdate(sendWebXDCUpdate) as { contacts: unknown[] }
+    expect(update.contacts).toEqual([])
+  })
+
+  // ── handleAssignRole ─────────────────────────────────────────────────────
+
+  test('handleAssignRole updates contact role on disk', async () => {
+    access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
+    const { ctx } = makeCtx()
+
+    await handleAssignRole(ctx, 99, 5, 'family-member', null)
+
+    expect(access.loadContact(access.DEFAULT_AGENT_ID, 5)?.role).toBe('family-member')
+  })
+
+  test('handleAssignRole sends role_assigned with updated contact', async () => {
+    access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
+    const { ctx, sendWebXDCUpdate } = makeCtx()
+
+    await handleAssignRole(ctx, 99, 5, 'trusted-agent', null)
+
+    expect(sendWebXDCUpdate).toHaveBeenCalledTimes(1)
+    const update = capturedUpdate(sendWebXDCUpdate) as { type: string; contact: { contactId: number; role: string } }
+    expect(update.type).toBe('role_assigned')
+    expect(update.contact.contactId).toBe(5)
+    expect(update.contact.role).toBe('trusted-agent')
+  })
+
+  test('handleAssignRole resolves assignerContactId via lookupContactByAddr', async () => {
+    access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
+    const { ctx, lookupContactByAddr } = makeCtx(42)
+
+    await handleAssignRole(ctx, 99, 5, 'family-member', 'alice@nine.testrun.org')
+
+    expect(lookupContactByAddr).toHaveBeenCalledWith('alice@nine.testrun.org')
+    const entry = readPermissionsLog() as { assignerContactId: number; reason: string }
+    expect(entry.assignerContactId).toBe(42)
+    expect(entry.reason).toBe('picked')
+  })
+
+  test('handleAssignRole logs null assignerContactId when address not in DC contacts', async () => {
+    access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
+    const { ctx } = makeCtx(null)
+
+    await handleAssignRole(ctx, 99, 5, 'family-member', 'unknown@example.com')
+
+    const entry = readPermissionsLog() as { assignerContactId: null }
+    expect(entry.assignerContactId).toBeNull()
+  })
+
+  test('handleAssignRole logs RoleAssignmentEvent with previousRole', async () => {
+    access.setContactRole(access.DEFAULT_AGENT_ID, 5, 'subscriber', 'Alice')
+    const { ctx } = makeCtx()
+
+    await handleAssignRole(ctx, 99, 5, 'family-member', null)
+
+    const entry = readPermissionsLog() as { assignedRole: string; previousRole: string }
+    expect(entry.assignedRole).toBe('family-member')
+    expect(entry.previousRole).toBe('subscriber')
+  })
+
+  test('handleAssignRole with unknown contactId is a no-op', async () => {
+    const { ctx, sendWebXDCUpdate } = makeCtx()
+
+    await handleAssignRole(ctx, 99, 999, 'family-member', null)
+
+    expect(sendWebXDCUpdate).not.toHaveBeenCalled()
+    expect(readPermissionsLog()).toBeNull()
+  })
+
+  test('handleAssignRole with null role is a no-op', async () => {
+    access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
+    const { ctx, sendWebXDCUpdate } = makeCtx()
+
+    await handleAssignRole(ctx, 99, 5, null as unknown as string, null)
+
+    expect(sendWebXDCUpdate).not.toHaveBeenCalled()
   })
 })
