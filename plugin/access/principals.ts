@@ -235,19 +235,71 @@ export function removeContact(contactId: number): void {
 }
 
 /**
- * Record a successful pair for `contactId`.  Idempotent — if a record
- * already exists, `firstPairedAt` is preserved and only `displayName`
- * is updated (when supplied).
+ * Record a successful pair for `contactId`. Idempotent for `firstPairedAt`
+ * (preserved across re-pairs) and `displayName` (updated when supplied).
  *
- * Hooked into `access.completePairing()` so every pair writes a record.
+ * **Role: terminal pairs are always subscribers (v1.3 slice 6).** Running
+ * `/deltachat:setup` from the local terminal Claude Code session IS the
+ * trust signal — anyone you coordinate a QR/code pair with through that
+ * flow gets full subscriber capabilities. Re-pair always elevates back
+ * to subscriber even if the contact was downgraded via the XDC picker
+ * (subscriber can downgrade them again afterwards if it was a mistake).
+ *
+ * Hooked into `access.completePairing()` so every pair writes the record.
+ *
+ * Safe against corrupt existing records — loadContact may throw on a
+ * malformed JSON / schema-mismatch principal file (slice-3-5 review fix);
+ * we treat that as "no existing record" so re-pair recovers the contact.
  */
 export function recordContactPair(contactId: number, displayName?: string): ContactPrincipal {
-  const existing = loadContact(contactId);
+  let existing: ContactPrincipal | null = null;
+  try {
+    existing = loadContact(contactId);
+  } catch (err) {
+    console.error(`principals.recordContactPair(${contactId}): corrupt existing record, overwriting:`, err);
+  }
   const principal: ContactPrincipal = {
     kind: "human",
     contactId,
     displayName: displayName ?? existing?.displayName,
     firstPairedAt: existing?.firstPairedAt ?? new Date().toISOString(),
+    role: "subscriber",
+    capabilities: ["*"],
+  };
+  writeContact(principal);
+  return principal;
+}
+
+/**
+ * Upsert a contact's role + capabilities (v1.3 slice 6).
+ *
+ * Used by the XDC role picker (slice 7) to permission contacts who landed
+ * in a paired chat via group-add — they have no principal yet because the
+ * group-add path doesn't go through `recordContactPair`. This function
+ * creates the principal on first call OR mutates an existing one.
+ *
+ * `capabilities` is set to `bundleFor(role)` so the explicit-array
+ * deny-by-empty path doesn't fire by accident; advanced operators who
+ * want a custom override can edit the JSON directly.
+ *
+ * Calls `_onMutate()` so the principals-policy permissioned-contacts
+ * cache (slice-3-5 review fix #3) invalidates and the next
+ * isContactPermissioned read sees the new contact.
+ */
+export function setContactRole(contactId: number, role: string, displayName?: string): ContactPrincipal {
+  let existing: ContactPrincipal | null = null;
+  try {
+    existing = loadContact(contactId);
+  } catch (err) {
+    console.error(`principals.setContactRole(${contactId}): corrupt existing record, overwriting:`, err);
+  }
+  const principal: ContactPrincipal = {
+    kind: "human",
+    contactId,
+    displayName: displayName ?? existing?.displayName,
+    firstPairedAt: existing?.firstPairedAt ?? new Date().toISOString(),
+    role,
+    capabilities: [...bundleFor(role)],
   };
   writeContact(principal);
   return principal;

@@ -10,8 +10,9 @@
  * `./chat-allowlist.ts`.
  */
 
+import { logRoleAssignment } from "../events.js";
 import { addChat } from "./chat-allowlist.js";
-import { recordContactPair } from "./principals.js";
+import { loadContact, recordContactPair } from "./principals.js";
 
 // --- Constants ---
 
@@ -166,9 +167,24 @@ export function completePairing(code: string): number {
 
   pending.delete(code);
   addChat(p.chatId, p.contactId);
-  // Phase 2: also write a ContactPrincipal record. Idempotent — preserves
-  // firstPairedAt on re-pair.
+  // Capture the previous role BEFORE recordContactPair so the audit log
+  // records the actual transition. loadContact may throw on a corrupt
+  // existing record (slice-3-5 review fix); treat that as null and
+  // proceed — recordContactPair will recover by overwriting.
+  let previousRole: string | null = null;
+  try { previousRole = loadContact(p.contactId)?.role ?? null; } catch { /* corrupt → null */ }
+  // Phase 2: write a ContactPrincipal record. Idempotent for
+  // firstPairedAt; v1.3 slice 6 always sets role=subscriber (terminal
+  // pair = subscriber, always).
   recordContactPair(p.contactId);
+  logRoleAssignment({
+    ts: new Date().toISOString(),
+    assigneeContactId: p.contactId,
+    assignedRole: "subscriber",
+    previousRole,
+    assignerContactId: null, // terminal session is the implicit actor
+    reason: "terminal_pair",
+  });
   return p.chatId;
 }
 

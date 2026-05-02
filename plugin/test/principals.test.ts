@@ -158,6 +158,94 @@ describe("principals — recordContactPair", () => {
     const second = access.recordContactPair(50);
     expect(second.displayName).toBe("Alice");
   });
+
+  test("assigns subscriber role + wildcard capabilities (v1.3 slice 6)", () => {
+    // Terminal pair = subscriber, always. Coordinating a QR/code from
+    // the terminal IS the trust signal.
+    const p = access.recordContactPair(50, "Alice");
+    expect(p.role).toBe("subscriber");
+    expect(p.capabilities).toEqual(["*"]);
+  });
+
+  test("re-pair elevates a previously-downgraded contact back to subscriber", () => {
+    // Edge case: subscriber downgraded contact to family-member via the
+    // XDC picker, then later coordinated a terminal re-pair. Re-pair is
+    // the higher-trust act — it elevates back to subscriber. Subscriber
+    // can downgrade again via the picker if it was a mistake.
+    access.setContactRole(50, "family-member", "Alice");
+    expect(access.loadContact(50)?.role).toBe("family-member");
+    access.recordContactPair(50);
+    expect(access.loadContact(50)?.role).toBe("subscriber");
+    expect(access.loadContact(50)?.capabilities).toEqual(["*"]);
+  });
+
+  test("recovers from a corrupt existing record by overwriting", () => {
+    mkdirSync(join(principalsDir, "humans"), { recursive: true });
+    writeFileSync(join(principalsDir, "humans", "50.json"), "{ not json");
+    // Capture stderr so the recovery message doesn't pollute test output.
+    const origErr = console.error;
+    let logged = false;
+    console.error = () => { logged = true; };
+    try {
+      const p = access.recordContactPair(50, "Alice");
+      expect(p.role).toBe("subscriber");
+      expect(p.displayName).toBe("Alice");
+      expect(logged).toBe(true);
+    } finally {
+      console.error = origErr;
+    }
+  });
+});
+
+describe("principals — setContactRole (v1.3 slice 6)", () => {
+  test("creates a fresh principal with the assigned role + bundle", () => {
+    const p = access.setContactRole(60, "family-member", "Bob");
+    expect(p.contactId).toBe(60);
+    expect(p.displayName).toBe("Bob");
+    expect(p.role).toBe("family-member");
+    expect(p.capabilities).toEqual(["chat", "low_stakes_*"]);
+    expect(access.loadContact(60)).toEqual(p);
+  });
+
+  test("mutates existing principal: role + capabilities updated, firstPairedAt preserved", async () => {
+    const original = access.recordContactPair(60, "Bob");
+    await new Promise((r) => setTimeout(r, 5));
+    const updated = access.setContactRole(60, "family-member");
+    expect(updated.role).toBe("family-member");
+    expect(updated.capabilities).toEqual(["chat", "low_stakes_*"]);
+    expect(updated.firstPairedAt).toBe(original.firstPairedAt);
+    expect(updated.displayName).toBe("Bob");
+  });
+
+  test("invalidates the permissioned-contacts cache (cache invariant)", () => {
+    // setContactRole upsert on a fresh contact must make
+    // isContactPermissioned return true on the next read.
+    expect(access.isContactPermissioned(70)).toBe(false);
+    access.setContactRole(70, "guest");
+    expect(access.isContactPermissioned(70)).toBe(true);
+  });
+
+  test("unknown role falls back to guest bundle (least-privilege)", () => {
+    // capability-bundles.bundleFor returns ["chat"] for unrecognized roles.
+    const p = access.setContactRole(80, "made-up-role-name");
+    expect(p.role).toBe("made-up-role-name"); // role string preserved verbatim
+    expect(p.capabilities).toEqual(["chat"]);  // guest bundle (fail-safe)
+  });
+
+  test("recovers from a corrupt existing record by overwriting", () => {
+    mkdirSync(join(principalsDir, "humans"), { recursive: true });
+    writeFileSync(join(principalsDir, "humans", "90.json"), "{ not json");
+    const origErr = console.error;
+    let logged = false;
+    console.error = () => { logged = true; };
+    try {
+      const p = access.setContactRole(90, "guest");
+      expect(p.role).toBe("guest");
+      expect(logged).toBe(true);
+    } finally {
+      console.error = origErr;
+    }
+  });
 });
 
 describe("principals — backfillFromAllowlist", () => {

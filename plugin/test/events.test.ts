@@ -424,3 +424,58 @@ describe('events.logWebXDC', () => {
     expect(err).not.toBe(null)
   })
 })
+
+describe('events.logRoleAssignment (v1.3 slice 6)', () => {
+  let dir: string
+  let prevDir: string
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'role-events-test-'))
+    prevDir = getEventDir()
+    setEventDir(dir)
+  })
+
+  afterEach(() => {
+    setEventDir(prevDir)
+    try { rmSync(dir, { recursive: true, force: true }) } catch {}
+  })
+
+  it('writes a role-assignment line to the permissions stream', async () => {
+    const { logRoleAssignment } = await import('../events.js')
+    logRoleAssignment({
+      ts: '2026-05-01T10:00:00.000Z',
+      assigneeContactId: 60,
+      assignedRole: 'subscriber',
+      previousRole: null,
+      assignerContactId: null,
+      reason: 'terminal_pair',
+    })
+    const files = readdirSync(dir)
+    expect(files).toEqual(['permissions-2026-05-01.log'])
+    const parsed = JSON.parse(readFileSync(join(dir, files[0]), 'utf-8').trim())
+    expect(parsed).toMatchObject({
+      assigneeContactId: 60,
+      assignedRole: 'subscriber',
+      previousRole: null,
+      assignerContactId: null,
+      reason: 'terminal_pair',
+    })
+  })
+
+  it('records previousRole on transitions (downgrade/upgrade)', async () => {
+    const { logRoleAssignment } = await import('../events.js')
+    logRoleAssignment({
+      ts: '2026-05-01T10:00:00.000Z',
+      assigneeContactId: 60,
+      assignedRole: 'family-member',
+      previousRole: 'subscriber',
+      assignerContactId: 50,
+      reason: 'picked',
+    })
+    const files = readdirSync(dir)
+    const parsed = JSON.parse(readFileSync(join(dir, files[0]), 'utf-8').trim())
+    expect(parsed.previousRole).toBe('subscriber')
+    expect(parsed.assignedRole).toBe('family-member')
+    expect(parsed.reason).toBe('picked')
+  })
+})
