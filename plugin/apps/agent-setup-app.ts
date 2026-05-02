@@ -1509,7 +1509,7 @@ export const agentSetupApp: WebXDCApp = {
         }
 
         const chatIds = access.chatsForOwner(contactId)
-        const principalExists = access.loadContact(contactId) !== null
+        const principalExists = access.loadContact(access.DEFAULT_AGENT_ID, contactId) !== null
         if (chatIds.length === 0 && !principalExists) {
           await sendErr('No paired chats or principal record for this contact')
           continue
@@ -1571,7 +1571,7 @@ export const agentSetupApp: WebXDCApp = {
         // Wipe the principal record so backfill on next startup doesn't
         // resurrect the contact, and so isContactPermissioned returns false.
         // (#66 Option A — full per-contact unpair wipes both layers.)
-        access.removeContact(contactId)
+        access.removeContact(access.DEFAULT_AGENT_ID, contactId)
         ctx.logf('agent-setup: unpaired contact %d (%s, %d chat(s))', contactId, mode, chatIds.length)
         continue
       }

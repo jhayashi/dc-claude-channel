@@ -23,7 +23,7 @@
 
 import { chatsForOwner, hasAnyOwner, isKnownOwner, listPaired } from "./chat-allowlist.js";
 import { bundleFor } from "./capability-bundles.js";
-import { _setContactsMutateCallback, listContacts, loadContact, writeContact, type Contact } from "./contacts.js";
+import { DEFAULT_AGENT_ID, _setContactsMutateCallback, listContacts, loadContact, writeContact, type Contact } from "./contacts.js";
 
 // ── Permissioned-contacts cache (v1.3 review fix — Elena HURT 2) ────────────
 //
@@ -40,21 +40,23 @@ import { _setContactsMutateCallback, listContacts, loadContact, writeContact, ty
 // `isKnownOwner` is still consulted as a legacy fallback for the brief
 // boot window before backfillFromAllowlist runs (matches the v1.2.2
 // contract).
-let _permissionedContactIds: Set<number> | null = null;
+const _permissionedContactIds = new Map<string, Set<number>>();
 
-function getPermissionedContactIds(): Set<number> {
-  if (_permissionedContactIds === null) {
-    _permissionedContactIds = new Set<number>();
-    for (const c of listContacts()) _permissionedContactIds.add(c.contactId);
+function getPermissionedContactIds(agentId: string): Set<number> {
+  let cached = _permissionedContactIds.get(agentId);
+  if (cached === undefined) {
+    cached = new Set<number>();
+    for (const c of listContacts(agentId)) cached.add(c.contactId);
+    _permissionedContactIds.set(agentId, cached);
   }
-  return _permissionedContactIds;
+  return cached;
 }
 
 // Register the invalidation callback at module load. contact-policy
 // imports contacts (above), so contact-policy's module evaluates
 // after contacts — the callback is set before any contact write.
 _setContactsMutateCallback(() => {
-  _permissionedContactIds = null;
+  _permissionedContactIds.clear();
 });
 
 /**
@@ -85,8 +87,8 @@ export function chatsFor(c: Contact): number[] {
  * ceremony. Per-contact unpair (`removeContact` + chat cleanup) wipes
  * the trust fully, so a fully-unpaired contact reads false here.
  */
-export function isContactPermissioned(contactId: number): boolean {
-  return getPermissionedContactIds().has(contactId) || isKnownOwner(contactId);
+export function isContactPermissioned(agentId: string, contactId: number): boolean {
+  return getPermissionedContactIds(agentId).has(contactId) || isKnownOwner(contactId);
 }
 
 /**
@@ -102,11 +104,11 @@ export function isContactPermissioned(contactId: number): boolean {
  * without chats) would falsely register as "no owners exist" and let
  * a stranger pair through.
  */
-export function hasAnyPermissionedContact(): boolean {
+export function hasAnyPermissionedContact(agentId: string): boolean {
   if (hasAnyOwner()) return true;
   // listContacts does one readdir; cheap. Returns the union of chat-
   // allowlist owners and contact records.
-  return listContacts().length > 0;
+  return listContacts(agentId).length > 0;
 }
 
 /**
@@ -130,8 +132,8 @@ export function hasAnyPermissionedContact(): boolean {
  * (slice 6/7) must take effect on the next tool call. The lookup is
  * one stat + one small JSON read; cheap.
  */
-export function getCapabilitiesFor(contactId: number): string[] {
-  const p = loadContact(contactId);
+export function getCapabilitiesFor(agentId: string, contactId: number): string[] {
+  const p = loadContact(agentId, contactId);
   if (!p) return [];
   if (Array.isArray(p.capabilities)) return [...p.capabilities];
   if (typeof p.role === "string" && p.role.length > 0) return [...bundleFor(p.role)];
@@ -151,16 +153,16 @@ export function getCapabilitiesFor(contactId: number): string[] {
  *
  * Returns the number of records newly written.
  */
-export function backfillFromAllowlist(): number {
+export function backfillFromAllowlist(agentId: string = DEFAULT_AGENT_ID): number {
   let written = 0;
   for (const dev of listPaired()) {
     let existing = null;
-    try { existing = loadContact(dev.contactId); } catch (err) {
+    try { existing = loadContact(agentId, dev.contactId); } catch (err) {
       console.error(`contacts.backfillFromAllowlist: skipping contact ${dev.contactId} (corrupt record):`, err);
       continue;
     }
     if (existing !== null) continue;
-    writeContact({
+    writeContact(agentId, {
       kind: "human",
       contactId: dev.contactId,
       firstPairedAt: new Date(dev.pairedAtMs).toISOString(),

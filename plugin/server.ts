@@ -753,6 +753,7 @@ const socketServer = new SocketServer({
         argsObj,
         requiredCapabilityFor(frame.tool),
         {
+          agentId: access.DEFAULT_AGENT_ID,
           firstPermissionedContact: access.firstPermissionedContact,
           evaluateCapability: access.evaluateCapability,
           getChatContacts: (id) => client.getChatContacts(id),
@@ -1419,7 +1420,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           return { content: [{ type: 'text' as const, text: `invalid contact_id: ${contactIdStr}` }], isError: true }
         }
         const chatIds = access.chatsForOwner(contactId)
-        const principalExists = access.loadContact(contactId) !== null
+        const principalExists = access.loadContact(access.DEFAULT_AGENT_ID, contactId) !== null
         if (chatIds.length === 0 && !principalExists) {
           return { content: [{ type: 'text' as const, text: `No paired chats or principal record for contact ${contactId}.` }], isError: true }
         }
@@ -1450,7 +1451,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         // Wipe the principal record so backfill on next startup doesn't
         // resurrect the contact, and so isContactPermissioned returns false.
         // (#66 Option A — full per-contact unpair wipes both layers.)
-        access.removeContact(contactId)
+        access.removeContact(access.DEFAULT_AGENT_ID, contactId)
         logf('dc channel: terminal-unpaired contact %d (%s, %d chat(s))', contactId, mode, chatIds.length)
         const verb = mode === 'delete' ? 'deleted' : 'frozen (read-only)'
         return { content: [{ type: 'text' as const, text: `Unpaired ${display} (contact ${contactId}): ${chatIds.length} chat(s) ${verb}.` }] }
@@ -1653,7 +1654,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         // operator has a record of when untrusted content reached the
         // agent's context. (#66 / v1.2.2.)
         let unpermissionedRevealed = 0
-        const trustDeps = { isContactPermissioned: access.isContactPermissioned }
+        const trustDeps = { isContactPermissioned: (id: number) => access.isContactPermissioned(access.DEFAULT_AGENT_ID, id) }
         const lines = messages.map(m => {
           const r = formatHistoryLine(m, trustDeps, { includeUnpermissioned })
           if (r.revealedUnpermissioned) unpermissionedRevealed++
@@ -1686,8 +1687,8 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         }
         const chatIdRaw = (args.chat_id as string | undefined)?.trim()
         const chatIdQ = chatIdRaw ? Number(chatIdRaw) : null
-        const permissioned = access.isContactPermissioned(contactId)
-        const principal = access.loadContact(contactId)
+        const permissioned = access.isContactPermissioned(access.DEFAULT_AGENT_ID, contactId)
+        const principal = access.loadContact(access.DEFAULT_AGENT_ID, contactId)
         const ownedChats = access.chatsForOwner(contactId)
         const info = await client.getContact(contactId).catch(() => null)
         const isPairingContactOfQueriedChat = chatIdQ != null
@@ -1751,7 +1752,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         // by default. Owner-relayed download intent → opt-in. (#66 / v1.2.2.)
         const decision = evaluateAttachmentDownload(
           msg.fromId,
-          { isContactPermissioned: access.isContactPermissioned },
+          { isContactPermissioned: (id: number) => access.isContactPermissioned(access.DEFAULT_AGENT_ID, id) },
           includeUnpermissionedDl,
         )
         if (!decision.proceed) {
@@ -2018,7 +2019,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     // returns `allow` with the wildcard bundle. The capability fields
     // are still logged for symmetry with subagent calls.
     const requiredCapability = requiredCapabilityFor(req.params.name)
-    const cap = access.evaluateCapability(null, requiredCapability)
+    const cap = access.evaluateCapability(access.DEFAULT_AGENT_ID, null, requiredCapability)
     logToolCall({
       ts: new Date().toISOString(),
       source: 'terminal',
@@ -2256,7 +2257,7 @@ async function main(): Promise<void> {
     logf('dc channel: seed-from-legacy-dir failed: %v', err)
   }
   try {
-    const written = access.backfillFromAllowlist()
+    const written = access.backfillFromAllowlist(access.DEFAULT_AGENT_ID)
     if (written > 0) logf('dc channel: backfilled %d principal record(s) at startup', written)
   } catch (err) {
     logf('dc channel: principal backfill failed: %v', err)
@@ -2780,13 +2781,13 @@ async function main(): Promise<void> {
   const handleUnpairedMessage = async (msg: Message): Promise<void> => {
     // Once a principal is established, only known principals can initiate new pairings.
     // (#66 Option A — auth gate is contact identity, not chat allowlist.)
-    if (access.hasAnyPermissionedContact() && msg.fromId && !access.isContactPermissioned(msg.fromId)) {
+    if (access.hasAnyPermissionedContact(access.DEFAULT_AGENT_ID) && msg.fromId && !access.isContactPermissioned(access.DEFAULT_AGENT_ID, msg.fromId)) {
       logf('dc channel: ignoring pairing request from unknown contact %d in chat %d', msg.fromId, msg.chatId)
       return
     }
     // Auto-pair: sender is already an approved contact (from a prior pair
     // ceremony in some chat, or via principal record).
-    if (msg.fromId && access.isContactPermissioned(msg.fromId)) {
+    if (msg.fromId && access.isContactPermissioned(access.DEFAULT_AGENT_ID, msg.fromId)) {
       access.addChat(msg.chatId, msg.fromId)
       logf('dc channel: auto-paired chat %d to known contact %d', msg.chatId, msg.fromId)
       // The owner has already completed the tutorial in another chat — skip
@@ -2902,7 +2903,7 @@ async function main(): Promise<void> {
       // msg.fromId is permissioned-and-in-this-chat is the common case.
       // We still check isContactPermissioned because a chat may also have
       // unpermissioned third parties (the chat-24 family-member shape).
-      if (access.isContactPermissioned(msg.fromId)) return true
+      if (access.isContactPermissioned(access.DEFAULT_AGENT_ID, msg.fromId)) return true
       // Unpermissioned contact: silently ignore. The router logs so the
       // operator can see drops for debugging. Their content remains
       // visible via dc_chat_history (tagged [UNPERMISSIONED]) so the
@@ -2977,7 +2978,7 @@ async function main(): Promise<void> {
       // initiate new pairings even within the armed window. This prevents
       // a stray stale-QR scan from a stranger from hijacking the flow.
       // (#66 Option A — checks principals + chat-allowlist.)
-      if (access.hasAnyPermissionedContact() && !access.isContactPermissioned(contactId)) {
+      if (access.hasAnyPermissionedContact(access.DEFAULT_AGENT_ID) && !access.isContactPermissioned(access.DEFAULT_AGENT_ID, contactId)) {
         logf('dc channel: securejoin armed but contact=%d is not an approved principal; ignoring', contactId)
         return
       }

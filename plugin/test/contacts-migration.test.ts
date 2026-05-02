@@ -100,14 +100,14 @@ describe("migrateContactsToAgentScoped", () => {
 
     access.migrateContactsToAgentScoped();
 
-    const contact = access.loadContact(42);
+    const contact = access.loadContact(access.DEFAULT_AGENT_ID, 42);
     expect(contact).not.toBeNull();
     expect(contact!.contactId).toBe(42);
     expect(contact!.role).toBe("subscriber");
   });
 
   test("writeContact writes to new path (no legacy dir needed)", () => {
-    access.writeContact({
+    access.writeContact(access.DEFAULT_AGENT_ID, {
       kind: "human",
       contactId: 77,
       firstPairedAt: "2026-01-01T00:00:00.000Z",

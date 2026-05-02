@@ -12,7 +12,7 @@
 
 import { logRoleAssignment } from "../events.js";
 import { addChat } from "./chat-allowlist.js";
-import { loadContact, recordContactPair } from "./contacts.js";
+import { DEFAULT_AGENT_ID, loadContact, recordContactPair } from "./contacts.js";
 
 // --- Constants ---
 
@@ -171,12 +171,12 @@ export function completePairing(code: string): number {
   // existing record (slice-3-5 review fix); treat that as null and
   // proceed — recordContactPair will recover by overwriting.
   let previousRole: string | null = null;
-  try { previousRole = loadContact(p.contactId)?.role ?? null; } catch { /* corrupt → null */ }
+  try { previousRole = loadContact(DEFAULT_AGENT_ID, p.contactId)?.role ?? null; } catch { /* corrupt → null */ }
   // Phase 2: write a Contact record. Idempotent for
   // firstPairedAt; v1.3 slice 6 always sets role=subscriber (terminal
   // pair = subscriber, always). addChat MUST come after this write so
   // the in-memory cache only reflects contacts that have a backing record.
-  recordContactPair(p.contactId);
+  recordContactPair(DEFAULT_AGENT_ID, p.contactId);
   addChat(p.chatId, p.contactId);
   logRoleAssignment({
     ts: new Date().toISOString(),

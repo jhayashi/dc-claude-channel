@@ -19,7 +19,7 @@ afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 describe("populateAllowlistFromMembership", () => {
   test("permissions chats whose membership includes a principal", async () => {
-    access.writeContact({ kind: "human", contactId: 100, firstPairedAt: "2026-01-01T00:00:00Z" });
+    access.writeContact(access.DEFAULT_AGENT_ID, { kind: "human", contactId: 100, firstPairedAt: "2026-01-01T00:00:00Z" });
     const fakeGetChats = async () => [1, 2];
     const fakeGetChatContacts = async (chatId: number) =>
       chatId === 1 ? [100, 1] : [999, 1]; // CONTACT_SELF=1 always present
@@ -38,8 +38,8 @@ describe("populateAllowlistFromMembership", () => {
   });
 
   test("first principal in membership order wins for owner cache", async () => {
-    access.writeContact({ kind: "human", contactId: 100, firstPairedAt: "2026-01-01T00:00:00Z" });
-    access.writeContact({ kind: "human", contactId: 200, firstPairedAt: "2026-01-02T00:00:00Z" });
+    access.writeContact(access.DEFAULT_AGENT_ID, { kind: "human", contactId: 100, firstPairedAt: "2026-01-01T00:00:00Z" });
+    access.writeContact(access.DEFAULT_AGENT_ID, { kind: "human", contactId: 200, firstPairedAt: "2026-01-02T00:00:00Z" });
     const fakeGetChats = async () => [5];
     const fakeGetChatContacts = async () => [200, 100, 1];
     await access.populateAllowlistFromMembership(fakeGetChats, fakeGetChatContacts);
@@ -59,7 +59,7 @@ describe("populateAllowlistFromMembership", () => {
     access.addChat(7, 50);
     expect(access.firstPermissionedContact(7)).toBe(50);
     // Then membership scan finds principal 100 in the same chat.
-    access.writeContact({ kind: "human", contactId: 100, firstPairedAt: "2026-01-01T00:00:00Z" });
+    access.writeContact(access.DEFAULT_AGENT_ID, { kind: "human", contactId: 100, firstPairedAt: "2026-01-01T00:00:00Z" });
     const fakeGetChats = async () => [7];
     const fakeGetChatContacts = async () => [100, 1];
     await access.populateAllowlistFromMembership(fakeGetChats, fakeGetChatContacts);
@@ -71,7 +71,7 @@ describe("populateAllowlistFromMembership", () => {
 
 describe("refreshAllowlistForChat", () => {
   test("updates a single chat's permissioned status", async () => {
-    access.writeContact({ kind: "human", contactId: 100, firstPairedAt: "2026-01-01T00:00:00Z" });
+    access.writeContact(access.DEFAULT_AGENT_ID, { kind: "human", contactId: 100, firstPairedAt: "2026-01-01T00:00:00Z" });
     let contacts: number[] = [999, 1];
     const fakeGetChatContacts = async () => contacts;
     await access.refreshAllowlistForChat(7, fakeGetChatContacts);
@@ -87,7 +87,7 @@ describe("refreshAllowlistForChat", () => {
   });
 
   test("removes a chat from the cache when last principal leaves", async () => {
-    access.writeContact({ kind: "human", contactId: 100, firstPairedAt: "2026-01-01T00:00:00Z" });
+    access.writeContact(access.DEFAULT_AGENT_ID, { kind: "human", contactId: 100, firstPairedAt: "2026-01-01T00:00:00Z" });
     let contacts: number[] = [100, 1];
     const fakeGetChatContacts = async () => contacts;
     await access.refreshAllowlistForChat(8, fakeGetChatContacts);

@@ -75,6 +75,9 @@ export interface AgentPrincipal {
 // contact-book annotations + a parallel managed-agent concept. Use
 // `Contact` directly. Re-introduce the union if/when v1.4 needs it.
 
+/** Singleton agent id for v1.3. v1.4 callers pass their own agent id. */
+export const DEFAULT_AGENT_ID = "claude-code";
+
 // ── Directory plumbing ───────────────────────────────────────────────────────
 
 // v1.3 slice 7 phase 3: contact records live at agents/<agentId>/contacts/.
@@ -124,11 +127,8 @@ export function setPrincipalsDir(dir: string): void {
 let _onMutate: () => void = () => { /* no-op until policy registers */ };
 export function _setContactsMutateCallback(cb: () => void): void { _onMutate = cb; }
 
-function contactPath(contactId: number): string {
-  // v1.3 slice 7 phase 3: agents/<agentId>/contacts/<contactId>.json
-  // Phase 3 commit 2 will expose agentId as a parameter; for now 'claude-code'
-  // is the only agent in v1.3.
-  return join(_agentsDir, "claude-code", "contacts", `${contactId}.json`);
+function contactPath(agentId: string, contactId: number): string {
+  return join(_agentsDir, agentId, "contacts", `${contactId}.json`);
 }
 
 // ── Atomic JSON write ────────────────────────────────────────────────────────
@@ -157,8 +157,8 @@ function atomicWriteJson(path: string, data: unknown): void {
  * security review T4. Reviewer Oliver P2 #1 flagged that the prior
  * blanket-catch made T4's distinction dead code.
  */
-export function loadContact(contactId: number): Contact | null {
-  const path = contactPath(contactId);
+export function loadContact(agentId: string, contactId: number): Contact | null {
+  const path = contactPath(agentId, contactId);
   let raw: string;
   try {
     raw = readFileSync(path, "utf-8");
@@ -175,7 +175,7 @@ export function loadContact(contactId: number): Contact | null {
     // Schema mismatch — treat as corrupt rather than absent. Throwing
     // routes this through the gate's lookup-error path, surfacing the
     // bad record to the operator instead of silently denying.
-    throw new Error(`contacts.loadContact: schema mismatch in ${path}`);
+    throw new Error(`contacts.loadContact: schema mismatch in ${path} (agent=${agentId})`);
   }
   const role = typeof parsed.role === "string" ? parsed.role : "subscriber";
   const capabilities = Array.isArray(parsed.capabilities)
@@ -192,8 +192,8 @@ export function loadContact(contactId: number): Contact | null {
 }
 
 /** Atomically persist a human principal record. */
-export function writeContact(p: Contact): void {
-  atomicWriteJson(contactPath(p.contactId), p);
+export function writeContact(agentId: string, p: Contact): void {
+  atomicWriteJson(contactPath(agentId, p.contactId), p);
   _onMutate();
 }
 
@@ -207,8 +207,8 @@ export function writeContact(p: Contact): void {
  * is used at startup and shouldn't take down the dispatcher because of
  * a single bad file. Errors are logged to stderr for operator visibility.
  */
-export function listContacts(): Contact[] {
-  const dir = join(_agentsDir, "claude-code", "contacts");
+export function listContacts(agentId: string): Contact[] {
+  const dir = join(_agentsDir, agentId, "contacts");
   let entries: string[];
   try {
     entries = readdirSync(dir);
@@ -221,7 +221,7 @@ export function listContacts(): Contact[] {
     const id = parseInt(name.slice(0, -5), 10);
     if (Number.isNaN(id)) continue;
     try {
-      const p = loadContact(id);
+      const p = loadContact(agentId, id);
       if (p) out.push(p);
     } catch (err) {
       console.error(`contacts.listContacts: skipping ${name} —`, err);
@@ -240,16 +240,16 @@ export function listContacts(): Contact[] {
  * principal stays put and `isContactPermissioned` keeps returning true.
  * Stderr lets the dispatcher's debug.log capture it.
  */
-export function removeContact(contactId: number): void {
+export function removeContact(agentId: string, contactId: number): void {
   try {
-    unlinkSync(contactPath(contactId));
+    unlinkSync(contactPath(agentId, contactId));
     _onMutate();
   } catch (err) {
     const code = (err as { code?: string }).code;
     if (code === "ENOENT") return; // expected — no record to remove
     // Real failure (EACCES, EBUSY, EROFS, etc.) — log so the unpair
     // operator notices the principal didn't actually go away.
-    console.error(`contacts.removeContact(${contactId}) failed:`, err);
+    console.error(`contacts.removeContact(${agentId}, ${contactId}) failed:`, err);
   }
 }
 
@@ -270,12 +270,12 @@ export function removeContact(contactId: number): void {
  * malformed JSON / schema-mismatch principal file (slice-3-5 review fix);
  * we treat that as "no existing record" so re-pair recovers the contact.
  */
-export function recordContactPair(contactId: number, displayName?: string): Contact {
+export function recordContactPair(agentId: string, contactId: number, displayName?: string): Contact {
   let existing: Contact | null = null;
   try {
-    existing = loadContact(contactId);
+    existing = loadContact(agentId, contactId);
   } catch (err) {
-    console.error(`contacts.recordContactPair(${contactId}): corrupt existing record, overwriting:`, err);
+    console.error(`contacts.recordContactPair(${agentId}, ${contactId}): corrupt existing record, overwriting:`, err);
   }
   const principal: Contact = {
     kind: "human",
@@ -285,7 +285,7 @@ export function recordContactPair(contactId: number, displayName?: string): Cont
     role: "subscriber",
     capabilities: ["*"],
   };
-  writeContact(principal);
+  writeContact(agentId, principal);
   return principal;
 }
 
@@ -305,12 +305,12 @@ export function recordContactPair(contactId: number, displayName?: string): Cont
  * cache (slice-3-5 review fix #3) invalidates and the next
  * isContactPermissioned read sees the new contact.
  */
-export function setContactRole(contactId: number, role: string, displayName?: string): Contact {
+export function setContactRole(agentId: string, contactId: number, role: string, displayName?: string): Contact {
   let existing: Contact | null = null;
   try {
-    existing = loadContact(contactId);
+    existing = loadContact(agentId, contactId);
   } catch (err) {
-    console.error(`contacts.setContactRole(${contactId}): corrupt existing record, overwriting:`, err);
+    console.error(`contacts.setContactRole(${agentId}, ${contactId}): corrupt existing record, overwriting:`, err);
   }
   const principal: Contact = {
     kind: "human",
@@ -320,7 +320,7 @@ export function setContactRole(contactId: number, role: string, displayName?: st
     role,
     capabilities: [...bundleFor(role)],
   };
-  writeContact(principal);
+  writeContact(agentId, principal);
   return principal;
 }
 

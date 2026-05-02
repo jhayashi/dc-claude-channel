@@ -35,7 +35,7 @@
 import { existsSync, readdirSync, readFileSync, renameSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { loadContact } from "./contacts.js";
+import { DEFAULT_AGENT_ID, loadContact } from "./contacts.js";
 
 // ── Module state ─────────────────────────────────────────────────────────────
 
@@ -216,7 +216,7 @@ export async function populateAllowlistFromMembership(
       // needed here; using it would re-introduce the chat-allowlist ↔
       // contacts dependency cycle this split was designed to remove.
       let contact = null;
-      try { contact = loadContact(contactId); } catch (err) {
+      try { contact = loadContact(DEFAULT_AGENT_ID, contactId); } catch (err) {
         console.error(`contacts.populateAllowlistFromMembership: skipping contact ${contactId} (corrupt record):`, err);
         continue;
       }
@@ -249,7 +249,7 @@ export async function refreshAllowlistForChat(
   for (const contactId of contacts) {
     if (contactId === 1) continue;
     let contact = null;
-    try { contact = loadContact(contactId); } catch (err) {
+    try { contact = loadContact(DEFAULT_AGENT_ID, contactId); } catch (err) {
       console.error(`contacts.refreshAllowlistForChat: skipping contact ${contactId} (corrupt record):`, err);
       continue;
     }
