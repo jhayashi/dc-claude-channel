@@ -16,10 +16,26 @@ export type SlashCommand =
   | { kind: 'memory'; subcommand?: 'show'; key?: string }
   | { kind: 'mcp' }
   | { kind: 'plugin' }
+  | { kind: 'model'; tier: 'haiku' | 'sonnet' | 'opus' | null }
+  | { kind: 'compact' }
+  | { kind: 'usage' }
+  | { kind: 'blocked'; cmd: string }
+  | { kind: 'unknown-slash'; cmd: string; args: string }
 
 // Match /cmd or /cmd <rest> at the start of a trimmed message.
 // Only letters, digits, and hyphens after the slash — no "//" or "/ ".
 const SLASH_RE = /^\/([a-z][a-z0-9-]*)(?:\s+([\s\S]+))?$/i
+
+// Commands that exist in the terminal CLI but have no equivalent in DC chat.
+// These return a 'blocked' command so the dispatcher can explain why.
+const BLOCKED_SLASHES = new Set([
+  'config',
+  'keybindings',
+  'keybindings-help',
+  'update-config',
+  'loop',
+  'schedule',
+])
 
 export function classifySlash(text: string): SlashCommand | null {
   const t = text.trim()
@@ -52,8 +68,21 @@ export function classifySlash(text: string): SlashCommand | null {
       // Bare `/memory <key>` is shorthand for `/memory show <key>`.
       return { kind: 'memory', subcommand: 'show', key: parts[0] }
     }
+    case 'model': {
+      if (!rest) return { kind: 'model', tier: null }
+      const tier = rest.split(/\s+/)[0].toLowerCase()
+      if (tier === 'haiku' || tier === 'sonnet' || tier === 'opus') {
+        return { kind: 'model', tier }
+      }
+      return { kind: 'model', tier: null }
+    }
+    case 'compact':
+      return { kind: 'compact' }
+    case 'usage':
+      return { kind: 'usage' }
     default:
-      return null
+      if (BLOCKED_SLASHES.has(cmd)) return { kind: 'blocked', cmd }
+      return { kind: 'unknown-slash', cmd, args: rest }
   }
 }
 

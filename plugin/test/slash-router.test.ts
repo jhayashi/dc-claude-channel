@@ -17,6 +17,14 @@ describe('classifySlash — recognised commands', () => {
     ['/memory show feedback_haiku', { kind: 'memory', subcommand: 'show', key: 'feedback_haiku' }],
     ['/memory show feedback_haiku extra', { kind: 'memory', subcommand: 'show', key: 'feedback_haiku' }],
     ['/memory feedback_haiku', { kind: 'memory', subcommand: 'show', key: 'feedback_haiku' }],
+    ['/model opus', { kind: 'model', tier: 'opus' }],
+    ['/model sonnet', { kind: 'model', tier: 'sonnet' }],
+    ['/model haiku', { kind: 'model', tier: 'haiku' }],
+    ['/model OPUS', { kind: 'model', tier: 'opus' }],
+    ['/model', { kind: 'model', tier: null }],
+    ['/model gpt-4', { kind: 'model', tier: null }],
+    ['/compact', { kind: 'compact' }],
+    ['/usage', { kind: 'usage' }],
   ])('%s', (input, expected) => {
     expect(classifySlash(input)).toEqual(expected)
   })
@@ -32,13 +40,12 @@ describe('classifySlash — leading/trailing whitespace', () => {
   })
 })
 
-describe('classifySlash — returns null for non-slashes', () => {
+describe('classifySlash — returns null for non-slash messages', () => {
   test.each([
     'help',
     'stop the server',
     '//help',
     '/ help',
-    '/unknown-command',
     '/123invalid',
     '',
     '   ',
@@ -49,15 +56,26 @@ describe('classifySlash — returns null for non-slashes', () => {
   })
 })
 
-describe('classifySlash — slash passthrough (sent to subagent unchanged)', () => {
+describe('classifySlash — blocked (terminal-only commands)', () => {
   test.each([
-    '/schedule',
-    '/loop',
-    '/ultrareview',
-    '/think',
-    '/foo',
-  ])('%s is not a recognised slash', (input) => {
-    expect(classifySlash(input)).toBeNull()
+    ['/config', 'config'],
+    ['/loop', 'loop'],
+    ['/schedule', 'schedule'],
+    ['/keybindings', 'keybindings'],
+    ['/update-config', 'update-config'],
+  ])('%s → blocked', (input, cmd) => {
+    expect(classifySlash(input)).toEqual({ kind: 'blocked', cmd })
+  })
+})
+
+describe('classifySlash — unknown slash (pass-through to subagent)', () => {
+  test.each<[string, SlashCommand]>([
+    ['/ultrareview', { kind: 'unknown-slash', cmd: 'ultrareview', args: '' }],
+    ['/review fix the bug', { kind: 'unknown-slash', cmd: 'review', args: 'fix the bug' }],
+    ['/foo', { kind: 'unknown-slash', cmd: 'foo', args: '' }],
+    ['/think hard', { kind: 'unknown-slash', cmd: 'think', args: 'hard' }],
+  ])('%s', (input, expected) => {
+    expect(classifySlash(input)).toEqual(expected)
   })
 })
 

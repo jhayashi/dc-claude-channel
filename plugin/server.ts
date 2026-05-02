@@ -2671,6 +2671,7 @@ async function main(): Promise<void> {
   const slashDeps = {
     send: (chatId: number, text: string) => client.send(chatId, text),
     evictChat: (chatId: number) => subagentCache.evictChat(chatId),
+    refreshIcon: refreshAgentIcon,
     logf,
   }
 
@@ -2687,7 +2688,7 @@ async function main(): Promise<void> {
     // Transcribe voice messages before forwarding to the subagent.
     const transcribeResult = await tryTranscribeVoice(msg)
     if (transcribeResult === 'drop') return
-    const enrichedMsg = transcribeResult ?? msg
+    let enrichedMsg = transcribeResult ?? msg
 
     // Coach interception: when this chat is mid-coach-interview (created
     // by the agent-setup wall's "Build now"), advance the state machine
@@ -2750,13 +2751,16 @@ async function main(): Promise<void> {
       }
     }
 
-    // Slash-command intercept — /stop, /clear, /help, /memory, /mcp, /plugin.
-    // Same gate as NL intents: skip when a coach session is in flight.
+    // Slash-command intercept. Same gate as NL intents: skip when a coach
+    // session is in flight. Known Bucket-1 commands return void (handled
+    // entirely here); pass-through commands return a rewritten prose string
+    // that replaces the message text for the subagent dispatch below.
     if (shouldClassifySlash(enrichedMsg.chatId, coachSessions)) {
       const slash = classifySlash(enrichedMsg.text ?? '')
       if (slash !== null) {
-        await handleSlash(slashDeps, slash, enrichedMsg.chatId)
-        return
+        const forward = await handleSlash(slashDeps, slash, enrichedMsg.chatId)
+        if (forward === undefined) return
+        enrichedMsg = { ...enrichedMsg, text: forward }
       }
     }
 

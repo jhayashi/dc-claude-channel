@@ -7,9 +7,10 @@
  * SubagentCache.evictChat, and bindings.clearSessionId.
  */
 
-import { readFile, readdir } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import * as agents from './agents.js'
 import * as bindings from './bindings.js'
 import type { SlashCommand } from './slash-router.js'
 
@@ -17,15 +18,22 @@ export interface SlashDeps {
   send: (chatId: number, text: string) => Promise<unknown>
   evictChat: (chatId: number) => Promise<unknown>
   logf: (fmt: string, ...args: unknown[]) => void
+  /** Best-effort badge refresh after model change. */
+  refreshIcon?: (chatId: number, agentId: string) => void
   /** Overrides process.cwd() for tests and multi-project setups. */
   projectCwd?: string
 }
 
+/**
+ * Handle a classified slash command. Returns a string when the command should
+ * be forwarded to the subagent as rewritten prose (pass-through); returns void
+ * when the dispatcher handled it entirely (no subagent dispatch needed).
+ */
 export async function handleSlash(
   deps: SlashDeps,
   cmd: SlashCommand,
   chatId: number,
-): Promise<void> {
+): Promise<string | void> {
   const { send, evictChat, logf } = deps
 
   switch (cmd.kind) {
@@ -74,6 +82,47 @@ export async function handleSlash(
       await handlePlugin(send, chatId, logf)
       return
     }
+
+    case 'model': {
+      if (!cmd.tier) {
+        await send(chatId, 'Usage: /model <haiku|sonnet|opus>').catch(() => {})
+        return
+      }
+      const binding = bindings.getBinding(chatId)
+      if (!binding?.agentId) {
+        await send(chatId, "Not bound to an agent here — /model doesn't apply.").catch(() => {})
+        return
+      }
+      try {
+        agents.setAgentModel(binding.agentId, cmd.tier)
+        await evictChat(chatId).catch((err) =>
+          logf('slash: model evict failed chat=%d: %v', chatId, err),
+        )
+        await send(chatId, `Switched to ${cmd.tier}. Takes effect on the next message.`).catch(() => {})
+        deps.refreshIcon?.(chatId, binding.agentId)
+      } catch (err) {
+        logf('slash: model failed chat=%d tier=%s: %v', chatId, cmd.tier, err)
+        await send(chatId, `Couldn't switch to ${cmd.tier}: ${err instanceof Error ? err.message : 'unknown error'}`).catch(() => {})
+      }
+      return
+    }
+
+    case 'compact':
+      return 'Compact our conversation: summarize the key context from this session so we can continue with a smaller context window.'
+
+    case 'usage': {
+      await handleUsage(send, chatId, logf)
+      return
+    }
+
+    case 'blocked':
+      await send(chatId, `/${cmd.cmd} isn't available in chat. Try /help.`).catch(() => {})
+      return
+
+    case 'unknown-slash':
+      return cmd.args
+        ? `Use the /${cmd.cmd} skill: ${cmd.args}`
+        : `Use the /${cmd.cmd} skill.`
   }
 }
 
@@ -85,10 +134,14 @@ const HELP_TEXT = `Available commands:
 /help — show this list
 /stop — stop the current turn; resume on next message
 /clear — stop + wipe session (next message starts completely fresh)
+/model <haiku|sonnet|opus> — switch the bound agent's model
+/compact — compact conversation context
+/usage — show account token usage
 /memory — show memory index
 /memory show <key> — show a specific memory entry
 /mcp — list configured MCP servers
-/plugin — list installed plugins`
+/plugin — list installed plugins
+Other /commands are forwarded to Claude as skill invocations.`
 
 // ---------------------------------------------------------------------------
 // /memory
@@ -138,6 +191,74 @@ async function handleMemoryShow(
       await send(chatId, `Could not read memory entry "${key}".`).catch(() => {})
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// /usage
+// ---------------------------------------------------------------------------
+
+interface ModelUsageEntry {
+  inputTokens: number
+  outputTokens: number
+  cacheReadInputTokens: number
+  cacheCreationInputTokens: number
+}
+
+interface StatsCache {
+  lastComputedDate?: string
+  totalSessions?: number
+  totalMessages?: number
+  modelUsage?: Record<string, ModelUsageEntry>
+}
+
+async function handleUsage(
+  send: SlashDeps['send'],
+  chatId: number,
+  logf: SlashDeps['logf'],
+): Promise<void> {
+  const statsPath = join(homedir(), '.claude', 'stats-cache.json')
+  try {
+    const raw = await readFile(statsPath, 'utf8')
+    const stats = JSON.parse(raw) as StatsCache
+    await send(chatId, formatUsage(stats)).catch(() => {})
+  } catch (err: unknown) {
+    if (isEnoent(err)) {
+      await send(chatId, 'No usage data found.').catch(() => {})
+    } else {
+      logf('slash: usage read failed chat=%d: %v', chatId, err)
+      await send(chatId, 'Could not read usage data.').catch(() => {})
+    }
+  }
+}
+
+function formatUsage(stats: StatsCache): string {
+  const lines: string[] = [`Usage (as of ${stats.lastComputedDate ?? 'unknown'})`]
+
+  const usage = stats.modelUsage ?? {}
+  const entries = Object.entries(usage)
+  if (entries.length > 0) {
+    lines.push('')
+    for (const [model, m] of entries) {
+      const total = m.inputTokens + m.outputTokens + m.cacheReadInputTokens + m.cacheCreationInputTokens
+      const label = model.replace('claude-', '').replace(/-\d{8}$/, '')
+      lines.push(`${label}: ${formatTokenCount(total)} tokens`)
+    }
+  }
+
+  if (stats.totalMessages || stats.totalSessions) {
+    lines.push('')
+    if (stats.totalMessages) lines.push(`Total messages: ${stats.totalMessages.toLocaleString()}`)
+    if (stats.totalSessions) lines.push(`Total sessions: ${stats.totalSessions.toLocaleString()}`)
+  }
+
+  return lines.join('\n')
+}
+
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
+  return `${n}`
 }
 
 // ---------------------------------------------------------------------------

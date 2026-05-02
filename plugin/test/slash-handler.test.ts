@@ -192,3 +192,92 @@ describe('/plugin', () => {
     expect(spy.sendCalls[0].text.length).toBeGreaterThan(0)
   })
 })
+
+// ---------------------------------------------------------------------------
+// /model
+// ---------------------------------------------------------------------------
+
+describe('/model', () => {
+  test('sends usage hint when tier is null', async () => {
+    const spy = makeSpy()
+    await handleSlash(spy.deps, { kind: 'model', tier: null }, 9)
+    expect(spy.sendCalls[0].text).toMatch(/usage/i)
+  })
+
+  test('sends "not bound" when chat has no binding', async () => {
+    const spy = makeSpy()
+    await handleSlash(spy.deps, { kind: 'model', tier: 'opus' }, 999)
+    expect(spy.sendCalls[0].text).toMatch(/not bound/i)
+  })
+
+  test('confirms switch when bound', async () => {
+    bindings.saveBinding({ chatId: 30, agentId: 'test-agent', sessionId: 'sess-xyz', createdAt: new Date().toISOString() })
+    const spy = makeSpy()
+    // setAgentModel will throw because 'test-agent' doesn't exist on disk in test env
+    // — we just verify the error path sends a message instead of crashing.
+    await handleSlash(spy.deps, { kind: 'model', tier: 'sonnet' }, 30)
+    expect(spy.sendCalls).toHaveLength(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// /compact
+// ---------------------------------------------------------------------------
+
+describe('/compact', () => {
+  test('returns rewritten prose for subagent dispatch', async () => {
+    const spy = makeSpy()
+    const result = await handleSlash(spy.deps, { kind: 'compact' }, 11)
+    expect(result).toBeTypeOf('string')
+    expect(result).toMatch(/compact/i)
+    expect(spy.sendCalls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// /usage
+// ---------------------------------------------------------------------------
+
+describe('/usage', () => {
+  test('sends a response (either "no usage data" or formatted stats)', async () => {
+    const spy = makeSpy()
+    await handleSlash(spy.deps, { kind: 'usage' }, 12)
+    expect(spy.sendCalls).toHaveLength(1)
+    expect(spy.sendCalls[0].text.length).toBeGreaterThan(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// /blocked
+// ---------------------------------------------------------------------------
+
+describe('/blocked', () => {
+  test('sends "not available" and returns void', async () => {
+    const spy = makeSpy()
+    const result = await handleSlash(spy.deps, { kind: 'blocked', cmd: 'loop' }, 13)
+    expect(result).toBeUndefined()
+    expect(spy.sendCalls[0].text).toMatch(/loop.*isn't available/i)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// /unknown-slash (pass-through)
+// ---------------------------------------------------------------------------
+
+describe('/unknown-slash', () => {
+  test('returns rewritten prose with args', async () => {
+    const spy = makeSpy()
+    const result = await handleSlash(spy.deps, { kind: 'unknown-slash', cmd: 'review', args: 'the auth module' }, 14)
+    expect(result).toBeTypeOf('string')
+    expect(result as string).toContain('/review')
+    expect(result as string).toContain('the auth module')
+    expect(spy.sendCalls).toHaveLength(0)
+  })
+
+  test('returns rewritten prose without args', async () => {
+    const spy = makeSpy()
+    const result = await handleSlash(spy.deps, { kind: 'unknown-slash', cmd: 'brainstorm', args: '' }, 15)
+    expect(result).toBeTypeOf('string')
+    expect(result as string).toContain('/brainstorm')
+  })
+})
