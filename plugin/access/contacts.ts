@@ -156,7 +156,7 @@ export function loadContact(contactId: number): Contact | null {
     // Schema mismatch — treat as corrupt rather than absent. Throwing
     // routes this through the gate's lookup-error path, surfacing the
     // bad record to the operator instead of silently denying.
-    throw new Error(`principals.loadContact: schema mismatch in ${path}`);
+    throw new Error(`contacts.loadContact: schema mismatch in ${path}`);
   }
   const role = typeof parsed.role === "string" ? parsed.role : "subscriber";
   const capabilities = Array.isArray(parsed.capabilities)
@@ -205,7 +205,7 @@ export function listContacts(): Contact[] {
       const p = loadContact(id);
       if (p) out.push(p);
     } catch (err) {
-      console.error(`principals.listContacts: skipping ${name} —`, err);
+      console.error(`contacts.listContacts: skipping ${name} —`, err);
     }
   }
   out.sort((a, b) => a.firstPairedAt.localeCompare(b.firstPairedAt) || a.contactId - b.contactId);
@@ -230,7 +230,7 @@ export function removeContact(contactId: number): void {
     if (code === "ENOENT") return; // expected — no record to remove
     // Real failure (EACCES, EBUSY, EROFS, etc.) — log so the unpair
     // operator notices the principal didn't actually go away.
-    console.error(`principals.removeContact(${contactId}) failed:`, err);
+    console.error(`contacts.removeContact(${contactId}) failed:`, err);
   }
 }
 
@@ -256,7 +256,7 @@ export function recordContactPair(contactId: number, displayName?: string): Cont
   try {
     existing = loadContact(contactId);
   } catch (err) {
-    console.error(`principals.recordContactPair(${contactId}): corrupt existing record, overwriting:`, err);
+    console.error(`contacts.recordContactPair(${contactId}): corrupt existing record, overwriting:`, err);
   }
   const principal: Contact = {
     kind: "human",
@@ -291,7 +291,7 @@ export function setContactRole(contactId: number, role: string, displayName?: st
   try {
     existing = loadContact(contactId);
   } catch (err) {
-    console.error(`principals.setContactRole(${contactId}): corrupt existing record, overwriting:`, err);
+    console.error(`contacts.setContactRole(${contactId}): corrupt existing record, overwriting:`, err);
   }
   const principal: Contact = {
     kind: "human",

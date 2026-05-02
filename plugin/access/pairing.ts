@@ -166,7 +166,6 @@ export function completePairing(code: string): number {
   }
 
   pending.delete(code);
-  addChat(p.chatId, p.contactId);
   // Capture the previous role BEFORE recordContactPair so the audit log
   // records the actual transition. loadContact may throw on a corrupt
   // existing record (slice-3-5 review fix); treat that as null and
@@ -175,8 +174,10 @@ export function completePairing(code: string): number {
   try { previousRole = loadContact(p.contactId)?.role ?? null; } catch { /* corrupt → null */ }
   // Phase 2: write a Contact record. Idempotent for
   // firstPairedAt; v1.3 slice 6 always sets role=subscriber (terminal
-  // pair = subscriber, always).
+  // pair = subscriber, always). addChat MUST come after this write so
+  // the in-memory cache only reflects contacts that have a backing record.
   recordContactPair(p.contactId);
+  addChat(p.chatId, p.contactId);
   logRoleAssignment({
     ts: new Date().toISOString(),
     assigneeContactId: p.contactId,

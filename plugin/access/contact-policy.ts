@@ -154,7 +154,12 @@ export function getCapabilitiesFor(contactId: number): string[] {
 export function backfillFromAllowlist(): number {
   let written = 0;
   for (const dev of listPaired()) {
-    if (loadContact(dev.contactId) !== null) continue;
+    let existing = null;
+    try { existing = loadContact(dev.contactId); } catch (err) {
+      console.error(`contacts.backfillFromAllowlist: skipping contact ${dev.contactId} (corrupt record):`, err);
+      continue;
+    }
+    if (existing !== null) continue;
     writeContact({
       kind: "human",
       contactId: dev.contactId,

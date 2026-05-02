@@ -221,6 +221,7 @@ export type PermissionReason =
   | 'skip_auto'
   | 'capability_deny'
   | 'capability_lookup_error'
+  | 'capability_invalid_requestor'
 
 export interface PermissionEvent {
   ts: string
