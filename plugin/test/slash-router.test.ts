@@ -62,6 +62,7 @@ describe('classifySlash — blocked (terminal-only commands)', () => {
     ['/loop', 'loop'],
     ['/schedule', 'schedule'],
     ['/keybindings', 'keybindings'],
+    ['/keybindings-help', 'keybindings-help'],
     ['/update-config', 'update-config'],
   ])('%s → blocked', (input, cmd) => {
     expect(classifySlash(input)).toEqual({ kind: 'blocked', cmd })

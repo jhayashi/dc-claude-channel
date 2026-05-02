@@ -22,6 +22,8 @@ export interface SlashDeps {
   refreshIcon?: (chatId: number, agentId: string) => void
   /** Overrides process.cwd() for tests and multi-project setups. */
   projectCwd?: string
+  /** Directly overrides the resolved memory directory (tests only). */
+  memoryDirOverride?: string
 }
 
 /**
@@ -64,7 +66,7 @@ export async function handleSlash(
     }
 
     case 'memory': {
-      const memDir = resolveMemoryDir(deps.projectCwd ?? process.cwd())
+      const memDir = deps.memoryDirOverride ?? resolveMemoryDir(deps.projectCwd ?? process.cwd())
       if (!cmd.subcommand) {
         await handleMemoryList(send, chatId, memDir, logf)
       } else {
@@ -180,8 +182,13 @@ async function handleMemoryShow(
   logf: SlashDeps['logf'],
 ): Promise<void> {
   const filename = key.endsWith('.md') ? key : `${key}.md`
+  const resolved = join(memDir, filename)
+  if (!resolved.startsWith(memDir + '/')) {
+    await send(chatId, `Invalid memory key "${key}".`).catch(() => {})
+    return
+  }
   try {
-    const content = await readFile(join(memDir, filename), 'utf8')
+    const content = await readFile(resolved, 'utf8')
     await send(chatId, content).catch(() => {})
   } catch (err: unknown) {
     if (isEnoent(err)) {
@@ -197,6 +204,7 @@ async function handleMemoryShow(
 // /usage
 // ---------------------------------------------------------------------------
 
+
 interface ModelUsageEntry {
   inputTokens: number
   outputTokens: number
@@ -204,7 +212,7 @@ interface ModelUsageEntry {
   cacheCreationInputTokens: number
 }
 
-interface StatsCache {
+export interface StatsCache {
   lastComputedDate?: string
   totalSessions?: number
   totalMessages?: number
@@ -231,7 +239,7 @@ async function handleUsage(
   }
 }
 
-function formatUsage(stats: StatsCache): string {
+export function formatUsage(stats: StatsCache): string {
   const lines: string[] = [`Usage (as of ${stats.lastComputedDate ?? 'unknown'})`]
 
   const usage = stats.modelUsage ?? {}
@@ -254,7 +262,7 @@ function formatUsage(stats: StatsCache): string {
   return lines.join('\n')
 }
 
-function formatTokenCount(n: number): string {
+export function formatTokenCount(n: number): string {
   if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`

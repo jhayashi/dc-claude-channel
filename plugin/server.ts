@@ -2660,20 +2660,15 @@ async function main(): Promise<void> {
     return coachState.nextQuestion ?? "What would you like to change about how I work?"
   }
 
-  const nlIntentDeps = {
+  const dispatcherDeps = {
     send: (chatId: number, text: string) => client.send(chatId, text),
     evictChat: (chatId: number) => subagentCache.evictChat(chatId),
     refreshIcon: refreshAgentIcon,
     logf,
-    startRefineSession: startRefineSessionForChat,
   }
 
-  const slashDeps = {
-    send: (chatId: number, text: string) => client.send(chatId, text),
-    evictChat: (chatId: number) => subagentCache.evictChat(chatId),
-    refreshIcon: refreshAgentIcon,
-    logf,
-  }
+  const nlIntentDeps = { ...dispatcherDeps, startRefineSession: startRefineSessionForChat }
+  const slashDeps = dispatcherDeps
 
   const runSubagentTurn = async (msg: Message): Promise<void> => {
     // Intercept .familiar.yaml/.familiar.yml attachments as familiar imports.
