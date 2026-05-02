@@ -7,7 +7,7 @@
  * slice 4 flips `would_deny` to a hard refuse.
  *
  * Layered above:
- *   - `principals-policy.ts:getCapabilitiesFor(contactId)` — resolves
+ *   - `contact-policy.ts:getCapabilitiesFor(contactId)` — resolves
  *     a contact's bundle (or returns `[]` for unknown contacts)
  *   - `capability-bundles.ts:hasCapability(set, required)` — wildcard /
  *     glob / exact-match logic
@@ -26,7 +26,7 @@
  */
 
 import { hasCapability } from "./capability-bundles.js";
-import { getCapabilitiesFor } from "./principals-policy.js";
+import { getCapabilitiesFor } from "./contact-policy.js";
 
 /** Tool annotations without `requiresCapability` default to chat-tier. */
 const DEFAULT_REQUIRED_CAPABILITY = "chat";

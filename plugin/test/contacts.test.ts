@@ -26,7 +26,7 @@ describe("principals — write/read/list", () => {
   });
 
   test("writeContact + loadContact round-trips (v1.3: fills role/capabilities defaults)", () => {
-    const p: access.ContactPrincipal = {
+    const p: access.Contact = {
       kind: "human",
       contactId: 42,
       displayName: "Alice",
@@ -490,7 +490,7 @@ describe("principals — role + capabilities (v1.3 slice 1)", () => {
   });
 
   test("writeContact + loadContact round-trips role and capabilities", () => {
-    const p: access.ContactPrincipal = {
+    const p: access.Contact = {
       kind: "human",
       contactId: 58,
       firstPairedAt: "2026-04-25T12:00:00.000Z",

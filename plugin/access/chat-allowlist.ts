@@ -8,10 +8,10 @@
  *
  * Cache state:
  *   - `chatsWithPermissionedMember: Set<chatId>` — chats with at least one
- *     non-bot member who has a principal record
- *   - `chatOwnerCache: Map<chatId, contactId>` — first permissioned
+ *     non-bot member who has a contact record
+ *   - `chatPrimaryContact: Map<chatId, contactId>` — first permissioned
  *     member encountered when scanning the chat (used by audit logging
- *     and the trust filter as the chat's "responsible contact")
+ *     as a stable per-chat representative)
  *
  * Population:
  *   - `populateAllowlistFromMembership(getChats, getChatContacts)` —
@@ -35,7 +35,7 @@
 import { existsSync, readdirSync, readFileSync, renameSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { loadContact } from "./principals.js";
+import { loadContact } from "./contacts.js";
 
 // ── Module state ─────────────────────────────────────────────────────────────
 
@@ -48,7 +48,7 @@ let _approvedDir = process.env.DC_TEST_APPROVED_DIR ?? join(
 );
 
 const chatsWithPermissionedMember = new Set<number>();
-const chatOwnerCache = new Map<number, number>();
+const chatPrimaryContact = new Map<number, number>();
 const pairedAtMsCache = new Map<number, number>();
 
 /** Current legacy `approved/` directory path (only read at startup). */
@@ -61,7 +61,7 @@ export function getApprovedDir(): string { return _approvedDir }
 export function setApprovedDir(dir: string): void {
   _approvedDir = dir;
   chatsWithPermissionedMember.clear();
-  chatOwnerCache.clear();
+  chatPrimaryContact.clear();
   pairedAtMsCache.clear();
 }
 
@@ -83,7 +83,7 @@ export function isAllowed(chatId: number): boolean {
  * null for chats not in the cache.
  */
 export function firstPermissionedContact(chatId: number): number | null {
-  return chatOwnerCache.get(chatId) ?? null;
+  return chatPrimaryContact.get(chatId) ?? null;
 }
 
 /**
@@ -104,8 +104,8 @@ export function getOwner(chatId: number): number | null {
  */
 export function addChat(chatId: number, ownerContactId?: number): void {
   chatsWithPermissionedMember.add(chatId);
-  if (ownerContactId && !chatOwnerCache.has(chatId)) {
-    chatOwnerCache.set(chatId, ownerContactId);
+  if (ownerContactId && !chatPrimaryContact.has(chatId)) {
+    chatPrimaryContact.set(chatId, ownerContactId);
     pairedAtMsCache.set(chatId, Date.now());
   }
 }
@@ -113,7 +113,7 @@ export function addChat(chatId: number, ownerContactId?: number): void {
 /** Remove a chat from the allowlist. Silently ignores unknown chats. */
 export function removeChat(chatId: number): void {
   chatsWithPermissionedMember.delete(chatId);
-  chatOwnerCache.delete(chatId);
+  chatPrimaryContact.delete(chatId);
   pairedAtMsCache.delete(chatId);
 }
 
@@ -127,7 +127,7 @@ export function removeChat(chatId: number): void {
  * `isContactPermissioned` itself; no other production caller.
  */
 export function isKnownOwner(contactId: number): boolean {
-  for (const id of chatOwnerCache.values()) {
+  for (const id of chatPrimaryContact.values()) {
     if (id === contactId) return true;
   }
   return false;
@@ -135,7 +135,7 @@ export function isKnownOwner(contactId: number): boolean {
 
 /** True if at least one allowed chat has a recorded responsible contact. */
 export function hasAnyOwner(): boolean {
-  return chatOwnerCache.size > 0;
+  return chatPrimaryContact.size > 0;
 }
 
 /** A paired device — a contact that's the responsible contact for at least one chat. */
@@ -154,7 +154,7 @@ export interface PairedDevice {
  */
 export function listPaired(): PairedDevice[] {
   const map = new Map<number, { chatIds: number[]; pairedAtMs: number }>();
-  for (const [chatId, contactId] of chatOwnerCache) {
+  for (const [chatId, contactId] of chatPrimaryContact) {
     const ms = pairedAtMsCache.get(chatId) ?? Date.now();
     const entry = map.get(contactId);
     if (entry) {
@@ -179,7 +179,7 @@ export function listPaired(): PairedDevice[] {
 /** Chats where `contactId` is the responsible contact. */
 export function chatsForOwner(contactId: number): number[] {
   const out: number[] = [];
-  for (const [chatId, ownerId] of chatOwnerCache) {
+  for (const [chatId, ownerId] of chatPrimaryContact) {
     if (ownerId === contactId) out.push(chatId);
   }
   return out.sort((a, b) => a - b);
@@ -212,9 +212,9 @@ export async function populateAllowlistFromMembership(
       // Direct principal lookup — populate runs after backfill, so any
       // contact in the legacy allowlist now has a principal record.
       // The `isContactPermissioned` policy (with its legacy
-      // `isKnownOwner` fallback) lives in principals-policy and isn't
+      // `isKnownOwner` fallback) lives in contact-policy and isn't
       // needed here; using it would re-introduce the chat-allowlist ↔
-      // principals dependency cycle this split was designed to remove.
+      // contacts dependency cycle this split was designed to remove.
       if (loadContact(contactId) !== null) {
         firstPermissioned = contactId;
         break;
@@ -224,8 +224,8 @@ export async function populateAllowlistFromMembership(
       chatsWithPermissionedMember.add(chatId);
       // Don't clobber an existing owner recorded earlier (e.g., from
       // legacy approved/<chatId> seeding). First-seeder wins.
-      if (!chatOwnerCache.has(chatId)) {
-        chatOwnerCache.set(chatId, firstPermissioned);
+      if (!chatPrimaryContact.has(chatId)) {
+        chatPrimaryContact.set(chatId, firstPermissioned);
       }
     }
   }
@@ -250,10 +250,10 @@ export async function refreshAllowlistForChat(
   }
   if (firstPermissioned !== null) {
     chatsWithPermissionedMember.add(chatId);
-    chatOwnerCache.set(chatId, firstPermissioned);
+    chatPrimaryContact.set(chatId, firstPermissioned);
   } else {
     chatsWithPermissionedMember.delete(chatId);
-    chatOwnerCache.delete(chatId);
+    chatPrimaryContact.delete(chatId);
     pairedAtMsCache.delete(chatId);
   }
 }
@@ -287,8 +287,8 @@ export function seedFromLegacyDir(): void {
     try { content = readFileSync(path, "utf-8").trim(); } catch { /* ignore */ }
     if (content) {
       const ownerId = parseInt(content, 10);
-      if (!Number.isNaN(ownerId) && !chatOwnerCache.has(chatId)) {
-        chatOwnerCache.set(chatId, ownerId);
+      if (!Number.isNaN(ownerId) && !chatPrimaryContact.has(chatId)) {
+        chatPrimaryContact.set(chatId, ownerId);
       }
     }
     try {

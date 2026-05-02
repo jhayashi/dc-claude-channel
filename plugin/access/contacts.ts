@@ -1,31 +1,29 @@
 /**
- * Principal records — the on-disk source of truth for "who exists" in
- * the channel. Per the identity/teams migration:
- * `docs/specs/2026-04-20-identity-and-teams-design.md`.
+ * Contact records — trust annotations on entries in the bot's DC contact
+ * book. One file per contact, keyed by dc-core contactId.
  *
- * A `ContactPrincipal` represents any DC contact in the bot's address
- * book — human or third-party bot. The two are indistinguishable to the
- * auth model; the role field (subscriber / family-member / trusted-agent
- * / untrusted-agent / guest) carries the trust-tier distinction. The
- * "humans/" subdirectory is a v1.2.2 historical artifact; we keep the
- * path for on-disk backwards compat (a v1.4 cleanup may rename to
- * "contacts/" with a one-release migration).
+ * A `Contact` here represents any DC contact in the bot's address
+ * book — human or third-party bot. The two are indistinguishable to
+ * the auth model; the `role` field (subscriber / family-member /
+ * trusted-agent / untrusted-agent / guest) carries the trust-tier
+ * distinction.
  *
- * Schema:
- *   ~/.claude/channels/deltachat/principals/
- *   └── humans/<contactId>.json
- *         { kind: "human", contactId, displayName?, firstPairedAt,
- *           role?, capabilities? }
+ * Phase 3 of v1.3 slice 7 will move these records under
+ * `agents/<agentId>/contacts/<contactId>.json` so each agent owns its
+ * own contact-book annotations (forward-compat for v1.4's per-agent
+ * chatmail accounts). Today, until that phase lands, they still live
+ * at the legacy single-bucket path:
  *
- * `kind: "human"` on disk is preserved for backwards compat — a v1.4+
- * `kind: "bot"` may be added if surfacing the human/bot distinction in
- * UX becomes useful, but the auth model should never read it.
+ *   ~/.claude/channels/deltachat/principals/humans/<contactId>.json
  *
- * `AgentPrincipal` (separate from `ContactPrincipal`) is the v1.4+
+ * `kind: "human"` on disk is preserved for backwards compat with v1.2.2
+ * records; the auth model never reads it.
+ *
+ * `AgentPrincipal` (separate type — kept for v1.4) is the
  * managed-agent concept: a bot the dispatcher provisions chatmail for,
  * with an `agentId` distinct from any `contactId`. Distinct from
- * "third-party bot in your address book" — those are ContactPrincipals
- * with role `trusted-agent` / `untrusted-agent`.
+ * "third-party bot in your address book" — those are Contacts with
+ * role `trusted-agent` / `untrusted-agent`.
  */
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
@@ -35,9 +33,9 @@ import { bundleFor } from "./capability-bundles.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type PrincipalKind = "human" | "agent";
+export type ContactKind = "human" | "agent";
 
-export interface ContactPrincipal {
+export interface Contact {
   kind: "human";
   contactId: number;
   displayName?: string;
@@ -73,7 +71,9 @@ export interface AgentPrincipal {
   dispatcherBinding: "main" | string;
 }
 
-export type Principal = ContactPrincipal | AgentPrincipal;
+// `Principal` union dropped in v1.3 slice 7 — the data is just
+// contact-book annotations + a parallel managed-agent concept. Use
+// `Contact` directly. Re-introduce the union if/when v1.4 needs it.
 
 // ── Directory plumbing ───────────────────────────────────────────────────────
 
@@ -92,21 +92,21 @@ export function getPrincipalsDir(): string { return _principalsDir }
 export function setPrincipalsDir(dir: string): void {
   _principalsDir = dir;
   // Cache invalidation hook (v1.3 review fix #3 — Elena HURT 2):
-  // principals-policy maintains a derived `permissionedContactIds` Set
+  // contact-policy maintains a derived `permissionedContactIds` Set
   // for O(1) `isContactPermissioned` on the inbound-message hot path.
   // Changing the principals dir invalidates the entire cache.
   _onMutate();
 }
 
 /**
- * Cache invalidation hook. principals-policy registers itself here at
+ * Cache invalidation hook. contact-policy registers itself here at
  * module load so it can drop its `permissionedContactIds` cache on
  * every write / remove / dir change. Stays a function-pointer (rather
- * than a static import from principals-policy) to avoid the
- * principals ↔ principals-policy cycle the slice-2 review broke.
+ * than a static import from contact-policy) to avoid the
+ * contacts ↔ contact-policy cycle the slice-2 review broke.
  */
 let _onMutate: () => void = () => { /* no-op until policy registers */ };
-export function _setPrincipalsMutateCallback(cb: () => void): void { _onMutate = cb; }
+export function _setContactsMutateCallback(cb: () => void): void { _onMutate = cb; }
 
 function contactPath(contactId: number): string {
   return join(_principalsDir, "humans", `${contactId}.json`);
@@ -138,7 +138,7 @@ function atomicWriteJson(path: string, data: unknown): void {
  * security review T4. Reviewer Oliver P2 #1 flagged that the prior
  * blanket-catch made T4's distinction dead code.
  */
-export function loadContact(contactId: number): ContactPrincipal | null {
+export function loadContact(contactId: number): Contact | null {
   const path = contactPath(contactId);
   let raw: string;
   try {
@@ -151,7 +151,7 @@ export function loadContact(contactId: number): ContactPrincipal | null {
     // capability_deny.
     throw err;
   }
-  const parsed = JSON.parse(raw) as Partial<ContactPrincipal>;
+  const parsed = JSON.parse(raw) as Partial<Contact>;
   if (parsed.kind !== "human" || typeof parsed.contactId !== "number" || typeof parsed.firstPairedAt !== "string") {
     // Schema mismatch — treat as corrupt rather than absent. Throwing
     // routes this through the gate's lookup-error path, surfacing the
@@ -173,7 +173,7 @@ export function loadContact(contactId: number): ContactPrincipal | null {
 }
 
 /** Atomically persist a human principal record. */
-export function writeContact(p: ContactPrincipal): void {
+export function writeContact(p: Contact): void {
   atomicWriteJson(contactPath(p.contactId), p);
   _onMutate();
 }
@@ -188,7 +188,7 @@ export function writeContact(p: ContactPrincipal): void {
  * is used at startup and shouldn't take down the dispatcher because of
  * a single bad file. Errors are logged to stderr for operator visibility.
  */
-export function listContacts(): ContactPrincipal[] {
+export function listContacts(): Contact[] {
   const dir = join(_principalsDir, "humans");
   let entries: string[];
   try {
@@ -196,7 +196,7 @@ export function listContacts(): ContactPrincipal[] {
   } catch {
     return [];
   }
-  const out: ContactPrincipal[] = [];
+  const out: Contact[] = [];
   for (const name of entries) {
     if (!name.endsWith(".json")) continue;
     const id = parseInt(name.slice(0, -5), 10);
@@ -251,14 +251,14 @@ export function removeContact(contactId: number): void {
  * malformed JSON / schema-mismatch principal file (slice-3-5 review fix);
  * we treat that as "no existing record" so re-pair recovers the contact.
  */
-export function recordContactPair(contactId: number, displayName?: string): ContactPrincipal {
-  let existing: ContactPrincipal | null = null;
+export function recordContactPair(contactId: number, displayName?: string): Contact {
+  let existing: Contact | null = null;
   try {
     existing = loadContact(contactId);
   } catch (err) {
     console.error(`principals.recordContactPair(${contactId}): corrupt existing record, overwriting:`, err);
   }
-  const principal: ContactPrincipal = {
+  const principal: Contact = {
     kind: "human",
     contactId,
     displayName: displayName ?? existing?.displayName,
@@ -282,18 +282,18 @@ export function recordContactPair(contactId: number, displayName?: string): Cont
  * deny-by-empty path doesn't fire by accident; advanced operators who
  * want a custom override can edit the JSON directly.
  *
- * Calls `_onMutate()` so the principals-policy permissioned-contacts
+ * Calls `_onMutate()` so the contact-policy permissioned-contacts
  * cache (slice-3-5 review fix #3) invalidates and the next
  * isContactPermissioned read sees the new contact.
  */
-export function setContactRole(contactId: number, role: string, displayName?: string): ContactPrincipal {
-  let existing: ContactPrincipal | null = null;
+export function setContactRole(contactId: number, role: string, displayName?: string): Contact {
+  let existing: Contact | null = null;
   try {
     existing = loadContact(contactId);
   } catch (err) {
     console.error(`principals.setContactRole(${contactId}): corrupt existing record, overwriting:`, err);
   }
-  const principal: ContactPrincipal = {
+  const principal: Contact = {
     kind: "human",
     contactId,
     displayName: displayName ?? existing?.displayName,
@@ -307,7 +307,7 @@ export function setContactRole(contactId: number, role: string, displayName?: st
 
 // Derived queries (`chatsFor`, `isContactPermissioned`,
 // `hasAnyPermissionedContact`, `getCapabilitiesFor`,
-// `backfillFromAllowlist`) live in `./principals-policy.ts` — moved
+// `backfillFromAllowlist`) live in `./contact-policy.ts` — moved
 // in v1.3 to break a chat-allowlist ↔ principals circular dependency
 // flagged by reviewers Elena + Oliver. The barrel `./index.ts` re-
 // exports them, so `access.X` callers see no API change.

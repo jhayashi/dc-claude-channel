@@ -162,7 +162,7 @@ describe('auto-pair via principal record (#66 Option A)', () => {
 describe('auto-pair → principals contract', () => {
   // Phase 2 design: principals are keyed per *contact*, not per chat.
   // The first pair for a contact goes through completePairing() which
-  // writes a ContactPrincipal record.  Auto-pair adds *another chat* for
+  // writes a Contact record.  Auto-pair adds *another chat* for
   // the same contact via addChat() — it does not (and does not need to)
   // touch the principal record, because the contact already has one.
   //

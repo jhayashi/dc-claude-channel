@@ -12,7 +12,7 @@
 
 import { logRoleAssignment } from "../events.js";
 import { addChat } from "./chat-allowlist.js";
-import { loadContact, recordContactPair } from "./principals.js";
+import { loadContact, recordContactPair } from "./contacts.js";
 
 // --- Constants ---
 
@@ -173,7 +173,7 @@ export function completePairing(code: string): number {
   // proceed — recordContactPair will recover by overwriting.
   let previousRole: string | null = null;
   try { previousRole = loadContact(p.contactId)?.role ?? null; } catch { /* corrupt → null */ }
-  // Phase 2: write a ContactPrincipal record. Idempotent for
+  // Phase 2: write a Contact record. Idempotent for
   // firstPairedAt; v1.3 slice 6 always sets role=subscriber (terminal
   // pair = subscriber, always).
   recordContactPair(p.contactId);
