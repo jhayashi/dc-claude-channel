@@ -7,7 +7,7 @@
  * no FS round-trip, no dc-core RPC.
  *
  * Cache state:
- *   - `permissionedChats: Set<chatId>` — chats with at least one
+ *   - `chatsWithPermissionedMember: Set<chatId>` — chats with at least one
  *     non-bot member who has a principal record
  *   - `chatOwnerCache: Map<chatId, contactId>` — first permissioned
  *     member encountered when scanning the chat (used by audit logging
@@ -47,7 +47,7 @@ let _approvedDir = process.env.DC_TEST_APPROVED_DIR ?? join(
   "approved",
 );
 
-const permissionedChats = new Set<number>();
+const chatsWithPermissionedMember = new Set<number>();
 const chatOwnerCache = new Map<number, number>();
 const pairedAtMsCache = new Map<number, number>();
 
@@ -60,7 +60,7 @@ export function getApprovedDir(): string { return _approvedDir }
  */
 export function setApprovedDir(dir: string): void {
   _approvedDir = dir;
-  permissionedChats.clear();
+  chatsWithPermissionedMember.clear();
   chatOwnerCache.clear();
   pairedAtMsCache.clear();
 }
@@ -69,12 +69,12 @@ export function setApprovedDir(dir: string): void {
 
 /** All currently permissioned chats. */
 export function allowedChats(): number[] {
-  return [...permissionedChats].sort((a, b) => a - b);
+  return [...chatsWithPermissionedMember].sort((a, b) => a - b);
 }
 
 /** Is this chat permissioned (has at least one principal in its membership)? */
 export function isAllowed(chatId: number): boolean {
-  return permissionedChats.has(chatId);
+  return chatsWithPermissionedMember.has(chatId);
 }
 
 /**
@@ -103,7 +103,7 @@ export function getOwner(chatId: number): number | null {
  * stable across re-pairs).
  */
 export function addChat(chatId: number, ownerContactId?: number): void {
-  permissionedChats.add(chatId);
+  chatsWithPermissionedMember.add(chatId);
   if (ownerContactId && !chatOwnerCache.has(chatId)) {
     chatOwnerCache.set(chatId, ownerContactId);
     pairedAtMsCache.set(chatId, Date.now());
@@ -112,7 +112,7 @@ export function addChat(chatId: number, ownerContactId?: number): void {
 
 /** Remove a chat from the allowlist. Silently ignores unknown chats. */
 export function removeChat(chatId: number): void {
-  permissionedChats.delete(chatId);
+  chatsWithPermissionedMember.delete(chatId);
   chatOwnerCache.delete(chatId);
   pairedAtMsCache.delete(chatId);
 }
@@ -221,7 +221,7 @@ export async function populateAllowlistFromMembership(
       }
     }
     if (firstPermissioned !== null) {
-      permissionedChats.add(chatId);
+      chatsWithPermissionedMember.add(chatId);
       // Don't clobber an existing owner recorded earlier (e.g., from
       // legacy approved/<chatId> seeding). First-seeder wins.
       if (!chatOwnerCache.has(chatId)) {
@@ -249,10 +249,10 @@ export async function refreshAllowlistForChat(
     }
   }
   if (firstPermissioned !== null) {
-    permissionedChats.add(chatId);
+    chatsWithPermissionedMember.add(chatId);
     chatOwnerCache.set(chatId, firstPermissioned);
   } else {
-    permissionedChats.delete(chatId);
+    chatsWithPermissionedMember.delete(chatId);
     chatOwnerCache.delete(chatId);
     pairedAtMsCache.delete(chatId);
   }
@@ -281,7 +281,7 @@ export function seedFromLegacyDir(): void {
   for (const name of entries) {
     const chatId = parseInt(name, 10);
     if (Number.isNaN(chatId)) continue;
-    permissionedChats.add(chatId);
+    chatsWithPermissionedMember.add(chatId);
     const path = join(_approvedDir, name);
     let content = "";
     try { content = readFileSync(path, "utf-8").trim(); } catch { /* ignore */ }
@@ -316,7 +316,7 @@ export function retireApprovedDir(): void {
   for (const name of entries) {
     const chatId = parseInt(name, 10);
     if (Number.isNaN(chatId)) continue;
-    if (!permissionedChats.has(chatId)) {
+    if (!chatsWithPermissionedMember.has(chatId)) {
       orphans.push(name);
     }
   }
