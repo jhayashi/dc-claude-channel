@@ -766,6 +766,14 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
   z-index: 200;
   box-shadow: 0 4px 20px rgba(0,0,0,0.45);
 }
+/* #79: when the commented anchor is in the lower half of the viewport,
+   the card flips to the top of the screen so it doesn't occlude the
+   anchor (most painfully, the bottom of the file). Set via the
+   `pin-top` class in openCommentCard. */
+#comment-card.pin-top {
+  top: 10px;
+  bottom: auto;
+}
 #comment-card .target-chip {
   margin-bottom: 10px;
 }
@@ -925,7 +933,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.39;
+var APP_VERSION = 1.40;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -1724,9 +1732,29 @@ function openCommentCard(anchor) {
   document.getElementById('card-target').textContent = title ? (anchorLabel + ' \u00b7 ' + title) : anchorLabel;
 
   var card = document.getElementById('comment-card');
-  // Position the card in the lower portion of the screen
-  card.style.bottom = '62px';
-  card.style.top = 'auto';
+  // #76: pick top/bottom pin based on where the commented anchor sits
+  // in the viewport. If the anchor is in the lower half, pin to top so
+  // the card doesn't cover it (most painful at the bottom of the file).
+  // Otherwise default to the bottom-pinned position. Evaluated only at
+  // open time — scroll-reactive flipping is a future polish.
+  var anchorSelector = isSource
+    ? '[data-line="' + anchor + '"]'
+    : '[data-paragraph="' + anchor + '"]';
+  var anchorEl = document.querySelector(anchorSelector);
+  var pinTop = false;
+  if (anchorEl) {
+    var rect = anchorEl.getBoundingClientRect();
+    pinTop = rect.top > window.innerHeight / 2;
+  }
+  card.classList.toggle('pin-top', pinTop);
+  if (pinTop) {
+    // Clear any inline bottom from a prior open so the .pin-top CSS wins.
+    card.style.bottom = '';
+    card.style.top = '';
+  } else {
+    card.style.bottom = '62px';
+    card.style.top = 'auto';
+  }
   card.style.display = 'block';
 
   setTimeout(function() { textarea.focus(); }, 100);

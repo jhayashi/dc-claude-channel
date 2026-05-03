@@ -10,6 +10,8 @@ Adds `/effort`, fixes the disappearing-task-progress bug, and backfills the slas
 
 ### Fixed
 
+- **File Reviewer comment card occluded the bottom of the file** (#76). The card was always pinned at `bottom: 62px`, so commenting on a line near the bottom hid the very lines the user was trying to discuss. Now the card auto-flips to the top of the viewport when the commented anchor sits in the lower half — evaluated only at open time, no scroll-reactive flipping (future polish). `file-reviewer` APP_VERSION 1.39 → 1.40 (auto-upgrade picks it up).
+
 - **TodoWrite step indicators were being overwritten by tool emojis** (#79). DC reactions are unique per (sender, message), so each new tool reaction replaced the previous one — meaning the user almost never saw `1️⃣ 2️⃣ 3️⃣` task progress in practice; they only saw whichever tool ran most recently. Once a `todo-*` reaction fires in a turn, non-todo reactions are now suppressed for the rest of the turn (lock clears at `clearTurnTarget`). Subsequent `TodoWrite` calls still fire and bypass the 60s debounce — matches the file-header doc that pre-fix said "never debounced" while the code applied it uniformly.
 
 ### Added
