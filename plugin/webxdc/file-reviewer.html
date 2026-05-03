@@ -933,7 +933,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.40;
+var APP_VERSION = 1.41;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -1711,6 +1711,72 @@ function attachLongPress(el, callback) {
 
 // ── Comment card ────────────────────────────────────────────────────
 
+// #76: scroll-reactive flip. Once the card is open, scrolling toward the
+// card's pinned edge flips the card to the opposite edge so it gets out
+// of the user's way. Throttled with rAF; thresholded to filter touch
+// wobble; cooldown to prevent jitter; suppressed while the user is
+// actively composing.
+var _cardScrollListener = null;
+var _cardLastScrollY = 0;
+var _cardLastFlipMs = 0;
+var SCROLL_DELTA_THRESHOLD = 50;
+var FLIP_COOLDOWN_MS = 800;
+
+function flipCardTo(pinTop) {
+  var card = document.getElementById('comment-card');
+  if (!card) return;
+  card.classList.toggle('pin-top', pinTop);
+  if (pinTop) {
+    card.style.bottom = '';
+    card.style.top = '';
+  } else {
+    card.style.bottom = '62px';
+    card.style.top = 'auto';
+  }
+  _cardLastFlipMs = Date.now();
+}
+
+function installCardScrollListener() {
+  removeCardScrollListener();
+  _cardLastScrollY = window.scrollY;
+  // Note: _cardLastFlipMs is set by flipCardTo at open time, so the
+  // cooldown naturally blocks an immediate first scroll-flip.
+  var pending = false;
+  _cardScrollListener = function () {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(function () {
+      pending = false;
+      var card = document.getElementById('comment-card');
+      if (!card || card.style.display !== 'block') return;
+      var y = window.scrollY;
+      var dy = y - _cardLastScrollY;
+      _cardLastScrollY = y;
+      if (Math.abs(dy) < SCROLL_DELTA_THRESHOLD) return;
+      if (Date.now() - _cardLastFlipMs < FLIP_COOLDOWN_MS) return;
+      // Don't yank the card while the user is composing a comment.
+      var ta = document.getElementById('comment-text');
+      if (ta && document.activeElement === ta && ta.value.trim().length > 0) return;
+      var pinTop = card.classList.contains('pin-top');
+      if (dy > 0 && !pinTop) {
+        // Scrolling down, card at bottom → flip to top.
+        flipCardTo(true);
+      } else if (dy < 0 && pinTop) {
+        // Scrolling up, card at top → flip to bottom.
+        flipCardTo(false);
+      }
+    });
+  };
+  window.addEventListener('scroll', _cardScrollListener, { passive: true });
+}
+
+function removeCardScrollListener() {
+  if (_cardScrollListener) {
+    window.removeEventListener('scroll', _cardScrollListener);
+    _cardScrollListener = null;
+  }
+}
+
 function openCommentCard(anchor) {
   editingAnchor = anchor;
   var comments = getComments(activeIndex);
@@ -1746,16 +1812,9 @@ function openCommentCard(anchor) {
     var rect = anchorEl.getBoundingClientRect();
     pinTop = rect.top > window.innerHeight / 2;
   }
-  card.classList.toggle('pin-top', pinTop);
-  if (pinTop) {
-    // Clear any inline bottom from a prior open so the .pin-top CSS wins.
-    card.style.bottom = '';
-    card.style.top = '';
-  } else {
-    card.style.bottom = '62px';
-    card.style.top = 'auto';
-  }
+  flipCardTo(pinTop);
   card.style.display = 'block';
+  installCardScrollListener();
 
   setTimeout(function() { textarea.focus(); }, 100);
 }
@@ -1763,6 +1822,7 @@ function openCommentCard(anchor) {
 function closeCommentCard() {
   document.getElementById('comment-card').style.display = 'none';
   editingAnchor = null;
+  removeCardScrollListener();
 }
 
 function saveComment() {
