@@ -227,6 +227,12 @@ export const fileReviewerApp: WebXDCApp = {
     const shortTitle = title.length > maxTitle ? title.slice(0, maxTitle - 1) + '\u2026' : title
     const partsNote = chunks.length > 1 ? ` (${chunks.length} parts)` : ''
 
+    // Stable per-call id used for notification deep-linking (#73). Both
+    // the payload and the href carry it; the receiver matches the URL
+    // fragment against doc.fileId on cold open / hashchange to land on
+    // the right file regardless of how many docs were sent after.
+    const fileId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)
+
     // Try bundled-update path first: one sendUpdate carrying all chunks.
     // For typical-sized docs this means one SMTP send instead of N. The
     // per-chunk startLine fields are preserved so comment routing still
@@ -236,11 +242,12 @@ export const fileReviewerApp: WebXDCApp = {
         type: 'document',
         title,
         version,
+        fileId,
         ...(language ? { language } : {}),
         chunks: chunks.map((c) => c.payload),
       },
       info: prefix + shortTitle + partsNote,
-      href: 'index.html',
+      href: `index.html#file-${fileId}`,
     }
     const bundledUpdate = JSON.stringify(bundledUpdateObj)
     const bundledSize = new TextEncoder().encode(bundledUpdate).length
@@ -260,10 +267,14 @@ export const fileReviewerApp: WebXDCApp = {
         const chunkShortTitle = chunk.title.length > maxTitle
           ? chunk.title.slice(0, maxTitle - 1) + '\u2026'
           : chunk.title
-        const updateObj: Record<string, unknown> = { payload: chunk.payload }
+        // Chunk 0 carries the notification + deep-link href + fileId so
+        // tapping the notification lands on the start of the file (#73).
+        // Subsequent chunks of the same file are payload-only.
+        const chunkPayload = i === 0 ? { ...chunk.payload, fileId } : chunk.payload
+        const updateObj: Record<string, unknown> = { payload: chunkPayload }
         if (i === 0) {
           updateObj.info = prefix + chunkShortTitle + partsNote
-          updateObj.href = 'index.html'
+          updateObj.href = `index.html#file-${fileId}`
         }
         const update = JSON.stringify(updateObj)
         await ctx.client.sendWebXDCUpdate(viewerMsgId, update)

@@ -57,7 +57,10 @@ describe('file-reviewer bundling', () => {
     expect(parsed.payload.chunks).toHaveLength(1)
     expect(parsed.info).toContain('Tap to review')
     expect(parsed.info).toContain('Small Doc')
-    expect(parsed.href).toBe('index.html')
+    // #73: href deep-links to the file via fragment, not bare index.html.
+    expect(parsed.href).toMatch(/^index\.html#file-/)
+    expect(typeof parsed.payload.fileId).toBe('string')
+    expect(parsed.href).toBe('index.html#file-' + parsed.payload.fileId)
   })
 
   test('single-chunk doc bundles without explicit startLine (viewer defaults to 1)', async () => {
@@ -135,7 +138,10 @@ describe('file-reviewer bundling', () => {
     const first = JSON.parse(updates[0].update)
     expect(first.info).toContain('Tap to review')
     expect(first.info).toContain('Huge Doc')
-    expect(first.href).toBe('index.html')
+    // #73: chunked-fallback chunk-0 also gets the deep-link href + fileId.
+    expect(first.href).toMatch(/^index\.html#file-/)
+    expect(typeof first.payload.fileId).toBe('string')
+    expect(first.href).toBe('index.html#file-' + first.payload.fileId)
     for (let i = 1; i < updates.length; i++) {
       const parsed = JSON.parse(updates[i].update)
       expect(parsed.info).toBeUndefined()

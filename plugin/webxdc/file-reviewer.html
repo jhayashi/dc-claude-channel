@@ -933,7 +933,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.41;
+var APP_VERSION = 1.42;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -2180,10 +2180,14 @@ window.webxdc.setUpdateListener(function(update) {
         content: chunkContent,
         language: c.language || data.language || null,
         startLine: c.startLine || 1,
+        // #73: only the FIRST chunk of a bundled file carries fileId.
+        // Notifications deep-link to the start of the file; user can
+        // navigate to subsequent chunks via the sidebar.
+        fileId: i === 0 ? (data.fileId || null) : null,
       });
     }
     rebuildSidebar();
-    if (documents.length > firstNewIndex) showDocument(firstNewIndex);
+    if (documents.length > firstNewIndex) showTargetDocument(firstNewIndex);
     return;
   }
 
@@ -2199,11 +2203,43 @@ window.webxdc.setUpdateListener(function(update) {
     content: content,
     language: data.language || null,
     startLine: data.startLine || 1,
+    // #73: chunked-fallback path puts fileId on chunk 0 only; legacy
+    // pre-1.42 payloads have no fileId and fall through to "show last."
+    fileId: data.fileId || null,
   });
 
   rebuildSidebar();
-  showDocument(documents.length - 1);
+  showTargetDocument(documents.length - 1);
 }, 0);
+
+// #73: notification deep-link routing. Mark the initial-replay window
+// closed on the next tick — DC delivers all queued updates synchronously
+// to the listener at startup, so anything dispatched after that is a
+// genuinely new file and should pull focus (existing post-init
+// behavior). Inside the window, defer to the hash-target match.
+var initialReplayDone = false;
+setTimeout(function () { initialReplayDone = true; }, 0);
+
+function showTargetDocument(newIndex) {
+  // Post-initial-replay: a fresh dc_send_file arrived → jump to it.
+  if (initialReplayDone && typeof newIndex === 'number') {
+    showDocument(newIndex);
+    return;
+  }
+  // Initial replay (or hashchange): match the URL fragment if present.
+  var m = (window.location.hash || '').match(/^#file-(.+)$/);
+  if (m) {
+    for (var i = 0; i < documents.length; i++) {
+      if (documents[i].fileId === m[1]) { showDocument(i); return; }
+    }
+  }
+  // No hash, no match, or no docs yet → fall back to most recent.
+  if (documents.length > 0) showDocument(documents.length - 1);
+}
+
+// Notification tapped while app is already open: DC may swap the URL
+// fragment without reloading the page.
+window.addEventListener('hashchange', function () { showTargetDocument(); });
 </script>
 </body>
 </html>
