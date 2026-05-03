@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import * as bindings from '../bindings'
-import { handleSlash, formatUsage, formatTokenCount, type SlashDeps, type StatsCache } from '../slash-handler'
+import { handleSlash, type SlashDeps } from '../slash-handler'
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -65,6 +65,10 @@ describe('/help', () => {
     expect(spy.sendCalls[0].text).toContain('/memory')
     expect(spy.sendCalls[0].text).toContain('/mcp')
     expect(spy.sendCalls[0].text).toContain('/plugin')
+    expect(spy.sendCalls[0].text).toContain('/think')
+    expect(spy.sendCalls[0].text).toContain('/ultrathink')
+    expect(spy.sendCalls[0].text).toContain('/plan')
+    expect(spy.sendCalls[0].text).toContain('/exit-plan')
   })
 })
 
@@ -231,6 +235,80 @@ describe('/compact', () => {
 })
 
 // ---------------------------------------------------------------------------
+// /think and /ultrathink
+// ---------------------------------------------------------------------------
+
+describe('/think', () => {
+  test('forwards prompt with "Think hard" directive appended', async () => {
+    const spy = makeSpy({})
+    const result = await handleSlash(spy.deps, { kind: 'think', prompt: 'should I refactor X' }, 50)
+    expect(result).toBeTypeOf('string')
+    expect(result as string).toContain('should I refactor X')
+    expect(result as string).toMatch(/think hard/i)
+    expect(spy.sendCalls).toHaveLength(0)
+  })
+
+  test('sends usage hint and does not dispatch when prompt is empty', async () => {
+    const spy = makeSpy({})
+    const result = await handleSlash(spy.deps, { kind: 'think', prompt: '' }, 50)
+    expect(result).toBeUndefined()
+    expect(spy.sendCalls[0].text).toMatch(/use \/think/i)
+  })
+})
+
+describe('/ultrathink', () => {
+  test('forwards prompt with "Ultrathink" directive appended', async () => {
+    const spy = makeSpy({})
+    const result = await handleSlash(spy.deps, { kind: 'ultrathink', prompt: 'design a schema' }, 51)
+    expect(result).toBeTypeOf('string')
+    expect(result as string).toContain('design a schema')
+    expect(result as string).toMatch(/ultrathink/i)
+    expect(spy.sendCalls).toHaveLength(0)
+  })
+
+  test('sends usage hint and does not dispatch when prompt is empty', async () => {
+    const spy = makeSpy({})
+    const result = await handleSlash(spy.deps, { kind: 'ultrathink', prompt: '' }, 51)
+    expect(result).toBeUndefined()
+    expect(spy.sendCalls[0].text).toMatch(/use \/ultrathink/i)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// /plan and /exit-plan
+// ---------------------------------------------------------------------------
+
+describe('/plan', () => {
+  test('forwards "Enter plan mode and plan: <task>" with prompt', async () => {
+    const spy = makeSpy({})
+    const result = await handleSlash(spy.deps, { kind: 'plan', prompt: 'refactor auth' }, 60)
+    expect(result).toBeTypeOf('string')
+    expect(result as string).toMatch(/enter plan mode/i)
+    expect(result as string).toContain('refactor auth')
+    expect(spy.sendCalls).toHaveLength(0)
+  })
+
+  test('forwards bare "Enter plan mode." when prompt is empty', async () => {
+    const spy = makeSpy({})
+    const result = await handleSlash(spy.deps, { kind: 'plan', prompt: '' }, 60)
+    expect(result).toBeTypeOf('string')
+    expect(result as string).toMatch(/enter plan mode/i)
+    expect(result as string).not.toContain(':')
+    expect(spy.sendCalls).toHaveLength(0)
+  })
+})
+
+describe('/exit-plan', () => {
+  test('forwards exit instruction', async () => {
+    const spy = makeSpy({})
+    const result = await handleSlash(spy.deps, { kind: 'exit-plan' }, 61)
+    expect(result).toBeTypeOf('string')
+    expect(result as string).toMatch(/exit plan mode/i)
+    expect(spy.sendCalls).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // /usage
 // ---------------------------------------------------------------------------
 
@@ -258,80 +336,6 @@ describe('/blocked', () => {
 
 // ---------------------------------------------------------------------------
 // /unknown-slash (pass-through)
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// formatTokenCount
-// ---------------------------------------------------------------------------
-
-describe('formatTokenCount', () => {
-  test.each<[number, string]>([
-    [0, '0'],
-    [999, '999'],
-    [1_000, '1K'],
-    [1_500, '2K'],
-    [1_000_000, '1.0M'],
-    [1_234_567, '1.2M'],
-    [1_000_000_000, '1.0B'],
-    [5_700_000_000, '5.7B'],
-  ])('%d → %s', (n, expected) => {
-    expect(formatTokenCount(n)).toBe(expected)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// formatUsage
-// ---------------------------------------------------------------------------
-
-describe('formatUsage', () => {
-  test('shows "unknown" when lastComputedDate is absent', () => {
-    const stats: StatsCache = {}
-    expect(formatUsage(stats)).toContain('unknown')
-  })
-
-  test('includes lastComputedDate in header', () => {
-    const stats: StatsCache = { lastComputedDate: '2026-05-01' }
-    expect(formatUsage(stats)).toContain('2026-05-01')
-  })
-
-  test('formats model token totals', () => {
-    const stats: StatsCache = {
-      lastComputedDate: '2026-05-01',
-      modelUsage: {
-        'claude-opus-4-6': { inputTokens: 100_000, outputTokens: 200_000, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
-      },
-    }
-    const out = formatUsage(stats)
-    expect(out).toContain('opus-4-6')
-    expect(out).toContain('300K')
-  })
-
-  test('strips date suffix from model name', () => {
-    const stats: StatsCache = {
-      modelUsage: {
-        'claude-haiku-4-5-20251001': { inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 1_000, cacheCreationInputTokens: 0 },
-      },
-    }
-    const out = formatUsage(stats)
-    expect(out).toContain('haiku-4-5')
-    expect(out).not.toContain('20251001')
-  })
-
-  test('shows totalMessages and totalSessions when present', () => {
-    const stats: StatsCache = { totalMessages: 12345, totalSessions: 67 }
-    const out = formatUsage(stats)
-    expect(out).toContain('12,345')
-    expect(out).toContain('67')
-  })
-
-  test('omits totals section when both are absent', () => {
-    const stats: StatsCache = { lastComputedDate: '2026-05-01' }
-    const out = formatUsage(stats)
-    expect(out).not.toContain('Total messages')
-    expect(out).not.toContain('Total sessions')
-  })
-})
-
 // ---------------------------------------------------------------------------
 
 describe('/unknown-slash', () => {

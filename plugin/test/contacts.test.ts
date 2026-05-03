@@ -400,6 +400,29 @@ describe("principals — isContactPermissioned (#66 Option A)", () => {
   });
 });
 
+describe("contacts — isContactTrustedForContent (capability-aware redaction gate)", () => {
+  test("returns true for subscriber (caps include '*')", () => {
+    access.recordContactPair(access.DEFAULT_AGENT_ID, 42, "Alice");
+    expect(access.isContactTrustedForContent(access.DEFAULT_AGENT_ID, 42)).toBe(true);
+  });
+
+  test("returns false for no-permissions role (caps = [])", () => {
+    access.setContactRole(access.DEFAULT_AGENT_ID, 42, "no-permissions");
+    expect(access.isContactTrustedForContent(access.DEFAULT_AGENT_ID, 42)).toBe(false);
+    // But isContactPermissioned still returns true — record exists.
+    expect(access.isContactPermissioned(access.DEFAULT_AGENT_ID, 42)).toBe(true);
+  });
+
+  test("returns true for family-member (chat + low_stakes_*)", () => {
+    access.setContactRole(access.DEFAULT_AGENT_ID, 42, "family-member");
+    expect(access.isContactTrustedForContent(access.DEFAULT_AGENT_ID, 42)).toBe(true);
+  });
+
+  test("returns false for unknown contact (no record)", () => {
+    expect(access.isContactTrustedForContent(access.DEFAULT_AGENT_ID, 999)).toBe(false);
+  });
+});
+
 describe("principals — hasAnyPermissionedContact", () => {
   test("false when both layers are empty (fresh install)", () => {
     expect(access.hasAnyPermissionedContact(access.DEFAULT_AGENT_ID)).toBe(false);

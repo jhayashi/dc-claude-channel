@@ -17,9 +17,9 @@ function makeMsg(over: Partial<Message> = {}): Message {
   }
 }
 
-// Permissioned contact 11; everyone else unpermissioned.
+// Trusted-for-content contact 11; everyone else (incl. no-permissions) untrusted.
 const deps: TrustFilterDeps = {
-  isContactPermissioned: (id) => id === 11,
+  isContactTrustedForContent: (id) => id === 11,
 }
 
 describe('formatHistoryLine — permissioned senders', () => {

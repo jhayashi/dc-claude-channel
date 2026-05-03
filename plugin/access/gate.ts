@@ -33,7 +33,17 @@ import type { CapabilityDecision } from "./capabilities.js";
 
 export interface GateDeps {
   agentId: string;
-  firstPermissionedContact: (chatId: number) => number | null;
+  /**
+   * Resolves the default originator for a tool call when
+   * `requestor_contact_id` is not declared. Wired in server.ts to
+   * consult the per-chat current-driver tracker (the actual message
+   * sender, when a message is in flight) before falling back to the
+   * chat's pairing contact. Pre-fix this was just
+   * `firstPermissionedContact` (always the pairing contact), which
+   * meant role tiers below subscriber didn't actually enforce unless
+   * the subagent self-declared the requestor.
+   */
+  defaultOriginator: (chatId: number) => number | null;
   evaluateCapability: (agentId: string, originator: number | null, required: string | null | undefined) => CapabilityDecision;
   getChatContacts: (chatId: number) => Promise<number[]>;
   logf?: (fmt: string, ...args: unknown[]) => void;
@@ -135,8 +145,9 @@ export async function applyCapabilityGate(
   const { requestor_contact_id: requestorRaw, ...scrubbed } = args;
   const scrubbedArgs: Record<string, unknown> = scrubbed;
 
-  // Default originator: chat's pairing contact.
-  let originator: number | null = deps.firstPermissionedContact(chatId);
+  // Default originator: the actual message sender (for in-flight turns)
+  // or the chat's pairing contact (synthetic / scheduled / collect calls).
+  let originator: number | null = deps.defaultOriginator(chatId);
 
   // Resolve `requestor_contact_id` if declared.
   if (requestorRaw !== undefined && requestorRaw !== null) {

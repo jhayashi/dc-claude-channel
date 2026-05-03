@@ -7,12 +7,18 @@
  * SubagentCache.evictChat, and bindings.clearSessionId.
  */
 
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import * as agents from './agents.js'
 import * as bindings from './bindings.js'
 import type { SlashCommand } from './slash-router.js'
+import {
+  loadUsageReport, formatUsageReport,
+  loadStatsCacheIfFresh, lastNDays, renderDailyTokensSVG,
+  localDateString, startOfDay, reportToDailyEntry, mergeDailyEntries,
+} from './usage-aggregator.js'
+import { Resvg } from '@resvg/resvg-js'
 
 export interface SlashDeps {
   send: (chatId: number, text: string) => Promise<unknown>
@@ -20,6 +26,8 @@ export interface SlashDeps {
   logf: (fmt: string, ...args: unknown[]) => void
   /** Best-effort badge refresh after model change. */
   refreshIcon?: (chatId: number, agentId: string) => void
+  /** Send a file attachment (e.g. usage chart PNG). Optional — handler degrades to text-only when absent. */
+  sendAttachment?: (chatId: number, filePath: string, caption?: string) => Promise<unknown>
   /** Overrides process.cwd() for tests and multi-project setups. */
   projectCwd?: string
   /** Directly overrides the resolved memory directory (tests only). */
@@ -113,9 +121,33 @@ export async function handleSlash(
       return 'Compact our conversation: summarize the key context from this session so we can continue with a smaller context window.'
 
     case 'usage': {
-      await handleUsage(send, chatId, logf)
+      await handleUsage(deps, chatId)
       return
     }
+
+    case 'think': {
+      if (!cmd.prompt) {
+        await send(chatId, 'Use /think <your question> to engage extended thinking.').catch(() => {})
+        return
+      }
+      return `${cmd.prompt}\n\nThink hard before responding.`
+    }
+
+    case 'ultrathink': {
+      if (!cmd.prompt) {
+        await send(chatId, 'Use /ultrathink <your question> for maximum extended thinking.').catch(() => {})
+        return
+      }
+      return `${cmd.prompt}\n\nUltrathink before responding.`
+    }
+
+    case 'plan':
+      return cmd.prompt
+        ? `Enter plan mode and plan: ${cmd.prompt}`
+        : 'Enter plan mode.'
+
+    case 'exit-plan':
+      return 'Exit plan mode and proceed with the approved plan.'
 
     case 'blocked':
       await send(chatId, `/${cmd.cmd} isn't available in chat. Try /help.`).catch(() => {})
@@ -139,6 +171,10 @@ const HELP_TEXT = `Available commands:
 /model <haiku|sonnet|opus> — switch the bound agent's model
 /compact — compact conversation context
 /usage — show account token usage
+/think <question> — engage extended thinking before responding
+/ultrathink <question> — engage maximum extended thinking
+/plan [task] — enter plan mode (no changes until you approve)
+/exit-plan — exit plan mode and execute the approved plan
 /memory — show memory index
 /memory show <key> — show a specific memory entry
 /mcp — list configured MCP servers
@@ -204,69 +240,51 @@ async function handleMemoryShow(
 // /usage
 // ---------------------------------------------------------------------------
 
-
-interface ModelUsageEntry {
-  inputTokens: number
-  outputTokens: number
-  cacheReadInputTokens: number
-  cacheCreationInputTokens: number
-}
-
-export interface StatsCache {
-  lastComputedDate?: string
-  totalSessions?: number
-  totalMessages?: number
-  modelUsage?: Record<string, ModelUsageEntry>
-}
+const USAGE_WINDOW_DAYS = 7
+const STATS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 async function handleUsage(
-  send: SlashDeps['send'],
+  deps: SlashDeps,
   chatId: number,
-  logf: SlashDeps['logf'],
 ): Promise<void> {
-  const statsPath = join(homedir(), '.claude', 'stats-cache.json')
+  const { send, logf } = deps
+  const projectsDir = join(homedir(), '.claude', 'projects')
+  const since = new Date(Date.now() - USAGE_WINDOW_DAYS * 86_400_000)
   try {
-    const raw = await readFile(statsPath, 'utf8')
-    const stats = JSON.parse(raw) as StatsCache
-    await send(chatId, formatUsage(stats)).catch(() => {})
+    const report = await loadUsageReport(projectsDir, since)
+    await send(chatId, formatUsageReport(report)).catch(() => {})
   } catch (err: unknown) {
-    if (isEnoent(err)) {
-      await send(chatId, 'No usage data found.').catch(() => {})
-    } else {
-      logf('slash: usage read failed chat=%d: %v', chatId, err)
-      await send(chatId, 'Could not read usage data.').catch(() => {})
+    logf('slash: usage read failed chat=%d: %v', chatId, err)
+    await send(chatId, 'Could not read usage data.').catch(() => {})
+    return
+  }
+
+  // If the CLI's stats cache is fresh (within 24h) AND we can send
+  // attachments, follow up with a per-day chart of the last 7 days. The
+  // cache stops at lastComputedDate (often "yesterday"), so we augment it
+  // with today's totals computed from transcripts.
+  if (!deps.sendAttachment) return
+  try {
+    const cachePath = join(homedir(), '.claude', 'stats-cache.json')
+    const cache = await loadStatsCacheIfFresh(cachePath, STATS_CACHE_MAX_AGE_MS)
+    if (!cache?.dailyModelTokens?.length) return
+
+    let series = cache.dailyModelTokens
+    const todayReport = await loadUsageReport(projectsDir, startOfDay())
+    if (todayReport.totalMessages > 0) {
+      series = mergeDailyEntries(series, reportToDailyEntry(localDateString(), todayReport))
     }
+    series = lastNDays(series, USAGE_WINDOW_DAYS)
+    if (!series.length) return
+
+    const svg = renderDailyTokensSVG(series)
+    const png = new Resvg(svg).render().asPng()
+    const pngPath = join(tmpdir(), `dc-usage-chart-${chatId}.png`)
+    await writeFile(pngPath, png)
+    await deps.sendAttachment(chatId, pngPath).catch(() => {})
+  } catch (err) {
+    logf('slash: usage chart failed chat=%d: %v', chatId, err)
   }
-}
-
-export function formatUsage(stats: StatsCache): string {
-  const lines: string[] = [`Usage (as of ${stats.lastComputedDate ?? 'unknown'})`]
-
-  const usage = stats.modelUsage ?? {}
-  const entries = Object.entries(usage)
-  if (entries.length > 0) {
-    lines.push('')
-    for (const [model, m] of entries) {
-      const total = m.inputTokens + m.outputTokens + m.cacheReadInputTokens + m.cacheCreationInputTokens
-      const label = model.replace('claude-', '').replace(/-\d{8}$/, '')
-      lines.push(`${label}: ${formatTokenCount(total)} tokens`)
-    }
-  }
-
-  if (stats.totalMessages || stats.totalSessions) {
-    lines.push('')
-    if (stats.totalMessages) lines.push(`Total messages: ${stats.totalMessages.toLocaleString()}`)
-    if (stats.totalSessions) lines.push(`Total sessions: ${stats.totalSessions.toLocaleString()}`)
-  }
-
-  return lines.join('\n')
-}
-
-export function formatTokenCount(n: number): string {
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
-  return `${n}`
 }
 
 // ---------------------------------------------------------------------------

@@ -25,6 +25,7 @@ export const ROLES = {
   "family-member": ["chat", "low_stakes_*"],
   "untrusted-agent": ["chat"],
   guest: ["chat"],
+  "no-permissions": [],
 } as const satisfies Record<string, readonly string[]>;
 
 export type Role = keyof typeof ROLES;

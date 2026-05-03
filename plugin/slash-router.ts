@@ -19,6 +19,10 @@ export type SlashCommand =
   | { kind: 'model'; tier: 'haiku' | 'sonnet' | 'opus' | null }
   | { kind: 'compact' }
   | { kind: 'usage' }
+  | { kind: 'think'; prompt: string }
+  | { kind: 'ultrathink'; prompt: string }
+  | { kind: 'plan'; prompt: string }
+  | { kind: 'exit-plan' }
   | { kind: 'blocked'; cmd: string }
   | { kind: 'unknown-slash'; cmd: string; args: string }
 
@@ -79,7 +83,16 @@ export function classifySlash(text: string): SlashCommand | null {
     case 'compact':
       return { kind: 'compact' }
     case 'usage':
+    case 'cost':
       return { kind: 'usage' }
+    case 'think':
+      return { kind: 'think', prompt: rest }
+    case 'ultrathink':
+      return { kind: 'ultrathink', prompt: rest }
+    case 'plan':
+      return { kind: 'plan', prompt: rest }
+    case 'exit-plan':
+      return { kind: 'exit-plan' }
     default:
       if (BLOCKED_SLASHES.has(cmd)) return { kind: 'blocked', cmd }
       return { kind: 'unknown-slash', cmd, args: rest }

@@ -1,5 +1,9 @@
 [test]
 root = "./test"
+# Safety net: redirect contacts/principals dirs to tmp before any test
+# imports access modules. Tests that forget to setContactsAgentsDir
+# silently fail safe instead of corrupting ~/.claude/channels/deltachat/.
+preload = ["./test/_preload.ts"]
 # Tier-1 WebXDC harness (test/webxdc/) uses *.pw.ts filenames which bun's
 # default matcher (*.{test,spec}.{js,ts,tsx}) ignores. Playwright has its
 # own config (test/webxdc/playwright.config.ts) picking those up. Run

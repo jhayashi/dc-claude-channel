@@ -756,7 +756,7 @@ const socketServer = new SocketServer({
         requiredCapabilityFor(frame.tool),
         {
           agentId: access.DEFAULT_AGENT_ID,
-          firstPermissionedContact: access.firstPermissionedContact,
+          defaultOriginator: defaultOriginatorFor,
           evaluateCapability: access.evaluateCapability,
           getChatContacts: (id) => client.getChatContacts(id),
           logf,
@@ -1166,6 +1166,32 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     ...apps.flatMap(a => a.tools()).map(withRequestorParam),
   ],
 }))
+
+/**
+ * v1.3 — current-driver tracking for the capability gate.
+ *
+ * When a real inbound message triggers a subagent turn, we record the
+ * sender's contact id here so the gate's default originator becomes the
+ * actual sender — NOT the chat's pairing contact. This makes role
+ * tiers (family-member, untrusted-agent, guest) actually enforce
+ * differently from subscriber, instead of relying on the subagent to
+ * self-declare `requestor_contact_id`.
+ *
+ * Set in `runSubagentTurn` around the `subagentCache.dispatch` call;
+ * cleared in finally. Synthetic / scheduler / `dispatchAndCollect`
+ * paths don't touch this map — they fall through to the chat's pairing
+ * contact (the previous default), which is the correct semantic for
+ * non-message-triggered runs.
+ *
+ * Subagent runs are serialized per chat by the cache, so a single
+ * Map<chatId, contactId> is race-free.
+ */
+const _currentDriver = new Map<number, number>()
+function defaultOriginatorFor(chatId: number): number | null {
+  const driver = _currentDriver.get(chatId)
+  if (driver !== undefined) return driver
+  return access.firstPermissionedContact(chatId)
+}
 
 /**
  * v1.3 slice 3 — tool name → required capability lookup. Built lazily
@@ -1656,7 +1682,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         // operator has a record of when untrusted content reached the
         // agent's context. (#66 / v1.2.2.)
         let unpermissionedRevealed = 0
-        const trustDeps = { isContactPermissioned: (id: number) => access.isContactPermissioned(access.DEFAULT_AGENT_ID, id) }
+        const trustDeps = { isContactTrustedForContent: (id: number) => access.isContactTrustedForContent(access.DEFAULT_AGENT_ID, id) }
         const lines = messages.map(m => {
           const r = formatHistoryLine(m, trustDeps, { includeUnpermissioned })
           if (r.revealedUnpermissioned) unpermissionedRevealed++
@@ -1754,7 +1780,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         // by default. Owner-relayed download intent → opt-in. (#66 / v1.2.2.)
         const decision = evaluateAttachmentDownload(
           msg.fromId,
-          { isContactPermissioned: (id: number) => access.isContactPermissioned(access.DEFAULT_AGENT_ID, id) },
+          { isContactTrustedForContent: (id: number) => access.isContactTrustedForContent(access.DEFAULT_AGENT_ID, id) },
           includeUnpermissionedDl,
         )
         if (!decision.proceed) {
@@ -2682,6 +2708,7 @@ async function main(): Promise<void> {
 
   const dispatcherDeps = {
     send: (chatId: number, text: string) => client.send(chatId, text),
+    sendAttachment: (chatId: number, filePath: string, caption?: string) => client.sendAttachment(chatId, filePath, caption),
     evictChat: (chatId: number) => subagentCache.evictChat(chatId),
     refreshIcon: refreshAgentIcon,
     logf,
@@ -2792,6 +2819,12 @@ async function main(): Promise<void> {
         logf('reaction: cold-start react failed chat=%d msg=%d: %v', chatId, msg.id, err),
       )
     }
+    // Record the message sender as the current driver for this chat so
+    // the capability gate runs against THEIR caps (not the chat owner's)
+    // for every tool call the subagent makes during this turn.
+    if (msg.fromId && msg.fromId > 0) {
+      _currentDriver.set(chatId, msg.fromId)
+    }
     try {
       const result = await subagentCache.dispatch(chatId, formatSubagentInput(enrichedMsg))
       logf('subagent: chat=%d result.text=%s denials=%d', chatId, (result.text ?? '').slice(0, 500).replace(/\n/g, ' '), result.denials.length)
@@ -2810,6 +2843,7 @@ async function main(): Promise<void> {
       await client.send(chatId, `\u26a0\ufe0f Internal error: ${err}`).catch(() => {})
     } finally {
       activityReactor.clearTurnTarget(chatId)
+      _currentDriver.delete(chatId)
     }
   }
 
@@ -2945,13 +2979,17 @@ async function main(): Promise<void> {
       // guarantees this chat has at least one permissioned member; the
       // membership-derived populateAllowlistFromMembership ensures
       // msg.fromId is permissioned-and-in-this-chat is the common case.
-      // We still check isContactPermissioned because a chat may also have
-      // unpermissioned third parties (the chat-24 family-member shape).
-      if (access.isContactPermissioned(access.DEFAULT_AGENT_ID, msg.fromId)) return true
-      // Unpermissioned contact: silently ignore. The router logs so the
-      // operator can see drops for debugging. Their content remains
-      // visible via dc_chat_history (tagged [UNPERMISSIONED]) so the
-      // chat's other principals can choose to act on it.
+      // We still gate by caps (not just record-existence) because a
+      // `no-permissions` contact has a record but empty caps — their
+      // messages must NOT drive a turn (would burn LLM tokens for a
+      // response the gate would also deny). Same applies to chats with
+      // unpermissioned third parties.
+      if (access.getCapabilitiesFor(access.DEFAULT_AGENT_ID, msg.fromId).length > 0) return true
+      // Unpermissioned-or-no-permissions contact: silently ignore. The
+      // router logs so the operator can see drops for debugging. Their
+      // content remains visible via dc_chat_history (tagged
+      // [UNPERMISSIONED]) so the chat's other trusted principals can
+      // choose to act on it.
       return false
     },
     dispatchToSubagent: async (msg) => {

@@ -112,6 +112,27 @@ export function hasAnyPermissionedContact(agentId: string): boolean {
 }
 
 /**
+ * Trust-filter predicate for inbound message content (chat history,
+ * attachments). Stricter than `isContactPermissioned`: requires a
+ * non-empty capability set, so a `no-permissions` contact (caps = `[]`)
+ * has their content redacted from the subagent's view, just like a
+ * fully unpaired sender.
+ *
+ * Why split this from `isContactPermissioned`:
+ *   - `isContactPermissioned` answers "does this contact have a record?" —
+ *     used by the auth gate that routes messages and runs the per-tool
+ *     capability check.
+ *   - `isContactTrustedForContent` answers "should the agent see what
+ *     this contact wrote?" — the prompt-injection question. A
+ *     `no-permissions` contact is paired (record exists) but
+ *     untrusted-for-content (caps empty), so the trust filter must
+ *     redact them.
+ */
+export function isContactTrustedForContent(agentId: string, contactId: number): boolean {
+  return getCapabilitiesFor(agentId, contactId).length > 0;
+}
+
+/**
  * Resolved capability set for a contact (v1.3 slice 1).
  *
  * Resolution order (the empty-array case matters — pre-fix the prior

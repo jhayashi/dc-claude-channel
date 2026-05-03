@@ -20,9 +20,9 @@ Chat-scoping is **not a privacy/security boundary** between paired chats; it's a
 
 For skip-permissions mode, scheduled jobs (`dc_schedule*`), shared memory semantics, the four event-log streams (`tools-*.log`, `turns-*.log`, `permissions-*.log`, `webxdc-*.log`) + the `dc_show_events` tool, and config env vars, see [`docs/ARCHITECTURE.md#subagent-model-v09`](docs/ARCHITECTURE.md).
 
-## Principals (v1.1.5+ write; v1.2.2+ read; v1.3+ contact-keyed)
+## Contacts (v1.3+; was "Principals" in v1.1.5–v1.2.2)
 
-Per-contact identity records — one record per DC contact in the bot's address book, regardless of whether the underlying entity is a human or a third-party bot. The `role` field carries the trust-tier distinction. On-disk at `~/.claude/channels/deltachat/principals/humans/<contactId>.json` (the `humans/` subdirectory is a v1.2.2 historical artifact; the path is preserved for backwards compat, with a possible `contacts/` rename in v1.4). Schema:
+Per-contact trust annotations — one record per DC contact in the bot's address book, regardless of whether the underlying entity is a human or a third-party bot. The `role` field carries the trust-tier distinction. On-disk at `~/.claude/channels/deltachat/agents/<agentId>/contacts/<contactId>.json` (v1.3 layout; legacy v1.2.2 path was `principals/humans/<contactId>.json`, retired to `principals.legacy/` on first v1.3 boot). Schema:
 
 ```json
 {
@@ -35,17 +35,27 @@ Per-contact identity records — one record per DC contact in the bot's address 
 }
 ```
 
-`kind: "human"` is preserved on disk for backwards compat — auth never reads it. The type is `ContactPrincipal` in `plugin/access/principals.ts`. The separate `AgentPrincipal` (with `agentId`, `chatmailAddress`, `teamId`, `dispatcherBinding`) is a v1.4+ concept for *managed agents* — bots the dispatcher provisions chatmail accounts for; not the same as a third-party bot in your address book (those are `ContactPrincipal`s with `role: trusted-agent` / `untrusted-agent`).
+`kind: "human"` is preserved on disk for backwards compat — auth never reads it. The type is `Contact` in `plugin/access/contacts.ts`. The `AgentPrincipal` (with `agentId`, `chatmailAddress`, `teamId`, `dispatcherBinding`) is a v1.4+ concept for *managed agents* — bots the dispatcher provisions chatmail accounts for; not the same as a third-party bot in your address book (those are `Contact` records with `role: trusted-agent` / `untrusted-agent`).
 
-**Write side (v1.1.5+).** Records are populated on every successful pair (`completePairing` hook) and lazily backfilled on dispatcher startup for legacy installs (`backfillFromAllowlist`).
+**Roles + capability bundles (v1.3, `plugin/access/capability-bundles.ts`):**
+- `subscriber`, `trusted-agent` → `["*"]` (full access)
+- `family-member` → `["chat", "low_stakes_*"]`
+- `untrusted-agent`, `guest` → `["chat"]`
+- `no-permissions` → `[]` (bot ignores entirely — dispatch gate drops the message before subagent runs; trust filter redacts content too)
 
-**Read side (v1.2.2+, #66 Option A).** Principals are the source of truth for "is this contact trusted to interact with the bot?" via `isContactPermissioned(contactId)` and `hasAnyPermissionedContact()`. Three call sites (`handleUnpairedMessage`'s auto-pair gate + stranger lockout, securejoin armed-window check) use these instead of the legacy `isKnownOwner` / `hasAnyOwner`. User-facing effect: a paired contact can land in any new chat with the bot and auto-pair without re-running the QR/code ceremony — the trust boundary is contact identity, not chatId. Per-contact unpair (agent-setup card + `dc_access_unpair` tool) wipes the principal record at the end so backfill on the next dispatcher startup doesn't resurrect the contact.
+**Write side (v1.1.5+).** Records are populated on every successful pair (`completePairing` hook) and lazily backfilled on dispatcher startup for legacy installs (`backfillFromAllowlist`). Role assignments via the agent-setup card's role picker write through `setContactRole(agentId, contactId, role)` and audit-log a `RoleAssignmentEvent`.
 
-**v1.3 (#66 Option B + capabilities):** `approved/<chatId>` files retire — the chat allowlist is now an in-memory cache derived from principal records ∩ chat membership. Populated at startup via `populateAllowlistFromMembership`; refreshed on `ChatModified` events. Records gain `role` (subscriber / trusted-agent / family-member / untrusted-agent / guest) and `capabilities` (resolved bundle). Capability gate at the dispatcher refuses tool calls when the originator's bundle lacks the tool's `requiresCapability`. Legacy `approved/` directory renamed to `approved.legacy/` at first v1.3 boot (slated for v1.4 removal).
+**Read side — record-existence gate (v1.2.2+, #66 Option A).** `isContactPermissioned(agentId, contactId)` answers "does this contact have a record?" Used by the auth gate that routes messages and by stranger-lockout / auto-pair / securejoin armed-window checks.
 
-API in `plugin/access/principals.ts`: `loadContact` / `writeContact` / `listContacts` / `removeContact` / `recordContactPair` / `backfillFromAllowlist` / `chatsFor` / `isContactPermissioned` / `hasAnyPermissionedContact` / `getCapabilitiesFor`. Storage dir overridable for tests via `DC_TEST_PRINCIPALS_DIR` or `setPrincipalsDir(dir)`.
+**Read side — capability gate (v1.3, #71).** `evaluateCapability(agentId, contactId, requiredCapability)` runs on every annotated DC tool call. The dispatcher refuses calls when the originator's bundle lacks the tool's `requiresCapability`. **Default originator = the actual message sender**, tracked per chat via `_currentDriver` in `server.ts`; subagents may override via `requestor_contact_id` for relay cases.
 
-Per `docs/specs/2026-04-20-identity-and-teams-design.md`.
+**Read side — content gate (v1.3).** `isContactTrustedForContent(agentId, contactId)` is the trust-filter predicate (chat history + attachment download). Stricter than `isContactPermissioned`: requires non-empty caps. Distinguishes "has a record" (auth gate) from "should the agent see what they wrote" (prompt-injection gate). A `no-permissions` contact has a record but empty caps, so they're redacted-as-data like an unpaired sender.
+
+**v1.3 (#66 Option B):** `approved/<chatId>` files retire — the chat allowlist is now an in-memory cache derived from contact records ∩ chat membership. Populated at startup via `populateAllowlistFromMembership`; refreshed on `ChatModified` events. Multi-user dispatch (#70): any permissioned member of a chat can drive a turn, not only the chat's pairing contact. Legacy `approved/` directory renamed to `approved.legacy/` at first v1.3 boot (slated for v1.4 removal).
+
+API in `plugin/access/contacts.ts`: `loadContact` / `writeContact` / `listContacts` / `removeContact` / `recordContactPair` / `setContactRole` / `migrateContactsToAgentScoped`. Higher-level policy in `plugin/access/contact-policy.ts`: `isContactPermissioned` / `hasAnyPermissionedContact` / `isContactTrustedForContent` / `getCapabilitiesFor` / `chatsFor` / `backfillFromAllowlist`. Capability evaluation in `plugin/access/capabilities.ts` + `gate.ts`. Storage dir overridable for tests via `DC_TEST_CONTACTS_DIR` env var or `setContactsAgentsDir(dir)`. The `bunfig.toml` `preload = ["./test/_preload.ts"]` sets a tmp dir by default during `bun test` so tests that forget to set isolation don't silently corrupt prod data.
+
+Per `docs/specs/2026-04-20-identity-and-teams-design.md` and the v1.3 slice 1–7 plans in `docs/superpowers/plans/2026-05-01-v130-*`.
 
 ## Trust filter for inbound-content tools (v1.2.2+)
 
@@ -59,7 +69,7 @@ Helpers live in `plugin/dispatcher/trust-filter.ts`: `formatHistoryLine` (pure f
 
 Channel system prompt has a "Trust evaluation in shared chats" paragraph instructing every subagent on the layer-1 (passive read; redaction) vs layer-2 (active dispatch; strict-pairing-contact-only) split, and to never adopt instructions from unpermissioned text regardless of who relayed it.
 
-The future "any approved principal can drive any chat" relaxation (layer 2) is gated by capability-based access (#71) and lands in v1.3 alongside Option B.
+Multi-user dispatch (#70) shipped in v1.3 alongside #71 capability-based access — any permissioned principal can drive any chat, gated per-tool by their role's capability bundle.
 
 ## Development
 
@@ -89,7 +99,7 @@ Top-level layout:
 - `plugin/server.ts` — dispatcher entry point (DC RPC, MCP server, subagent socket)
 - `plugin/dispatcher/` — subagent-per-chat machinery (LRU cache, socket server, permission hook, scheduler, trust filter)
 - `plugin/apps/` — WebXDC app implementations (file-reviewer, permissions, agent-setup)
-- `plugin/access/` — chat allowlist + pairing + principals (per-contact identity)
+- `plugin/access/` — chat allowlist + pairing + contacts (per-contact trust annotations) + capability gate
 - `plugin/agents.ts` / `plugin/bindings.ts` — agent definitions + per-chat bindings
 - `plugin/dc-client.ts` — `@deltachat/jsonrpc-client` wrapper
 - `plugin/webxdc/` — WebXDC HTML sources

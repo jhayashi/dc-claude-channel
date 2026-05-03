@@ -40,15 +40,6 @@ describe('computeEmoji tool classes', () => {
     expect(computeEmoji('WebSearch', {})).toEqual({ cls: 'web', emoji: '\u{1F310}' })
   })
 
-  test('EnterPlanMode / ExitPlanMode → thinking class (#65 merge)', () => {
-    const r1 = computeEmoji('EnterPlanMode', {})!
-    const r2 = computeEmoji('ExitPlanMode', {})!
-    expect(r1.cls).toBe('thinking')
-    expect(thinkingSet.has(r1.emoji)).toBe(true)
-    expect(r2.cls).toBe('thinking')
-    expect(thinkingSet.has(r2.emoji)).toBe(true)
-  })
-
   test('Agent / Task → 🤝', () => {
     expect(computeEmoji('Agent', {})).toEqual({ cls: 'delegating', emoji: '\u{1F91D}' })
     expect(computeEmoji('Task', {})).toEqual({ cls: 'delegating', emoji: '\u{1F91D}' })
@@ -235,7 +226,7 @@ describe('createActivityReactor', () => {
     reactor.reactForTool(1, 'Read', {})
     reactor.reactForTool(1, 'Grep', {})
     reactor.reactForTool(1, 'Glob', {})
-    reactor.reactForTool(1, 'EnterPlanMode', {})
+    reactor.reactForTool(1, 'Read', {})
     await new Promise((r) => setTimeout(r, 0))
     expect(calls).toHaveLength(1)
     expect(isThinking(calls[0].emoji)).toBe(true)

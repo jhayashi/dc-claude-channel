@@ -8,7 +8,7 @@ import { applyCapabilityGate, withRequestorParam } from "../access/gate.js";
 function makeDeps(overrides: Partial<GateDeps> = {}): GateDeps {
   return {
     agentId: 'claude-code',
-    firstPermissionedContact: () => 50, // default subscriber
+    defaultOriginator: () => 50, // default subscriber
     evaluateCapability: () => ({
       required: "chat",
       originatorCapabilities: ["*"],
@@ -33,7 +33,7 @@ function decision(
 describe("applyCapabilityGate — allow paths", () => {
   test("default originator (pairing contact), capability covered → allow", async () => {
     const result = await applyCapabilityGate(7, "dc_send_file", {}, "private_data_write", makeDeps({
-      firstPermissionedContact: () => 50,
+      defaultOriginator: () => 50,
       evaluateCapability: (_agentId, id, req) => {
         expect(id).toBe(50);
         expect(req).toBe("private_data_write");
@@ -50,7 +50,7 @@ describe("applyCapabilityGate — allow paths", () => {
 
   test("declared requestor_contact_id (member), capability covered → allow with requestor as originator", async () => {
     const result = await applyCapabilityGate(7, "dc_send", { requestor_contact_id: "200" }, "chat", makeDeps({
-      firstPermissionedContact: () => 50,
+      defaultOriginator: () => 50,
       getChatContacts: async () => [1, 50, 200],
       evaluateCapability: (_agentId, id) => {
         expect(id).toBe(200); // gate uses declared requestor, not pairing contact
@@ -131,7 +131,7 @@ describe("applyCapabilityGate — capability_invalid_requestor", () => {
 
   test("null requestor_contact_id is treated as absent (default originator path)", async () => {
     const result = await applyCapabilityGate(7, "dc_send", { requestor_contact_id: null }, "chat", makeDeps({
-      firstPermissionedContact: () => 50,
+      defaultOriginator: () => 50,
       evaluateCapability: () => decision(["*"], "chat", "allow"),
     }));
     // null acts as "not declared" — fall through to pairing contact.
@@ -157,7 +157,7 @@ describe("applyCapabilityGate — capability_lookup_error", () => {
 
   test("evaluateCapability throws (corrupt principal record)", async () => {
     const result = await applyCapabilityGate(7, "dc_send", {}, "chat", makeDeps({
-      firstPermissionedContact: () => 50,
+      defaultOriginator: () => 50,
       evaluateCapability: () => { throw new Error("schema mismatch in /path/principal/50.json") },
     }));
     expect(result.outcome.kind).toBe("deny");
@@ -174,7 +174,7 @@ describe("applyCapabilityGate — capability_lookup_error", () => {
 describe("applyCapabilityGate — capability_deny", () => {
   test("would_deny propagates as capability_deny with originator + caps", async () => {
     const result = await applyCapabilityGate(7, "dc_send_file", {}, "private_data_write", makeDeps({
-      firstPermissionedContact: () => 200,
+      defaultOriginator: () => 200,
       evaluateCapability: () => decision(["chat", "low_stakes_*"], "private_data_write", "would_deny"),
     }));
     expect(result.outcome.kind).toBe("deny");
@@ -192,7 +192,7 @@ describe("applyCapabilityGate — capability_deny", () => {
     // Pre-fix bug: this case logged subscriber's caps (allow) in tools log
     // but family-member's caps (deny) in permissions log. Now consistent.
     const result = await applyCapabilityGate(7, "dc_send_file", { requestor_contact_id: 200 }, "private_data_write", makeDeps({
-      firstPermissionedContact: () => 50, // subscriber, would have * caps
+      defaultOriginator: () => 50, // subscriber, would have * caps
       getChatContacts: async () => [1, 50, 200],
       evaluateCapability: (_agentId, id) => {
         expect(id).toBe(200); // gate must check requestor's caps, not subscriber's

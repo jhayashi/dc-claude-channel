@@ -333,14 +333,29 @@ describe('contact management handlers', () => {
     try { rmSync(tmpEvents, { recursive: true, force: true }) } catch {}
   })
 
-  function makeCtx(lookupResult: number | null = null): {
+  function makeCtx(
+    lookupResult: number | null = null,
+    chatMembership: Map<number, number[]> = new Map(),
+    contactOverrides: Map<number, { isBot?: boolean; address?: string }> = new Map(),
+    selfAddr: string | null = null,
+  ): {
     ctx: AppContext
     sendWebXDCUpdate: ReturnType<typeof mock>
     lookupContactByAddr: ReturnType<typeof mock>
   } {
     const sendWebXDCUpdate = mock(async () => {})
     const lookupContactByAddr = mock(async (_addr: string) => lookupResult)
-    const client = { sendWebXDCUpdate, lookupContactByAddr } as unknown as AppContext['client']
+    const getContact = mock(async (id: number) => ({
+      displayName: `Contact-${id}`,
+      name: `Contact-${id}`,
+      address: contactOverrides.get(id)?.address ?? `c${id}@example.com`,
+      isVerified: false,
+      isBot: contactOverrides.get(id)?.isBot ?? false,
+    }))
+    const getChats = mock(async () => Array.from(chatMembership.keys()))
+    const getChatContacts = mock(async (chatId: number) => chatMembership.get(chatId) ?? [])
+    const getSelfAddress = mock(async () => selfAddr)
+    const client = { sendWebXDCUpdate, lookupContactByAddr, getContact, getChats, getChatContacts, getSelfAddress } as unknown as AppContext['client']
     const ctx: AppContext = {
       client,
       mcp: {} as unknown as AppContext['mcp'],
@@ -361,7 +376,8 @@ describe('contact management handlers', () => {
   }
 
   function capturedUpdate(sendWebXDCUpdate: ReturnType<typeof mock>): unknown {
-    return JSON.parse(sendWebXDCUpdate.mock.calls[0][1] as string)
+    const raw = JSON.parse(sendWebXDCUpdate.mock.calls[0][1] as string) as { payload: unknown }
+    return raw.payload
   }
 
   function readPermissionsLog(): unknown {
@@ -372,21 +388,66 @@ describe('contact management handlers', () => {
 
   // ── handleListContacts ───────────────────────────────────────────────────
 
-  test('handleListContacts sends contacts_loaded with all contacts', async () => {
-    access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
-    access.recordContactPair(access.DEFAULT_AGENT_ID, 6, 'Bob')
-    const { ctx, sendWebXDCUpdate } = makeCtx()
+  test('handleListContacts returns active members across all bot chats (paired + unpaired)', async () => {
+    access.recordContactPair(access.DEFAULT_AGENT_ID, 50, 'Alice')
+    const { ctx, sendWebXDCUpdate } = makeCtx(null, new Map([
+      [10, [1, 50, 70]], // chat 10: self + paired Alice + unpaired 70
+      [11, [1, 50, 80]], // chat 11: self + Alice + unpaired 80
+    ]))
 
     await handleListContacts(ctx, 99)
 
-    expect(sendWebXDCUpdate).toHaveBeenCalledTimes(1)
-    expect(sendWebXDCUpdate.mock.calls[0][0]).toBe(99)
-    const update = capturedUpdate(sendWebXDCUpdate) as { type: string; contacts: { contactId: number }[] }
+    const update = capturedUpdate(sendWebXDCUpdate) as { type: string; contacts: { contactId: number; role: string | null }[] }
     expect(update.type).toBe('contacts_loaded')
-    expect(update.contacts.map(c => c.contactId).sort()).toEqual([5, 6])
+    const byId = new Map(update.contacts.map(c => [c.contactId, c]))
+    expect(Array.from(byId.keys()).sort((a, b) => a - b)).toEqual([50, 70, 80])
+    expect(byId.get(50)!.role).toBe('subscriber') // paired
+    expect(byId.get(70)!.role).toBe(null) // needs role
+    expect(byId.get(80)!.role).toBe(null) // needs role
   })
 
-  test('handleListContacts with no contacts sends empty array', async () => {
+  test('handleListContacts skips DC reserved system contacts (id ≤ 9)', async () => {
+    const { ctx, sendWebXDCUpdate } = makeCtx(null, new Map([
+      [10, [1, 2, 5, 9, 50]], // self + info + device + reserved + a real contact
+    ]))
+
+    await handleListContacts(ctx, 99)
+
+    const update = capturedUpdate(sendWebXDCUpdate) as { contacts: { contactId: number }[] }
+    expect(update.contacts.map(c => c.contactId)).toEqual([50])
+  })
+
+  test('handleListContacts INCLUDES bots so they can be permissioned', async () => {
+    const { ctx, sendWebXDCUpdate } = makeCtx(
+      null,
+      new Map([[10, [1, 50, 99]]]),
+      new Map([[99, { isBot: true }]]),
+    )
+
+    await handleListContacts(ctx, 99)
+
+    const update = capturedUpdate(sendWebXDCUpdate) as { contacts: { contactId: number; isBot: boolean }[] }
+    const ids = update.contacts.map(c => c.contactId).sort((a, b) => a - b)
+    expect(ids).toEqual([50, 99])
+    // isBot is surfaced so the UI can show a "bot" badge, but doesn't gate inclusion
+    expect(update.contacts.find(c => c.contactId === 99)!.isBot).toBe(true)
+  })
+
+  test('handleListContacts excludes self-as-contact entries by address match', async () => {
+    const { ctx, sendWebXDCUpdate } = makeCtx(
+      null,
+      new Map([[10, [1, 50, 88]]]),
+      new Map([[88, { address: 'bot@example.com' }]]),
+      'bot@example.com',
+    )
+
+    await handleListContacts(ctx, 99)
+
+    const update = capturedUpdate(sendWebXDCUpdate) as { contacts: { contactId: number }[] }
+    expect(update.contacts.map(c => c.contactId)).toEqual([50])
+  })
+
+  test('handleListContacts with no chats sends empty array', async () => {
     const { ctx, sendWebXDCUpdate } = makeCtx()
 
     await handleListContacts(ctx, 99)
@@ -394,6 +455,7 @@ describe('contact management handlers', () => {
     const update = capturedUpdate(sendWebXDCUpdate) as { contacts: unknown[] }
     expect(update.contacts).toEqual([])
   })
+
 
   // ── handleAssignRole ─────────────────────────────────────────────────────
 
@@ -452,13 +514,19 @@ describe('contact management handlers', () => {
     expect(entry.previousRole).toBe('subscriber')
   })
 
-  test('handleAssignRole with unknown contactId is a no-op', async () => {
+  test('handleAssignRole with unpaired contact creates record (Option B)', async () => {
     const { ctx, sendWebXDCUpdate } = makeCtx()
 
     await handleAssignRole(ctx, 99, 999, 'family-member', null)
 
-    expect(sendWebXDCUpdate).not.toHaveBeenCalled()
-    expect(readPermissionsLog()).toBeNull()
+    // Record now exists for the previously-unpaired contact
+    expect(access.loadContact(access.DEFAULT_AGENT_ID, 999)?.role).toBe('family-member')
+    // role_assigned reply was sent so the picker spinner can dismiss
+    expect(sendWebXDCUpdate).toHaveBeenCalledTimes(1)
+    // Audit entry recorded with previousRole=null (no prior record)
+    const entry = readPermissionsLog() as { assignedRole: string; previousRole: string | null }
+    expect(entry.assignedRole).toBe('family-member')
+    expect(entry.previousRole).toBeNull()
   })
 
   test('handleAssignRole with null role is a no-op', async () => {

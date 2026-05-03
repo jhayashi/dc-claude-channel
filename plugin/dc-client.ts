@@ -574,6 +574,18 @@ export class DCClient {
     return await rpc.getChatlistEntries(accountId, null, null, null);
   }
 
+  /**
+   * Every contact in the bot's address book — paired or not. Wraps
+   * `getContactIds(accountId, 0, null)` (no flags = no filtering: every
+   * known contact, excluding blocked ones, excluding self by default).
+   * Used by the contacts UI to surface unpaired contacts alongside
+   * paired ones.
+   */
+  async getContactIds(): Promise<number[]> {
+    const { rpc, accountId } = this.ensureAccount();
+    return await rpc.getContactIds(accountId, 0, null);
+  }
+
   async getFullChat(chatId: number): Promise<{
     id: number
     name: string
@@ -716,6 +728,7 @@ export class DCClient {
     name: string;
     address: string;
     isVerified: boolean;
+    isBot: boolean;
   } | null> {
     const { rpc, accountId } = this.ensureAccount();
     try {
@@ -726,7 +739,18 @@ export class DCClient {
         name: c.name ?? '',
         address: c.address ?? '',
         isVerified: !!c.isVerified,
+        isBot: !!c.isBot,
       };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Bot's own configured email address (from dc-core config). */
+  async getSelfAddress(): Promise<string | null> {
+    const { rpc, accountId } = this.ensureAccount();
+    try {
+      return await rpc.getConfig(accountId, "configured_addr");
     } catch {
       return null;
     }

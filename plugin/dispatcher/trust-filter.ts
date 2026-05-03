@@ -24,8 +24,13 @@ import type { Message } from '../dc-client.js'
 const CONTACT_SELF = 1
 
 export interface TrustFilterDeps {
-  /** Returns true when the contact is a known principal (or legacy chat-allowlist owner). */
-  isContactPermissioned: (contactId: number) => boolean
+  /**
+   * Returns true when the contact's content is safe to expose to the
+   * subagent. Stricter than "is paired" — a `no-permissions` contact
+   * has a record but empty caps, and their messages must be redacted.
+   * Wired to `access.isContactTrustedForContent` in the dispatcher.
+   */
+  isContactTrustedForContent: (contactId: number) => boolean
 }
 
 export interface FormatHistoryLineOptions {
@@ -57,7 +62,7 @@ export function formatHistoryLine(
   const fromId = msg.fromId ?? 0
   // Bot's own outgoing messages: fromId === 0 (missing) or === CONTACT_SELF (1).
   // Both are trivially trusted — they came from us.
-  const permissioned = fromId === 0 || fromId === CONTACT_SELF || deps.isContactPermissioned(fromId)
+  const permissioned = fromId === 0 || fromId === CONTACT_SELF || deps.isContactTrustedForContent(fromId)
   const tag = permissioned ? '[permissioned]' : '[UNPERMISSIONED]'
   const includeUnpermissioned = opts.includeUnpermissioned === true
 
@@ -94,7 +99,7 @@ export function evaluateAttachmentDownload(
   includeUnpermissioned: boolean,
 ): { proceed: true; revealedUnpermissioned: boolean } | { proceed: false; reason: string } {
   const id = fromId ?? 0
-  const permissioned = id === 0 || id === CONTACT_SELF || deps.isContactPermissioned(id)
+  const permissioned = id === 0 || id === CONTACT_SELF || deps.isContactTrustedForContent(id)
   if (permissioned) return { proceed: true, revealedUnpermissioned: false }
   if (!includeUnpermissioned) {
     return {

@@ -22,6 +22,17 @@ describe("capability bundles — bundleFor", () => {
     expect(bundleFor("guest")).toEqual(["chat"]);
   });
 
+  test("no-permissions returns the empty bundle (denied everywhere)", () => {
+    expect(bundleFor("no-permissions")).toEqual([]);
+  });
+
+  test("hasCapability denies everything for the no-permissions bundle", () => {
+    const bundle = bundleFor("no-permissions");
+    for (const cap of ["chat", "private_data_read", "real_world_action", "infrastructure"]) {
+      expect(hasCapability(bundle, cap)).toBe(false);
+    }
+  });
+
   test("unknown role returns guest bundle (fail-safe)", () => {
     expect(bundleFor("nonsense")).toEqual(["chat"]);
   });

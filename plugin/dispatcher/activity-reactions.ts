@@ -9,11 +9,10 @@
  * turn start before any tool fires.
  *
  * Palette (#65, v1.2.2):
- *   thinking   — turn-start indicator AND merged read/plan tools.
- *                Read/Grep/Glob/LS and EnterPlanMode/ExitPlanMode are
- *                indistinguishable from "subagent is figuring something
- *                out" from the user's POV; collapsing them lets the
- *                richer pool stay visible without competing classes.
+ *   thinking   — turn-start indicator AND read tools (Read/Grep/Glob/LS).
+ *                These are indistinguishable from "subagent is figuring
+ *                something out" from the user's POV; collapsing them lets
+ *                the richer pool stay visible without competing classes.
  *   coding     — Edit/Write/MultiEdit/NotebookEdit
  *   running   — Bash
  *   web       — WebFetch/WebSearch
@@ -83,7 +82,6 @@ export function computeEmoji(toolName: string, toolInput: unknown): { cls: strin
   if (READING_TOOLS.has(toolName)) return { cls: 'thinking', emoji: pick(THINKING_EMOJIS) }
   if (toolName === 'Bash') return { cls: 'running', emoji: pick(RUNNING_EMOJIS) }
   if (WEB_TOOLS.has(toolName)) return { cls: 'web', emoji: EMOJI_WEB }
-  if (toolName === 'EnterPlanMode' || toolName === 'ExitPlanMode') return { cls: 'thinking', emoji: pick(THINKING_EMOJIS) }
   if (toolName === 'Agent' || toolName === 'Task') return { cls: 'delegating', emoji: EMOJI_DELEGATING }
   if (toolName === 'TodoWrite') { const e = todoStepEmoji(toolInput); return e ? { cls: `todo-${e}`, emoji: e } : null }
   return null

@@ -590,6 +590,8 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 #paired-devices { display: none; }
 #paired-devices.visible { display: flex; flex-direction: column; max-height: calc(100vh - 40px); }
 #paired-devices .body { flex: 1; overflow-y: auto; min-height: 0; }
+#contacts, #role-picker { display: none; }
+#contacts.visible, #role-picker.visible { display: block; }
 
 .to-row {
   display: flex; align-items: center; gap: 10px;
@@ -1881,7 +1883,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 2.05;
+var APP_VERSION = 2.08;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -4566,12 +4568,14 @@ var ROLE_DISPLAY = {
   'family-member':   { label: 'Family Member',     chipCls: 'role-chip-family',  badgeCls: 'contact-badge-amber',   iconColor: 'var(--amber)' },
   'untrusted-agent': { label: 'Untrusted Contact', chipCls: 'role-chip-untrust', badgeCls: 'contact-badge-faint',   iconColor: 'var(--ink-faint)' },
   'guest':           { label: 'Untrusted Contact', chipCls: 'role-chip-untrust', badgeCls: 'contact-badge-faint',   iconColor: 'var(--ink-faint)' },
+  'no-permissions':  { label: 'No Permissions',    chipCls: 'role-chip-untrust', badgeCls: 'contact-badge-faint',   iconColor: 'var(--ink-faint)' },
 };
 var ROLE_OPTIONS = [
   { id: 'subscriber',      label: 'Subscriber',        caps: '["*"]',                    desc: 'Full access — all agent tools, schedules, and data operations' },
   { id: 'trusted-agent',   label: 'Trusted Agent',     caps: '["*"]',                    desc: 'Automated account with full subscriber privileges' },
   { id: 'family-member',   label: 'Family Member',     caps: '["chat", "low_stakes_*"]', desc: 'Messaging and low-stakes operations — no schedules or infrastructure' },
   { id: 'untrusted-agent', label: 'Untrusted Contact', caps: '["chat"]',                 desc: 'Messaging only — no tool access, schedules, or data operations' },
+  { id: 'no-permissions',  label: 'No Permissions',    caps: '[]',                       desc: 'Bot ignores this contact entirely — no replies, no tool access' },
 ];
 
 function userIconSVG(size, color) {

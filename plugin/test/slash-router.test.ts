@@ -25,6 +25,19 @@ describe('classifySlash — recognised commands', () => {
     ['/model gpt-4', { kind: 'model', tier: null }],
     ['/compact', { kind: 'compact' }],
     ['/usage', { kind: 'usage' }],
+    ['/cost', { kind: 'usage' }],
+    ['/COST', { kind: 'usage' }],
+    ['/think', { kind: 'think', prompt: '' }],
+    ['/think how should I refactor this', { kind: 'think', prompt: 'how should I refactor this' }],
+    ['/THINK foo', { kind: 'think', prompt: 'foo' }],
+    ['/ultrathink', { kind: 'ultrathink', prompt: '' }],
+    ['/ultrathink design a new schema', { kind: 'ultrathink', prompt: 'design a new schema' }],
+    ['/Ultrathink why', { kind: 'ultrathink', prompt: 'why' }],
+    ['/plan', { kind: 'plan', prompt: '' }],
+    ['/plan refactor the auth layer', { kind: 'plan', prompt: 'refactor the auth layer' }],
+    ['/PLAN do the thing', { kind: 'plan', prompt: 'do the thing' }],
+    ['/exit-plan', { kind: 'exit-plan' }],
+    ['/Exit-Plan', { kind: 'exit-plan' }],
   ])('%s', (input, expected) => {
     expect(classifySlash(input)).toEqual(expected)
   })
@@ -74,7 +87,6 @@ describe('classifySlash — unknown slash (pass-through to subagent)', () => {
     ['/ultrareview', { kind: 'unknown-slash', cmd: 'ultrareview', args: '' }],
     ['/review fix the bug', { kind: 'unknown-slash', cmd: 'review', args: 'fix the bug' }],
     ['/foo', { kind: 'unknown-slash', cmd: 'foo', args: '' }],
-    ['/think hard', { kind: 'unknown-slash', cmd: 'think', args: 'hard' }],
   ])('%s', (input, expected) => {
     expect(classifySlash(input)).toEqual(expected)
   })

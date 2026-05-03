@@ -4,6 +4,80 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.3.0] — 2026-05-02
+
+Capability-based access control. The full v1.3 architecture lands in this release: every contact in the bot's address book carries a role (subscriber, trusted-agent, family-member, untrusted-agent, guest, or no-permissions); each role maps to a capability bundle; every annotated DC tool declares the capability it requires; the dispatcher refuses tool calls when the originator's bundle lacks it. The default originator is the actual message sender, not the chat's pairing contact, so role tiers below subscriber actually enforce different permissions instead of relying on the subagent to self-declare a requestor. Storage moves to `agents/<agentId>/` so v1.4's multi-agent work has a home. The agent-setup card gains a Contacts screen + role picker as the visible deliverable. Closes #70 (multi-user dispatch), #71 (capability-based access), #72 (slash command routing), and the slice 1–7 design plan.
+
+Migration is automatic on first boot: existing `principals/humans/<contactId>.json` records are copied to `agents/claude-code/contacts/<contactId>.json`, the legacy directory is renamed to `principals.legacy/`, and the chat allowlist becomes an in-memory cache derived from contact records ∩ chat membership. No operator action required.
+
+### Added
+
+- **Role + capability tiers.** Six roles ship: `subscriber` and `trusted-agent` (caps `["*"]`), `family-member` (caps `["chat", "low_stakes_*"]`), `untrusted-agent` and `guest` (caps `["chat"]`), and `no-permissions` (caps `[]`). Bundles defined in `plugin/access/capability-bundles.ts`. Adding a new capability is non-breaking for `*`-tier roles; renaming one is breaking and explicitly forbidden.
+
+- **Per-tool capability annotations.** Every DC MCP tool declares `requiresCapability: 'chat' | 'private_data_read' | 'private_data_write' | 'real_world_action' | 'infrastructure'`. Tool definitions in `server.ts` carry the annotation; `applyCapabilityGate` (`plugin/access/gate.ts`) consults it on every dispatch.
+
+- **Capability gate at tool dispatch.** Tool calls go through `applyCapabilityGate(chatId, toolName, args, requiredCapability, deps)`. The gate resolves the originator (default = the actual message sender; override via `requestor_contact_id`), validates membership, runs `evaluateCapability`, and returns allow / deny + scrubbed args. Three deny reasons (`capability_deny`, `capability_lookup_error`, `capability_invalid_requestor`) are audit-logged to `events/permissions-*.log`.
+
+- **Default originator = actual message sender.** When a real inbound message triggers a subagent turn, the dispatcher records `msg.fromId` as the chat's "current driver" and the gate uses that as the default originator. Synthetic / scheduled / `dispatchAndCollect` paths fall back to the chat's pairing contact (the previous default), which is correct for non-message-triggered runs. This means a family-member's message gets gated against family-member caps automatically — no subagent self-declaration required.
+
+- **`requestor_contact_id` arg on every annotated tool.** Subagents can declare a different originator (e.g., subscriber relaying for a third party). Validated as a current chat member; calls with non-member or malformed ids return `capability_invalid_requestor`. Schema is auto-merged onto every annotated tool's `inputSchema` at registration time.
+
+- **`no-permissions` role with content redaction.** Bot ignores the contact entirely: the dispatch gate drops their messages before subagent dispatch (saves LLM tokens), and `dc_chat_history` / `dc_download_attachment` redact their content (capability-aware: `isContactTrustedForContent` checks `getCapabilitiesFor(...).length > 0`, so a `no-permissions` contact with empty caps is treated like an unpaired sender for content purposes).
+
+- **Contacts management UI in the agent-setup card.** New "Contacts" entry in each agent's overflow menu opens a list of every contact in the bot's address book (current chat members union — Option B per the slice 7 plan), grouped by Needs Role / Assigned Roles / Subscribers. Each row opens a role picker with capability previews and a progress modal during save. Display names + addresses come from dc-core; role + capabilities come from the per-agent contact store.
+
+- **Per-agent storage layout.** `agents/<agentId>/definition.yaml` (was `agents/<agentId>.yaml`) plus sibling `agents/<agentId>/contacts/<contactId>.json` for trust metadata. Forward-compat for v1.4's multi-agent and per-agent chatmail work. One-time migration on first boot moves existing definitions and contact records into the new layout; legacy paths renamed to `principals.legacy/` and `approved.legacy/` (slated for v1.4 removal).
+
+- **Auto-pair gate by role.** Only `subscriber` and `trusted-agent` roles can auto-pair into new chats. Lower-trust roles (family-member, untrusted-agent, guest, no-permissions) get silently dropped if they try to initiate a chat the bot doesn't know about. Closes the surface-expansion gap from the v1.2.2 review.
+
+- **Slash command routing for DC chats.** `/help`, `/usage`, and other slash commands handled by `slash-router.ts` + `slash-handler.ts`. `/usage` reads from `~/.claude/projects/<project>/<sessionId>.jsonl` via the new `usage-aggregator.ts` and renders a per-model breakdown. Closes #72.
+
+- **`--model` flag on resume + session-agents index.** `buildResumeCommand` accepts `model?: string` and emits `--model <model>` between `--resume <sessionId>` and `--name`. `resolveAttachAgent(sessionId, sourceChatId)` now consults a session-agents index first, falling back to the source binding's `agentId`, then `DEFAULT_AGENT_ID`. New chats bind to the original agent of the resumed session, not the source chat's agent.
+
+- **`isContactTrustedForContent(agentId, contactId)`** — capability-aware predicate for the trust filter (chat history + attachment download). Stricter than `isContactPermissioned`: requires non-empty caps, so `no-permissions` contacts have their content redacted from the subagent's view. Wired into `formatHistoryLine` and `evaluateAttachmentDownload`.
+
+- **`setContactRole` API + role audit log.** Mutates a contact's role on disk; logs a `RoleAssignmentEvent` to the permissions log with `assigneeContactId`, `assignedRole`, `previousRole`, `assignerContactId`, `reason`. Used by the agent-setup card's role picker and the terminal pair flow (terminal pairs always assigned `subscriber`).
+
+- **CONTEXT.md + docs/adr/ scaffold.** Repo root gains a living glossary (`CONTEXT.md`) and four backfilled architecture decision records (subagent-per-chat-with-LRU-cache, agent-definition-and-binding-split, principals-as-trust-source, kill-and-respawn-for-interrupt). Feeds the `improve-architecture` skill.
+
+- **Test isolation safety net.** `bun test` preload (`test/_preload.ts` via `bunfig.toml`) sets `DC_TEST_CONTACTS_DIR` and `DC_TEST_PRINCIPALS_DIR` to a per-process tmp dir before any test file imports the access modules. Tests that forget `setContactsAgentsDir` now write to tmp instead of corrupting `~/.claude/channels/deltachat/`. Closes a real incident from slice-7-p3 development where a mid-refactor test run leaked synthetic contact records into a developer's production data.
+
+### Changed
+
+- **Vocabulary cleanup: `principal` → `Contact`.** `HumanPrincipal` → `ContactPrincipal` → `Contact`; `principals/humans/<id>.json` → `agents/<agentId>/contacts/<id>.json`; `loadPrincipal` / `writePrincipal` / `listPrincipals` → `loadContact` / `writeContact` / `listContacts`; `setPrincipalsDir` → `setContactsAgentsDir`. The "principal" abstraction was a misleading carry-over from the original identity-and-teams design — v1.3 keys trust metadata 1:1 with DC contacts, so the records ARE contact-book annotations, not a separate identity layer.
+
+- **Contact APIs take `agentId` as first param.** `loadContact(agentId, contactId)`, `writeContact(agentId, contact)`, `setContactRole(agentId, contactId, role)`, etc. v1.3 callers pass `DEFAULT_AGENT_ID` (`'claude-code'`); v1.4 multi-agent work fills in the rest. Forward-compat with zero behavior change for single-agent installs.
+
+- **`isAuthorized` predicate gates by capabilities, not record-existence.** A paired contact with `no-permissions` role (empty caps) no longer drives a turn — the dispatch gate at `server.ts` checks `getCapabilitiesFor(...).length > 0` instead of `isContactPermissioned(...)`. Saves LLM tokens (subagent never runs for ignored contacts) and aligns the dispatch gate with the per-tool capability gate.
+
+- **Multi-user dispatch (#70).** Any permissioned member of a chat can drive a turn, not only the chat's pairing contact. The capability gate at tool dispatch enforces what they can actually do based on their role. Pre-v1.3 only the pairing contact could drive; the gate makes it safe to relax this.
+
+- **Trust-filter dep renamed.** `isContactPermissioned` → `isContactTrustedForContent` in `dispatcher/trust-filter.ts`'s `TrustFilterDeps`. The semantic distinction matters: record-existence answers "does this contact have a record?" (auth gate), but capability-existence answers "should the agent see what they wrote?" (prompt-injection gate). Two gates, two predicates.
+
+- **`approved/<chatId>` files retired.** The chat allowlist is now an in-memory cache derived from contact records ∩ chat membership. Populated at startup via `populateAllowlistFromMembership`; refreshed on `ChatModified` events. Legacy directory renamed to `approved.legacy/` at first v1.3 boot (slated for v1.4 removal).
+
+- **In-memory `permissionedContactIds` cache.** Hot-path `isContactPermissioned` reads now hit a `Set<contactId>` populated lazily from `listContacts` on first access, invalidated on every contact write/remove via callback. Restores v1.2.2-class latency that the early v1.3 slices had regressed (per Elena's HURT-2 review finding).
+
+- **Atomic write with mode 0600 on contact records.** Per security review T3 (privilege-escalation-via-FS-write). Idempotent chmod after rename for cross-platform safety.
+
+### Fixed
+
+- **`handleAssignRole` early-return on unpaired contacts.** Pre-fix the handler bailed when no record existed (`if (!previous) return`), which was correct under the original Option-A picker (paired contacts only) but wrong under Option B (the picker IS the path to first-time role assignment). The bail caused the spinner to hang forever and the role write to silently no-op. Now `setContactRole` creates the record fresh when none exists; audit log captures `previousRole: null`.
+
+- **Picker showed phantom contacts (Autocrypt-gossip ghosts, ex-members of deleted chats).** Pre-fix the handler used `getContactIds(0, null)` which returns dc-core's full address book — including contacts that are no longer in any chat the bot is part of. Now uses chat-walk via `getChatContacts` per chat (dc-core filters `add_timestamp >= remove_timestamp` — ex-members excluded automatically). Defensive filters added for DC reserved IDs (≤ 9) and the bot's own configured address.
+
+- **Picker contact rows showed `Contact 100` instead of names.** The on-disk `Contact` schema doesn't store `displayName` (it's dc-core's job); `handleListContacts` now enriches each row via `client.getContact(contactId)` so `displayName` and `chatmailAddress` arrive populated. `handleAssignRole`'s `role_assigned` reply does the same so rows keep their name after a role change.
+
+- **CSS leak in agent-setup card after Contacts/Role-Picker landed.** New screens were missing from the `display: none` defaults at the top of `agent-setup.html`, so they always rendered underneath whichever other screen was visible. Added `#contacts, #role-picker { display: none; }` + `.visible` rules. APP_VERSION bump triggers auto-upgrade for existing app instances.
+
+- **Bug fixes from the v1.3 review batch (Elena + Oliver):** corrupt-record handling skips the offending file instead of aborting startup scans; explicit empty `capabilities: []` arrays honored as denied (pre-fix the `length > 0` guard let them fall through to role bundle); capability gate extracted to a testable helper (`gate.ts`); `capability_invalid_requestor` added to `PermissionReason` union (was written at runtime but absent from the type); `cleanupChatState` transition preserved in `handleChatModified`; integration test for `isChatApproved` honors its `chatId` argument.
+
+### Operator notes
+
+- **Restart required** to pick up dispatcher-side changes: capability gate, current-driver tracking, dispatch gate, slash routing, no-permissions handling. WebXDC apps auto-upgrade via the version-mismatch protocol.
+- **Migration is automatic.** First v1.3 boot: existing `principals/humans/*.json` copy into `agents/claude-code/contacts/`, legacy dirs rename to `*.legacy/`. Idempotent — safe to re-run if a previous boot crashed mid-migration.
+- **Backwards compat.** All v1.2.2 records lacking `role` / `capabilities` keys read as `subscriber` with `["*"]` caps via documented backfill semantics. No behavior change for existing installs until the operator explicitly assigns roles via the picker.
+
 ## [1.2.2] — 2026-05-01
 
 Trust-model substrate for v1.3. Lands four issues plus a regression fix: contact-identity becomes the auth source (#66 Option A); `dc_chat_history` and `dc_download_attachment` redact unpermissioned senders' content by default with explicit opt-in (subagent-side prompt-injection defense; #70 layer 1.5); group-chat WebXDC updates work again after the dc-core ≥ 2.48 selfAddr-as-hash regression (#47); the activity-reaction palette is pruned of "AI cosplay" emojis and reading/planning collapse into thinking (#65); schedules round-trip via `.schedules.yaml` chat command + attachment (#67). Plus the resume picker now correctly hides the dispatcher's own parent claude session.
@@ -459,6 +533,10 @@ First public release of the Delta Chat channel for Claude Code.
 - File-based allowlist + pairing codes.
 - `deltachat-rpc-server` integration.
 
+[1.3.0]: https://github.com/jhayashi/dc-claude-channel/compare/v1.2.2...v1.3.0
+[1.2.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.2.1...v1.2.2
+[1.2.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.2.0...v1.2.1
+[1.2.0]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.5...v1.2.0
 [1.1.5]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.4...v1.1.5
 [1.1.4]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/jhayashi/dc-claude-channel/compare/v1.1.2...v1.1.3

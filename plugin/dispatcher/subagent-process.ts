@@ -97,14 +97,21 @@ export const KNOWN_MCP_SERVERS: Record<string, string> = {
 /** All known MCP server prefixes. */
 export const ALL_MCP_SERVER_PREFIXES = Object.keys(KNOWN_MCP_SERVERS)
 
-/** Full list of built-in Claude Code tools passed via --allowedTools by default. */
+/**
+ * Full list of built-in Claude Code tools passed via --allowedTools by default.
+ *
+ * Excluded by design: AskUserQuestion, EnterPlanMode, ExitPlanMode — these need
+ * an interactive user UI that `claude -p` mode can't provide; the harness
+ * auto-denies them and the user sees a "Some actions blocked by policy" card.
+ * `/plan` and `/exit-plan` slash commands cover the planning use case via
+ * prose rewriting instead.
+ */
 export const ALL_BUILTIN_TOOLS: string[] = [
   'Bash', 'Read', 'Edit', 'Write', 'Grep', 'Glob',
   'WebFetch', 'WebSearch', 'NotebookEdit',
   'Task', 'TaskOutput', 'TaskStop', 'TodoWrite',
   'Skill', 'ToolSearch',
-  'AskUserQuestion', 'LSP',
-  'EnterPlanMode', 'ExitPlanMode', 'EnterWorktree', 'ExitWorktree',
+  'LSP', 'EnterWorktree', 'ExitWorktree',
 ]
 
 /** Short descriptions for each built-in tool (used by the agent-setup UI). */
@@ -124,10 +131,7 @@ export const BUILTIN_TOOL_DESCRIPTIONS: Record<string, string> = {
   TodoWrite: 'Track progress with todos',
   Skill: 'Use installed skills',
   ToolSearch: 'Load deferred tools',
-  AskUserQuestion: 'Ask clarifying questions',
   LSP: 'Language server queries',
-  EnterPlanMode: 'Enter plan mode',
-  ExitPlanMode: 'Exit plan mode',
   EnterWorktree: 'Work in isolated branch',
   ExitWorktree: 'Leave isolated branch',
 }

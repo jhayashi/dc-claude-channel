@@ -921,8 +921,50 @@ export async function graduateRefineSession(ctx: AppContext, chatId: number): Pr
 }
 
 export async function handleListContacts(ctx: AppContext, msgId: number): Promise<void> {
-  const contacts = access.listContacts(access.DEFAULT_AGENT_ID)
-  await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({ type: 'contacts_loaded', contacts }))
+  // Universe = current members across every chat the bot is in.
+  // dc-core's getChatContacts filters add_timestamp >= remove_timestamp, so
+  // ex-members (e.g. someone removed from a chat) are automatically
+  // excluded. Using getContactIds instead would return phantom contacts
+  // dc-core knows about via Autocrypt-Gossip but isn't currently chatting
+  // with — Joe explicitly does NOT want those in the picker.
+  const chatIds = await ctx.client.getChats()
+  const seen = new Set<number>()
+  for (const chatId of chatIds) {
+    let members: number[] = []
+    try { members = await ctx.client.getChatContacts(chatId) } catch { continue }
+    for (const id of members) {
+      if (id <= 9) continue // CONTACT_SELF (1) + DC reserved range (≤9)
+      seen.add(id)
+    }
+  }
+
+  const ownAddr = await ctx.client.getSelfAddress()
+
+  const enriched = await Promise.all(Array.from(seen).map(async (contactId) => {
+    let record: access.Contact | null = null
+    try { record = access.loadContact(access.DEFAULT_AGENT_ID, contactId) } catch { /* corrupt → treat as unpaired */ }
+    const info = await ctx.client.getContact(contactId)
+    return {
+      contactId,
+      kind: 'human' as const,
+      firstPairedAt: record?.firstPairedAt ?? null,
+      role: record?.role ?? null,
+      capabilities: record?.capabilities ?? null,
+      displayName: info?.displayName ?? null,
+      chatmailAddress: info?.address ?? null,
+      isBot: info?.isBot ?? false,
+    }
+  }))
+
+  // Bots are intentionally NOT filtered: we want to be able to permission
+  // other DC bots (research bot → trusted-agent, third-party bot →
+  // untrusted-agent, etc.). The only defensive filter is matching the
+  // dispatcher's own address — that catches self-as-contact ghosts.
+  const filtered = ownAddr
+    ? enriched.filter(c => c.chatmailAddress !== ownAddr)
+    : enriched
+
+  await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({ payload: { type: 'contacts_loaded', contacts: filtered } }))
 }
 
 export async function handleAssignRole(
@@ -933,8 +975,11 @@ export async function handleAssignRole(
   senderAddr: string | null,
 ): Promise<void> {
   if (!contactId || !role) return
-  const previous = access.loadContact(access.DEFAULT_AGENT_ID, contactId)
-  if (!previous) return
+  // No early-return on unpaired contacts: per Option B the picker is the
+  // path to first-time role assignment, so a missing record is expected
+  // and setContactRole creates one with firstPairedAt = now.
+  let previous: access.Contact | null = null
+  try { previous = access.loadContact(access.DEFAULT_AGENT_ID, contactId) } catch { /* corrupt → treat as no prior */ }
 
   const assignerContactId = senderAddr
     ? await ctx.client.lookupContactByAddr(senderAddr)
@@ -945,11 +990,17 @@ export async function handleAssignRole(
     ts: new Date().toISOString(),
     assigneeContactId: contactId,
     assignedRole: role,
-    previousRole: previous.role ?? null,
+    previousRole: previous?.role ?? null,
     assignerContactId,
     reason: 'picked',
   })
-  await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({ type: 'role_assigned', contact: updated }))
+  const info = await ctx.client.getContact(contactId)
+  const enriched = {
+    ...updated,
+    displayName: info?.displayName ?? null,
+    chatmailAddress: info?.address ?? null,
+  }
+  await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({ payload: { type: 'role_assigned', contact: enriched } }))
 }
 
 export const agentSetupApp: WebXDCApp = {
