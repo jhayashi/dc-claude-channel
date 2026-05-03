@@ -322,3 +322,85 @@ describe('createActivityReactor', () => {
     await new Promise((r) => setTimeout(r, 0))
   })
 })
+
+// ---------------------------------------------------------------------------
+// #79: TodoWrite reactions are sticky — tool emojis stop overwriting the
+// task step indicator once a todo fires.
+// ---------------------------------------------------------------------------
+
+const todo1 = { todos: [{ status: 'in_progress', content: 'a' }] }
+const todo2 = { todos: [
+  { status: 'completed', content: 'a' },
+  { status: 'in_progress', content: 'b' },
+] }
+const todoPending = { todos: [{ status: 'pending', content: 'a' }] }
+
+describe('createActivityReactor — todo lock (#79)', () => {
+  test('tool → todo → tool is suppressed; second todo still fires', async () => {
+    const { reactor, calls, clock } = makeReactor()
+    reactor.setTurnTarget(1, 100)                  // call 0: thinking
+    clock.t += 60_000
+    reactor.reactForTool(1, 'Edit', {})            // call 1: coding
+    reactor.reactForTool(1, 'TodoWrite', todo1)    // call 2: todo-1️⃣ (lock engages, bypasses debounce)
+    reactor.reactForTool(1, 'Bash', {})            // SUPPRESSED (lock active)
+    reactor.reactForTool(1, 'TodoWrite', todo2)    // call 3: todo-2️⃣ (todos still allowed)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toHaveLength(4)
+    expect(thinkingSet.has(calls[0].emoji)).toBe(true)
+    expect(codingSet.has(calls[1].emoji)).toBe(true)
+    expect(calls[2].emoji).toBe('1️⃣')
+    expect(calls[3].emoji).toBe('2️⃣')
+  })
+
+  test('two TodoWrites in quick succession both fire (todos bypass debounce)', async () => {
+    const { reactor, calls, clock } = makeReactor()
+    reactor.setTurnTarget(1, 100)                  // call 0: thinking, lastFiredAtMs = 0
+    reactor.reactForTool(1, 'TodoWrite', todo1)    // call 1: todo-1️⃣ (immediately, no debounce)
+    clock.t += 100                                  // 100ms later — well under 60s
+    reactor.reactForTool(1, 'TodoWrite', todo2)    // call 2: todo-2️⃣ (no debounce)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toHaveLength(3)
+    expect(thinkingSet.has(calls[0].emoji)).toBe(true)
+    expect(calls[1].emoji).toBe('1️⃣')
+    expect(calls[2].emoji).toBe('2️⃣')
+  })
+
+  test('lock clears at clearTurnTarget — next turn fires tool reactions normally', async () => {
+    const { reactor, calls, clock } = makeReactor()
+    reactor.setTurnTarget(1, 100)
+    reactor.reactForTool(1, 'TodoWrite', todo1)    // engages lock
+    reactor.reactForTool(1, 'Bash', {})            // suppressed
+    reactor.clearTurnTarget(1)
+    reactor.setTurnTarget(1, 200)                  // fresh state, lockedToTodos=false
+    clock.t += 60_000
+    reactor.reactForTool(1, 'Bash', {})            // fires running — lock cleared
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toHaveLength(4)
+    expect(calls[0].msgId).toBe(100); expect(thinkingSet.has(calls[0].emoji)).toBe(true)
+    expect(calls[1].msgId).toBe(100); expect(calls[1].emoji).toBe('1️⃣')
+    expect(calls[2].msgId).toBe(200); expect(thinkingSet.has(calls[2].emoji)).toBe(true)
+    expect(calls[3].msgId).toBe(200); expect(runningSet.has(calls[3].emoji)).toBe(true)
+  })
+
+  test('same todo step does not re-fire (same-class skip preserved)', async () => {
+    const { reactor, calls } = makeReactor()
+    reactor.setTurnTarget(1, 100)
+    reactor.reactForTool(1, 'TodoWrite', todo1)    // fires
+    reactor.reactForTool(1, 'TodoWrite', todo1)    // suppressed by same-class skip
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toHaveLength(2)
+    expect(calls[1].emoji).toBe('1️⃣')
+  })
+
+  test('TodoWrite with no in_progress entry is a no-op and does not engage lock', async () => {
+    const { reactor, calls, clock } = makeReactor()
+    reactor.setTurnTarget(1, 100)
+    clock.t += 60_000
+    reactor.reactForTool(1, 'TodoWrite', todoPending)   // computeEmoji returns null → no fire, no lock change
+    reactor.reactForTool(1, 'Bash', {})                 // fires running — lock never engaged
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toHaveLength(2)
+    expect(thinkingSet.has(calls[0].emoji)).toBe(true)
+    expect(runningSet.has(calls[1].emoji)).toBe(true)
+  })
+})

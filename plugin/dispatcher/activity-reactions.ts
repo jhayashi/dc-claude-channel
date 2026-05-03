@@ -151,6 +151,13 @@ interface TurnState {
   msgId: number
   lastClass: string | null
   lastFiredAtMs: number
+  /**
+   * Set true on the first `todo-*` reaction in the turn. While true,
+   * non-todo reactions are suppressed — the task indicator stays visible
+   * to the user (#79). Cleared with the rest of the entry on
+   * `clearTurnTarget`.
+   */
+  lockedToTodos: boolean
 }
 
 export function createActivityReactor(deps: ActivityReactorDeps): ActivityReactor {
@@ -160,7 +167,7 @@ export function createActivityReactor(deps: ActivityReactorDeps): ActivityReacto
   return {
     setTurnTarget(chatId, msgId) {
       const emoji = THINKING_EMOJIS[Math.floor(Math.random() * THINKING_EMOJIS.length)]
-      state.set(chatId, { msgId, lastClass: 'thinking', lastFiredAtMs: now() })
+      state.set(chatId, { msgId, lastClass: 'thinking', lastFiredAtMs: now(), lockedToTodos: false })
       // Fire-and-forget thinking indicator before any tool fires.
       deps.sendReaction(msgId, emoji).catch(() => {})
     },
@@ -172,13 +179,25 @@ export function createActivityReactor(deps: ActivityReactorDeps): ActivityReacto
       if (!entry) return
       const result = computeEmoji(toolName, toolInput)
       if (!result) return
+
+      const isTodo = result.cls.startsWith('todo-')
+      // Once the turn has shown a todo step, suppress every non-todo
+      // reaction — the task indicator dominates tool emojis (#79).
+      if (entry.lockedToTodos && !isTodo) return
+
       if (result.cls === entry.lastClass) return
-      entry.lastClass = result.cls
       const t = now()
-      if (t - entry.lastFiredAtMs < REACTION_DEBOUNCE_MS) return
+      // Tool reactions are still rate-limited to one per 60s. Todo
+      // reactions bypass the debounce so that advancing the in_progress
+      // pointer is visible immediately — matches the file-header doc
+      // (line 20) which pre-fix said "never debounced" but the code
+      // applied the debounce uniformly.
+      if (!isTodo && t - entry.lastFiredAtMs < REACTION_DEBOUNCE_MS) return
+
+      if (isTodo) entry.lockedToTodos = true
+      entry.lastClass = result.cls
       entry.lastFiredAtMs = t
-      const { msgId } = entry
-      deps.sendReaction(msgId, result.emoji).catch(() => {})
+      deps.sendReaction(entry.msgId, result.emoji).catch(() => {})
     },
   }
 }

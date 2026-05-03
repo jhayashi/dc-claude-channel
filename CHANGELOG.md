@@ -6,7 +6,11 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## [1.3.1] — 2026-05-02
 
-Adds `/effort` and backfills the slash-command list that landed silently in v1.3.0.
+Adds `/effort`, fixes the disappearing-task-progress bug, and backfills the slash-command list that landed silently in v1.3.0.
+
+### Fixed
+
+- **TodoWrite step indicators were being overwritten by tool emojis** (#79). DC reactions are unique per (sender, message), so each new tool reaction replaced the previous one — meaning the user almost never saw `1️⃣ 2️⃣ 3️⃣` task progress in practice; they only saw whichever tool ran most recently. Once a `todo-*` reaction fires in a turn, non-todo reactions are now suppressed for the rest of the turn (lock clears at `clearTurnTarget`). Subsequent `TodoWrite` calls still fire and bypass the 60s debounce — matches the file-header doc that pre-fix said "never debounced" while the code applied it uniformly.
 
 ### Added
 
