@@ -16,6 +16,7 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
 - **Fine-grained control: permissions, tools, MCP servers** — you decide the permission limits, access controls, and capabilities of every agent. Skipping permissions in channels is no longer a dangerous all-or-nothing choice; you decide where you want permissions and where you want to let Claude run free.
 - **On-the-go file iteration** — D4C includes a built-in file reviewer that makes it easy to comment on specific parts of a markdown or source file and have Claude make the changes you need.
 - **Session teleporting** — move your terminal sessions to Delta Chat and back again. Use the "settings" GUI to move a chat to a terminal session or pick a recent session from the settings GUI to continue it in a new DC chat. Take your active coding session with you on the bus, on your morning walk, or even to your fundraising pitch.
+- **Slash commands** — familiar Claude Code slash commands work in DC chats: `/help`, `/model <tier>`, `/effort <level>`, `/think <prompt>`, `/ultrathink <prompt>`, `/plan <prompt>`, `/usage`, `/memory`, `/compact`, `/clear`, `/stop`, `/mcp`, `/plugin`. Per-agent overrides (model, effort) persist across messages.
 
 ### For productivity
 

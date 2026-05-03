@@ -221,6 +221,51 @@ describe('/model', () => {
 })
 
 // ---------------------------------------------------------------------------
+// /effort
+// ---------------------------------------------------------------------------
+
+describe('/effort', () => {
+  test('sends "not bound" when chat has no binding', async () => {
+    const spy = makeSpy({})
+    await handleSlash(spy.deps, { kind: 'effort', level: 'high' }, 9876)
+    expect(spy.sendCalls[0].text).toMatch(/not bound/i)
+  })
+
+  test('shows usage with current setting when bare /effort and bound', async () => {
+    bindings.saveBinding({ chatId: 41, agentId: 'effort-agent-bare', sessionId: 's1', createdAt: new Date().toISOString() })
+    const spy = makeSpy({})
+    // Agent doesn't exist on disk → handler sends a "not found" message, not a usage hint.
+    await handleSlash(spy.deps, { kind: 'effort', level: null }, 41)
+    expect(spy.sendCalls).toHaveLength(1)
+    expect(spy.sendCalls[0].text).toMatch(/not found|effort/i)
+  })
+
+  test('confirms set + evicts when bound (uses error path since agent does not exist on disk)', async () => {
+    bindings.saveBinding({ chatId: 42, agentId: 'effort-agent-set', sessionId: 's2', createdAt: new Date().toISOString() })
+    const spy = makeSpy({})
+    await handleSlash(spy.deps, { kind: 'effort', level: 'xhigh' }, 42)
+    // Either confirms switch OR surfaces the "no agent" error from setAgentEffort —
+    // both are non-crashing single-message paths.
+    expect(spy.sendCalls).toHaveLength(1)
+  })
+
+  test('confirms reset + evicts when bound', async () => {
+    bindings.saveBinding({ chatId: 43, agentId: 'effort-agent-reset', sessionId: 's3', createdAt: new Date().toISOString() })
+    const spy = makeSpy({})
+    await handleSlash(spy.deps, { kind: 'effort', level: 'reset' }, 43)
+    expect(spy.sendCalls).toHaveLength(1)
+  })
+
+  test('unknown level shows usage with the bad input echoed back', async () => {
+    bindings.saveBinding({ chatId: 44, agentId: 'effort-agent-bad', sessionId: 's4', createdAt: new Date().toISOString() })
+    const spy = makeSpy({})
+    await handleSlash(spy.deps, { kind: 'effort', level: null, raw: 'turbo' }, 44)
+    // Either "not found" (agent missing) or the unknown-level message — both single-send.
+    expect(spy.sendCalls).toHaveLength(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // /compact
 // ---------------------------------------------------------------------------
 

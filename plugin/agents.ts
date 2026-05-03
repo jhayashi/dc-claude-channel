@@ -132,6 +132,12 @@ export const AgentDefSchema = z.object({
   allowedMcpServers: z.array(z.string()).nullable().optional(),
   /** @deprecated Use allowedMcpServers. Kept for migration compat. */
   allowedMcpTools: z.array(z.string()).nullable().optional(),
+  /**
+   * Reasoning effort level passed as `--effort <level>` when spawning
+   * the subagent. Per-agent override; absent = use the CLI's persisted
+   * default. Set via the `/effort` slash command.
+   */
+  effort: z.enum(models.EFFORT_LEVELS).optional(),
 })
 
 export type AgentDef = z.infer<typeof AgentDefSchema>
@@ -335,6 +341,20 @@ export function setAgentModel(agentId: string, tier: models.ModelTier): void {
   const def = getAgent(agentId)
   if (!def) throw new Error(`setAgentModel: no agent ${agentId}`)
   def.model = LATEST_MODELS[tier]
+  saveAgent(def)
+}
+
+/**
+ * Set or clear an agent's reasoning effort level. `null` clears the
+ * field so the agent inherits the CLI's persisted default.
+ *
+ * Throws if the agent doesn't exist.
+ */
+export function setAgentEffort(agentId: string, level: models.EffortLevel | null): void {
+  const def = getAgent(agentId)
+  if (!def) throw new Error(`setAgentEffort: no agent ${agentId}`)
+  if (level === null) delete def.effort
+  else def.effort = level
   saveAgent(def)
 }
 

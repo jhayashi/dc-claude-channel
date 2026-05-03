@@ -47,6 +47,20 @@ describe('buildSubagentArgs', () => {
     expect(args[i + 1]).toBe('claude-opus-4-6')
   })
 
+  test('--effort is added when effort option is set', () => {
+    const { args, envBlock } = buildSubagentArgs(baseOpts({ effort: 'xhigh' }))
+    const i = args.indexOf('--effort')
+    expect(i).toBeGreaterThanOrEqual(0)
+    expect(args[i + 1]).toBe('xhigh')
+    expect(envBlock).toContain('Effort: xhigh')
+  })
+
+  test('--effort is omitted when effort option is unset', () => {
+    const { args, envBlock } = buildSubagentArgs(baseOpts())
+    expect(args).not.toContain('--effort')
+    expect(envBlock).toContain('Effort: default')
+  })
+
   test('systemPrompt is appended to the env block', () => {
     const { args, envBlock } = buildSubagentArgs(
       baseOpts({ systemPrompt: 'You are a coding assistant.' }),

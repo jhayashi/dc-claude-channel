@@ -14,6 +14,7 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import type { EffortLevel } from '../models.js'
 
 interface StreamFrame {
   type: string
@@ -49,6 +50,8 @@ export interface SubagentSpawnOptions {
   addDirs?: string[]
   /** Override the model (e.g. 'claude-opus-4-6'). Defaults to CLI default. */
   model?: string
+  /** Reasoning effort level. Passed as `--effort <level>` if set; CLI uses its persisted default otherwise. */
+  effort?: EffortLevel
   /** Agent display name (e.g. 'Marketing Agent'). */
   agentName?: string
   /** Owner's display name from the DC contact card. */
@@ -151,6 +154,7 @@ export function buildSubagentArgs(
     `- Working directory: ${opts.cwd ?? process.cwd()}`,
     `- Bound chat: ${opts.chatId}`,
     `- Model: ${opts.model ?? 'default'} (this is authoritative — if your conversation history says a different model, it is outdated; trust this value)`,
+    `- Effort: ${opts.effort ?? 'default'}`,
   ]
   if (opts.agentName) lines.push(`- Agent name: ${opts.agentName}`)
   if (opts.userName) lines.push(`- User: ${opts.userName}`)
@@ -178,6 +182,9 @@ export function buildSubagentArgs(
   ]
   if (opts.model) {
     args.push('--model', opts.model)
+  }
+  if (opts.effort) {
+    args.push('--effort', opts.effort)
   }
   if (opts.sessionName) {
     args.push('--name', opts.sessionName)

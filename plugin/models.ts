@@ -14,6 +14,16 @@ import { readFileSync } from 'node:fs'
 
 export type ModelTier = 'opus' | 'sonnet' | 'haiku'
 
+/**
+ * Reasoning effort levels accepted by `claude --effort <level>` (CLI 2.1+).
+ * Per-agent override; absent = use the CLI's persisted default.
+ */
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+export type EffortLevel = typeof EFFORT_LEVELS[number]
+export function isEffortLevel(s: string): s is EffortLevel {
+  return (EFFORT_LEVELS as readonly string[]).includes(s)
+}
+
 export interface ModelEntry {
   id: string
   label: string

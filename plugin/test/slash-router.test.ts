@@ -38,6 +38,17 @@ describe('classifySlash — recognised commands', () => {
     ['/PLAN do the thing', { kind: 'plan', prompt: 'do the thing' }],
     ['/exit-plan', { kind: 'exit-plan' }],
     ['/Exit-Plan', { kind: 'exit-plan' }],
+    ['/effort', { kind: 'effort', level: null }],
+    ['/effort low', { kind: 'effort', level: 'low' }],
+    ['/effort medium', { kind: 'effort', level: 'medium' }],
+    ['/effort high', { kind: 'effort', level: 'high' }],
+    ['/effort xhigh', { kind: 'effort', level: 'xhigh' }],
+    ['/effort max', { kind: 'effort', level: 'max' }],
+    ['/effort MAX', { kind: 'effort', level: 'max' }],
+    ['/effort none', { kind: 'effort', level: 'reset' }],
+    ['/effort default', { kind: 'effort', level: 'reset' }],
+    ['/effort reset', { kind: 'effort', level: 'reset' }],
+    ['/effort foo', { kind: 'effort', level: null, raw: 'foo' }],
   ])('%s', (input, expected) => {
     expect(classifySlash(input)).toEqual(expected)
   })

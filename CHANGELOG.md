@@ -4,6 +4,27 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.3.1] — 2026-05-02
+
+Adds `/effort` and backfills the slash-command list that landed silently in v1.3.0.
+
+### Added
+
+- **`/effort [low|medium|high|xhigh|max]`** — per-agent reasoning effort override, mirroring `/model`. Persists to the agent definition; takes effect on the next message via the CLI's `--effort <level>` flag (subagent is evicted so it respawns with the new flag). `/effort` with no args shows the current setting; `/effort none` (or `default` / `reset`) clears the override so the agent inherits the CLI default. Schema gains `effort: enum(...)` on `AgentDef`; spawn opts gain `effort?: EffortLevel`; the env block surfaces `Effort: <level>` so the subagent can self-introspect.
+
+- **Slash commands documented (backfill from v1.3.0).** v1.3.0 silently shipped slash command routing for DC chats (`plugin/slash-router.ts` + `slash-handler.ts`), but neither the README nor the v1.3.0 release notes called them out. Commands available in any bound chat:
+  - `/help` — usage
+  - `/stop` — interrupt the in-flight turn
+  - `/clear` — reset the chat's session
+  - `/memory`, `/memory show <key>` — list / show memory entries
+  - `/mcp`, `/plugin` — list available MCP servers / plugins
+  - `/model <haiku|sonnet|opus>` — per-agent model override
+  - `/compact` — summarize and compact the chat session
+  - `/usage` (alias `/cost`) — per-model token totals from on-disk transcripts
+  - `/think <prompt>`, `/ultrathink <prompt>` — request explicit extended thinking
+  - `/plan <prompt>`, `/exit-plan` — enter / exit plan mode
+  - Terminal-only commands (`/config`, `/keybindings`, `/loop`, `/schedule`, etc.) return a "blocked in DC" message explaining where to run them.
+
 ## [1.3.0] — 2026-05-02
 
 Capability-based access control. The full v1.3 architecture lands in this release: every contact in the bot's address book carries a role (subscriber, trusted-agent, family-member, untrusted-agent, guest, or no-permissions); each role maps to a capability bundle; every annotated DC tool declares the capability it requires; the dispatcher refuses tool calls when the originator's bundle lacks it. The default originator is the actual message sender, not the chat's pairing contact, so role tiers below subscriber actually enforce different permissions instead of relying on the subagent to self-declare a requestor. Storage moves to `agents/<agentId>/` so v1.4's multi-agent work has a home. The agent-setup card gains a Contacts screen + role picker as the visible deliverable. Closes #70 (multi-user dispatch), #71 (capability-based access), #72 (slash command routing), and the slice 1–7 design plan.
@@ -533,6 +554,7 @@ First public release of the Delta Chat channel for Claude Code.
 - File-based allowlist + pairing codes.
 - `deltachat-rpc-server` integration.
 
+[1.3.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/jhayashi/dc-claude-channel/compare/v1.2.2...v1.3.0
 [1.2.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.2.0...v1.2.1

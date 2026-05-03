@@ -117,6 +117,52 @@ export async function handleSlash(
       return
     }
 
+    case 'effort': {
+      const binding = bindings.getBinding(chatId)
+      if (!binding?.agentId) {
+        await send(chatId, "Not bound to an agent here — /effort doesn't apply.").catch(() => {})
+        return
+      }
+      const def = agents.getAgent(binding.agentId)
+      if (!def) {
+        await send(chatId, `Agent ${binding.agentId} not found.`).catch(() => {})
+        return
+      }
+
+      // Bare /effort or unknown level → show current + usage.
+      if (cmd.level === null) {
+        const current = def.effort ?? 'not set (using CLI default)'
+        const prefix = cmd.raw
+          ? `Unknown effort level "${cmd.raw}". `
+          : ''
+        await send(
+          chatId,
+          `${prefix}Current effort: ${current}.\nUsage: /effort <low|medium|high|xhigh|max>, or /effort none to clear.`,
+        ).catch(() => {})
+        return
+      }
+
+      try {
+        if (cmd.level === 'reset') {
+          agents.setAgentEffort(binding.agentId, null)
+          await evictChat(chatId).catch((err) =>
+            logf('slash: effort evict failed chat=%d: %v', chatId, err),
+          )
+          await send(chatId, 'Cleared effort override. Takes effect on the next message.').catch(() => {})
+        } else {
+          agents.setAgentEffort(binding.agentId, cmd.level)
+          await evictChat(chatId).catch((err) =>
+            logf('slash: effort evict failed chat=%d: %v', chatId, err),
+          )
+          await send(chatId, `Switched effort to ${cmd.level}. Takes effect on the next message.`).catch(() => {})
+        }
+      } catch (err) {
+        logf('slash: effort failed chat=%d level=%s: %v', chatId, cmd.level, err)
+        await send(chatId, `Couldn't change effort: ${err instanceof Error ? err.message : 'unknown error'}`).catch(() => {})
+      }
+      return
+    }
+
     case 'compact':
       return 'Compact our conversation: summarize the key context from this session so we can continue with a smaller context window.'
 

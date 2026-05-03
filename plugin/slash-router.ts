@@ -17,6 +17,7 @@ export type SlashCommand =
   | { kind: 'mcp' }
   | { kind: 'plugin' }
   | { kind: 'model'; tier: 'haiku' | 'sonnet' | 'opus' | null }
+  | { kind: 'effort'; level: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null | 'reset'; raw?: string }
   | { kind: 'compact' }
   | { kind: 'usage' }
   | { kind: 'think'; prompt: string }
@@ -79,6 +80,18 @@ export function classifySlash(text: string): SlashCommand | null {
         return { kind: 'model', tier }
       }
       return { kind: 'model', tier: null }
+    }
+    case 'effort': {
+      if (!rest) return { kind: 'effort', level: null }
+      const arg = rest.split(/\s+/)[0].toLowerCase()
+      if (arg === 'none' || arg === 'default' || arg === 'reset') {
+        return { kind: 'effort', level: 'reset' }
+      }
+      if (arg === 'low' || arg === 'medium' || arg === 'high' || arg === 'xhigh' || arg === 'max') {
+        return { kind: 'effort', level: arg }
+      }
+      // Unknown level → null + raw so the handler can show usage with the user's input.
+      return { kind: 'effort', level: null, raw: arg }
     }
     case 'compact':
       return { kind: 'compact' }

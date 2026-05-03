@@ -699,6 +699,37 @@ describe('default agent (undeletable)', () => {
   })
 })
 
+describe('setAgentEffort', () => {
+  test('sets effort on an existing agent', () => {
+    agents.saveAgent(makeDef({ id: 'effort-target' }))
+
+    agents.setAgentEffort('effort-target', 'high')
+
+    expect(agents.getAgent('effort-target')!.effort).toBe('high')
+  })
+
+  test('clears effort when called with null', () => {
+    const def = makeDef({ id: 'effort-clear', effort: 'xhigh' })
+    agents.saveAgent(def)
+
+    agents.setAgentEffort('effort-clear', null)
+
+    expect(agents.getAgent('effort-clear')!.effort).toBeUndefined()
+  })
+
+  test('round-trips every supported level', () => {
+    agents.saveAgent(makeDef({ id: 'effort-rt' }))
+    for (const lvl of ['low', 'medium', 'high', 'xhigh', 'max'] as const) {
+      agents.setAgentEffort('effort-rt', lvl)
+      expect(agents.getAgent('effort-rt')!.effort).toBe(lvl)
+    }
+  })
+
+  test('throws on unknown agent', () => {
+    expect(() => agents.setAgentEffort('does-not-exist', 'high')).toThrow(/no agent/)
+  })
+})
+
 describe('importAgentFromYaml', () => {
   test('imports a valid YAML string and saves the agent', () => {
     const yaml = [
