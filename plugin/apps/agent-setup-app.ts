@@ -39,40 +39,6 @@ function availableToolsPayload(ctx: AppContext) {
   }
 }
 
-/**
- * Snapshot the template library for the init payload. Each template is
- * marked `available: true` when every MCP server it requires is currently
- * connected — the setup card shows unavailable templates greyed out with
- * the missing service listed.
- */
-function templatesPayload(ctx: AppContext): Array<{
-  id: string
-  name: string
-  archetype: string
-  icon: string
-  glyph: string
-  description: string
-  model: string
-  requiresMcpServers: string[]
-  available: boolean
-}> {
-  const connected = new Set(ctx.getConnectedMcpServers())
-  return templates.listTemplates().map(t => {
-    const required = t.requires.mcpServers ?? []
-    const available = required.every(s => connected.has(s))
-    return {
-      id: t.id,
-      name: t.name,
-      archetype: t.archetype,
-      icon: t.icon,
-      glyph: t.glyph,
-      description: t.description,
-      model: t.model,
-      requiresMcpServers: required,
-      available,
-    }
-  })
-}
 
 /**
  * Per-L2 summary for the new-agent-flow wall: one entry per distinct
@@ -347,10 +313,9 @@ async function sendInit(
   await sweepDeadChats(ctx)
   const existing = sessions.get(sourceChatId)
   const draft = blankDraft()
-  // Default-on as of Task 11.3 (v1.2.0). Set DC_NEW_AGENT_FLOW=0 to
-  // fall back to the v1.x template-grid create path. The legacy path
-  // is kept for users who want it but is slated for removal.
-  const newAgentFlowEnabled = process.env.DC_NEW_AGENT_FLOW !== '0'
+  // Wall flow is the only supported agent-creation path as of v1.3.1.
+  // The legacy template-grid view (#90, formerly opt-in via
+  // DC_NEW_AGENT_FLOW=0) was removed.
   const payload = {
     type: 'init' as const,
     version: agentSetup.getAgentSetupVersion(),
@@ -361,30 +326,27 @@ async function sendInit(
     },
     existingAgents: await listExistingForPicker(sourceChatId),
     senderAddr: 'server',
-    templates: templatesPayload(ctx),
     availableModels: models.MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier })),
     defaultModel: models.DEFAULT_MODEL,
     ...availableToolsPayload(ctx),
-    newAgentFlow: newAgentFlowEnabled
-      ? (() => {
-          const leaves = loadAllLeaves()
-          const sym = symmetricCombines()
-          return {
-            enabled: true as const,
-            leaves: leaves.map(l => ({
-              id: l.id,
-              path: l.path,
-              l2: l.l2,
-              name: l.name,
-              parameter: l.parameter,
-              liability: l.liability,
-              pitch: l.pitch,
-              combinesWith: [...(sym.get(l.id) ?? new Set<string>())].sort(),
-            })),
-            l2Summary: buildL2Summary(leaves),
-          }
-        })()
-      : { enabled: false as const },
+    newAgentFlow: (() => {
+      const leaves = loadAllLeaves()
+      const sym = symmetricCombines()
+      return {
+        enabled: true as const,
+        leaves: leaves.map(l => ({
+          id: l.id,
+          path: l.path,
+          l2: l.l2,
+          name: l.name,
+          parameter: l.parameter,
+          liability: l.liability,
+          pitch: l.pitch,
+          combinesWith: [...(sym.get(l.id) ?? new Set<string>())].sort(),
+        })),
+        l2Summary: buildL2Summary(leaves),
+      }
+    })(),
   }
   const update = JSON.stringify({
     payload,

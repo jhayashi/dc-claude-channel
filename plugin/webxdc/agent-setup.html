@@ -355,11 +355,11 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 /* Full-page layout (#90 / 1.3.1): every view fills the .card flex
    column. Only one is .visible at a time. The .body inside each view
    is the scrollable region; optional .footer-bar sticks at the bottom. */
-#step0, #new-chat, #wall-screen, #new-chat-mode, #reuse-picker, #manage,
+#step0, #wall-screen, #new-chat-mode, #reuse-picker, #manage,
 #step2, #step3, #outdated, #loading, #resume-import {
   display: none;
 }
-#step0.visible, #new-chat.visible, #wall-screen.visible, #new-chat-mode.visible,
+#step0.visible, #wall-screen.visible, #new-chat-mode.visible,
 #reuse-picker.visible, #manage.visible, #step2.visible, #step3.visible,
 #outdated.visible, #loading.visible, #resume-import.visible {
   display: flex;
@@ -371,7 +371,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 /* The .body that sits as a direct child of each view is the scroll
    region. Nested .body elements (.trust-card .body, .tool-group > .body)
    keep their own rules. */
-#step0 > .body, #new-chat > .body, #wall-screen > .body, #new-chat-mode > .body,
+#step0 > .body, #wall-screen > .body, #new-chat-mode > .body,
 #reuse-picker > .body, #manage > .body, #step2 > .body, #step3 > .body,
 #resume-import > .body, #teleport-out > .body, #paired-devices > .body,
 #contacts > .body, #role-picker > .body {
@@ -1371,28 +1371,6 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     </div>
   </div>
 
-  <div id="new-chat">
-    <div class="title-bar">
-      <button class="crumb" type="button" onclick="show('step0')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        Home
-      </button>
-      <div class="title">Pick an agent</div>
-    </div>
-    <div class="body">
-      <div id="templates-section" style="display:none;">
-        <div class="section-label">Templates</div>
-        <div id="templates-list" class="template-grid"></div>
-      </div>
-      <div id="pick-section" style="display:none;">
-        <div class="section-label">Your agents</div>
-        <div id="pick-list"></div>
-      </div>
-      <div class="footer-bar">
-        <button class="btn btn-primary" onclick="gotoCreate()">+ Create from scratch</button>
-      </div>
-    </div>
-  </div>
 
   <div id="wall-screen">
     <div class="title-bar">
@@ -1920,7 +1898,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 2.09;
+var APP_VERSION = 2.10;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -2070,7 +2048,6 @@ function refreshLivePreview(scope) {
 
 var draft = null;
 var existingAgents = [];
-var templateList = [];
 // Holds slow-changing init-payload data the wall-screen reads (newAgentFlow:
 // { enabled, leaves[], l2Summary[] }). Existing v1.x state stays as flat
 // top-level vars — the bag is just a place to park forward-flow payloads.
@@ -2159,7 +2136,7 @@ function wireSeg(segEl, onChange) {
 }
 
 function show(id) {
-  var ids = ['loading', 'step0', 'new-chat', 'wall-screen', 'new-chat-mode', 'reuse-picker', 'manage', 'step2', 'step3', 'outdated', 'resume-import', 'teleport-out', 'paired-devices', 'contacts', 'role-picker'];
+  var ids = ['loading', 'step0', 'wall-screen', 'new-chat-mode', 'reuse-picker', 'manage', 'step2', 'step3', 'outdated', 'resume-import', 'teleport-out', 'paired-devices', 'contacts', 'role-picker'];
   for (var i = 0; i < ids.length; i++) {
     var el = document.getElementById(ids[i]);
     if (ids[i] === id) el.classList.add('visible'); else el.classList.remove('visible');
@@ -2557,148 +2534,6 @@ function handleChatReady() {
 function handleChatFailed(errorMessage) {
   document.getElementById('reuse-confirm-sub').textContent = errorMessage || 'Something went wrong.';
   setReuseConfirmState('error');
-}
-
-function renderPickList() {
-  var container = document.getElementById('pick-list');
-  var section = document.getElementById('pick-section');
-  if (!container) return;
-  container.textContent = '';
-  if (section) section.style.display = existingAgents.length === 0 ? 'none' : '';
-  for (var i = 0; i < existingAgents.length; i++) {
-    var a = existingAgents[i];
-    var row = document.createElement('div');
-    row.className = 'agent-row';
-    if (a.isCurrentAgent) row.classList.add('current-agent');
-    row.onclick = (function(id){ return function(){ pickExisting(id); }; })(a.id);
-
-    var avatar = document.createElement('div');
-    avatar.className = 'avatar';
-    if (a.iconDataUri) {
-      var img = document.createElement('img');
-      img.src = a.iconDataUri;
-      img.alt = '';
-      avatar.appendChild(img);
-    } else {
-      setBadgeSvg(avatar, renderPreviewSvg(a.tier || 'sonnet', !!a.isTrusted, a.glyph || 'user-round', a.pattern || 'checker'));
-    }
-    row.appendChild(avatar);
-
-    var info = document.createElement('div');
-    info.className = 'info';
-    var nameRow = document.createElement('div');
-    nameRow.className = 'name';
-    nameRow.style.display = 'flex';
-    nameRow.style.alignItems = 'center';
-    var nameText = document.createElement('span');
-    nameText.textContent = a.name;
-    nameText.style.overflow = 'hidden';
-    nameText.style.textOverflow = 'ellipsis';
-    nameText.style.whiteSpace = 'nowrap';
-    nameRow.appendChild(nameText);
-    if (a.isCurrentAgent) {
-      var badge = document.createElement('span');
-      badge.className = 'current-badge';
-      badge.textContent = 'Current chat';
-      nameRow.appendChild(badge);
-    }
-    info.appendChild(nameRow);
-
-    var meta = document.createElement('div');
-    meta.className = 'meta';
-    var tierDot = document.createElement('span');
-    tierDot.className = 'tier-dot ' + (a.tier || 'sonnet');
-    meta.appendChild(tierDot);
-    var modelText = document.createElement('span');
-    modelText.textContent = TIER_LABEL[a.tier] || (MODEL_TIERS[a.model] || a.model);
-    meta.appendChild(modelText);
-    if (a.isTrusted) {
-      var sep1 = document.createElement('span');
-      sep1.className = 'sep';
-      sep1.textContent = '\u2022';
-      meta.appendChild(sep1);
-      var trustText = document.createElement('span');
-      trustText.className = 'trusted';
-      trustText.textContent = 'Trusted';
-      meta.appendChild(trustText);
-    }
-    var sep2 = document.createElement('span');
-    sep2.className = 'sep';
-    sep2.textContent = '\u2022';
-    meta.appendChild(sep2);
-    var count = a.bindingCount || 0;
-    var usage = document.createElement('span');
-    if (count === 0) {
-      usage.className = 'unused';
-      usage.textContent = 'Unused';
-    } else {
-      usage.textContent = count + ' chat' + (count === 1 ? '' : 's');
-    }
-    meta.appendChild(usage);
-    info.appendChild(meta);
-    row.appendChild(info);
-
-    container.appendChild(row);
-  }
-}
-
-function renderHomeCount() {
-  var ver = document.getElementById('home-version');
-  if (ver) ver.textContent = 'v' + APP_VERSION.toFixed(2);
-  var manageBtn = document.getElementById('home-manage-btn');
-  if (manageBtn) manageBtn.disabled = existingAgents.length === 0;
-}
-
-function renderTemplates() {
-  var container = document.getElementById('templates-list');
-  var section = document.getElementById('templates-section');
-  if (!container || !section) return;
-  container.textContent = '';
-  if (!templateList || templateList.length === 0) {
-    section.style.display = 'none';
-    return;
-  }
-  section.style.display = '';
-  for (var i = 0; i < templateList.length; i++) {
-    var t = templateList[i];
-    var btn = document.createElement('button');
-    btn.className = 'template-card';
-    if (!t.available) {
-      btn.classList.add('unavailable');
-      btn.disabled = true;
-    } else {
-      btn.onclick = (function(id){ return function(){ instantiateTemplate(id); }; })(t.id);
-    }
-    var glyph = document.createElement('div');
-    glyph.className = 'glyph';
-    var glyphName = t.glyph || 'cog';
-    var inner = GLYPHS[glyphName] || GLYPHS['cog'] || '';
-    glyph.innerHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' + inner + '</svg>';
-    btn.appendChild(glyph);
-    var name = document.createElement('div');
-    name.className = 'name';
-    name.textContent = t.name;
-    btn.appendChild(name);
-    if (t.description) {
-      var desc = document.createElement('div');
-      desc.className = 'desc';
-      desc.textContent = t.description;
-      btn.appendChild(desc);
-    }
-    if (!t.available && t.requiresMcpServers && t.requiresMcpServers.length > 0) {
-      var warn = document.createElement('div');
-      warn.className = 'warn';
-      var labels = t.requiresMcpServers.map(function(prefix) {
-        for (var j = 0; j < availableMcpServers.length; j++) {
-          if (availableMcpServers[j].prefix === prefix) return availableMcpServers[j].label;
-        }
-        return prefix;
-      });
-      warn.textContent = 'Needs: ' + labels.join(', ');
-      btn.appendChild(warn);
-    }
-    container.appendChild(btn);
-  }
 }
 
 function instantiateTemplate(templateId) {
@@ -3164,19 +2999,9 @@ function gotoNewChat() {
 // Build-from-leaves path. The wall flow that v1.2.0 wired straight to
 // "Start a new chat"; now reached from the mode picker's third card.
 function gotoBuildCustom() {
-  if (state.newAgentFlow && state.newAgentFlow.enabled) {
-    show('wall-screen');
-    installWallDelegates();
-    renderWall();
-    return;
-  }
-  // LEGACY (v1.x). Default-off as of v1.2.0 — only reached when the
-  // user has set DC_NEW_AGENT_FLOW=0 to opt out of the wall flow.
-  // Slated for removal in a future release. The wall flow above is
-  // the supported path; do not add new features below this line.
-  renderPickList();
-  renderTemplates();
-  show('new-chat');
+  show('wall-screen');
+  installWallDelegates();
+  renderWall();
 }
 
 function gotoReusePicker() {
@@ -4428,7 +4253,6 @@ function exportAgent(agentId) {
 
 function refreshList() {
   renderManageList();
-  renderPickList();
   renderHomeCount();
 }
 
@@ -4771,7 +4595,6 @@ window.webxdc.setUpdateListener(function(update) {
     }
     draft = d.draft || null;
     existingAgents = d.existingAgents || [];
-    templateList = d.templates || [];
     state.newAgentFlow = d.newAgentFlow || { enabled: false };
     // Phase 7 mash-up state. state.build holds leaf IDs the user has
     // tapped to combine. state.openLeafId tracks the currently-displayed
@@ -4791,8 +4614,6 @@ window.webxdc.setUpdateListener(function(update) {
     connectedMcpServers = d.connectedMcpServers || [];
     populateCreateToolPicker(null, null);
     renderManageList();
-    renderPickList();
-    renderTemplates();
     renderHomeCount();
     show('step0');
   }
