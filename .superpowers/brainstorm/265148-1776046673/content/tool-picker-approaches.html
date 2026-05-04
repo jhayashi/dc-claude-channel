@@ -1,0 +1,130 @@
+<h2>Per-Agent Tool Restrictions — UI Approaches</h2>
+<p class="subtitle">How should the tool picker appear in the agent-setup card?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Collapsible Sections (Recommended)</h3>
+      <p>Each tool source is a collapsible group header. Tap to expand and see individual tools with checkboxes. A "select all / deselect all" toggle per group. Compact when collapsed — just shows "Built-in Tools (7/10)" and "DC Tools (5/5)".</p>
+      <div class="mockup" style="margin-top: 12px;">
+        <div class="mockup-header">Agent Setup Card Preview</div>
+        <div class="mockup-body" style="background: #0e1117; padding: 16px; font-family: system-ui, sans-serif; color: #e6edf3;">
+          <!-- Name/Model/System fields (collapsed) -->
+          <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #6e7681; margin-bottom: 6px;">Agent name</div>
+          <div style="background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 8px 12px; font-size: 14px; color: #8b949e; margin-bottom: 12px;">Marketing Agent</div>
+
+          <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #6e7681; margin-bottom: 8px; margin-top: 16px;">Allowed Tools</div>
+
+          <!-- Group 1: Built-in Tools (expanded) -->
+          <div style="border: 1px solid #30363d; border-radius: 10px; margin-bottom: 8px; overflow: hidden;">
+            <div style="background: #161b22; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
+              <div>
+                <span style="font-size: 13px; font-weight: 600;">Built-in Tools</span>
+                <span style="font-size: 11px; color: #8b949e; margin-left: 8px;">7 / 10</span>
+              </div>
+              <span style="color: #8b949e; font-size: 12px;">▼</span>
+            </div>
+            <div style="padding: 8px 14px; background: #0d1117;">
+              <div style="display: flex; justify-content: flex-end; margin-bottom: 6px;">
+                <span style="font-size: 11px; color: #58a6ff; cursor: pointer;">Select all</span>
+              </div>
+              <label style="display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; border-bottom: 1px solid #21262d;">
+                <input type="checkbox" checked disabled> <span>Read</span> <span style="color: #6e7681; font-size: 11px; margin-left: auto;">Read file contents</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; border-bottom: 1px solid #21262d;">
+                <input type="checkbox" checked disabled> <span>Write</span> <span style="color: #6e7681; font-size: 11px; margin-left: auto;">Create files</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; border-bottom: 1px solid #21262d;">
+                <input type="checkbox" checked disabled> <span>Edit</span> <span style="color: #6e7681; font-size: 11px; margin-left: auto;">Modify files</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; border-bottom: 1px solid #21262d;">
+                <input type="checkbox" disabled> <span style="color: #6e7681;">Bash</span> <span style="color: #484f58; font-size: 11px; margin-left: auto;">Run commands</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; border-bottom: 1px solid #21262d;">
+                <input type="checkbox" checked disabled> <span>Glob</span> <span style="color: #6e7681; font-size: 11px; margin-left: auto;">Find files</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px;">
+                <input type="checkbox" checked disabled> <span>Grep</span> <span style="color: #6e7681; font-size: 11px; margin-left: auto;">Search content</span>
+              </label>
+              <div style="font-size: 11px; color: #6e7681; padding-top: 4px;">+ 4 more...</div>
+            </div>
+          </div>
+
+          <!-- Group 2: DC Tools (collapsed) -->
+          <div style="border: 1px solid #30363d; border-radius: 10px; margin-bottom: 8px; overflow: hidden;">
+            <div style="background: #161b22; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
+              <div>
+                <span style="font-size: 13px; font-weight: 600;">DC Tools</span>
+                <span style="font-size: 11px; color: #3fb950; margin-left: 8px;">5 / 5 ✓</span>
+              </div>
+              <span style="color: #8b949e; font-size: 12px;">▶</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Compact — groups stay collapsed until needed</li><li>Natural grouping by source</li><li>Quick scan: "7/10" tells you at a glance</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>More implementation work (collapsible sections)</li><li>Nested UI in an already-nested WebXDC card</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Flat Checkbox List with Group Headers</h3>
+      <p>All tools visible at once, organized under simple text headers. No expand/collapse — just scroll. Simpler to build, but longer on mobile.</p>
+      <div class="mockup" style="margin-top: 12px;">
+        <div class="mockup-header">Agent Setup Card Preview</div>
+        <div class="mockup-body" style="background: #0e1117; padding: 16px; font-family: system-ui, sans-serif; color: #e6edf3;">
+          <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #6e7681; margin-bottom: 8px;">Allowed Tools</div>
+
+          <div style="font-size: 12px; font-weight: 600; color: #58a6ff; margin: 12px 0 6px; border-bottom: 1px solid #21262d; padding-bottom: 4px;">Built-in Tools</div>
+          <label style="display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px;">
+            <input type="checkbox" checked disabled> Read
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px;">
+            <input type="checkbox" checked disabled> Write
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px;">
+            <input type="checkbox" checked disabled> Edit
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px;">
+            <input type="checkbox" disabled> Bash
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px;">
+            <input type="checkbox" checked disabled> Glob
+          </label>
+
+          <div style="font-size: 12px; font-weight: 600; color: #58a6ff; margin: 12px 0 6px; border-bottom: 1px solid #21262d; padding-bottom: 4px;">DC Tools</div>
+          <label style="display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px;">
+            <input type="checkbox" checked disabled> dc_send_file
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px;">
+            <input type="checkbox" checked disabled> dc_chat_history
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px;">
+            <input type="checkbox" checked disabled> dc_react
+          </label>
+        </div>
+      </div>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Simplest to build</li><li>Everything visible — no hidden state</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Long scroll on mobile with 15+ tools</li><li>No quick "all on/all off" per group</li><li>Pushes the Create/Save button way down</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Separate Tools Tab/Screen</h3>
+      <p>Keep the current create/edit form clean. Add a "Configure Tools" button that opens a dedicated screen for tool selection. Keeps the main form uncluttered.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Main form stays simple</li><li>Tool picker gets full screen real estate</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Extra navigation step</li><li>Users might miss it entirely</li><li>More complex state management</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

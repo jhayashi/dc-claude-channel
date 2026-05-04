@@ -254,8 +254,7 @@ export const fileReviewerApp: WebXDCApp = {
 
     if (bundledSize <= BUNDLED_THRESHOLD_BYTES) {
       await ctx.client.sendWebXDCUpdate(viewerMsgId, bundledUpdate)
-      const session = fileReviewer.getSession(chatId)
-      if (session) session.lastUpdate = bundledUpdate
+      fileReviewer.setLastUpdate(chatId, bundledUpdate)
     } else {
       // Pathological-doc fallback: stream chunks individually. The
       // dc-client rate limiter paces these to avoid the chatmail GCRA
@@ -278,8 +277,7 @@ export const fileReviewerApp: WebXDCApp = {
         }
         const update = JSON.stringify(updateObj)
         await ctx.client.sendWebXDCUpdate(viewerMsgId, update)
-        const session = fileReviewer.getSession(chatId)
-        if (session) session.lastUpdate = update
+        fileReviewer.setLastUpdate(chatId, update)
       }
     }
 
@@ -363,7 +361,7 @@ export const fileReviewerApp: WebXDCApp = {
           try {
             const parsed = JSON.parse(session.lastUpdate)
             if (parsed?.payload?.title === data.title) {
-              session.lastUpdate = undefined
+              fileReviewer.clearLastUpdate(ownerChatId)
               ctx.logf('file-reviewer: cleared lastUpdate for closed tab "%s" in chat %d', data.title, ownerChatId)
             }
           } catch {}
@@ -390,12 +388,22 @@ export const fileReviewerApp: WebXDCApp = {
         if (parsed.payload) parsed.payload.version = fileReviewer.getViewerVersion()
         const freshUpdate = JSON.stringify(parsed)
         await ctx.client.sendWebXDCUpdate(newMsgId, freshUpdate)
-        const newSession = fileReviewer.getSession(ownerChatId)
-        if (newSession) newSession.lastUpdate = freshUpdate
+        fileReviewer.setLastUpdate(ownerChatId, freshUpdate)
       }
       const { unlinkSync } = await import('node:fs')
       try { unlinkSync(xdcPath) } catch {}
       return
+    }
+  },
+
+  start(ctx: AppContext): void {
+    // Restore viewer sessions persisted across dispatcher restarts so
+    // the next dc_send_file call reuses the existing applet card
+    // instead of shipping a fresh .xdc.
+    const restored = fileReviewer.loadPersistedViewers()
+    for (const v of restored) {
+      ctx.registerWebXDCMsg(v.msgId, this, v.chatId)
+      ctx.logf('file-reviewer: restored viewer for chat %d (msg %d)', v.chatId, v.msgId)
     }
   },
 }
