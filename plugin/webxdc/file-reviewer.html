@@ -933,7 +933,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.42;
+var APP_VERSION = 1.46;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -2187,7 +2187,7 @@ window.webxdc.setUpdateListener(function(update) {
       });
     }
     rebuildSidebar();
-    if (documents.length > firstNewIndex) showTargetDocument(firstNewIndex);
+    if (documents.length > firstNewIndex) showTargetDocument();
     return;
   }
 
@@ -2209,35 +2209,30 @@ window.webxdc.setUpdateListener(function(update) {
   });
 
   rebuildSidebar();
-  showTargetDocument(documents.length - 1);
+  showTargetDocument();
 }, 0);
 
-// #73: notification deep-link routing. Mark the initial-replay window
-// closed on the next tick — DC delivers all queued updates synchronously
-// to the listener at startup, so anything dispatched after that is a
-// genuinely new file and should pull focus (existing post-init
-// behavior). Inside the window, defer to the hash-target match.
-var initialReplayDone = false;
-setTimeout(function () { initialReplayDone = true; }, 0);
-
-function showTargetDocument(newIndex) {
-  // Post-initial-replay: a fresh dc_send_file arrived → jump to it.
-  if (initialReplayDone && typeof newIndex === 'number') {
-    showDocument(newIndex);
-    return;
-  }
-  // Initial replay (or hashchange): match the URL fragment if present.
+// #73: deep-link to a specific file via the URL fragment carried in the
+// notification's href. Spec example: `index.html#about`; we use
+// `index.html#file-<fileId>`. Hash always wins — no race-prone
+// "initial replay done" flag. Trade-off: a new file arriving while
+// you're viewing an older one won't auto-jump (navigate via sidebar).
+function showTargetDocument() {
   var m = (window.location.hash || '').match(/^#file-(.+)$/);
   if (m) {
+    var target = decodeURIComponent(m[1]);
     for (var i = 0; i < documents.length; i++) {
-      if (documents[i].fileId === m[1]) { showDocument(i); return; }
+      if (documents[i].fileId === target) { showDocument(i); return; }
     }
+    // Hash present but no doc matches yet — wait for the doc to arrive
+    // in a subsequent update (the hashchange or next showTargetDocument
+    // call will retry).
+    return;
   }
-  // No hash, no match, or no docs yet → fall back to most recent.
   if (documents.length > 0) showDocument(documents.length - 1);
 }
 
-// Notification tapped while app is already open: DC may swap the URL
+// Notification tapped while app is already open: DC swaps the URL
 // fragment without reloading the page.
 window.addEventListener('hashchange', function () { showTargetDocument(); });
 </script>
