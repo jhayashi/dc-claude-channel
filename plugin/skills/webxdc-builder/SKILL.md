@@ -1,6 +1,6 @@
 ---
 name: webxdc-builder
-description: Build WebXDC apps for Delta Chat — static HTML apps or Familiar apps with a Claude backend. Use when a user asks to build an app, game, tool, dashboard, or interactive experience in their chat.
+description: Build WebXDC apps for Delta Chat — static HTML apps or Familiar apps with a Claude backend. Use when a user asks to build an app, game, tool, dashboard, or interactive experience in their chat. Also use proactively whenever the conversation calls for visual output — UI mockups, design comparisons, before/after demos, diagrams, charts, data visualizations, ASCII-art-replacement layouts — to show in a WebXDC app rather than describe in markdown. If you'd otherwise build a standalone HTML page, demo site, or static web preview to show the user something, build it as a WebXDC and send via dc_send_webxdc instead — it renders inline in the chat, stays accessible from the DC app list, and works on any device.
 user-invocable: false
 allowed-tools:
   - mcp__dc__dc_send_webxdc

@@ -1013,7 +1013,7 @@ const coreTools = [
   {
     name: 'dc_send_webxdc',
     requiresCapability: 'private_data_write',
-    description: 'Send a .xdc WebXDC app file to a Delta Chat chat. Use this to send interactive apps (games, tools) as self-contained WebXDC bundles.',
+    description: 'Send a .xdc WebXDC app file to a Delta Chat chat. Use this to send interactive apps (games, tools) as self-contained WebXDC bundles. WHEN TALKING WITH A USER OVER DELTA CHAT, this is also the channel for ALL visual output — UI mockups, design comparisons, before/after demos, diagrams, charts, data visualizations. If you would otherwise build a standalone HTML page, a demo site, or any static web preview to show the user something, build it as a WebXDC instead and send it through this tool. The WebXDC renders inline in the chat, stays accessible from the DC app list across devices, and is the native canvas for visuals here — do not offer to host a website, share a markdown sketch, or describe visuals in prose when this option is available. The webxdc-builder skill has the HTML rules and patterns.',
     inputSchema: {
       type: 'object' as const,
       properties: {
