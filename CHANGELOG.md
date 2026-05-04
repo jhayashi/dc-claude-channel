@@ -4,9 +4,9 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
-## [1.3.1] — 2026-05-02
+## [1.3.1] — 2026-05-03
 
-Adds `/effort`, fixes the disappearing-task-progress bug, and backfills the slash-command list that landed silently in v1.3.0.
+Polish release on top of v1.3.0's capability gate: group-chat WebXDC plumbing fix, four File Reviewer fixes (deep-link, comment-card occlusion, tab visibility, viewer persistence), TodoWrite step indicators that survive subsequent tool calls, the `/effort` command, full-page layouts in the agent settings card, and two legacy-view cleanups (#90 + #92) now that v1.3 roles supersede them.
 
 ### Fixed
 
@@ -16,7 +16,19 @@ Adds `/effort`, fixes the disappearing-task-progress bug, and backfills the slas
 
 - **File Reviewer comment card occluded the bottom of the file** (#76). The card was always pinned at `bottom: 62px`, so commenting on a line near the bottom hid the very lines the user was trying to discuss. Now the card auto-flips to the top of the viewport when the commented anchor sits in the lower half (open-time decision), AND flips on the fly as the user scrolls — scroll down toward the bottom-pinned card → card jumps to the top; scroll up toward the top-pinned card → card jumps to the bottom. Throttled with rAF, gated by a 50px scroll-delta threshold and 800ms cooldown to filter wobble and prevent jitter; suppressed while the user is actively composing in the textarea. `file-reviewer` APP_VERSION 1.39 → 1.41.
 
+- **File Reviewer active tab hidden behind newer tabs after deep-link.** Sidebar renders newest-first (left), so opening an older file from a notification landed on a tab that sat off-screen to the right under the newer ones — surfaced on phone after the #73 deep-link work made older notifications openable. `showDocument` now scrolls the active tab into view via `sidebar.scrollLeft` only — never touches page scroll or vertical scroll, only adjusts when the tab is actually clipped. `file-reviewer` APP_VERSION 1.46 → 1.47.
+
 - **TodoWrite step indicators were being overwritten by tool emojis** (#79). DC reactions are unique per (sender, message), so each new tool reaction replaced the previous one — meaning the user almost never saw `1️⃣ 2️⃣ 3️⃣` task progress in practice; they only saw whichever tool ran most recently. Once a `todo-*` reaction fires in a turn, non-todo reactions are now suppressed for the rest of the turn (lock clears at `clearTurnTarget`). Subsequent `TodoWrite` calls still fire and bypass the 60s debounce — matches the file-header doc that pre-fix said "never debounced" while the code applied it uniformly.
+
+### Changed
+
+- **File Reviewer viewer sessions persist across dispatcher restarts.** Pre-fix every `bun server.ts` bounce minted a fresh viewer XDC for each chat that had received a file before — chat histories accumulated duplicate app instances. The viewer table now persists to `~/.claude/channels/deltachat/file-viewers/<chatId>.json` and rehydrates on dispatcher start, so subsequent `dc_send_file` calls reuse the existing viewer instead of creating a new one.
+
+- **Agent setup card uses a full-page layout across all 14 views.** Layout-only refactor: every view (loading, step0, wall-screen, new-chat-mode, reuse-picker, manage, step2, step3, outdated, resume-import, teleport-out, contacts, role-picker, plus the prior paired-devices) now fills the full viewport width and height in a flex-column shell with a sticky title bar, scrollable body, and optional sticky footer. No JS or state-machine changes; just the CSS scaffolding so phone screens stop showing dead space around the card. `agent-setup` APP_VERSION 2.07 → 2.09.
+
+- **Removed legacy `new-chat` template-grid view** (#90). The v1.x agent-creation path was reachable only via `DC_NEW_AGENT_FLOW=0` (default-off since v1.2.0). The supported path is now the wall-flow mode picker introduced in v1.2.0. Drops `<div id="new-chat">…</div>`, `renderPickList` / `renderTemplates` / `instantiateTemplate` JS, the `templates` field in the init payload, and the `DC_NEW_AGENT_FLOW` env-var check from `agent-setup-app.ts`.
+
+- **Removed Paired devices view** (#92). Now superseded by the v1.3 Contacts view + role picker — assigning `no-permissions` is the equivalent of unpairing for "stop the bot from responding." The chat-cleanup nuance (freeze vs delete the DC chat itself) is no longer offered through the UI; users delete chats through DC's normal chat menu if they also want them gone. The `dc_access_unpair` MCP tool stays for subagent use. Drops the home button, `<div id="paired-devices">`, the unpair modal, all related JS state/handlers, and the `paired_list_request` + `unpair_commit` backend handlers.
 
 ### Added
 

@@ -132,11 +132,11 @@ Reply "no" to skip the tour and drop into normal chat mode.
 
 If you want to hack on the plugin itself, see the [Development](#development) section below.
 
-## Unpairing
+## Removing a contact's access
 
-To remove a paired device, open the agent settings app (ask Claude to "open settings", or tap the notification when it appears) and select **Paired devices** on the home screen. Choose **freeze** (chats go read-only, history preserved) or **delete** (chats are removed).
+Open the agent settings app (ask Claude to "open settings", or tap the notification when it appears) → tap an agent's **Manage** card → **Contacts**. Pick a contact and assign the **No permissions** role. The bot will stop responding to their messages and redact their content from chat history. The DC chat itself stays intact; delete it via DC's normal chat menu if you also want it gone.
 
-From a terminal, `/deltachat:setup unpair` lists paired contacts and `/deltachat:setup unpair <contact_id>` unpairs one. Add `delete` to the command to remove chats instead of freezing them.
+From a terminal, `/deltachat:setup unpair` lists paired contacts and `/deltachat:setup unpair <contact_id>` removes one (with optional `delete` mode to also remove the chats).
 
 ## Resuming / Teleporting sessions
 
