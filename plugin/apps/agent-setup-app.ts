@@ -13,7 +13,6 @@ import * as models from '../models.js'
 import * as bindings from '../bindings.js'
 import * as access from '../access/index.js'
 import * as resume from '../resume.js'
-import * as templates from '../templates.js'
 import { loadAllLeaves, symmetricCombines, getDefaultCatalog, type Catalog, type Leaf, type Path } from '../leaves.js'
 import { decideCleanup, CONTACT_SELF } from '../cleanup.js'
 import { ALL_BUILTIN_TOOLS, BUILTIN_TOOL_DESCRIPTIONS } from '../dispatcher/subagent-process.js'
@@ -37,41 +36,6 @@ function availableToolsPayload(ctx: AppContext) {
     availableMcpServers: ctx.getAvailableMcpServers(),
     connectedMcpServers: ctx.getConnectedMcpServers(),
   }
-}
-
-/**
- * Snapshot the template library for the init payload. Each template is
- * marked `available: true` when every MCP server it requires is currently
- * connected — the setup card shows unavailable templates greyed out with
- * the missing service listed.
- */
-function templatesPayload(ctx: AppContext): Array<{
-  id: string
-  name: string
-  archetype: string
-  icon: string
-  glyph: string
-  description: string
-  model: string
-  requiresMcpServers: string[]
-  available: boolean
-}> {
-  const connected = new Set(ctx.getConnectedMcpServers())
-  return templates.listTemplates().map(t => {
-    const required = t.requires.mcpServers ?? []
-    const available = required.every(s => connected.has(s))
-    return {
-      id: t.id,
-      name: t.name,
-      archetype: t.archetype,
-      icon: t.icon,
-      glyph: t.glyph,
-      description: t.description,
-      model: t.model,
-      requiresMcpServers: required,
-      available,
-    }
-  })
 }
 
 /**
@@ -347,10 +311,8 @@ async function sendInit(
   await sweepDeadChats(ctx)
   const existing = sessions.get(sourceChatId)
   const draft = blankDraft()
-  // Default-on as of Task 11.3 (v1.2.0). Set DC_NEW_AGENT_FLOW=0 to
-  // fall back to the v1.x template-grid create path. The legacy path
-  // is kept for users who want it but is slated for removal.
-  const newAgentFlowEnabled = process.env.DC_NEW_AGENT_FLOW !== '0'
+  const leaves = loadAllLeaves()
+  const sym = symmetricCombines()
   const payload = {
     type: 'init' as const,
     version: agentSetup.getAgentSetupVersion(),
@@ -361,30 +323,22 @@ async function sendInit(
     },
     existingAgents: await listExistingForPicker(sourceChatId),
     senderAddr: 'server',
-    templates: templatesPayload(ctx),
     availableModels: models.MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier })),
     defaultModel: models.DEFAULT_MODEL,
     ...availableToolsPayload(ctx),
-    newAgentFlow: newAgentFlowEnabled
-      ? (() => {
-          const leaves = loadAllLeaves()
-          const sym = symmetricCombines()
-          return {
-            enabled: true as const,
-            leaves: leaves.map(l => ({
-              id: l.id,
-              path: l.path,
-              l2: l.l2,
-              name: l.name,
-              parameter: l.parameter,
-              liability: l.liability,
-              pitch: l.pitch,
-              combinesWith: [...(sym.get(l.id) ?? new Set<string>())].sort(),
-            })),
-            l2Summary: buildL2Summary(leaves),
-          }
-        })()
-      : { enabled: false as const },
+    newAgentFlow: {
+      leaves: leaves.map(l => ({
+        id: l.id,
+        path: l.path,
+        l2: l.l2,
+        name: l.name,
+        parameter: l.parameter,
+        liability: l.liability,
+        pitch: l.pitch,
+        combinesWith: [...(sym.get(l.id) ?? new Set<string>())].sort(),
+      })),
+      l2Summary: buildL2Summary(leaves),
+    },
   }
   const update = JSON.stringify({
     payload,
@@ -1515,167 +1469,6 @@ export const agentSetupApp: WebXDCApp = {
         continue
       }
 
-      if (payload.type === 'paired_list_request') {
-        const requestId = typeof (payload as { requestId?: unknown }).requestId === 'number'
-          ? (payload as { requestId: number }).requestId : 0
-        try {
-          const devices = access.listPaired()
-          const rows: Array<{
-            contactId: number
-            displayName: string
-            address: string
-            isVerified: boolean
-            chatCount: number
-            pairedAtMs: number
-            isSelf: boolean
-          }> = []
-          for (const d of devices) {
-            let displayName = `Contact ${d.contactId}`
-            let address = ''
-            let isVerified = false
-            try {
-              const contact = await ctx.client.getContact(d.contactId)
-              if (contact) {
-                displayName = contact.displayName || contact.name || displayName
-                address = contact.address ?? ''
-                isVerified = !!contact.isVerified
-              }
-            } catch (err) {
-              ctx.logf('agent-setup: paired_list getContact failed for %d: %v', d.contactId, err)
-            }
-            rows.push({
-              contactId: d.contactId,
-              displayName,
-              address,
-              isVerified,
-              chatCount: d.chatIds.length,
-              pairedAtMs: d.pairedAtMs,
-              isSelf: d.chatIds.includes(session.sourceChatId),
-            })
-          }
-          await ctx.client.sendWebXDCUpdate(session.msgId, JSON.stringify({
-            payload: {
-              type: 'paired_list',
-              requestId,
-              devices: rows,
-              version: agentSetup.getAgentSetupVersion(),
-              senderAddr: 'server',
-            },
-            summary: 'Paired devices',
-          }))
-        } catch (err) {
-          ctx.logf('agent-setup: paired_list_request failed: %v', err)
-        }
-        continue
-      }
-
-      if (payload.type === 'list_contacts') {
-        await handleListContacts(ctx, session.msgId)
-        continue
-      }
-
-      if (payload.type === 'assign_role') {
-        const contactId = typeof (payload as { contactId?: unknown }).contactId === 'number'
-          ? (payload as { contactId: number }).contactId : null
-        const role = typeof (payload as { role?: unknown }).role === 'string'
-          ? (payload as { role: string }).role : null
-        const senderAddr = typeof (payload as { senderAddr?: unknown }).senderAddr === 'string'
-          ? (payload as { senderAddr: string }).senderAddr : null
-        await handleAssignRole(ctx, session.msgId, contactId, role, senderAddr)
-        continue
-      }
-
-      if (payload.type === 'unpair_commit') {
-        const requestId = typeof (payload as { requestId?: unknown }).requestId === 'number'
-          ? (payload as { requestId: number }).requestId : 0
-        const contactId = typeof (payload as { contactId?: unknown }).contactId === 'number'
-          ? (payload as { contactId: number }).contactId : NaN
-        const rawMode = (payload as { mode?: unknown }).mode
-        const mode: 'freeze' | 'delete' = rawMode === 'delete' ? 'delete' : 'freeze'
-
-        const sendErr = async (message: string) => {
-          await ctx.client.sendWebXDCUpdate(session.msgId, JSON.stringify({
-            payload: {
-              type: 'unpair_error', requestId, message,
-              version: agentSetup.getAgentSetupVersion(), senderAddr: 'server',
-            },
-            summary: 'Unpair error',
-          })).catch(() => {})
-        }
-
-        if (!Number.isFinite(contactId) || contactId < 1) {
-          await sendErr('Invalid contact')
-          continue
-        }
-
-        const chatIds = access.chatsForOwner(contactId)
-        const principalExists = access.loadContact(access.DEFAULT_AGENT_ID, contactId) !== null
-        if (chatIds.length === 0 && !principalExists) {
-          await sendErr('No paired chats or principal record for this contact')
-          continue
-        }
-        // chatIds.length === 0 && principalExists is the Option A edge
-        // case — orphan principal with no chats. Fall through; the
-        // loop below is a no-op, removeContact wipes the orphan record.
-
-        // Send the "done" response first so the card can update its UI before
-        // cleanup tears down the chats — if the source chat is among those
-        // owned by this contact, the app will stop receiving updates once
-        // `cleanupChatState` runs against it.
-        try {
-          const devicesAfter = access.listPaired().filter(d => d.contactId !== contactId)
-          await ctx.client.sendWebXDCUpdate(session.msgId, JSON.stringify({
-            payload: {
-              type: 'unpair_done',
-              requestId,
-              contactId,
-              mode,
-              chatCount: chatIds.length,
-              remainingDevices: devicesAfter.length,
-              version: agentSetup.getAgentSetupVersion(),
-              senderAddr: 'server',
-            },
-            summary: 'Unpaired',
-          }))
-        } catch (err) {
-          ctx.logf('agent-setup: unpair_done send failed: %v', err)
-        }
-
-        // Clean up each owned chat. Post a farewell message before leaving so
-        // the user sees context in the frozen chat; skip it on delete since
-        // the chat disappears.
-        const farewell = mode === 'freeze'
-          ? 'You\'ve been unpaired from this Claude bot. This chat is now read-only — your history is preserved but no new messages will be processed.'
-          : null
-        const chatAction: 'delete' | 'leave' = mode === 'delete' ? 'delete' : 'leave'
-        // Process non-source chats first, then the source chat last, so the
-        // user's WebXDC card stays responsive until the moment its host chat
-        // is torn down.
-        const ordered = chatIds.slice().sort((a, b) => {
-          if (a === session.sourceChatId) return 1
-          if (b === session.sourceChatId) return -1
-          return a - b
-        })
-        for (const cid of ordered) {
-          if (farewell) {
-            try { await ctx.client.send(cid, farewell) } catch (err) {
-              ctx.logf('agent-setup: unpair farewell send failed chat=%d: %v', cid, err)
-            }
-          }
-          try {
-            await ctx.cleanupChatState(cid, { chatAction, reason: `unpair-${mode}` })
-          } catch (err) {
-            ctx.logf('agent-setup: unpair cleanup failed chat=%d: %v', cid, err)
-          }
-        }
-        // Wipe the principal record so backfill on next startup doesn't
-        // resurrect the contact, and so isContactPermissioned returns false.
-        // (#66 Option A — full per-contact unpair wipes both layers.)
-        access.removeContact(access.DEFAULT_AGENT_ID, contactId)
-        ctx.logf('agent-setup: unpaired contact %d (%s, %d chat(s))', contactId, mode, chatIds.length)
-        continue
-      }
-
       if (payload.type === 'resume_attach') {
         const requestId = typeof (payload as { requestId?: unknown }).requestId === 'number'
           ? (payload as { requestId: number }).requestId : 0
@@ -1788,56 +1581,6 @@ export const agentSetupApp: WebXDCApp = {
           } catch (sendErr) {
             ctx.logf('agent-setup: resume_attach_err send failed: %v', sendErr)
           }
-        }
-        continue
-      }
-
-      if (payload.type === 'instantiateTemplate') {
-        const templateId = typeof (payload as { templateId?: unknown }).templateId === 'string'
-          ? (payload as { templateId: string }).templateId : ''
-        if (!templateId) {
-          ctx.logf('agent-setup: instantiateTemplate missing templateId')
-          continue
-        }
-        const draft = templates.instantiate(templateId)
-        if (!draft) {
-          ctx.logf('agent-setup: template %s not found', templateId)
-          continue
-        }
-        const ownerContactId = await resolveOwner()
-        if (!ownerContactId) continue
-
-        // Synthesize a fresh id so multiple instantiations of the same
-        // template don't collide (the template yaml uses a fixed id).
-        const newAgentId = agents.synthesizeAgentId(draft.name)
-        try {
-          const newChatId = await ctx.client.createGroup(draft.name)
-          await ctx.client.addContactToChat(newChatId, ownerContactId)
-          access.addChat(newChatId, ownerContactId)
-          const newAgent: agents.AgentDef = { ...draft, id: newAgentId }
-          // Roll a random orientation so same-model agents are visually
-          // differentiable (matches `create` path).
-          agents.setIconMirror(newAgent, Math.random() < 0.5)
-          agents.saveAgent(newAgent)
-          bindings.bindAgent(newChatId, newAgentId, {
-            inheritClaudeMd: agents.inheritClaudeMdForModel(newAgent.model),
-          })
-          const savedAgent = agents.getAgent(newAgentId)
-          if (savedAgent) await decorateAgentChat(ctx, newChatId, savedAgent)
-          ctx.logf(
-            'agent-setup: instantiated template %s as agent %s for chat %d (owner %d)',
-            templateId, newAgentId, newChatId, ownerContactId,
-          )
-
-          const update = JSON.stringify({
-            payload: { type: 'created', chatId: newChatId, name: draft.name },
-            summary: 'Agent created',
-          })
-          await ctx.client.sendWebXDCUpdate(session.msgId, update)
-          // Session stays alive — user may keep using the settings card.
-        } catch (err) {
-          ctx.logf('agent-setup: instantiateTemplate failed: %v', err)
-          try { agents.deleteAgent(newAgentId) } catch {}
         }
         continue
       }

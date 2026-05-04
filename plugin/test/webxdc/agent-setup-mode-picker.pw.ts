@@ -74,7 +74,6 @@ function buildInit(overrides: Record<string, unknown> = {}) {
     availableBuiltinTools: [],
     availableMcpServers: [],
     connectedMcpServers: [],
-    pairedDevices: [],
     ownerEmail: "test@example.com",
     ...overrides,
   };
