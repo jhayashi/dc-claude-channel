@@ -933,7 +933,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.46;
+var APP_VERSION = 1.47;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -2040,11 +2040,33 @@ function showDocument(index) {
   }
 
   var tabs = document.querySelectorAll('.doc-tab');
+  var activeTab = null;
   for (var i = 0; i < tabs.length; i++) {
-    tabs[i].className = 'doc-tab' + (Number(tabs[i].getAttribute('data-index')) === index ? ' active' : '');
+    var on = Number(tabs[i].getAttribute('data-index')) === index;
+    tabs[i].className = 'doc-tab' + (on ? ' active' : '');
+    if (on) activeTab = tabs[i];
   }
+  scrollTabIntoView(activeTab);
 
   updateBottomBar();
+}
+
+// Horizontal-only scroll so the active tab's title is visible. Sidebar
+// renders newest-first (left), so opening an older file lands on a tab
+// that may sit off-screen to the right under newer ones (#73 testing
+// surfaced this on phone). Adjusts sidebar.scrollLeft only — never
+// touches page or sidebar vertical scroll.
+function scrollTabIntoView(tab) {
+  if (!tab) return;
+  var sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  var sRect = sidebar.getBoundingClientRect();
+  var tRect = tab.getBoundingClientRect();
+  if (tRect.left < sRect.left) {
+    sidebar.scrollLeft += tRect.left - sRect.left;
+  } else if (tRect.right > sRect.right) {
+    sidebar.scrollLeft += tRect.right - sRect.right;
+  }
 }
 
 function rebuildSidebar() {
