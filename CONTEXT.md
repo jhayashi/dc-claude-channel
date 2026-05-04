@@ -4,7 +4,7 @@ The vocabulary of this codebase. Use these terms exactly when discussing the sys
 
 This file is **living**: extend it whenever a session sharpens a fuzzy term, names a new module, or surfaces a load-bearing distinction. The bar for inclusion is "a term that, if not in the glossary, would force a paragraph of explanation each time it's used."
 
-For longer-form architecture documentation, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). For decisions, see [`docs/adr/`](docs/adr/).
+For longer-form architecture documentation, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ---
 
