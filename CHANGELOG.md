@@ -18,10 +18,6 @@ Adds `/effort`, fixes the disappearing-task-progress bug, and backfills the slas
 
 - **TodoWrite step indicators were being overwritten by tool emojis** (#79). DC reactions are unique per (sender, message), so each new tool reaction replaced the previous one — meaning the user almost never saw `1️⃣ 2️⃣ 3️⃣` task progress in practice; they only saw whichever tool ran most recently. Once a `todo-*` reaction fires in a turn, non-todo reactions are now suppressed for the rest of the turn (lock clears at `clearTurnTarget`). Subsequent `TodoWrite` calls still fire and bypass the 60s debounce — matches the file-header doc that pre-fix said "never debounced" while the code applied it uniformly.
 
-### Removed
-
-- **Legacy `new-chat` template-grid view** (#90). Pre-fix `agent-setup.html` shipped a v1.x template-grid creation path reachable only when `DC_NEW_AGENT_FLOW=0` was set in the env — slated for removal per its own source comment. Now gone: HTML view, `renderPickList`/`renderTemplates` JS functions, dead `templateList` state, the env-var opt-out, and the unused backend `templates: templatesPayload(ctx)` init field. The wall flow (`new-chat-mode → wall-screen → coach`) is the only supported agent-creation path. `agent-setup` APP_VERSION 2.09 → 2.10.
-
 ### Added
 
 - **`/effort [low|medium|high|xhigh|max]`** — per-agent reasoning effort override, mirroring `/model`. Persists to the agent definition; takes effect on the next message via the CLI's `--effort <level>` flag (subagent is evicted so it respawns with the new flag). `/effort` with no args shows the current setting; `/effort none` (or `default` / `reset`) clears the override so the agent inherits the CLI default. Schema gains `effort: enum(...)` on `AgentDef`; spawn opts gain `effort?: EffortLevel`; the env block surfaces `Effort: <level>` so the subagent can self-introspect.
