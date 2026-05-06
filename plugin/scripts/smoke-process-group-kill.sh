@@ -1,22 +1,31 @@
 #!/usr/bin/env bash
-# Smoke test: does `claude -p` cascade SIGTERM to its grandchildren?
+# Smoke test: does sending SIGTERM to claude cascade to its grandchildren?
 #
-# Empirical answer (recorded 2026-05-05 against claude 2.1.128): NO.
-# claude itself dies on SIGTERM, but its Bash-tool shells and their
-# subprocesses orphan and keep running. Reparented to init.
+# Empirical history (2026-05-05, claude 2.1.128):
 #
-# This is the regression check for the process-group kill behavior in
-# plugin/dispatcher/subagent-process.ts. Once `detached: true` +
-# negative-PID kill ship (GH issue #21), this same script becomes the
-# smoke fixture for verifying the cascade actually works.
+#   1. SIGTERM to raw claude -p (no detach): grandchildren LEAK. claude
+#      itself dies; its Bash-tool zsh subshells and their subprocesses
+#      orphan and reparent to init. This is the bug that motivated #21.
 #
-# Run before each release that touches subagent-process.ts:
-#   bash scripts/smoke-process-group-kill.sh
+#   2. process-group SIGTERM (claude in own pgrp via setsid): grandchildren
+#      STILL LEAK. claude's Bash tool internally `setsid`s its tool shells,
+#      so each subshell sits in its own process group, distinct from
+#      claude's. `process.kill(-claude_pgid, SIGTERM)` only hits claude.
+#      Negative-PID kill is the wrong cascade mechanism for this scenario.
 #
-# Pre-fix expected verdict: "Grandchildren leak. detached:true justified."
-# Post-fix expected verdict: "claude -p DOES cascade SIGTERM" (after the
-# dispatcher's spawn opts include detached:true and the kill path uses
-# negative-PID — only true through the dispatcher, not raw `claude -p`).
+#   3. process-tree walk + per-pid kill (post-fix): grandchildren DIE.
+#      Walking the parent-child tree via `pgrep -P` recursively bypasses
+#      pgrp boundaries. Same shape as Windows `taskkill /T /F`. This is
+#      what plugin/dispatcher/subagent-process.ts:killTree() does.
+#
+# Run pre-release for any change that touches subagent-process.ts:
+#   bash plugin/scripts/smoke-process-group-kill.sh
+#
+# This script tests RAW claude -p (case 1 above) — confirms the bug premise
+# and serves as the baseline. To verify the dispatcher's tree-walk fix
+# actually works in a paired chat, send a message that triggers a long Bash
+# (e.g. `python3 -c 'import time; time.sleep(120)'`), then /stop, then check
+# the process tree from a separate shell.
 
 set -u
 

@@ -13,7 +13,7 @@
  *   - Caller calls close() on eviction/shutdown.
  */
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import type { EffortLevel } from '../models.js'
 
 interface StreamFrame {
@@ -247,11 +247,12 @@ export class SubagentProcess {
     )
 
     // detached: true makes the child the leader of its own process group on
-    // POSIX (no-op for that purpose on Windows). Combined with the negative-
-    // PID signaling in close(), this cascades SIGTERM/SIGKILL to grandchildren
-    // — claude's Bash-tool shells and their descendants — instead of orphaning
-    // them. Empirical confirmation that claude does NOT cascade on its own:
-    // plugin/scripts/smoke-process-group-kill.sh (#21).
+    // POSIX, isolating it from the dispatcher's pgrp. NOTE: this alone does
+    // NOT cascade signals — claude's Bash tool internally `setsid`s its tool
+    // shells, so each shell sits in its OWN process group, separate from
+    // claude's. The actual cascade happens via the explicit process-tree
+    // walk in killTree(). detached:true is kept for clean isolation; the
+    // tree walk is what makes /stop actually take down grandchildren.
     //
     // Stdio piping is unaffected: explicit pipe stdio overrides any detach
     // semantics around stdin/stdout/stderr.
@@ -392,13 +393,26 @@ export class SubagentProcess {
   }
 
   /**
-   * Signal the subagent's whole process group on POSIX, or just the direct
-   * child on Windows. Wrapped in try/catch — ESRCH (already-exited) is benign.
+   * Signal the subagent's entire process tree.
    *
-   * Windows note: process groups in the POSIX sense don't exist; negative-PID
-   * kill throws EINVAL. v1.4 follow-up will add `taskkill /T /F /PID <pid>`
-   * for tree-kill on Windows. Until then Windows users get the pre-existing
-   * direct-child-only behavior with a known grandchild-leak limitation.
+   * Why a tree walk and not process-group kill: claude's Bash tool internally
+   * `setsid`s its tool shells (verified empirically — see
+   * plugin/scripts/smoke-process-group-kill.sh). Each shell + its descendants
+   * sit in their own process group, separate from claude's. So
+   * `process.kill(-pid, signal)` on claude's pgrp doesn't reach them.
+   *
+   * Walking the parent-child tree via `pgrep -P` recursively bypasses pgrp
+   * boundaries entirely — same shape as Windows `taskkill /T /F`. Wrapped in
+   * try/catch per kill; ESRCH (already-exited) is benign.
+   *
+   * Windows path: tracked as #95 (taskkill /T /F /PID). For now Windows
+   * falls back to direct-child kill with a documented grandchild-leak
+   * limitation.
+   *
+   * Race: between `collectDescendants` and the kill loop, claude could spawn
+   * new grandchildren that we miss. Window is single-digit ms; long-running
+   * tools (the targets of /stop) are unlikely to spawn new descendants in
+   * that window. Acceptable.
    */
   private killTree(signal: 'SIGTERM' | 'SIGKILL'): void {
     const pid = this.child.pid
@@ -407,6 +421,43 @@ export class SubagentProcess {
       try { this.child.kill(signal) } catch {}
       return
     }
-    try { process.kill(-pid, signal) } catch {}
+    // Snapshot the tree BEFORE killing — once the parent dies, descendants
+    // reparent to init and we lose the linkage.
+    const tree = this.collectDescendants(pid)
+    // Kill descendants depth-first (children before parents) so each layer
+    // dies cleanly before its parent is gone.
+    for (let i = tree.length - 1; i >= 0; i--) {
+      try { process.kill(tree[i], signal) } catch {}
+    }
+    try { process.kill(pid, signal) } catch {}
+  }
+
+  /**
+   * Collect every descendant PID of `rootPid` via repeated `pgrep -P`.
+   * Returns descendants in BFS order (shallowest first); kill in reverse for
+   * depth-first teardown. Synchronous because killTree is called once on
+   * shutdown — not a hot path.
+   */
+  private collectDescendants(rootPid: number): number[] {
+    const result: number[] = []
+    const stack = [rootPid]
+    while (stack.length > 0) {
+      const p = stack.pop()!
+      let out = ''
+      try {
+        out = execFileSync('pgrep', ['-P', String(p)], { encoding: 'utf-8' })
+      } catch {
+        // pgrep exits non-zero when no children — treat as empty.
+        continue
+      }
+      for (const line of out.split('\n')) {
+        const child = parseInt(line.trim(), 10)
+        if (!isNaN(child) && child > 0) {
+          result.push(child)
+          stack.push(child)
+        }
+      }
+    }
+    return result
   }
 }
