@@ -3034,6 +3034,34 @@ async function main(): Promise<void> {
     handleSystemMessage,
     handleChatModified,
     handleUnpaired: handleUnpairedMessage,
+    isEditorAuthorized: (chatId, fromId) => {
+      // #45: re-check editor's capability at edit time. Original sender's
+      // role may have been demoted between original-send and edit. Same
+      // shape as isAuthorized's caps check; chatId not strictly needed
+      // (record-existence + non-empty caps suffice) but preserved for
+      // future per-chat policy.
+      void chatId
+      if (!fromId) return true
+      return access.getCapabilitiesFor(access.DEFAULT_AGENT_ID, fromId).length > 0
+    },
+    handleEdit: async (event) => {
+      const t0 = Date.now()
+      logf('edit-as-interrupt: chat=%d msg=%d from=%d', event.chatId, event.msgId, event.fromId)
+      try {
+        await subagentCache.evictChat(event.chatId)
+        logf('edit-as-interrupt: evictChat ok chat=%d elapsed=%dms', event.chatId, Date.now() - t0)
+      } catch (err) {
+        logf('edit-as-interrupt: evictChat failed chat=%d: %v', event.chatId, err)
+      }
+      const t1 = Date.now()
+      try {
+        await subagentCache.dispatch(event.chatId, event.text)
+        logf('edit-as-interrupt: dispatch ok chat=%d turn-elapsed=%dms total=%dms',
+             event.chatId, Date.now() - t1, Date.now() - t0)
+      } catch (err) {
+        logf('edit-as-interrupt: dispatch failed chat=%d: %v', event.chatId, err)
+      }
+    },
     logf,
   })
 
@@ -3045,6 +3073,21 @@ async function main(): Promise<void> {
   client.onChatModified((chatId) => {
     if (shuttingDown) return
     router.onChatModified(chatId).catch((err) => logf('router crashed: %v', err))
+  })
+
+  // #45: edit-as-interrupt. The dc-client filter pipeline handles single-msg
+  // dispatch, lastUserMsgId pre-filter, debounce, and dedupe; the router
+  // gates on permission + dispatches.
+  client.onMessageEdit((event) => {
+    if (shuttingDown) return
+    router.onMessageEdit(event).catch((err) => logf('router crashed: %v', err))
+  })
+
+  // #45: backfill lastUserMsgId for paired chats so the first edit after a
+  // dispatcher restart isn't silently ignored by the most-recent pre-filter.
+  // Runs alongside other startup hooks; non-blocking on failure.
+  client.backfillLastUserMsgIds(access.allowedChats()).catch((err) => {
+    logf('startup: backfillLastUserMsgIds failed: %v', err)
   })
 
   // Pair-on-verified-contact: when a joiner completes securejoin during a

@@ -77,6 +77,19 @@ export interface ReactionEvent {
   timestamp: Date;
 }
 
+/**
+ * A message-edit event surfaced after debounce + dedupe (#45). Fires
+ * only when the edited message is the most-recent user message in the
+ * chat — older edits are dropped at the dc-client layer.
+ */
+export interface MessageEditEvent {
+  chatId: number;
+  msgId: number;
+  fromId: number;
+  text: string;
+  timestamp: Date;
+}
+
 export interface BotStatus {
   address: string;
   connected: boolean;
@@ -115,6 +128,22 @@ export class DCClient {
   private contextEvents: ReturnType<DeltaChatOverJsonRpcServer['getContextEvents']> | null = null;
   private logFn: ((format: string, ...args: unknown[]) => void) | null = null;
   private rateLimiter: RateLimiter | null = null;
+
+  // ── Edit-as-interrupt state (#45) ──────────────────────────────────────
+  // Most-recent inbound (non-self) msgId per chat. Set on every IncomingMsg;
+  // backfilled at dispatcher startup. Read by onMessageEdit's pre-filter to
+  // skip RPC for edits to non-most-recent messages.
+  private lastUserMsgId: Map<number, number> = new Map();
+  // Per-chat debounce timer for coalesced edits. At most one timer per chat;
+  // each new MsgsChanged for the chat resets the timer.
+  private pendingEditTimers: Map<number, NodeJS.Timeout> = new Map();
+  // Per-(chatId, msgId) snapshot of the last text we fired on. Used to dedupe
+  // re-fires when DC's MsgsChanged repeats with the same content.
+  private editLastFiredText: Map<string, string> = new Map();
+  // Default debounce window — edits within this window coalesce to one fire.
+  // 5s is long enough to absorb a typing-pause-typing edit storm without
+  // making single-edit responsiveness too laggy.
+  private static EDIT_DEBOUNCE_MS = 5000;
 
   /** Set a logger for internal error reporting. */
   setLogger(fn: (format: string, ...args: unknown[]) => void): void {
@@ -336,6 +365,19 @@ export class DCClient {
         if (snap.fromId === CONTACT_SELF) return;
         await rpc.markseenMsgs(accountId, [event.msgId]).catch(() => {});
 
+        // #45: track most-recent user msgId per chat for edit-as-interrupt
+        // pre-filter, and cancel any pending edit-debounce timer for this
+        // chat — newer messages always supersede pending edits to older
+        // ones (Elena #1; otherwise the edit's restart would clobber the
+        // newer message's response after the debounce expires).
+        this.lastUserMsgId.set(snap.chatId, snap.id);
+        const pendingEditTimer = this.pendingEditTimers.get(snap.chatId);
+        if (pendingEditTimer) {
+          clearTimeout(pendingEditTimer);
+          this.pendingEditTimers.delete(snap.chatId);
+          this.log('dc-client: incoming msg %d on chat %d cancelled pending edit', snap.id, snap.chatId);
+        }
+
         // Auto-download attachments that aren't fully downloaded yet.
         this.log('dc-client: msg %d: viewType=%s downloadState=%s file=%s', snap.id, snap.viewType, snap.downloadState, snap.file ?? 'null');
         snap = await this.ensureDownloaded(snap, event.msgId);
@@ -407,6 +449,103 @@ export class DCClient {
         this.log('dc-client: reaction event error: %v', err);
       }
     });
+  }
+
+  /**
+   * Register a handler for message-edit events (#45). Subscribes to DC's
+   * MsgsChanged event and filters down to actual edits of the most-recent
+   * user message in each paired chat.
+   *
+   * Filter pipeline:
+   *   1. Single-message dispatch only (chatId !== 0 && msgId !== 0).
+   *   2. Cheap pre-filter: msgId === lastUserMsgId[chatId]. MsgsChanged is
+   *      chatty (read receipts, delivery, etc.); this drops ~99% of fires
+   *      without an RPC. Edits to non-most-recent messages are out of scope
+   *      for v1 anyway.
+   *   3. Debounce 5s per chat. Each fire resets the timer; deliverEdit runs
+   *      after 5s of quiet on the chat. Coalesces typing-pause-typing storms.
+   *   4. After debounce expires: getMessage RPC, check isEdited + not-self,
+   *      dedupe by text (no editedTimestamp on the Message schema), fire
+   *      handler.
+   *
+   * Pending timers are cancelled by the IncomingMsg handler when a newer
+   * user message arrives — newer messages always supersede edits to older
+   * ones. See onIncomingMessage().
+   *
+   * Register BEFORE calling startIO().
+   */
+  onMessageEdit(handler: (event: MessageEditEvent) => void): void {
+    if (!this.contextEvents) throw new Error('Account not initialized');
+
+    this.contextEvents.on('MsgsChanged', (event: { chatId: number; msgId: number }) => {
+      // 1. single-message dispatch only
+      if (event.chatId === 0 || event.msgId === 0) return;
+      // 2. pre-filter: only most-recent user msg
+      const lastMsg = this.lastUserMsgId.get(event.chatId);
+      if (lastMsg !== event.msgId) return;
+      // 3. debounce — reset timer on every fire
+      const existing = this.pendingEditTimers.get(event.chatId);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => this.deliverEdit(event.chatId, event.msgId, handler), DCClient.EDIT_DEBOUNCE_MS);
+      this.pendingEditTimers.set(event.chatId, timer);
+    });
+  }
+
+  /** After-debounce edit delivery: fetch message, validate, dedupe, fire. */
+  private async deliverEdit(chatId: number, msgId: number, handler: (event: MessageEditEvent) => void): Promise<void> {
+    this.pendingEditTimers.delete(chatId);
+    try {
+      const { rpc, accountId } = this.ensureAccount();
+      const snap = await rpc.getMessage(accountId, msgId);
+      // 4a. only fire on actual edits
+      if (!snap.isEdited) return;
+      // 4b. skip self-authored (DC only allows users to edit their own messages,
+      // but defensive: bot's own outbound edits should never trigger restart)
+      if (snap.fromId === CONTACT_SELF) return;
+      // 4c. dedupe by text — DC's MsgsChanged can re-fire for the same edit;
+      // we only want to fire once per distinct edited text
+      const dedupeKey = `${chatId}:${msgId}`;
+      const lastText = this.editLastFiredText.get(dedupeKey);
+      if (lastText === snap.text) return;
+      this.editLastFiredText.set(dedupeKey, snap.text);
+
+      handler({
+        chatId: snap.chatId,
+        msgId: snap.id,
+        fromId: snap.fromId,
+        text: snap.text,
+        timestamp: new Date(),
+      });
+    } catch (err) {
+      this.log('dc-client: deliverEdit error chat=%d msg=%d: %v', chatId, msgId, err);
+    }
+  }
+
+  /**
+   * Backfill `lastUserMsgId` for the given chats from DC's local DB. Called
+   * during dispatcher startup so the first edit after restart isn't silently
+   * ignored (the cheap pre-filter in onMessageEdit needs lastUserMsgId
+   * populated).
+   */
+  async backfillLastUserMsgIds(chatIds: number[]): Promise<void> {
+    const { rpc, accountId } = this.ensureAccount();
+    for (const chatId of chatIds) {
+      try {
+        // Get the message-id list (most recent last). We want the highest id
+        // where fromId !== CONTACT_SELF.
+        const ids = await rpc.getMessageIds(accountId, chatId, false, false);
+        for (let i = ids.length - 1; i >= 0; i--) {
+          const id = ids[i];
+          const snap = await rpc.getMessage(accountId, id).catch(() => null);
+          if (snap && snap.fromId !== CONTACT_SELF) {
+            this.lastUserMsgId.set(chatId, snap.id);
+            break;
+          }
+        }
+      } catch (err) {
+        this.log('dc-client: backfillLastUserMsgIds chat=%d failed: %v', chatId, err);
+      }
+    }
   }
 
   /**
