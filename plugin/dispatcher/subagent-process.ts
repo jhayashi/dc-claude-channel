@@ -433,31 +433,50 @@ export class SubagentProcess {
   }
 
   /**
-   * Collect every descendant PID of `rootPid` via repeated `pgrep -P`.
+   * Collect every descendant PID of `rootPid` via a single `ps` snapshot.
    * Returns descendants in BFS order (shallowest first); kill in reverse for
-   * depth-first teardown. Synchronous because killTree is called once on
-   * shutdown — not a hot path.
+   * depth-first teardown.
+   *
+   * One snapshot rather than N repeated `pgrep -P` calls: the recursive pgrep
+   * approach has a race surface — transient PIDs between calls can be missed
+   * or misattributed. Empirically observed during dispatcher-path verification
+   * on 2026-05-05. Single ps invocation gives an atomic view of the parent
+   * map; the walk is then in-memory.
+   *
+   * Linux + macOS both ship this ps invocation. Synchronous because killTree
+   * is called once on shutdown — not a hot path.
    */
   private collectDescendants(rootPid: number): number[] {
-    const result: number[] = []
-    const stack = [rootPid]
-    while (stack.length > 0) {
-      const p = stack.pop()!
-      let out = ''
-      try {
-        out = execFileSync('pgrep', ['-P', String(p)], { encoding: 'utf-8' })
-      } catch {
-        // pgrep exits non-zero when no children — treat as empty.
-        continue
-      }
-      for (const line of out.split('\n')) {
-        const child = parseInt(line.trim(), 10)
-        if (!isNaN(child) && child > 0) {
-          result.push(child)
-          stack.push(child)
-        }
+    let raw = ''
+    try {
+      raw = execFileSync('ps', ['-e', '-o', 'pid=,ppid='], { encoding: 'utf-8' })
+    } catch {
+      return []
+    }
+    // Parent map (child → parent), then invert to a children map for BFS.
+    const childMap = new Map<number, number[]>()
+    for (const line of raw.split('\n')) {
+      const parts = line.trim().split(/\s+/)
+      if (parts.length < 2) continue
+      const pid = parseInt(parts[0], 10)
+      const ppid = parseInt(parts[1], 10)
+      if (isNaN(pid) || isNaN(ppid)) continue
+      if (!childMap.has(ppid)) childMap.set(ppid, [])
+      childMap.get(ppid)!.push(pid)
+    }
+    const descendants: number[] = []
+    const queue: number[] = [rootPid]
+    const visited = new Set<number>([rootPid])
+    while (queue.length > 0) {
+      const p = queue.shift()!
+      const kids = childMap.get(p) ?? []
+      for (const k of kids) {
+        if (visited.has(k)) continue  // defensive against cycles in malformed ps output
+        visited.add(k)
+        descendants.push(k)
+        queue.push(k)
       }
     }
-    return result
+    return descendants
   }
 }
