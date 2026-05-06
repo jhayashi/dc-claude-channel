@@ -246,9 +246,19 @@ export class SubagentProcess {
       opts.subagentId, opts.chatId, opts.sessionId, String(opts.resume),
     )
 
+    // detached: true makes the child the leader of its own process group on
+    // POSIX (no-op for that purpose on Windows). Combined with the negative-
+    // PID signaling in close(), this cascades SIGTERM/SIGKILL to grandchildren
+    // — claude's Bash-tool shells and their descendants — instead of orphaning
+    // them. Empirical confirmation that claude does NOT cascade on its own:
+    // plugin/scripts/smoke-process-group-kill.sh (#21).
+    //
+    // Stdio piping is unaffected: explicit pipe stdio overrides any detach
+    // semantics around stdin/stdout/stderr.
     this.child = spawn('claude', args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: opts.cwd,
+      detached: true,
       env: {
         ...process.env,
         DC_DISPATCHER_SOCKET: opts.dispatcherSocket,
@@ -365,16 +375,38 @@ export class SubagentProcess {
 
   async close(): Promise<void> {
     if (this.closed) return
+    // Step 1: graceful — stdin EOF lets claude shut down cleanly via stream-json.
     try { this.child.stdin.end() } catch {}
-    try { this.child.kill('SIGTERM') } catch {}
-    // Wait up to 2s for graceful exit, then SIGKILL
+    // Step 2: SIGTERM the whole process group on POSIX (negative PID = group);
+    // fall back to direct-child kill on Windows. ESRCH (already exited) is fine.
+    this.killTree('SIGTERM')
+    // Step 3: 2s grace, then SIGKILL the group (or direct child on Windows).
     await new Promise<void>((resolve) => {
       const t = setTimeout(() => {
-        try { this.child.kill('SIGKILL') } catch {}
+        this.killTree('SIGKILL')
         resolve()
       }, 2000)
       this.child.on('exit', () => { clearTimeout(t); resolve() })
     })
     this.closed = true
+  }
+
+  /**
+   * Signal the subagent's whole process group on POSIX, or just the direct
+   * child on Windows. Wrapped in try/catch — ESRCH (already-exited) is benign.
+   *
+   * Windows note: process groups in the POSIX sense don't exist; negative-PID
+   * kill throws EINVAL. v1.4 follow-up will add `taskkill /T /F /PID <pid>`
+   * for tree-kill on Windows. Until then Windows users get the pre-existing
+   * direct-child-only behavior with a known grandchild-leak limitation.
+   */
+  private killTree(signal: 'SIGTERM' | 'SIGKILL'): void {
+    const pid = this.child.pid
+    if (pid === undefined) return  // spawn failed; nothing to signal
+    if (process.platform === 'win32') {
+      try { this.child.kill(signal) } catch {}
+      return
+    }
+    try { process.kill(-pid, signal) } catch {}
   }
 }
