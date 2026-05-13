@@ -1276,8 +1276,13 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         if (!text) {
           return { content: [{ type: 'text' as const, text: 'reply: text is required' }], isError: true }
         }
-        const msgId = await client.send(chatId, text)
-        return { content: [{ type: 'text' as const, text: `sent (id: ${msgId})` }] }
+        try {
+          const msgId = await client.send(chatId, text)
+          return { content: [{ type: 'text' as const, text: `sent (id: ${msgId})` }] }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : JSON.stringify(err)
+          return { content: [{ type: 'text' as const, text: `reply: send failed: ${msg}` }], isError: true }
+        }
       }
 
       case 'dc_react': {
@@ -2106,7 +2111,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       isError: true,
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = err instanceof Error ? err.message : (typeof err === 'object' ? JSON.stringify(err) : String(err))
     emit(false, 'tool_crash')
     return {
       content: [{ type: 'text' as const, text: `${req.params.name} failed: ${msg}` }],
