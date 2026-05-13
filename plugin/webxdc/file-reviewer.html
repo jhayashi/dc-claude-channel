@@ -225,6 +225,46 @@ body {
   vertical-align: middle;
 }
 .content li.task.done { color: var(--ink-faint); }
+/* #75: suppress native long-press behaviors (iOS callout/selection
+   magnifier, Android selection) on commentable elements, and give list
+   items a usable hit-target size. The CSS is the actual cure for native
+   gesture conflicts — sync preventDefault in attachLongPress is only
+   defense-in-depth. touch-action: pan-y keeps vertical scroll working
+   when the user's finger lands on a commentable bullet. */
+.content li[data-paragraph],
+.content tr[data-paragraph],
+.content .code-line[data-paragraph],
+.md-block[data-paragraph] {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: pan-y;
+}
+.content li[data-paragraph] {
+  min-height: 36px;
+  padding: 6px 0;
+}
+/* #75: custom bullet rendering for top-level lists with commentable items.
+   Native ::marker pseudo-elements aren't in the <li>'s hit-test box, so
+   tapping the visible bullet falls through to the <ul> and bubbles up
+   to surrounding blocks. Custom .bullet spans are inside the <li>, so
+   bullet taps register correctly. */
+.content .md-list-custom {
+  list-style: none;
+  padding-left: 0;
+}
+.content .md-list-custom > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.content .md-list-custom > li > .bullet {
+  flex: 0 0 auto;
+  min-width: 16px;
+  color: var(--ink-faint);
+  user-select: none;
+  padding-top: 6px;  /* match the li padding so bullet aligns with text */
+}
 .content h4 { font-size: 16px; margin: 16px 0 8px; color: var(--ink); }
 .content h5 { font-size: 14px; margin: 14px 0 6px; color: var(--ink); }
 .content h6 { font-size: 13px; margin: 12px 0 6px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.05em; }
@@ -933,7 +973,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.47;
+var APP_VERSION = 1.48;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -943,7 +983,6 @@ var activeIndex = -1;
 // For markdown: key = paragraph index (0-indexed)
 var commentsByDoc = {}; // { docIndex: { anchor: commentText } }
 var editingAnchor = null; // currently editing anchor (or null)
-var longPressTimer = null;
 
 function getComments(docIndex) {
   if (!commentsByDoc[docIndex]) commentsByDoc[docIndex] = {};
@@ -1318,10 +1357,24 @@ function renderBlocksInto(container, children, paraIdx, comments) {
       for (var c = 0; c < child.children.length; c++) {
         if (child.children[c].tagName === 'LI') items.push(child.children[c]);
       }
+      // #75: custom bullets so taps on the visible bullet hit the <li>
+      // instead of falling through to the <ul>. Mark the parent so the
+      // CSS strips native list-style + lays out items in a flex row.
+      // Task-list items (rendered with their own .task-mark span) keep
+      // their existing layout — skip the .bullet injection for them.
+      child.classList.add('md-list-custom');
+      var isOrdered = child.tagName === 'OL';
       var commentedItems = [];
       for (var li = 0; li < items.length; li++) {
         var item = items[li];
         item.setAttribute('data-paragraph', String(paraIdx));
+        if (!item.classList.contains('task')) {
+          var bullet = document.createElement('span');
+          bullet.className = 'bullet';
+          bullet.setAttribute('aria-hidden', 'true');
+          bullet.textContent = isOrdered ? (li + 1) + '.' : '•';
+          item.insertBefore(bullet, item.firstChild);
+        }
         if (comments[paraIdx]) {
           item.classList.add('commented');
           commentedItems.push({ para: paraIdx, rowEl: item, rowIndex: li + 1, text: comments[paraIdx] });
@@ -1677,36 +1730,83 @@ function closeCommentPopover() {
 }
 
 /**
- * Attach a long-press (500ms) handler to an element.
+ * Attach a long-press (500ms) handler to an element. Also registers a
+ * contextmenu (right-click) handler that fires the same callback as a
+ * mouse / keyboard alternative.
+ *
+ * #75 rewrite: migrated from the touchstart/mousedown split (which had
+ * a late preventDefault inside setTimeout — useless against the OS's
+ * own long-press timer) to a unified PointerEvents implementation:
+ *
+ *   - synchronous preventDefault on pointerdown (defense-in-depth — the
+ *     CSS in .content li[data-paragraph] et al is the actual cure for
+ *     native gesture suppression)
+ *   - setPointerCapture so subsequent move/up events route to `el` even
+ *     if the finger slides off it (without capture, an off-target
+ *     pointermove fires on a different element and cancel never runs)
+ *   - 14px move threshold (matches Flutter kTouchSlop=18, Android
+ *     ScaledTouchSlop floor; was 4-6 in the plan — too aggressive,
+ *     touch-jitter cancels long-press on older devices)
+ *   - pointerType/button discrimination (right-click and middle-click
+ *     no longer start the timer; right-click routes to contextmenu)
+ *   - isConnected guard before firing callback (doc may have been
+ *     re-rendered during the 500ms hold via version_mismatch or tab
+ *     switch — fire on stale paragraph index = wrong content)
+ *   - haptic tick on success via navigator.vibrate(10) (Android only;
+ *     iOS WKWebView silently ignores)
  */
+var LONG_PRESS_MS = 500;
+var LONG_PRESS_MOVE_THRESHOLD_PX = 14;
+
 function attachLongPress(el, callback) {
   var timer = null;
-  var cancelled = false;
+  var startX = 0, startY = 0;
+  var pointerId = null;
 
-  function start(e) {
-    cancelled = false;
-    timer = setTimeout(function() {
-      if (!cancelled) {
-        e.preventDefault();
-        callback();
-      }
-    }, 500);
-  }
-  function cancel() {
-    cancelled = true;
+  function clear() {
     if (timer) { clearTimeout(timer); timer = null; }
+    if (pointerId !== null) {
+      try { el.releasePointerCapture(pointerId); } catch (_) {}
+      pointerId = null;
+    }
   }
 
-  el.addEventListener('touchstart', start, { passive: false });
-  el.addEventListener('touchend', cancel);
-  el.addEventListener('touchmove', cancel);
-  el.addEventListener('touchcancel', cancel);
-  // Desktop: mousedown
-  el.addEventListener('mousedown', function(e) {
-    if (e.button === 0) start(e);
+  el.addEventListener('pointerdown', function(e) {
+    // Right-click + middle-click on a mouse don't start long-press; they
+    // route through contextmenu instead.
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    clear();
+    pointerId = e.pointerId;
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+    startX = e.clientX;
+    startY = e.clientY;
+    e.preventDefault();  // defense-in-depth — suppress synthetic mouse follow-on
+    timer = setTimeout(function() {
+      timer = null;
+      // Element may have been removed during the 500ms hold (tab switch,
+      // version_mismatch re-render). Fire on stale → wrong-content card.
+      if (!el.isConnected) return;
+      try { if (navigator.vibrate) navigator.vibrate(10); } catch (_) {}
+      callback();
+    }, LONG_PRESS_MS);
   });
-  el.addEventListener('mouseup', cancel);
-  el.addEventListener('mouseleave', cancel);
+
+  el.addEventListener('pointermove', function(e) {
+    if (e.pointerId !== pointerId) return;
+    var dx = e.clientX - startX, dy = e.clientY - startY;
+    if (dx * dx + dy * dy > LONG_PRESS_MOVE_THRESHOLD_PX * LONG_PRESS_MOVE_THRESHOLD_PX) clear();
+  });
+  el.addEventListener('pointerup', clear);
+  el.addEventListener('pointercancel', clear);
+  el.addEventListener('pointerleave', clear);  // defensive; capture should prevent
+
+  // Mouse / keyboard alternative — right-click (and the "Apps" key on
+  // some keyboards) fires the same callback. Accessibility floor for
+  // users who can't long-press.
+  el.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    if (el.isConnected) callback();
+  });
 }
 
 // ── Comment card ────────────────────────────────────────────────────
