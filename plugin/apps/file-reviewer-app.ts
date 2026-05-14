@@ -1,7 +1,28 @@
+import { mkdtempSync, writeFileSync, unlinkSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { WebXDCApp, ToolDef, ToolResult, AppContext } from '../webxdc-app.js'
 import type { WebXDCUpdate } from '../dc-client.js'
 import * as fileReviewer from '../file-reviewer.js'
 import { getBinding } from '../bindings.js'
+
+// #78: hard cap on export-as-attachment file size. The assembled content
+// (all chunks of a logical file concatenated) must fit under this to be
+// exported. Leaves headroom under DC core's sendUpdate ceiling for the
+// JSON wrapper. Must match the JS-side constant in file-reviewer.html.
+export const MAX_EXPORT_BYTES = 100_000
+
+// #78: file extension inference for export-as-attachment. Used when the
+// document's title doesn't already have an extension. Order: title ext
+// (kept) → this map → '.txt' fallback. Conservative — only well-known
+// languages map to a sensible extension; unknown languages fall to .txt
+// (don't mislead the user about format).
+const LANG_TO_EXT: Record<string, string> = {
+  javascript: 'js', typescript: 'ts', python: 'py', bash: 'sh',
+  go: 'go', rust: 'rs', java: 'java', ruby: 'rb', php: 'php',
+  json: 'json', yaml: 'yml', toml: 'toml', markdown: 'md',
+  markup: 'html', css: 'css', diff: 'diff', sql: 'sql',
+}
 
 // DC core's STATUS_UPDATE_SIZE_MAX is 100 KiB (102_400 bytes) — the
 // per-SMTP-batch soft limit at which `flush_status_updates` splits the
@@ -237,6 +258,11 @@ export const fileReviewerApp: WebXDCApp = {
     // For typical-sized docs this means one SMTP send instead of N. The
     // per-chunk startLine fields are preserved so comment routing still
     // resolves to absolute line numbers in the viewer.
+    //
+    // #78 pre-req: every chunk's payload carries fileId so the
+    // export-as-attachment assembler in the viewer can group chunks of
+    // the same logical file. Pre-#78 only chunk 0 carried fileId (for
+    // notification deep-linking); now all chunks share the file's id.
     const bundledUpdateObj = {
       payload: {
         type: 'document',
@@ -244,7 +270,7 @@ export const fileReviewerApp: WebXDCApp = {
         version,
         fileId,
         ...(language ? { language } : {}),
-        chunks: chunks.map((c) => c.payload),
+        chunks: chunks.map((c) => ({ ...c.payload, fileId })),
       },
       info: prefix + shortTitle + partsNote,
       href: `index.html#file-${fileId}`,
@@ -266,10 +292,11 @@ export const fileReviewerApp: WebXDCApp = {
         const chunkShortTitle = chunk.title.length > maxTitle
           ? chunk.title.slice(0, maxTitle - 1) + '\u2026'
           : chunk.title
-        // Chunk 0 carries the notification + deep-link href + fileId so
-        // tapping the notification lands on the start of the file (#73).
-        // Subsequent chunks of the same file are payload-only.
-        const chunkPayload = i === 0 ? { ...chunk.payload, fileId } : chunk.payload
+        // Chunk 0 carries the notification + deep-link href so tapping
+        // the notification lands on the start of the file (#73).
+        // Every chunk carries fileId (#78 pre-req) so the export-as-
+        // attachment assembler can group chunks of the same logical file.
+        const chunkPayload = { ...chunk.payload, fileId }
         const updateObj: Record<string, unknown> = { payload: chunkPayload }
         if (i === 0) {
           updateObj.info = prefix + chunkShortTitle + partsNote
@@ -365,6 +392,70 @@ export const fileReviewerApp: WebXDCApp = {
               ctx.logf('file-reviewer: cleared lastUpdate for closed tab "%s" in chat %d', data.title, ownerChatId)
             }
           } catch {}
+        }
+        continue
+      }
+
+      if (payload.type === 'export-file') {
+        // #78: send the assembled file content back to the chat as a
+        // regular DC attachment. Frontend has already done the multi-
+        // chunk assembly, size check, and filename inference; we just
+        // write the temp file and post it.
+        const data = payload as { type: string; filename?: string; content?: string }
+        const filename = typeof data.filename === 'string' ? data.filename : 'export.txt'
+        const content = typeof data.content === 'string' ? data.content : ''
+        const requestId = (payload as { requestId?: number }).requestId ?? 0
+
+        const sendResult = async (ok: boolean, message?: string): Promise<void> => {
+          const update = JSON.stringify({
+            payload: {
+              type: 'export-result',
+              requestId,
+              ok,
+              filename,
+              ...(message ? { message } : {}),
+              senderAddr: 'server',
+            },
+          })
+          await ctx.client.sendWebXDCUpdate(msgId, update).catch((err) =>
+            ctx.logf('file-reviewer: export-result send failed chat=%d: %v', ownerChatId, err),
+          )
+        }
+
+        // Size safety net — frontend also checks, but defense-in-depth
+        // against a stale/buggy client.
+        const byteLen = Buffer.byteLength(content, 'utf-8')
+        if (byteLen > MAX_EXPORT_BYTES) {
+          ctx.logf('file-reviewer: export-file oversize chat=%d bytes=%d cap=%d',
+                   ownerChatId, byteLen, MAX_EXPORT_BYTES)
+          await sendResult(false, `File too large (${byteLen} bytes > ${MAX_EXPORT_BYTES} cap)`)
+          continue
+        }
+
+        let dir: string | null = null
+        try {
+          dir = mkdtempSync(join(tmpdir(), 'dc-file-export-'))
+          const path = join(dir, filename)
+          writeFileSync(path, content)
+          await ctx.client.sendAttachment(ownerChatId, path)
+          ctx.logf('file-reviewer: export-file chat=%d filename=%s bytes=%d',
+                   ownerChatId, filename, byteLen)
+          await sendResult(true)
+          // Delayed cleanup — dc-core reads the file for SMTP attach after
+          // sendAttachment resolves the msgId, so immediate unlink races.
+          // 60s grace is generous; outbox typically flushes in seconds.
+          const cleanupDir = dir
+          setTimeout(() => {
+            try { unlinkSync(path) } catch {}
+            try { rmSync(cleanupDir, { recursive: true, force: true }) } catch {}
+          }, 60_000)
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err)
+          ctx.logf('file-reviewer: export-file failed chat=%d: %v', ownerChatId, err)
+          await sendResult(false, errMsg)
+          if (dir) {
+            try { rmSync(dir, { recursive: true, force: true }) } catch {}
+          }
         }
         continue
       }

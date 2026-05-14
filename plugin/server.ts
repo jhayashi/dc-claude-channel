@@ -2542,7 +2542,7 @@ async function main(): Promise<void> {
       ).catch(() => {})
       return
     }
-    const { mkdtempSync, writeFileSync } = await import('node:fs')
+    const { mkdtempSync, writeFileSync, unlinkSync, rmSync } = await import('node:fs')
     const { tmpdir } = await import('node:os')
     const { join } = await import('node:path')
     const dir = mkdtempSync(join(tmpdir(), 'dc-schedules-export-'))
@@ -2555,9 +2555,18 @@ async function main(): Promise<void> {
     try {
       await client.sendAttachment(chatId, path, caption)
       logf('export-schedules: chat=%d included=%d skippedOneShots=%d', chatId, included, skippedOneShots)
+      // Drive-by leak fix (#78): pre-#78 this temp dir was never cleaned
+      // up — every export leaked a tmp dir. Delayed unlink so dc-core
+      // has time to read the file for SMTP attach.
+      setTimeout(() => {
+        try { unlinkSync(path) } catch {}
+        try { rmSync(dir, { recursive: true, force: true }) } catch {}
+      }, 60_000)
     } catch (err) {
       logf('export-schedules: send failed chat=%d: %v', chatId, err)
       await client.send(chatId, `⚠️ Couldn't send schedules export: ${err instanceof Error ? err.message : err}`).catch(() => {})
+      // Clean immediately on failure — nothing's waiting to read it.
+      try { rmSync(dir, { recursive: true, force: true }) } catch {}
     }
   }
 

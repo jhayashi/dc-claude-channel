@@ -107,6 +107,70 @@ body {
 .doc-tab .tab-close:hover, .doc-tab .tab-close:active {
   color: var(--danger);
 }
+/* #78: export-as-attachment button at the right edge of the sidebar
+   strip. Pinned with margin-left: auto so it sits past the scrollable
+   tabs. Bottom-margin -1 matches .doc-tab so the border aligns with
+   the strip's underline. */
+.sidebar .export-btn {
+  margin-left: auto;
+  margin-bottom: -1px;
+  padding: 8px 11px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink-faint);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 10px 10px 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  transition: background 120ms ease, color 120ms ease;
+}
+.sidebar .export-btn:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.sidebar .export-btn:active { opacity: 0.7; }
+.sidebar .export-btn[disabled] { cursor: default; opacity: 0.6; }
+.sidebar .export-btn .export-btn-icon { font-size: 13px; }
+.sidebar .export-btn .spinner {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--ink-faint);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: exportspin 0.8s linear infinite;
+}
+@keyframes exportspin { to { transform: rotate(360deg); } }
+/* Toast under the sidebar — success (green) or error (danger). */
+.export-toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--line-soft);
+  animation: exporttoast 180ms ease;
+  position: sticky;
+  top: 36px;  /* below the sticky sidebar */
+  z-index: 9;
+}
+.export-toast.success { background: var(--green-soft); color: var(--green); }
+.export-toast.error   { background: var(--danger-soft); color: var(--danger); }
+.export-toast .dot {
+  width: 14px;
+  height: 14px;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+@keyframes exporttoast {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 /* Confirm dialog */
 .dialog-overlay {
   display: none;
@@ -973,10 +1037,24 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.48;
+var APP_VERSION = 1.49;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
+
+// #78: export-as-attachment state. Match MAX_EXPORT_BYTES in
+// apps/file-reviewer-app.ts (defense-in-depth dual-side check).
+var MAX_EXPORT_BYTES = 100000;
+// Inferred file extensions from Prism language ids. Keep aligned with
+// LANG_TO_EXT in the backend.
+var LANG_TO_EXT = {
+  javascript: 'js', typescript: 'ts', python: 'py', bash: 'sh',
+  go: 'go', rust: 'rs', java: 'java', ruby: 'rb', php: 'php',
+  json: 'json', yaml: 'yml', toml: 'toml', markdown: 'md',
+  markup: 'html', css: 'css', diff: 'diff', sql: 'sql'
+};
+var pendingExportRequestId = 0;
+var exportToastTimer = null;
 
 // Comment state: per-document map of anchor -> comment text
 // For source: key = line number (1-indexed)
@@ -2169,6 +2247,139 @@ function scrollTabIntoView(tab) {
   }
 }
 
+// #78: assemble the active document — and any sibling chunks of the
+// same logical file — into a single text blob for export.
+// Pre-v1.48 only chunk 0 carried fileId; for those legacy entries we
+// fall back to grouping by stripped-suffix title.
+function collectFileForExport() {
+  if (activeIndex < 0 || activeIndex >= documents.length) return null;
+  var active = documents[activeIndex];
+  var fileId = active.fileId;
+  // Strip "(N-M)" suffix and trailing whitespace for base-title comparison.
+  function baseTitle(t) {
+    return (t || '').replace(/\s*\(\d+-\d+\)\s*$/, '').trim();
+  }
+  var activeBase = baseTitle(active.title || '');
+  var matches = [];
+  for (var i = 0; i < documents.length; i++) {
+    var d = documents[i];
+    var match = false;
+    if (fileId && d.fileId === fileId) match = true;
+    else if (!fileId && baseTitle(d.title || '') === activeBase) match = true;
+    if (match) matches.push(d);
+  }
+  // Sort by startLine so chunks concatenate in source order.
+  matches.sort(function(a, b) {
+    return (a.startLine || 1) - (b.startLine || 1);
+  });
+  var content = matches.map(function(d) { return d.content || ''; }).join('\n');
+  return {
+    title: activeBase || active.title || 'Untitled',
+    language: active.language || null,
+    content: content,
+  };
+}
+
+// #78: three-tier filename inference. title-extension wins; else
+// map language to ext; else .txt fallback (never .md for unknown).
+function inferExportFilename(title, language) {
+  if (/\.[A-Za-z0-9]+$/.test(title)) return title;
+  if (language && LANG_TO_EXT[language]) return title + '.' + LANG_TO_EXT[language];
+  return title + '.txt';
+}
+
+function dismissExportToast() {
+  var existing = document.querySelector('.export-toast');
+  if (existing) existing.remove();
+  if (exportToastTimer) { clearTimeout(exportToastTimer); exportToastTimer = null; }
+}
+
+function showExportToast(kind, text) {
+  dismissExportToast();
+  var sidebar = document.getElementById('sidebar');
+  if (!sidebar || !sidebar.parentNode) return;
+  var toast = document.createElement('div');
+  toast.className = 'export-toast ' + kind;
+  var dot = document.createElement('span');
+  dot.className = 'dot';
+  dot.textContent = kind === 'success' ? '✓' : '!';
+  var span = document.createElement('span');
+  span.textContent = text;
+  toast.appendChild(dot);
+  toast.appendChild(span);
+  sidebar.parentNode.insertBefore(toast, sidebar.nextSibling);
+  // Auto-dismiss success after 2s; keep errors longer so user can read.
+  exportToastTimer = setTimeout(dismissExportToast, kind === 'success' ? 2000 : 5000);
+}
+
+function setExportBtnBusy(busy) {
+  var btn = document.getElementById('export-btn');
+  if (!btn) return;
+  btn.disabled = !!busy;
+  btn.replaceChildren();
+  if (busy) {
+    var spinner = document.createElement('span');
+    spinner.className = 'spinner';
+    var label = document.createElement('span');
+    label.className = 'export-btn-label';
+    label.textContent = 'Sending…';
+    btn.appendChild(spinner);
+    btn.appendChild(label);
+  } else {
+    var icon = document.createElement('span');
+    icon.className = 'export-btn-icon';
+    icon.textContent = '\u{1f4ce}';
+    var label2 = document.createElement('span');
+    label2.className = 'export-btn-label';
+    label2.textContent = 'Send';
+    btn.appendChild(icon);
+    btn.appendChild(label2);
+  }
+}
+
+function exportActiveFile() {
+  dismissExportToast();
+  var bundle = collectFileForExport();
+  if (!bundle) {
+    showExportToast('error', 'No active document to export');
+    return;
+  }
+  var byteLen = new TextEncoder().encode(bundle.content).length;
+  if (byteLen > MAX_EXPORT_BYTES) {
+    var kb = Math.round(byteLen / 1024);
+    var capKb = Math.round(MAX_EXPORT_BYTES / 1024);
+    showExportToast('error', 'Too large to export (' + kb + ' KB > ' + capKb + ' KB cap)');
+    return;
+  }
+  var filename = inferExportFilename(bundle.title, bundle.language);
+  setExportBtnBusy(true);
+  pendingExportRequestId = pendingExportRequestId + 1;
+  var requestId = pendingExportRequestId;
+  window.webxdc.sendUpdate({
+    payload: {
+      type: 'export-file',
+      requestId: requestId,
+      filename: filename,
+      content: bundle.content,
+      language: bundle.language,
+      senderAddr: window.webxdc.selfAddr,
+    },
+    summary: 'Export file: ' + filename,
+  }, '');
+}
+
+function handleExportResult(data) {
+  // Ignore stale results (a newer export was kicked off after this one).
+  if (data.requestId !== undefined && data.requestId !== pendingExportRequestId) return;
+  setExportBtnBusy(false);
+  if (data.ok) {
+    showExportToast('success', 'Sent to chat');
+  } else {
+    var msg = data.message ? ('Export failed: ' + data.message) : 'Export failed';
+    showExportToast('error', msg);
+  }
+}
+
 function rebuildSidebar() {
   var sidebar = document.getElementById('sidebar');
   sidebar.replaceChildren();
@@ -2205,6 +2416,28 @@ function rebuildSidebar() {
       showDocument(Number(this.parentNode.getAttribute('data-index')));
     });
     sidebar.appendChild(tab);
+  }
+  // #78: export-as-attachment button at the right edge of the strip.
+  // Only rendered when at least one doc is open; matches the
+  // .sidebar:empty {display:none} behavior (so an empty sidebar stays
+  // hidden) without needing extra logic.
+  if (documents.length > 0) {
+    var exportBtn = document.createElement('button');
+    exportBtn.className = 'export-btn';
+    exportBtn.id = 'export-btn';
+    exportBtn.type = 'button';
+    exportBtn.title = 'Send active file as a chat attachment';
+    exportBtn.setAttribute('aria-label', 'Send as attachment');
+    var exportIcon = document.createElement('span');
+    exportIcon.className = 'export-btn-icon';
+    exportIcon.textContent = '\u{1f4ce}';  // 📎
+    var exportLabel = document.createElement('span');
+    exportLabel.className = 'export-btn-label';
+    exportLabel.textContent = 'Send';
+    exportBtn.appendChild(exportIcon);
+    exportBtn.appendChild(exportLabel);
+    exportBtn.addEventListener('click', exportActiveFile);
+    sidebar.appendChild(exportBtn);
   }
 }
 
@@ -2272,6 +2505,14 @@ window.webxdc.setUpdateListener(function(update) {
   if (!data) return;
   if (versionMismatchSent) return;
 
+  // #78: export-as-attachment result (success or failure). Handled
+  // before the version-upgrade gate because it's a server-emitted
+  // status update unrelated to document delivery.
+  if (data.type === 'export-result') {
+    handleExportResult(data);
+    return;
+  }
+
   // Auto-upgrade: if server version is newer, request fresh app
   if (data.version && data.version > APP_VERSION && !versionMismatchSent) {
     versionMismatchSent = true;
@@ -2302,10 +2543,11 @@ window.webxdc.setUpdateListener(function(update) {
         content: chunkContent,
         language: c.language || data.language || null,
         startLine: c.startLine || 1,
-        // #73: only the FIRST chunk of a bundled file carries fileId.
-        // Notifications deep-link to the start of the file; user can
-        // navigate to subsequent chunks via the sidebar.
-        fileId: i === 0 ? (data.fileId || null) : null,
+        // #73 + #78: every chunk shares the file-level fileId. #73 deep-
+        // links via the URL fragment (which matches chunk 0's notification
+        // anchor); #78's export-as-attachment assembler groups chunks of
+        // the same logical file by fileId.
+        fileId: data.fileId || null,
       });
     }
     rebuildSidebar();
