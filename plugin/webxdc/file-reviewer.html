@@ -1037,7 +1037,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.49;
+var APP_VERSION = 1.50;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -2512,6 +2512,12 @@ window.webxdc.setUpdateListener(function(update) {
     handleExportResult(data);
     return;
   }
+  // #78: outbound 'export-file' payloads echo to our own listener via
+  // WebXDC's standard sendUpdate replay. They have a 'content' field
+  // which would otherwise match the legacy single-chunk fallback below
+  // and create a duplicate "Untitled" tab. Drop early — nothing to do
+  // with an export request on the receive side.
+  if (data.type === 'export-file') return;
 
   // Auto-upgrade: if server version is newer, request fresh app
   if (data.version && data.version > APP_VERSION && !versionMismatchSent) {

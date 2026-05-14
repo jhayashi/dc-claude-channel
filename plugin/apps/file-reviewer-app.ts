@@ -437,7 +437,10 @@ export const fileReviewerApp: WebXDCApp = {
           dir = mkdtempSync(join(tmpdir(), 'dc-file-export-'))
           const path = join(dir, filename)
           writeFileSync(path, content)
-          await ctx.client.sendAttachment(ownerChatId, path)
+          // Caption gives the chat-side reader a visible acknowledgment
+          // that the file came from the reviewer, not a random attachment.
+          const caption = `📎 Exported \`${filename}\` from the file reviewer.`
+          await ctx.client.sendAttachment(ownerChatId, path, caption)
           ctx.logf('file-reviewer: export-file chat=%d filename=%s bytes=%d',
                    ownerChatId, filename, byteLen)
           await sendResult(true)
