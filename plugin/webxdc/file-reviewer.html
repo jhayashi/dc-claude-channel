@@ -112,7 +112,6 @@ body {
    tabs. Bottom-margin -1 matches .doc-tab so the border aligns with
    the strip's underline. */
 .sidebar .export-btn {
-  margin-left: auto;
   margin-bottom: -1px;
   padding: 8px 11px 10px;
   background: transparent;
@@ -171,6 +170,106 @@ body {
   from { opacity: 0; transform: translateY(-6px); }
   to { opacity: 1; transform: translateY(0); }
 }
+/* #77: find feature — 🔍 button styled identically to .export-btn, just
+   slightly different hover affordance so it reads as a separate action. */
+.sidebar .find-btn {
+  margin-bottom: -1px;
+  padding: 8px 11px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink-faint);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 10px 10px 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  transition: background 120ms ease, color 120ms ease;
+}
+/* find-btn always gets margin-left:auto. export-btn naturally sits to
+   its right (appended after find-btn in rebuildSidebar). The two form a
+   group pinned to the right edge of the strip. */
+.sidebar .find-btn { margin-left: auto; }
+.sidebar .find-btn:hover { background: var(--surface-2); color: var(--ink); }
+.sidebar .find-btn:active { opacity: 0.7; }
+.sidebar .find-btn .find-btn-icon { font-size: 13px; }
+
+/* #77: search bar that replaces the sidebar at the top when active. */
+#search-bar {
+  display: none;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line-soft);
+  padding: 8px 10px;
+  align-items: center;
+  gap: 8px;
+}
+body.searching #search-bar { display: flex; }
+body.searching .sidebar { display: none; }
+#search-bar input {
+  flex: 1 1 auto;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  outline: none;
+}
+#search-bar input:focus { border-color: var(--orange); }
+#search-bar .search-counter {
+  font-size: 11px;
+  color: var(--ink-faint);
+  min-width: 44px;
+  text-align: right;
+  flex-shrink: 0;
+}
+#search-bar .search-counter.no-matches { color: var(--danger); }
+#search-bar button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 14px;
+  color: var(--ink-mute);
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+  transition: background 120ms ease, color 120ms ease;
+}
+#search-bar button:hover { background: var(--surface-2); color: var(--ink); }
+#search-bar button[disabled] { opacity: 0.4; cursor: default; }
+
+/* match highlight on the rendered content */
+.search-match {
+  background: var(--amber);
+  color: var(--bg);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.search-match.current {
+  outline: 2px solid var(--orange);
+  outline-offset: 1px;
+}
+/* source-mode: extra gutter indicator on lines that contain a match */
+.source-line.has-search-match .line-gutter::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--orange);
+}
+.source-line .line-gutter { position: relative; }
+
 /* Confirm dialog */
 .dialog-overlay {
   display: none;
@@ -974,6 +1073,13 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
   <div class="outdated-sub">A newer file reviewer was sent to this chat. Swipe back and open the latest one.</div>
 </div>
 <div id="sidebar" class="sidebar"></div>
+<div id="search-bar" role="search" aria-label="Find in file">
+  <input id="search-input" type="text" aria-label="Find in file" placeholder="Find in file" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+  <span id="search-counter" class="search-counter" aria-live="polite"></span>
+  <button id="search-prev" type="button" aria-label="Previous match" title="Previous match (Shift+Enter)">↑</button>
+  <button id="search-next" type="button" aria-label="Next match" title="Next match (Enter)">↓</button>
+  <button id="search-close" type="button" aria-label="Close search" title="Close (Esc)">×</button>
+</div>
 <div id="content" class="content" style="display:none"></div>
 <div id="bottombar">
   <span class="hint" id="bar-hint">Long-press any line or paragraph to add a comment.</span>
@@ -1037,7 +1143,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.50;
+var APP_VERSION = 1.51;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -1956,6 +2062,12 @@ function removeCardScrollListener() {
 }
 
 function openCommentCard(anchor) {
+  // #77: if search is open, close it first. <mark.search-match>
+  // wrappers can capture pointer events inside commentable blocks,
+  // and the comment-card layout can interact oddly with stray
+  // wrappers. Closing the search clears the marks AND restores focus
+  // hygiene before the textarea grabs it.
+  if (_searchOpen) closeSearch();
   editingAnchor = anchor;
   var comments = getComments(activeIndex);
   var existing = comments[anchor];
@@ -2151,6 +2263,16 @@ function isSlideModeActive() {
 }
 
 document.addEventListener('keydown', function(e) {
+  // #77: Cmd/Ctrl+F opens search. Synchronously preventDefault so the
+  // host webview's browser-level find UI doesn't compete. If a platform
+  // eats the keybind before the page sees it, the 🔍 button is the
+  // universal fallback.
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F')) {
+    e.preventDefault();
+    openSearch();
+    return;
+  }
+
   if (!isSlideModeActive()) return;
   // Don't hijack arrow keys while typing in the comment card
   var tag = document.activeElement && document.activeElement.tagName;
@@ -2203,6 +2325,10 @@ document.addEventListener('keydown', function(e) {
 
 function showDocument(index) {
   if (index < 0 || index >= documents.length) return;
+  // #77: tab switch closes the search. The new doc's DOM is built
+  // fresh below; any marks from the old doc would be wiped anyway,
+  // but closing the bar explicitly is the cleaner UX.
+  if (_searchOpen) closeSearch();
   activeIndex = index;
   var contentEl = document.getElementById('content');
   contentEl.style.display = 'block';
@@ -2380,6 +2506,284 @@ function handleExportResult(data) {
   }
 }
 
+// ── #77: find / in-document search ─────────────────────────────────
+var SEARCH_DEBOUNCE_MS = 100;
+var SEARCH_MATCH_CAP = 1000;
+var _searchOpen = false;
+var _searchLastFocus = null;
+var _searchDebounceTimer = null;
+var _searchCurrentIdx = -1;
+var _searchMatchCount = 0;
+var _searchCapped = false;
+
+function openSearch() {
+  if (_searchOpen) {
+    var existingInput = document.getElementById('search-input');
+    if (existingInput) existingInput.focus();
+    return;
+  }
+  _searchLastFocus = document.activeElement;
+  _searchOpen = true;
+  document.body.classList.add('searching');
+  var input = document.getElementById('search-input');
+  if (input) {
+    input.value = '';
+    input.focus();
+  }
+  updateSearchCounter(0, 0);
+}
+
+function closeSearch() {
+  if (!_searchOpen) return;
+  if (_searchDebounceTimer) { clearTimeout(_searchDebounceTimer); _searchDebounceTimer = null; }
+  clearSearchMarks();
+  _searchOpen = false;
+  _searchCurrentIdx = -1;
+  _searchMatchCount = 0;
+  _searchCapped = false;
+  document.body.classList.remove('searching');
+  // Restore focus to the previously-focused element (if still attached)
+  // or document.body — never leave focus dangling on the × button.
+  var target = (_searchLastFocus && _searchLastFocus.isConnected) ? _searchLastFocus : document.body;
+  try { target.focus(); } catch (_) {}
+  _searchLastFocus = null;
+}
+
+// Clear all search-match wrappers and normalize text nodes back.
+function clearSearchMarks() {
+  var marks = document.querySelectorAll('mark.search-match');
+  for (var i = 0; i < marks.length; i++) {
+    var m = marks[i];
+    var parent = m.parentNode;
+    if (!parent) continue;
+    while (m.firstChild) parent.insertBefore(m.firstChild, m);
+    parent.removeChild(m);
+  }
+  // Merge adjacent text nodes that were split by the marks
+  // (call normalize on the rendered content container).
+  var content = document.getElementById('content');
+  if (content) {
+    try { content.normalize(); } catch (_) {}
+  }
+  // Drop source-mode gutter indicators
+  var lit = document.querySelectorAll('.source-line.has-search-match');
+  for (var j = 0; j < lit.length; j++) lit[j].classList.remove('has-search-match');
+}
+
+function updateSearchCounter(currentOneBased, total) {
+  var el = document.getElementById('search-counter');
+  if (!el) return;
+  if (total === 0) {
+    el.textContent = '';
+    el.classList.remove('no-matches');
+  } else if (total > SEARCH_MATCH_CAP) {
+    el.textContent = SEARCH_MATCH_CAP + '+ matches';
+    el.classList.remove('no-matches');
+  } else if (currentOneBased <= 0) {
+    el.textContent = '0 of ' + total;
+    el.classList.add('no-matches');
+  } else {
+    el.textContent = currentOneBased + ' of ' + total;
+    el.classList.remove('no-matches');
+  }
+  // Update prev/next button enabled state
+  var prev = document.getElementById('search-prev');
+  var next = document.getElementById('search-next');
+  if (prev) prev.disabled = total === 0;
+  if (next) next.disabled = total === 0;
+}
+
+// Build a flat text + nodeMap from #content. Walks all visible text
+// nodes including those inside Prism token spans (so source-mode
+// matches work). Skips text nodes inside <mark.search-match> elements
+// (which shouldn't exist when this is called fresh, but defensive).
+function buildFlatTextIndex() {
+  var root = document.getElementById('content');
+  if (!root) return { flat: '', nodeMap: [] };
+  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: function(node) {
+      var p = node.parentElement;
+      while (p && p !== root) {
+        if (p.tagName === 'MARK' && p.classList.contains('search-match')) return NodeFilter.FILTER_REJECT;
+        p = p.parentElement;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  var parts = [];
+  var nodeMap = [];
+  var offset = 0;
+  while (walker.nextNode()) {
+    var n = walker.currentNode;
+    var text = n.nodeValue || '';
+    if (!text) continue;
+    nodeMap.push({ start: offset, end: offset + text.length, node: n });
+    parts.push(text);
+    offset += text.length;
+  }
+  return { flat: parts.join(''), nodeMap: nodeMap };
+}
+
+// Find all matches of (lowercased) `q` in flat text. Returns an array
+// of matches; each match is an array of Ranges (>1 when the match
+// spans multiple text nodes). Capped at SEARCH_MATCH_CAP; the
+// returned `cappedAt` indicates whether more existed beyond the cap.
+function findMatches(index, q) {
+  var matches = [];
+  if (!q) return { matches: matches, cappedAt: false };
+  var lower = index.flat.toLowerCase();
+  var qLower = q.toLowerCase();
+  var qlen = qLower.length;
+  var cap = SEARCH_MATCH_CAP + 1;  // +1 so we can detect overflow
+  var pos = 0;
+  while (true) {
+    var idx = lower.indexOf(qLower, pos);
+    if (idx < 0) break;
+    var matchStart = idx;
+    var matchEnd = idx + qlen;
+    var ranges = rangesForSpan(index.nodeMap, matchStart, matchEnd);
+    if (ranges.length > 0) matches.push(ranges);
+    pos = matchEnd;
+    if (matches.length >= cap) break;
+  }
+  var cappedAt = matches.length > SEARCH_MATCH_CAP;
+  if (cappedAt) matches.length = SEARCH_MATCH_CAP;
+  return { matches: matches, cappedAt: cappedAt };
+}
+
+// For a flat-text span [matchStart, matchEnd), build one Range per
+// covered text-node fragment. surroundContents-friendly: each range is
+// within a single text node.
+function rangesForSpan(nodeMap, matchStart, matchEnd) {
+  var ranges = [];
+  for (var i = 0; i < nodeMap.length; i++) {
+    var entry = nodeMap[i];
+    if (entry.end <= matchStart) continue;
+    if (entry.start >= matchEnd) break;
+    var startOffset = Math.max(0, matchStart - entry.start);
+    var endOffset = Math.min(entry.end - entry.start, matchEnd - entry.start);
+    if (endOffset <= startOffset) continue;
+    var r = document.createRange();
+    try {
+      r.setStart(entry.node, startOffset);
+      r.setEnd(entry.node, endOffset);
+      ranges.push(r);
+    } catch (_) {}
+  }
+  return ranges;
+}
+
+// Wrap each range with a <mark class="search-match" data-match-idx="N">.
+// Returns array of arrays-of-mark-elements (one outer entry per logical match).
+function applyMarks(matches) {
+  var allMarkGroups = [];
+  for (var i = 0; i < matches.length; i++) {
+    var ranges = matches[i];
+    var marks = [];
+    for (var r = 0; r < ranges.length; r++) {
+      var range = ranges[r];
+      try {
+        var mark = document.createElement('mark');
+        mark.className = 'search-match';
+        mark.setAttribute('data-match-idx', String(i));
+        range.surroundContents(mark);
+        marks.push(mark);
+      } catch (_) {
+        // Range crosses element boundaries — surroundContents threw.
+        // We chunked per text-node in rangesForSpan so this shouldn't
+        // happen, but be defensive.
+      }
+    }
+    allMarkGroups.push(marks);
+  }
+  // Source-mode gutter dots: any .source-line containing a search-match
+  // gets the .has-search-match class.
+  var lines = document.querySelectorAll('.source-line');
+  for (var li = 0; li < lines.length; li++) {
+    if (lines[li].querySelector('mark.search-match')) {
+      lines[li].classList.add('has-search-match');
+    }
+  }
+  return allMarkGroups;
+}
+
+function setCurrentMatchIdx(newIdx, total) {
+  if (total === 0) {
+    _searchCurrentIdx = -1;
+    updateSearchCounter(0, 0);
+    return;
+  }
+  // Wrap around
+  var wrapped = ((newIdx % total) + total) % total;
+  _searchCurrentIdx = wrapped;
+  // Remove .current from all, add to the new match group
+  var allMarks = document.querySelectorAll('mark.search-match');
+  for (var i = 0; i < allMarks.length; i++) allMarks[i].classList.remove('current');
+  var currentMarks = document.querySelectorAll('mark.search-match[data-match-idx="' + wrapped + '"]');
+  for (var j = 0; j < currentMarks.length; j++) currentMarks[j].classList.add('current');
+  // Scroll the first mark of the current match into view
+  if (currentMarks.length > 0 && currentMarks[0].scrollIntoView) {
+    currentMarks[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  updateSearchCounter(wrapped + 1, total);
+}
+
+function runSearch(query) {
+  clearSearchMarks();
+  _searchMatchCount = 0;
+  _searchCapped = false;
+  _searchCurrentIdx = -1;
+  if (!query) {
+    updateSearchCounter(0, 0);
+    return;
+  }
+  var index = buildFlatTextIndex();
+  var result = findMatches(index, query);
+  applyMarks(result.matches);
+  _searchMatchCount = result.matches.length;
+  _searchCapped = result.cappedAt;
+  if (_searchCapped) {
+    updateSearchCounter(0, SEARCH_MATCH_CAP + 1);  // triggers the "1000+ matches" branch
+    return;
+  }
+  setCurrentMatchIdx(0, result.matches.length);
+}
+
+function navigateSearch(delta) {
+  if (_searchMatchCount === 0 || _searchCapped) return;
+  setCurrentMatchIdx(_searchCurrentIdx + delta, _searchMatchCount);
+}
+
+// Wire the search-bar buttons + input handler. Called once at startup.
+function wireSearchBar() {
+  var input = document.getElementById('search-input');
+  var prev = document.getElementById('search-prev');
+  var next = document.getElementById('search-next');
+  var close = document.getElementById('search-close');
+  if (!input || !prev || !next || !close) return;
+
+  input.addEventListener('input', function() {
+    if (_searchDebounceTimer) clearTimeout(_searchDebounceTimer);
+    var q = input.value;
+    _searchDebounceTimer = setTimeout(function() {
+      _searchDebounceTimer = null;
+      runSearch(q);
+    }, SEARCH_DEBOUNCE_MS);
+  });
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeSearch();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      navigateSearch(e.shiftKey ? -1 : 1);
+    }
+  });
+  prev.addEventListener('click', function() { navigateSearch(-1); });
+  next.addEventListener('click', function() { navigateSearch(1); });
+  close.addEventListener('click', closeSearch);
+}
+
 function rebuildSidebar() {
   var sidebar = document.getElementById('sidebar');
   sidebar.replaceChildren();
@@ -2417,11 +2821,26 @@ function rebuildSidebar() {
     });
     sidebar.appendChild(tab);
   }
-  // #78: export-as-attachment button at the right edge of the strip.
-  // Only rendered when at least one doc is open; matches the
-  // .sidebar:empty {display:none} behavior (so an empty sidebar stays
-  // hidden) without needing extra logic.
+  // #77: find button + #78: export button at the right edge of the
+  // strip. Both only rendered when at least one doc is open (matches
+  // the .sidebar:empty {display:none} behavior). find-btn comes first
+  // so its CSS picks up margin-left:auto and pins the pair to the right.
   if (documents.length > 0) {
+    var findBtn = document.createElement('button');
+    findBtn.className = 'find-btn';
+    findBtn.type = 'button';
+    findBtn.title = 'Find in file (Cmd/Ctrl+F)';
+    findBtn.setAttribute('aria-label', 'Find in file');
+    var findIcon = document.createElement('span');
+    findIcon.className = 'find-btn-icon';
+    findIcon.textContent = '\u{1f50d}';  // 🔍
+    var findLabel = document.createElement('span');
+    findLabel.textContent = 'Find';
+    findBtn.appendChild(findIcon);
+    findBtn.appendChild(findLabel);
+    findBtn.addEventListener('click', openSearch);
+    sidebar.appendChild(findBtn);
+
     var exportBtn = document.createElement('button');
     exportBtn.className = 'export-btn';
     exportBtn.id = 'export-btn';
@@ -2497,6 +2916,8 @@ function confirmCloseTab() {
   rebuildSidebar();
   hideCloseDialog();
 }
+// #77: wire the search bar's button + input handlers at boot.
+wireSearchBar();
 document.getElementById('close-dialog-cancel').addEventListener('click', hideCloseDialog);
 document.getElementById('close-dialog-confirm').addEventListener('click', confirmCloseTab);
 
