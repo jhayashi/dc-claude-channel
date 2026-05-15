@@ -2856,7 +2856,15 @@ async function main(): Promise<void> {
       }
     } catch (err) {
       logf('dispatch error chat=%d: %v', chatId, err)
-      await client.send(chatId, `\u26a0\ufe0f Internal error: ${err}`).catch(() => {})
+      // Suppress the chat-side toast for shutdown-class errors: the user
+      // either evicted us or the subagent crashed during teardown, and the
+      // surface-level "Internal error" is just noise. We still log to
+      // turns-*.log via the line above.
+      const msg = err instanceof Error ? err.message : String(err)
+      const isShutdownError = /^subagent\b.*\b(closed|evicted|exited)\b/.test(msg)
+      if (!isShutdownError) {
+        await client.send(chatId, `\u26a0\ufe0f Internal error: ${err}`).catch(() => {})
+      }
     } finally {
       activityReactor.clearTurnTarget(chatId)
       _currentDriver.delete(chatId)

@@ -222,6 +222,13 @@ export class SubagentProcess {
   private buf = ''
   private frameQueue: StreamFrame[] = []
   private waiters: Array<(f: StreamFrame) => void> = []
+  /**
+   * Reject function for the in-flight readFrame, if any. Set inside the
+   * Promise executor and cleared on resolve/timeout. close() and the exit
+   * handler call abortPendingReaders to fire this so callers unblock
+   * immediately instead of waiting for the multi-hour turn timeout.
+   */
+  private pendingReject: ((err: Error) => void) | null = null
   private busy = false
   private closed = false
   private logf: (fmt: string, ...args: unknown[]) => void
@@ -277,6 +284,7 @@ export class SubagentProcess {
     this.child.on('exit', (code) => {
       this.closed = true
       this.logf('subagent %s exited code=%s', this.subagentId, String(code))
+      this.abortPendingReaders(new Error(`subagent ${this.subagentId} exited (code=${code})`))
     })
   }
 
@@ -320,7 +328,13 @@ export class SubagentProcess {
     for (let i = 0; i < this.frameQueue.length; i++) {
       if (predicate(this.frameQueue[i])) return Promise.resolve(this.frameQueue.splice(i, 1)[0])
     }
+    // No frames will arrive after the child has exited or close() has run.
+    // Reject immediately rather than waiting out the multi-hour turn timeout.
+    if (this.closed) {
+      return Promise.reject(new Error(`subagent ${this.subagentId} closed`))
+    }
     return new Promise<StreamFrame>((resolve, reject) => {
+      this.pendingReject = reject
       this.pendingDeadline = Date.now() + timeoutMs
       const arm = () => {
         const remaining = Math.max(0, this.pendingDeadline - Date.now())
@@ -330,6 +344,7 @@ export class SubagentProcess {
           const idx = this.waiters.indexOf(resolveWrapper)
           if (idx >= 0) this.waiters.splice(idx, 1)
           this.pendingTimer = null
+          this.pendingReject = null
           reject(new Error(`timeout after ${timeoutMs}ms`))
         }, remaining)
       }
@@ -337,10 +352,24 @@ export class SubagentProcess {
       const resolveWrapper = (f: StreamFrame) => {
         if (!predicate(f)) { this.frameQueue.push(f); this.waiters.push(resolveWrapper); return }
         if (this.pendingTimer) { clearTimeout(this.pendingTimer); this.pendingTimer = null }
+        this.pendingReject = null
         resolve(f)
       }
       this.waiters.push(resolveWrapper)
     })
+  }
+
+  /**
+   * Reject any in-flight readFrame so close()/exit unblock send() callers
+   * synchronously instead of waiting out the turn timeout. Safe to call
+   * with no reader pending — it just clears state.
+   */
+  private abortPendingReaders(err: Error): void {
+    if (this.pendingTimer) { clearTimeout(this.pendingTimer); this.pendingTimer = null }
+    this.waiters.length = 0
+    const reject = this.pendingReject
+    this.pendingReject = null
+    if (reject) reject(err)
   }
 
   async send(text: string, turnTimeoutMs = 4 * 60 * 60 * 1000): Promise<TurnResult> {
@@ -376,6 +405,11 @@ export class SubagentProcess {
 
   async close(): Promise<void> {
     if (this.closed) return
+    // Mark closed first + abort any pending readFrame so the awaiting send()
+    // throws synchronously. Without this the caller would wait out the turn
+    // timeout (default 1 hour) before learning the subagent was torn down.
+    this.closed = true
+    this.abortPendingReaders(new Error(`subagent ${this.subagentId} closed by dispatcher`))
     // Step 1: graceful — stdin EOF lets claude shut down cleanly via stream-json.
     try { this.child.stdin.end() } catch {}
     // Step 2: SIGTERM the whole process group on POSIX (negative PID = group);
@@ -389,7 +423,6 @@ export class SubagentProcess {
       }, 2000)
       this.child.on('exit', () => { clearTimeout(t); resolve() })
     })
-    this.closed = true
   }
 
   /**

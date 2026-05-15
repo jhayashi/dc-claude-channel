@@ -128,10 +128,10 @@ export class SubagentCache {
     const entry = this.entries.get(chatId)
     if (!entry) return
     if (entry.idleTimer) clearTimeout(entry.idleTimer)
-    // Flag the in-flight turn so runNow's finally classifies correctly.
-    // Known gap: SubagentProcess.close won't unblock an in-flight send, so
-    // the send keeps waiting until turn-timeout; evictReason overrides
-    // that default.
+    // Flag the in-flight turn so runNow's finally classifies the resulting
+    // error as lru_evict/user_abort instead of crash. SubagentProcess.close
+    // aborts the pending readFrame synchronously, so the send rejects before
+    // we even reach the await below.
     if (entry.busy) entry.evictReason = reason
     this.entries.delete(chatId)
     this.lruOrder = this.lruOrder.filter((c) => c !== chatId)
