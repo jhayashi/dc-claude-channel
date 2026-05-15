@@ -4,6 +4,40 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.3.2] — 2026-05-14
+
+Three themes: (1) edit a prior message in DC and the dispatcher stops the in-flight turn and relaunches with the edited prompt; (2) `/stop` and chat eviction now reliably tear down claude's whole process tree (Bash-tool grandchildren included) and unblock the awaiting `send()` synchronously instead of letting it sit out the multi-hour turn timeout; (3) File Reviewer gains in-document find, file-as-attachment export, a kebab menu that consolidates both, and reliable long-press commenting on ordered/unordered list items. Closes #21, #45, #75, #77, #78.
+
+### Added
+
+- **Edit-as-interrupt (#45).** Editing a previously-sent message in DC now stops the in-flight turn (via `dc_access_unpair`-equivalent eviction → kill cascade) and dispatches a fresh turn with the edited prompt. Implemented as a `MsgsChanged` filter inside `dc-client.ts` that detects content edits (not just status changes) on the user's own outgoing messages and fires through the same dispatch path as a brand-new message — so the subagent rehydrates with `--resume` and processes the corrected prompt without the user repeating themselves.
+
+- **File Reviewer: in-document find (#77).** Tap the kebab → "Find in document" to open a search bar. Matches across multi-node prose are supported via a flat-text + nodeMap index (so `foo bar` matches when those words straddle inline-code or emphasis boundaries). Debounced 100ms, capped at 1000 matches; n/N to jump between matches; Escape clears.
+
+- **File Reviewer: send file as chat attachment (#78).** Tap the kebab → "Export file" to send the currently-open document back to the chat as a real DC attachment. Tapping it in the chat list invokes the OS "Open with…" picker so you can hand the file to Obsidian, Marked, or any text editor. Three-tier filename rules (title extension wins → language-mapped → `.txt` fallback). Multi-chunk docs assemble all chunks into one attachment. 100 KB size cap with an inline error toast when exceeded. `file-reviewer` APP_VERSION 1.47 → 1.56.
+
+### Changed
+
+- **Find + Export consolidated into a kebab menu (#77 + #78).** Pre-change the doc-tab strip was getting crowded — both a magnifier (find) and an attachment icon (export) ate horizontal space that on phone screens left almost no room for actual file tabs. Now a single `⋮` kebab opens a small menu with "Find in document" and "Export file" (renamed from "Send as attachment" mid-cycle for clarity). The kebab sits at the right edge of the strip and leaves the rest of the strip for tabs.
+
+- **WebXDC is now the default canvas for visuals.** Pre-change Claude (the channel agent) would offer to spin up an HTTP-served website on a localhost port to render mockups, diagrams, and dashboards. Visuals in DC chats now default to a throwaway `.xdc` WebXDC app — self-contained, encrypted with the chat, accessible from the DC app list, and lives in the chat history. Updated channel system prompt + `docs/CONTRIBUTING.md` accordingly.
+
+- **`/stop` icon swapped from 📎 to ⬇️ on the export action.** Paperclip read as "attach a file from elsewhere" rather than "send this file out"; download arrow is clearer for an outbound export.
+
+### Fixed
+
+- **`/stop` and chat eviction now actually kill grandchildren (#21).** Claude's Bash tool internally `setsid`s its tool shells into their own process groups, so `process.kill(-pid, signal)` on claude's pgrp wouldn't reach them — `/stop` was leaving long-running bash/curl/python descendants orphaned and reparented to init. Replaced the pgrp-kill with an explicit process-tree walk: a single `ps -e -o pid=,ppid=` snapshot captured BEFORE the SIGTERM (so post-kill reparenting doesn't erase the linkage), inverted to a children-map in memory, then BFS to collect descendants and kill them depth-first. Single ps snapshot rather than recursive `pgrep -P` calls to avoid a transient-PID race window between calls. Windows fallback (taskkill /T /F) tracked as #93/#95. Verified empirically via `plugin/scripts/smoke-process-group-kill.sh`.
+
+- **`/stop` unblocks awaiting send synchronously instead of waiting out turn-timeout (#45).** `SubagentProcess.close()` previously SIGTERM'd the child but left the pending `readFrame` Promise on the multi-hour turn timeout — so an evicted chat's dispatch would hang for up to an hour before surfacing as "⚠️ Internal error: timeout after 3600000ms". Added a `pendingReject` slot captured inside the readFrame executor; `abortPendingReaders` fires it synchronously from both `close()` and the `exit` handler. The dispatch catch in `server.ts` now also recognizes shutdown-class errors (closed/evicted/exited) and suppresses the chat-side "Internal error" toast — the events are still recorded to `turns-*.log` for diagnostics.
+
+- **File Reviewer: list-item commenting on unordered and ordered lists (#75).** Two distinct bugs stacked: (a) the user-select / -webkit-touch-callout cascade was being broken by flex layout — child `<li>` content inherited from the parent block but flex containers reset cascade for descendants, so long-press would fall through to the surrounding block; (b) the markdown renderer's ordered-list wrap stripped the `class="ol"` marker, then the unordered-list regex broadly re-matched bare `<li>`s inside `<ol>` and applied UL classes, breaking OL-specific selectors. Fix (a): explicit `[data-paragraph] *` cascade for the relevant CSS properties. Fix (b): symmetric `class="ul"` marker on the UL wrap so the OL/UL regexes don't collide. Verified across UL, OL, and nested-mixed combinations.
+
+- **File Reviewer: no duplicate "Untitled" tab on Send (#78).** The export-file payload originally carried a `content:` field, which the legacy single-chunk fallback was matching as if it were a new file being opened — so Send would spawn a phantom doc tab alongside the export. Fix: drop the `type === 'export-file'` branch early in `setUpdateListener` so the legacy fallback never sees it. Bonus: the chat now also gets a short caption ("Sent server.ts as attachment") so the action is acknowledged in conversation.
+
+- **`dc_reply` error handling.** Wrapped the `client.send` call in `dc_reply`'s handler in try/catch and improved non-Error formatting in the catch arm, so a transient send failure surfaces as a clean string rather than `[object Object]`.
+
+- **docs/adr/ removed from git tracking.** ADRs are kept locally for ongoing reference but no longer ship with the plugin install — they're not user-facing and the .gitignore now covers them alongside `docs/specs/` and `docs/upstream-issues/`.
+
 ## [1.3.1] — 2026-05-03
 
 Polish release on top of v1.3.0's capability gate: group-chat WebXDC plumbing fix, four File Reviewer fixes (deep-link, comment-card occlusion, tab visibility, viewer persistence), TodoWrite step indicators that survive subsequent tool calls, the `/effort` command, full-page layouts in the agent settings card, and two legacy-view cleanups (#90 + #92) now that v1.3 roles supersede them.
@@ -576,6 +610,7 @@ First public release of the Delta Chat channel for Claude Code.
 - File-based allowlist + pairing codes.
 - `deltachat-rpc-server` integration.
 
+[1.3.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/jhayashi/dc-claude-channel/compare/v1.2.2...v1.3.0
 [1.2.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.2.1...v1.2.2
