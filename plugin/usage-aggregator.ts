@@ -3,62 +3,23 @@
  *
  * Source of truth: `~/.claude/projects/<project>/<sessionId>.jsonl`. Every
  * `type: "assistant"` line carries a `message.usage` object with raw API
- * token counts. This module walks those files, sums per-model totals,
- * and renders a chat-friendly report.
- *
- * The previous `~/.claude/stats-cache.json` source was deprecated when the
- * Claude Code CLI merged `/cost` + `/stats` into `/usage` in 2.1.118.
+ * token counts. This module walks those files, sums per-model totals
+ * (`aggregateEntries`) or buckets them by local date (`aggregateByDay`),
+ * and renders a chat-friendly report. The chart in `slash-handler.ts`
+ * reads the per-day series directly from transcripts — there is no longer
+ * a dependency on the CLI's `stats-cache.json` (deprecated in 2.1.118).
  */
 
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
 // ---------------------------------------------------------------------------
-// Stats-cache reader (~/.claude/stats-cache.json, v3 schema)
+// Daily-series types
 // ---------------------------------------------------------------------------
 
 export interface DailyTokenEntry {
-  date: string  // YYYY-MM-DD
+  date: string  // YYYY-MM-DD (local)
   tokensByModel: Record<string, number>
-}
-
-interface StatsCacheV3 {
-  version?: number
-  lastComputedDate?: string
-  dailyModelTokens?: DailyTokenEntry[]
-}
-
-/**
- * Reads `~/.claude/stats-cache.json` if its mtime is within `maxAgeMs`.
- * Returns the parsed v3 cache, or null when the file is missing, stale,
- * or malformed. The CLI updates this file lazily — when fresh, it gives
- * us the per-day per-model token series the TUI uses for its chart.
- */
-export async function loadStatsCacheIfFresh(
-  cachePath: string,
-  maxAgeMs: number,
-  now: number = Date.now(),
-): Promise<StatsCacheV3 | null> {
-  let s
-  try {
-    s = await stat(cachePath)
-  } catch {
-    return null
-  }
-  if (now - s.mtimeMs > maxAgeMs) return null
-  let raw: string
-  try {
-    raw = await readFile(cachePath, 'utf8')
-  } catch {
-    return null
-  }
-  try {
-    const parsed = JSON.parse(raw) as StatsCacheV3
-    if (parsed.version !== 3) return null
-    return parsed
-  } catch {
-    return null
-  }
 }
 
 /** Returns the last N entries of a daily series, sorted ascending by date. */
@@ -79,29 +40,6 @@ export function startOfDay(d: Date = new Date()): Date {
   const out = new Date(d)
   out.setHours(0, 0, 0, 0)
   return out
-}
-
-/**
- * Convert a per-model UsageReport into a single DailyTokenEntry.
- *
- * Counts only input + output tokens (NOT cache reads/writes) to match the
- * semantics the CLI's stats-cache uses for `dailyModelTokens`. Including
- * cache reads here would make our "today" bar visually dwarf cached prior
- * days by 10-50× since cache reads dominate token counts.
- */
-export function reportToDailyEntry(date: string, report: UsageReport): DailyTokenEntry {
-  const tokensByModel: Record<string, number> = {}
-  for (const [model, m] of Object.entries(report.perModel)) {
-    tokensByModel[model] = m.inputTokens + m.outputTokens
-  }
-  return { date, tokensByModel }
-}
-
-/** Inserts/replaces an entry for `override.date` and returns the merged series sorted ascending. */
-export function mergeDailyEntries(cached: DailyTokenEntry[], override: DailyTokenEntry): DailyTokenEntry[] {
-  const out = cached.filter(d => d.date !== override.date)
-  out.push(override)
-  return out.sort((a, b) => a.date.localeCompare(b.date))
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +117,29 @@ export function aggregateEntries(entries: AssistantEntry[], since?: Date): Usage
   }
 }
 
+/**
+ * Buckets entries into per-day per-model totals (input + output only — cache
+ * reads/writes are excluded because they dominate counts 10-50× and would
+ * make today's bar visually dwarf cached prior days). Bucketing key is the
+ * local-date YYYY-MM-DD of the entry's timestamp. Returns the series sorted
+ * ascending by date.
+ */
+export function aggregateByDay(entries: AssistantEntry[], since?: Date): DailyTokenEntry[] {
+  const sinceMs = since ? since.getTime() : -Infinity
+  const buckets = new Map<string, Record<string, number>>()
+  for (const e of entries) {
+    const ts = Date.parse(e.timestamp)
+    if (Number.isFinite(ts) && ts < sinceMs) continue
+    const date = localDateString(new Date(ts))
+    const slot = buckets.get(date) ?? {}
+    slot[e.model] = (slot[e.model] ?? 0) + e.inputTokens + e.outputTokens
+    buckets.set(date, slot)
+  }
+  const out: DailyTokenEntry[] = []
+  for (const [date, tokensByModel] of buckets) out.push({ date, tokensByModel })
+  return out.sort((a, b) => a.date.localeCompare(b.date))
+}
+
 // ---------------------------------------------------------------------------
 // Parsing (pure)
 // ---------------------------------------------------------------------------
@@ -228,14 +189,14 @@ export function parseLine(line: string): AssistantEntry | null {
 // Disk loading
 // ---------------------------------------------------------------------------
 
-/** Walks the projects dir and aggregates usage from every session transcript, optionally filtering to entries at/after `since`. */
-export async function loadUsageReport(projectsDir: string, since?: Date): Promise<UsageReport> {
+/** Walks the projects dir and returns every parsed assistant entry, mtime-prefiltered by `since` when supplied. */
+export async function loadUsageEntries(projectsDir: string, since?: Date): Promise<AssistantEntry[]> {
   const entries: AssistantEntry[] = []
   let projectDirs: string[]
   try {
     projectDirs = await readdir(projectsDir)
   } catch {
-    return aggregateEntries([])
+    return entries
   }
 
   for (const project of projectDirs) {
@@ -283,7 +244,12 @@ export async function loadUsageReport(projectsDir: string, since?: Date): Promis
     }
   }
 
-  return aggregateEntries(entries, since)
+  return entries
+}
+
+/** Convenience wrapper: load + aggregate in one call. */
+export async function loadUsageReport(projectsDir: string, since?: Date): Promise<UsageReport> {
+  return aggregateEntries(await loadUsageEntries(projectsDir, since), since)
 }
 
 // ---------------------------------------------------------------------------

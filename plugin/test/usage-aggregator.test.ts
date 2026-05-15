@@ -3,17 +3,15 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, utimesSync } from 'node:
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
+  aggregateByDay,
   aggregateEntries,
   formatTokenCount,
   formatUsageReport,
   lastNDays,
-  loadStatsCacheIfFresh,
   loadUsageReport,
   localDateString,
-  mergeDailyEntries,
   parseLine,
   renderDailyTokensSVG,
-  reportToDailyEntry,
   startOfDay,
   type AssistantEntry,
   type DailyTokenEntry,
@@ -182,6 +180,62 @@ describe('aggregateEntries', () => {
 })
 
 // ---------------------------------------------------------------------------
+// aggregateByDay
+// ---------------------------------------------------------------------------
+
+/** Build an ISO timestamp that, when bucketed via localDateString, lands on the given local YYYY-MM-DD. */
+function localTs(year: number, month: number, day: number, hour = 12): string {
+  return new Date(year, month - 1, day, hour, 0, 0).toISOString()
+}
+
+describe('aggregateByDay', () => {
+  test('empty input → empty series', () => {
+    expect(aggregateByDay([])).toEqual([])
+  })
+
+  test('buckets by local date and sums input + output only (cache tokens excluded)', () => {
+    const series = aggregateByDay([
+      entry({ timestamp: localTs(2026, 5, 1), model: 'opus', inputTokens: 100, outputTokens: 50, cacheReadTokens: 10_000, cacheCreationTokens: 500 }),
+      entry({ timestamp: localTs(2026, 5, 1), model: 'opus', inputTokens: 200, outputTokens: 25 }),
+      entry({ timestamp: localTs(2026, 5, 2), model: 'sonnet', inputTokens: 500 }),
+    ])
+    expect(series).toEqual([
+      { date: '2026-05-01', tokensByModel: { opus: 375 } },  // 150 + 225, cache reads ignored
+      { date: '2026-05-02', tokensByModel: { sonnet: 500 } },
+    ])
+  })
+
+  test('keeps models separate on the same day', () => {
+    const series = aggregateByDay([
+      entry({ timestamp: localTs(2026, 5, 1), model: 'opus',   inputTokens: 100 }),
+      entry({ timestamp: localTs(2026, 5, 1), model: 'sonnet', inputTokens: 200 }),
+    ])
+    expect(series).toEqual([
+      { date: '2026-05-01', tokensByModel: { opus: 100, sonnet: 200 } },
+    ])
+  })
+
+  test('returns series sorted ascending by date regardless of input order', () => {
+    const series = aggregateByDay([
+      entry({ timestamp: localTs(2026, 5, 3), inputTokens: 30 }),
+      entry({ timestamp: localTs(2026, 5, 1), inputTokens: 10 }),
+      entry({ timestamp: localTs(2026, 5, 2), inputTokens: 20 }),
+    ])
+    expect(series.map(d => d.date)).toEqual(['2026-05-01', '2026-05-02', '2026-05-03'])
+  })
+
+  test('filters entries before `since`', () => {
+    const since = new Date(localTs(2026, 5, 1, 0))
+    const series = aggregateByDay([
+      entry({ timestamp: localTs(2026, 4, 30, 12), inputTokens: 999 }),
+      entry({ timestamp: localTs(2026, 5, 1, 12),  inputTokens: 100 }),
+    ], since)
+    expect(series).toHaveLength(1)
+    expect(series[0].date).toBe('2026-05-01')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // formatUsageReport
 // ---------------------------------------------------------------------------
 
@@ -321,47 +375,6 @@ describe('loadUsageReport', () => {
 })
 
 // ---------------------------------------------------------------------------
-// loadStatsCacheIfFresh
-// ---------------------------------------------------------------------------
-
-describe('loadStatsCacheIfFresh', () => {
-  const cacheDir = mkdtempSync(join(tmpdir(), 'dc-stats-cache-'))
-  const cachePath = join(cacheDir, 'stats-cache.json')
-
-  test('returns null when file does not exist', async () => {
-    expect(await loadStatsCacheIfFresh('/tmp/no-such-file-xyz', 60_000)).toBeNull()
-  })
-
-  test('returns null when file is older than maxAgeMs', async () => {
-    writeFileSync(cachePath, JSON.stringify({ version: 3, dailyModelTokens: [] }))
-    const old = new Date('2025-01-01T00:00:00.000Z')
-    utimesSync(cachePath, old, old)
-    expect(await loadStatsCacheIfFresh(cachePath, 60_000)).toBeNull()
-  })
-
-  test('returns null when version is not 3', async () => {
-    writeFileSync(cachePath, JSON.stringify({ version: 2, dailyModelTokens: [] }))
-    expect(await loadStatsCacheIfFresh(cachePath, 60 * 60_000)).toBeNull()
-  })
-
-  test('returns null on malformed JSON', async () => {
-    writeFileSync(cachePath, 'not json')
-    expect(await loadStatsCacheIfFresh(cachePath, 60 * 60_000)).toBeNull()
-  })
-
-  test('returns parsed cache when fresh and v3', async () => {
-    writeFileSync(cachePath, JSON.stringify({
-      version: 3,
-      lastComputedDate: '2026-05-02',
-      dailyModelTokens: [{ date: '2026-05-01', tokensByModel: { 'claude-opus-4-7': 1000 } }],
-    }))
-    const c = await loadStatsCacheIfFresh(cachePath, 60 * 60_000)
-    expect(c?.version).toBe(3)
-    expect(c?.dailyModelTokens?.[0].date).toBe('2026-05-01')
-  })
-})
-
-// ---------------------------------------------------------------------------
 // lastNDays
 // ---------------------------------------------------------------------------
 
@@ -412,46 +425,6 @@ describe('localDateString / startOfDay', () => {
   })
 })
 
-describe('reportToDailyEntry', () => {
-  test('counts only input + output (excludes cache tokens to match CLI cache semantics)', () => {
-    const r = aggregateEntries([
-      entry({ model: 'claude-opus-4-7', inputTokens: 100, outputTokens: 50, cacheReadTokens: 10_000, cacheCreationTokens: 500 }),
-      entry({ model: 'claude-sonnet-4-6', inputTokens: 200 }),
-    ])
-    const e = reportToDailyEntry('2026-05-02', r)
-    expect(e.date).toBe('2026-05-02')
-    expect(e.tokensByModel['claude-opus-4-7']).toBe(150)  // 100 + 50, NOT 10,650
-    expect(e.tokensByModel['claude-sonnet-4-6']).toBe(200)
-  })
-})
-
-describe('mergeDailyEntries', () => {
-  test('replaces an existing same-date entry', () => {
-    const cached: DailyTokenEntry[] = [
-      { date: '2026-05-01', tokensByModel: { 'a': 100 } },
-      { date: '2026-05-02', tokensByModel: { 'a': 999 } },  // stale "today"
-    ]
-    const merged = mergeDailyEntries(cached, { date: '2026-05-02', tokensByModel: { 'a': 50 } })
-    expect(merged).toEqual([
-      { date: '2026-05-01', tokensByModel: { 'a': 100 } },
-      { date: '2026-05-02', tokensByModel: { 'a': 50 } },
-    ])
-  })
-
-  test('appends a new date and keeps results sorted', () => {
-    const cached: DailyTokenEntry[] = [
-      { date: '2026-05-01', tokensByModel: { 'a': 100 } },
-    ]
-    const merged = mergeDailyEntries(cached, { date: '2026-05-02', tokensByModel: { 'a': 50 } })
-    expect(merged.map(d => d.date)).toEqual(['2026-05-01', '2026-05-02'])
-  })
-
-  test('does not mutate the input', () => {
-    const cached: DailyTokenEntry[] = [{ date: '2026-05-01', tokensByModel: { 'a': 100 } }]
-    mergeDailyEntries(cached, { date: '2026-05-02', tokensByModel: { 'a': 50 } })
-    expect(cached.length).toBe(1)
-  })
-})
 
 describe('renderDailyTokensSVG', () => {
   test('produces a valid SVG envelope', () => {

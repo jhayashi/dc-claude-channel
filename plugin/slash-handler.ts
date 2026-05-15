@@ -14,9 +14,8 @@ import * as agents from './agents.js'
 import * as bindings from './bindings.js'
 import type { SlashCommand } from './slash-router.js'
 import {
-  loadUsageReport, formatUsageReport,
-  loadStatsCacheIfFresh, lastNDays, renderDailyTokensSVG,
-  localDateString, startOfDay, reportToDailyEntry, mergeDailyEntries,
+  loadUsageEntries, aggregateEntries, aggregateByDay,
+  formatUsageReport, lastNDays, renderDailyTokensSVG,
 } from './usage-aggregator.js'
 import { Resvg } from '@resvg/resvg-js'
 
@@ -287,7 +286,6 @@ async function handleMemoryShow(
 // ---------------------------------------------------------------------------
 
 const USAGE_WINDOW_DAYS = 7
-const STATS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 async function handleUsage(
   deps: SlashDeps,
@@ -296,33 +294,22 @@ async function handleUsage(
   const { send, logf } = deps
   const projectsDir = join(homedir(), '.claude', 'projects')
   const since = new Date(Date.now() - USAGE_WINDOW_DAYS * 86_400_000)
+
+  // One walk feeds both the text report and the chart series.
+  let entries
   try {
-    const report = await loadUsageReport(projectsDir, since)
-    await send(chatId, formatUsageReport(report)).catch(() => {})
+    entries = await loadUsageEntries(projectsDir, since)
   } catch (err: unknown) {
     logf('slash: usage read failed chat=%d: %v', chatId, err)
     await send(chatId, 'Could not read usage data.').catch(() => {})
     return
   }
+  await send(chatId, formatUsageReport(aggregateEntries(entries, since))).catch(() => {})
 
-  // If the CLI's stats cache is fresh (within 24h) AND we can send
-  // attachments, follow up with a per-day chart of the last 7 days. The
-  // cache stops at lastComputedDate (often "yesterday"), so we augment it
-  // with today's totals computed from transcripts.
   if (!deps.sendAttachment) return
   try {
-    const cachePath = join(homedir(), '.claude', 'stats-cache.json')
-    const cache = await loadStatsCacheIfFresh(cachePath, STATS_CACHE_MAX_AGE_MS)
-    if (!cache?.dailyModelTokens?.length) return
-
-    let series = cache.dailyModelTokens
-    const todayReport = await loadUsageReport(projectsDir, startOfDay())
-    if (todayReport.totalMessages > 0) {
-      series = mergeDailyEntries(series, reportToDailyEntry(localDateString(), todayReport))
-    }
-    series = lastNDays(series, USAGE_WINDOW_DAYS)
+    const series = lastNDays(aggregateByDay(entries, since), USAGE_WINDOW_DAYS)
     if (!series.length) return
-
     const svg = renderDailyTokensSVG(series)
     const png = new Resvg(svg).render().asPng()
     const pngPath = join(tmpdir(), `dc-usage-chart-${chatId}.png`)
