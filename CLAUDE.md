@@ -18,6 +18,8 @@ Every paired chat that recently sent a message has a persistent `claude -p` suba
 
 Chat-scoping is **not a privacy/security boundary** between paired chats; it's a **context-hygiene default**. Treat `chat_id` as "which chat am I acting on" rather than "which chat am I permitted to act on." (`dc_schedule*` is the one exception — caller chat_id must equal target chat_id.)
 
+**Interrupting a turn (v1.3.2+):** `/stop` and edit-a-message both flow through `subagentCache.evictChat`. The kill cascade walks the full process tree (single `ps -e -o pid=,ppid=` snapshot → BFS, depth-first SIGTERM, 2s grace, SIGKILL) because claude's Bash tool `setsid`s its shells into their own process groups — pgrp-kill alone misses them. `SubagentProcess.close()` synchronously aborts the in-flight `readFrame` Promise so the awaiting `send()` rejects immediately rather than waiting out the multi-hour turn timeout; the dispatcher's catch suppresses the chat-side "Internal error" toast for shutdown-class errors (still recorded to `turns-*.log`). Edit-as-interrupt: `dc-client.ts`'s `MsgsChanged` filter detects content edits on the user's own outgoing messages and re-dispatches them through the same path as a brand-new message, so the resumed subagent processes the corrected prompt without the user repeating themselves.
+
 For skip-permissions mode, scheduled jobs (`dc_schedule*`), shared memory semantics, the four event-log streams (`tools-*.log`, `turns-*.log`, `permissions-*.log`, `webxdc-*.log`) + the `dc_show_events` tool, and config env vars, see [`docs/ARCHITECTURE.md#subagent-model-v09`](docs/ARCHITECTURE.md).
 
 ## Contacts (v1.3+; was "Principals" in v1.1.5–v1.2.2)
