@@ -77,18 +77,37 @@ describe('/help', () => {
 // ---------------------------------------------------------------------------
 
 describe('/stop', () => {
-  test('evicts subagent and confirms', async () => {
+  test('acks "Stopping…" immediately, then evicts and acks "Stopped"', async () => {
     const spy = makeSpy({})
     await handleSlash(spy.deps, { kind: 'stop' }, 10)
     expect(spy.evictCalls).toEqual([10])
-    expect(spy.sendCalls[0].text).toMatch(/stopped/i)
+    expect(spy.sendCalls).toHaveLength(2)
+    expect(spy.sendCalls[0].text).toMatch(/stopping/i)
+    expect(spy.sendCalls[1].text).toMatch(/stopped/i)
   })
 
-  test('still confirms even if evict throws', async () => {
+  test('"Stopping…" sends before evict completes (immediate feedback)', async () => {
+    const spy = makeSpy({})
+    let evictResolve!: () => void
+    spy.deps.evictChat = () => new Promise<void>((resolve) => { evictResolve = resolve })
+    const handlerDone = handleSlash(spy.deps, { kind: 'stop' }, 10)
+    // Yield once so the synchronous `await send(...)` resolves.
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(spy.sendCalls[0]?.text).toMatch(/stopping/i)
+    expect(spy.sendCalls).toHaveLength(1)  // "Stopped" not sent yet
+    evictResolve()
+    await handlerDone
+    expect(spy.sendCalls).toHaveLength(2)
+  })
+
+  test('reports "Stop failed: <err>" when evict throws', async () => {
     const spy = makeSpy({})
     spy.deps.evictChat = async () => { throw new Error('cache miss') }
     await handleSlash(spy.deps, { kind: 'stop' }, 10)
-    expect(spy.sendCalls[0].text).toMatch(/stopped/i)
+    expect(spy.sendCalls).toHaveLength(2)
+    expect(spy.sendCalls[0].text).toMatch(/stopping/i)
+    expect(spy.sendCalls[1].text).toMatch(/stop failed:.*cache miss/i)
     expect(spy.logCalls.some((l) => l.includes('evict failed'))).toBe(true)
   })
 })

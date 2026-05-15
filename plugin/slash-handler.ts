@@ -52,10 +52,19 @@ export async function handleSlash(
     }
 
     case 'stop': {
-      await evictChat(chatId).catch((err) =>
-        logf('slash: stop evict failed chat=%d: %v', chatId, err),
-      )
-      await send(chatId, 'Stopped. Send your next message to continue.').catch(() => {})
+      // Two-phase ack: post "Stopping..." before the kill chain so the user
+      // sees feedback in <100ms instead of waiting out the SIGTERM grace
+      // (~2s on a process tree with slow grandchildren). Final ack comes
+      // after evict resolves so success vs. failure is distinguishable.
+      await send(chatId, 'Stopping...').catch(() => {})
+      try {
+        await evictChat(chatId)
+        await send(chatId, 'Stopped. Send your next message to continue.').catch(() => {})
+      } catch (err) {
+        logf('slash: stop evict failed chat=%d: %v', chatId, err)
+        const msg = err instanceof Error ? err.message : String(err)
+        await send(chatId, `Stop failed: ${msg}`).catch(() => {})
+      }
       return
     }
 
