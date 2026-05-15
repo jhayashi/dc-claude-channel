@@ -107,41 +107,10 @@ body {
 .doc-tab .tab-close:hover, .doc-tab .tab-close:active {
   color: var(--danger);
 }
-/* #78: export-as-attachment button at the right edge of the sidebar
-   strip. Pinned with margin-left: auto so it sits past the scrollable
-   tabs. Bottom-margin -1 matches .doc-tab so the border aligns with
-   the strip's underline. */
-.sidebar .export-btn {
-  margin-bottom: -1px;
-  padding: 8px 11px 10px;
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--ink-faint);
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  border-radius: 10px 10px 0 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  transition: background 120ms ease, color 120ms ease;
-}
-.sidebar .export-btn:hover {
-  background: var(--surface-2);
-  color: var(--ink);
-}
-.sidebar .export-btn:active { opacity: 0.7; }
-.sidebar .export-btn[disabled] { cursor: default; opacity: 0.6; }
-.sidebar .export-btn .export-btn-icon { font-size: 13px; }
-.sidebar .export-btn .spinner {
-  width: 12px;
-  height: 12px;
-  border: 1.5px solid var(--ink-faint);
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: exportspin 0.8s linear infinite;
-}
+/* #78: export-as-attachment lived as its own button at the right edge
+   of the sidebar; replaced by the kebab menu (see below). Action is
+   now a menu item; while pending, the export-toast under the sidebar
+   provides feedback. No standalone button styles required anymore. */
 @keyframes exportspin { to { transform: rotate(360deg); } }
 /* Toast under the sidebar — success (green) or error (danger). */
 .export-toast {
@@ -170,31 +139,87 @@ body {
   from { opacity: 0; transform: translateY(-6px); }
   to { opacity: 1; transform: translateY(0); }
 }
-/* #77: find feature — 🔍 button styled identically to .export-btn, just
-   slightly different hover affordance so it reads as a separate action. */
-.sidebar .find-btn {
+/* #77/#78 follow-up: kebab menu replaces individual find + export buttons.
+   Frees up horizontal space in the tab strip for the actual file tabs.
+   Single ⋮ button pinned right; tap opens a popover with menu items.
+   Tapping outside or pressing Esc closes the menu. */
+.sidebar .kebab-btn {
+  margin-left: auto;
   margin-bottom: -1px;
-  padding: 8px 11px 10px;
+  padding: 8px 12px 10px;
   background: transparent;
   border: 1px solid transparent;
   color: var(--ink-faint);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 18px;
+  line-height: 1;
   cursor: pointer;
   border-radius: 10px 10px 0 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
   flex-shrink: 0;
   transition: background 120ms ease, color 120ms ease;
 }
-/* find-btn always gets margin-left:auto. export-btn naturally sits to
-   its right (appended after find-btn in rebuildSidebar). The two form a
-   group pinned to the right edge of the strip. */
-.sidebar .find-btn { margin-left: auto; }
-.sidebar .find-btn:hover { background: var(--surface-2); color: var(--ink); }
-.sidebar .find-btn:active { opacity: 0.7; }
-.sidebar .find-btn .find-btn-icon { font-size: 13px; }
+.sidebar .kebab-btn:hover { background: var(--surface-2); color: var(--ink); }
+.sidebar .kebab-btn:active { opacity: 0.7; }
+.sidebar .kebab-btn[aria-expanded="true"] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+/* The popover itself. Anchored to bottom-right of the kebab button via
+   inline positioning set by openKebabMenu. position:fixed so it escapes
+   the sidebar's overflow clipping. */
+#kebab-menu {
+  display: none;
+  position: fixed;
+  z-index: 50;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+  min-width: 200px;
+  padding: 6px;
+  animation: kebabFade 120ms ease;
+}
+#kebab-menu.visible { display: block; }
+@keyframes kebabFade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+#kebab-menu .kebab-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 100ms ease;
+}
+#kebab-menu .kebab-item:hover { background: var(--surface-2); }
+#kebab-menu .kebab-item:active { opacity: 0.7; }
+#kebab-menu .kebab-item-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  min-width: 18px;
+  text-align: center;
+}
+#kebab-menu .kebab-item-label { flex: 1 1 auto; }
+#kebab-menu .kebab-item-kbd {
+  font-size: 10px;
+  color: var(--ink-faint);
+  padding: 2px 5px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
 
 /* #77: search bar that replaces the sidebar at the top when active. */
 #search-bar {
@@ -1100,6 +1125,17 @@ code[class*="language-"], pre[class*="language-"] { text-shadow: none; }
   <button id="search-next" type="button" aria-label="Next match" title="Next match (Enter)">↓</button>
   <button id="search-close" type="button" aria-label="Close search" title="Close (Esc)">×</button>
 </div>
+<div id="kebab-menu" role="menu" aria-label="File actions">
+  <button id="kebab-find" class="kebab-item" type="button" role="menuitem">
+    <span class="kebab-item-icon">🔍</span>
+    <span class="kebab-item-label">Find in file</span>
+    <span class="kebab-item-kbd">⌘F</span>
+  </button>
+  <button id="kebab-export" class="kebab-item" type="button" role="menuitem">
+    <span class="kebab-item-icon">⬇️</span>
+    <span class="kebab-item-label">Send as attachment</span>
+  </button>
+</div>
 <div id="content" class="content" style="display:none"></div>
 <div id="bottombar">
   <span class="hint" id="bar-hint">Long-press any line or paragraph to add a comment.</span>
@@ -1163,7 +1199,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.54;
+var APP_VERSION = 1.55;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -2469,32 +2505,13 @@ function showExportToast(kind, text) {
   exportToastTimer = setTimeout(dismissExportToast, kind === 'success' ? 2000 : 5000);
 }
 
-function setExportBtnBusy(busy) {
-  var btn = document.getElementById('export-btn');
-  if (!btn) return;
-  btn.disabled = !!busy;
-  btn.replaceChildren();
-  if (busy) {
-    var spinner = document.createElement('span');
-    spinner.className = 'spinner';
-    var label = document.createElement('span');
-    label.className = 'export-btn-label';
-    label.textContent = 'Sending…';
-    btn.appendChild(spinner);
-    btn.appendChild(label);
-  } else {
-    var icon = document.createElement('span');
-    icon.className = 'export-btn-icon';
-    icon.textContent = '\u{2b07}\u{fe0f}';
-    var label2 = document.createElement('span');
-    label2.className = 'export-btn-label';
-    label2.textContent = 'Send';
-    btn.appendChild(icon);
-    btn.appendChild(label2);
-  }
-}
+// Single-flight guard for export. The kebab is the only entry point;
+// menu closes on item-click so users can't easily double-fire, but a
+// flag is cheap insurance.
+var _exporting = false;
 
 function exportActiveFile() {
+  if (_exporting) return;
   dismissExportToast();
   var bundle = collectFileForExport();
   if (!bundle) {
@@ -2508,8 +2525,8 @@ function exportActiveFile() {
     showExportToast('error', 'Too large to export (' + kb + ' KB > ' + capKb + ' KB cap)');
     return;
   }
+  _exporting = true;
   var filename = inferExportFilename(bundle.title, bundle.language);
-  setExportBtnBusy(true);
   pendingExportRequestId = pendingExportRequestId + 1;
   var requestId = pendingExportRequestId;
   window.webxdc.sendUpdate({
@@ -2528,13 +2545,79 @@ function exportActiveFile() {
 function handleExportResult(data) {
   // Ignore stale results (a newer export was kicked off after this one).
   if (data.requestId !== undefined && data.requestId !== pendingExportRequestId) return;
-  setExportBtnBusy(false);
+  _exporting = false;
   if (data.ok) {
     showExportToast('success', 'Sent to chat');
   } else {
     var msg = data.message ? ('Export failed: ' + data.message) : 'Export failed';
     showExportToast('error', msg);
   }
+}
+
+// ── Kebab menu (file actions) ──────────────────────────────────────
+var _kebabOpen = false;
+
+function toggleKebabMenu() {
+  if (_kebabOpen) closeKebabMenu();
+  else openKebabMenu();
+}
+
+function openKebabMenu() {
+  var btn = document.getElementById('kebab-btn');
+  var menu = document.getElementById('kebab-menu');
+  if (!btn || !menu) return;
+  // Position the menu directly under the kebab button's right edge.
+  var rect = btn.getBoundingClientRect();
+  var menuWidth = 220;  // approximate; the menu's actual width may vary slightly
+  var left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+  menu.style.left = left + 'px';
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.classList.add('visible');
+  btn.setAttribute('aria-expanded', 'true');
+  _kebabOpen = true;
+}
+
+function closeKebabMenu() {
+  var btn = document.getElementById('kebab-btn');
+  var menu = document.getElementById('kebab-menu');
+  if (menu) menu.classList.remove('visible');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+  _kebabOpen = false;
+}
+
+function wireKebabMenu() {
+  var find = document.getElementById('kebab-find');
+  var exp = document.getElementById('kebab-export');
+  if (find) {
+    find.addEventListener('click', function() {
+      closeKebabMenu();
+      openSearch();
+    });
+  }
+  if (exp) {
+    exp.addEventListener('click', function() {
+      closeKebabMenu();
+      exportActiveFile();
+    });
+  }
+  // Outside-click closes the menu. Listen on document so any tap
+  // outside the menu or the kebab button itself closes the popover.
+  document.addEventListener('click', function(e) {
+    if (!_kebabOpen) return;
+    var menu = document.getElementById('kebab-menu');
+    var btn = document.getElementById('kebab-btn');
+    if (menu && menu.contains(e.target)) return;
+    if (btn && btn.contains(e.target)) return;
+    closeKebabMenu();
+  });
+  // Esc closes the menu (when it's the active layer). Doesn't conflict
+  // with search Esc handling because the search input grabs focus when
+  // search is open and consumes its own Esc.
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && _kebabOpen) {
+      closeKebabMenu();
+    }
+  });
 }
 
 // ── #77: find / in-document search ─────────────────────────────────
@@ -2852,42 +2935,26 @@ function rebuildSidebar() {
     });
     sidebar.appendChild(tab);
   }
-  // #77: find button + #78: export button at the right edge of the
-  // strip. Both only rendered when at least one doc is open (matches
-  // the .sidebar:empty {display:none} behavior). find-btn comes first
-  // so its CSS picks up margin-left:auto and pins the pair to the right.
+  // Kebab menu (⋮) at the right edge of the strip. Frees up
+  // horizontal space for file tabs vs the previous side-by-side
+  // find/export buttons. Items: Find in file, Send as attachment.
+  // Only rendered when at least one doc is open (matches the
+  // .sidebar:empty {display:none} behavior).
   if (documents.length > 0) {
-    var findBtn = document.createElement('button');
-    findBtn.className = 'find-btn';
-    findBtn.type = 'button';
-    findBtn.title = 'Find in file (Cmd/Ctrl+F)';
-    findBtn.setAttribute('aria-label', 'Find in file');
-    var findIcon = document.createElement('span');
-    findIcon.className = 'find-btn-icon';
-    findIcon.textContent = '\u{1f50d}';  // 🔍
-    var findLabel = document.createElement('span');
-    findLabel.textContent = 'Find';
-    findBtn.appendChild(findIcon);
-    findBtn.appendChild(findLabel);
-    findBtn.addEventListener('click', openSearch);
-    sidebar.appendChild(findBtn);
-
-    var exportBtn = document.createElement('button');
-    exportBtn.className = 'export-btn';
-    exportBtn.id = 'export-btn';
-    exportBtn.type = 'button';
-    exportBtn.title = 'Send active file as a chat attachment';
-    exportBtn.setAttribute('aria-label', 'Send as attachment');
-    var exportIcon = document.createElement('span');
-    exportIcon.className = 'export-btn-icon';
-    exportIcon.textContent = '\u{2b07}\u{fe0f}';  // ⬇️
-    var exportLabel = document.createElement('span');
-    exportLabel.className = 'export-btn-label';
-    exportLabel.textContent = 'Send';
-    exportBtn.appendChild(exportIcon);
-    exportBtn.appendChild(exportLabel);
-    exportBtn.addEventListener('click', exportActiveFile);
-    sidebar.appendChild(exportBtn);
+    var kebabBtn = document.createElement('button');
+    kebabBtn.className = 'kebab-btn';
+    kebabBtn.id = 'kebab-btn';
+    kebabBtn.type = 'button';
+    kebabBtn.title = 'More actions';
+    kebabBtn.setAttribute('aria-label', 'More actions');
+    kebabBtn.setAttribute('aria-haspopup', 'menu');
+    kebabBtn.setAttribute('aria-expanded', 'false');
+    kebabBtn.textContent = '⋮';  // ⋮ (vertical ellipsis)
+    kebabBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      toggleKebabMenu();
+    });
+    sidebar.appendChild(kebabBtn);
   }
 }
 
@@ -2949,6 +3016,8 @@ function confirmCloseTab() {
 }
 // #77: wire the search bar's button + input handlers at boot.
 wireSearchBar();
+// Kebab menu's items + outside-click + Esc handlers.
+wireKebabMenu();
 document.getElementById('close-dialog-cancel').addEventListener('click', hideCloseDialog);
 document.getElementById('close-dialog-confirm').addEventListener('click', confirmCloseTab);
 
