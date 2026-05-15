@@ -1163,7 +1163,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.52;
+var APP_VERSION = 1.53;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -1372,17 +1372,28 @@ function renderMarkdown(md) {
       return '<li class="task' + (checked ? ' done' : '') + '">' +
         '<span class="task-mark">' + (checked ? '\u2705' : '\u2B1C') + '</span> ' + text + '</li>';
     })
-    // Ordered list items
+    // Ordered list items — marker class so the wrap below can match exactly.
     .replace(/^\d+\. (.+)$/gm, '<li class="ol">$1</li>')
-    // Unordered list items
-    .replace(/^[*-] (.+)$/gm, '<li>$1</li>')
+    // Unordered list items — symmetric marker class. (Pre-fix this was bare
+    // <li>, which the broad UL-wrap below then re-matched against the bare
+    // <li>s already inside <ol> after the OL wrap stripped their class.
+    // That nested <ol><ul><li>…</li></ul></ol> broke commenting on ordered
+    // lists because renderBlocksInto looks for direct <li> children of the
+    // <ol> and finds only a <ul>.)
+    .replace(/^[*-] (.+)$/gm, '<li class="ul">$1</li>')
     .replace(/^(?!<[hlupboda]|<li|<hr|<pre|\x00)(.+)$/gm, '<p>$1</p>')
-    // Wrap consecutive ordered items in <ol>
+    // Wrap consecutive ordered items in <ol>; strip the marker on the way in.
     .replace(/(<li class="ol">[\s\S]*?<\/li>\n?)+/g, function(m) {
       return '<ol>' + m.replace(/ class="ol"/g, '') + '</ol>';
     })
-    // Wrap remaining consecutive <li> (incl. task items) in <ul>
-    .replace(/(<li(?:\s[^>]*)?>[\s\S]*?<\/li>\n?)+/g, '<ul>$&</ul>');
+    // Wrap remaining consecutive UL items (incl. task items) in <ul>.
+    // Matches <li class="ul"> and <li class="task..."> ONLY — bare <li>s
+    // already inside <ol> from the previous step are not re-matched. Strip
+    // the "ul" marker on the way; task class is preserved (task rendering
+    // depends on it).
+    .replace(/(<li class="(?:ul|task)(?:[^"]*)?"[^>]*>[\s\S]*?<\/li>\n?)+/g, function(m) {
+      return '<ul>' + m.replace(/<li class="ul">/g, '<li>') + '</ul>';
+    });
 
   html = html.replace(/\x00CB(\d+)\x00/g, function(_, idx) {
     return codeBlocks[Number(idx)];
