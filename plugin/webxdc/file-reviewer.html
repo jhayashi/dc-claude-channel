@@ -403,6 +403,26 @@ body.searching .sidebar { display: none; }
   -webkit-touch-callout: none;
   touch-action: pan-y;
 }
+/* #75 follow-up (#77 surfaced it): the user-select / touch-callout
+   rules above don't always cascade to descendants in WebKit when the
+   parent uses display: flex. A loose-list bullet renders as:
+     <li display:flex>
+       <span class="bullet">•</span>
+       <p>... bullet text ...</p>          <-- WebKit: <p> ignores parent's none
+     </li>
+   The <p> falls back to its user-agent default (user-select: text),
+   selection works again on bullet text, iOS's selection magnifier wins
+   over our long-press, comment gesture loses. #77's <mark.search-match>
+   wrappers inherit the same broken cascade. Explicit rule on descendants
+   forces the property through. */
+.content li[data-paragraph] *,
+.content tr[data-paragraph] *,
+.content .code-line[data-paragraph] *,
+.md-block[data-paragraph] * {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
 .content li[data-paragraph] {
   min-height: 36px;
   padding: 6px 0;
@@ -1143,7 +1163,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.51;
+var APP_VERSION = 1.52;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
