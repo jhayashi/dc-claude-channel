@@ -1163,7 +1163,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.53;
+var APP_VERSION = 1.54;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -2485,7 +2485,7 @@ function setExportBtnBusy(busy) {
   } else {
     var icon = document.createElement('span');
     icon.className = 'export-btn-icon';
-    icon.textContent = '\u{1f4ce}';
+    icon.textContent = '\u{2b07}\u{fe0f}';
     var label2 = document.createElement('span');
     label2.className = 'export-btn-label';
     label2.textContent = 'Send';
@@ -2880,7 +2880,7 @@ function rebuildSidebar() {
     exportBtn.setAttribute('aria-label', 'Send as attachment');
     var exportIcon = document.createElement('span');
     exportIcon.className = 'export-btn-icon';
-    exportIcon.textContent = '\u{1f4ce}';  // 📎
+    exportIcon.textContent = '\u{2b07}\u{fe0f}';  // ⬇️
     var exportLabel = document.createElement('span');
     exportLabel.className = 'export-btn-label';
     exportLabel.textContent = 'Send';
