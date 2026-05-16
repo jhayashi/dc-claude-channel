@@ -4,6 +4,10 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+### Added
+
+- **Event-log retention (#85).** Dated log files under `$DC_EVENT_DIR` (`tools-`, `turns-`, `permissions-`, `webxdc-`, `agent-lifecycle-`) are now auto-deleted past `DC_EVENT_LOG_MAX_AGE_DAYS` days (default 30; set `0` to disable). Sweep runs once at dispatcher boot and once every 24 hours, driven by filename date (not mtime, so backup/snapshot tooling doesn't perturb retention). Non-matching files in the events dir are left alone; per-file unlink errors are collected and logged without aborting the sweep.
+
 ## [1.3.2] — 2026-05-14
 
 Three themes: (1) edit a prior message in DC and the dispatcher stops the in-flight turn and relaunches with the edited prompt; (2) `/stop` and chat eviction now reliably tear down claude's whole process tree (Bash-tool grandchildren included) and unblock the awaiting `send()` synchronously instead of letting it sit out the multi-hour turn timeout; (3) File Reviewer gains in-document find, file-as-attachment export, a kebab menu that consolidates both, and reliable long-press commenting on ordered/unordered list items. Closes #21, #45, #75, #77, #78.

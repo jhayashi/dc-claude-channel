@@ -147,6 +147,7 @@ Config (environment variables):
 - `DC_SUBAGENT_IDLE_TIMEOUT_MIN` — idle timeout (default 15)
 - `DC_HOOK_TIMEOUT_SEC` — max wait for a permission verdict (default 300)
 - `DC_EVENT_DIR` — override for the event log dir (default `$DC_STATE_DIR/events/`)
+- `DC_EVENT_LOG_MAX_AGE_DAYS` — auto-delete dated log files older than this many days (default 30; set `0` to disable). Sweep runs once at dispatcher boot and once every 24h; covers all five streams (`tools-`, `turns-`, `permissions-`, `webxdc-`, `agent-lifecycle-`). Filename-date driven, not mtime, so backup/snapshot drift doesn't change retention.
 
 ## Subagent session resume
 

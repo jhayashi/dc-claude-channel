@@ -48,9 +48,10 @@ import { createMessageRouter } from './dispatcher/message-router.js'
 import { ReactionRouter } from './dispatcher/reaction-router.js'
 import { tryAutoApprove } from './dispatcher/skip-permissions.js'
 import { createActivityReactor, THINKING_EMOJIS, type ActivityReactor } from './dispatcher/activity-reactions.js'
-import { logToolCall, logTurn, logPermission, logWebXDC, logAutoPairDenial, buildArgPreview } from './events.js'
+import { logToolCall, logTurn, logPermission, logWebXDC, logAutoPairDenial, buildArgPreview, getEventDir } from './events.js'
 import { formatHistoryLine, evaluateAttachmentDownload } from './dispatcher/trust-filter.js'
 import { parseSince, queryEvents, renderEventsMarkdown, ALL_STREAMS, type EventStream } from './events-query.js'
+import { pruneEventLogs } from './dispatcher/event-log-rotate.js'
 import * as resume from './resume.js'
 import * as models from './models.js'
 import { ScheduleStore, type ScheduledJob } from './dispatcher/schedule-store.js'
@@ -2218,6 +2219,23 @@ async function main(): Promise<void> {
       logf('bootstrap: install failed — tool calls will return an error: %v', err)
     })
   }
+
+  // Event-log retention: delete dated log files older than
+  // DC_EVENT_LOG_MAX_AGE_DAYS (default 30). Sweep at boot + once/day. The
+  // timer is unref'd so it doesn't keep the event loop alive during
+  // shutdown. Set the env var to 0 to disable.
+  const eventLogMaxAgeDays = Number(process.env.DC_EVENT_LOG_MAX_AGE_DAYS ?? '30')
+  async function runEventLogPrune(): Promise<void> {
+    try {
+      const { deleted, errors } = await pruneEventLogs(getEventDir(), eventLogMaxAgeDays)
+      if (deleted.length) logf('event-log: pruned %d file(s) older than %d days', deleted.length, eventLogMaxAgeDays)
+      for (const { file, err } of errors) logf('event-log: prune failed %s: %v', file, err)
+    } catch (err) {
+      logf('event-log: prune sweep failed: %v', err)
+    }
+  }
+  await runEventLogPrune()
+  setInterval(runEventLogPrune, 24 * 60 * 60 * 1000).unref()
 
   await client.start()
 
