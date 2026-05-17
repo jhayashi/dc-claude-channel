@@ -189,3 +189,25 @@ describe('synthesizeAgentName', () => {
     expect(agents.synthesizeAgentName('')).toBe('agent')
   })
 })
+
+describe('mcp__dc auto-injection', () => {
+  test('adds mcp__dc to tools when absent on save', () => {
+    agents.saveAgent(makeDef({ name: 'no-dc', tools: 'Read, Bash' }))
+    const reloaded = agents.getAgent('no-dc')
+    expect(reloaded?.tools).toContain('mcp__dc')
+    expect(reloaded?.tools).toContain('Read')
+    expect(reloaded?.tools).toContain('Bash')
+  })
+
+  test('leaves mcp__dc alone when already present', () => {
+    agents.saveAgent(makeDef({ name: 'has-dc', tools: 'Read, mcp__dc, Bash' }))
+    const reloaded = agents.getAgent('has-dc')
+    const matches = (reloaded?.tools ?? '').match(/mcp__dc/g) ?? []
+    expect(matches.length).toBe(1)
+  })
+
+  test('handles empty tools CSV by initialising to mcp__dc', () => {
+    agents.saveAgent(makeDef({ name: 'empty', tools: '' }))
+    expect(agents.getAgent('empty')?.tools).toBe('mcp__dc')
+  })
+})

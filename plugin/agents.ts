@@ -263,9 +263,26 @@ export function getAgent(name: string): AgentDef | null {
   return result.success ? result.data : null
 }
 
+/**
+ * Ensure `mcp__dc` is present in a tools CSV. The DC tools-proxy MCP
+ * server is mandatory for any agent that needs to interact with the
+ * chat — without it the agent has no `dc_reply` / `dc_react` / etc.
+ * Idempotent: leaves existing entries untouched (including the more
+ * specific `mcp__dc__<tool>` form).
+ */
+function ensureMcpDc(tools: string): string {
+  const parts = tools.split(',').map(s => s.trim()).filter(Boolean)
+  if (parts.some(t => t === 'mcp__dc' || t.startsWith('mcp__dc__'))) {
+    return parts.join(', ')
+  }
+  parts.push('mcp__dc')
+  return parts.join(', ')
+}
+
 /** Save an agent definition. Atomic via temp + rename. */
 export function saveAgent(def: AgentDef): void {
-  const validated = AgentDefSchema.parse(def)
+  const withDc: AgentDef = { ...def, tools: ensureMcpDc(def.tools ?? '') }
+  const validated = AgentDefSchema.parse(withDc)
   mkdirSync(AGENTS_DIR, { recursive: true })
   // Separate the body from the rest of the frontmatter — the body
   // becomes the markdown after the closing `---`; everything else is
