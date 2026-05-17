@@ -25,6 +25,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import YAML from 'yaml'
 import * as agents from './agents.js'
+import * as bindings from './bindings.js'
 import { ALL_BUILTIN_TOOLS } from './dispatcher/subagent-process.js'
 
 export const LegacyAgentDefSchema = z.object({
@@ -114,6 +115,12 @@ export interface MigrationResult {
   migrated: number
   /** Names that collided with an existing target file; their migrated copy was written with `-dc` suffix. */
   collisions: string[]
+  /**
+   * Number of existing bindings whose `agentId` was rewritten because
+   * the agent they referenced was renamed on collision. Zero unless
+   * `collisions` is non-empty.
+   */
+  bindingsRewritten: number
 }
 
 /**
@@ -124,7 +131,7 @@ export interface MigrationResult {
  * result's `collisions` list for the caller to log.
  */
 export function migrateLegacyDefinitionYaml(): MigrationResult {
-  const result: MigrationResult = { migrated: 0, collisions: [] }
+  const result: MigrationResult = { migrated: 0, collisions: [], bindingsRewritten: 0 }
   if (!existsSync(LEGACY_AGENTS_DIR)) return result
 
   let entries: string[]
@@ -133,6 +140,12 @@ export function migrateLegacyDefinitionYaml(): MigrationResult {
   } catch {
     return result
   }
+
+  // Track old-name → new-name for collisions so we can rewrite bindings
+  // after the per-agent loop. Existing binding.agentId values reference
+  // the pre-rename slug; without rewriting them, `resolveChat` would
+  // load the unrelated terminal-CC agent at the colliding path.
+  const renameMap = new Map<string, string>()
 
   for (const entry of entries) {
     const dirPath = join(LEGACY_AGENTS_DIR, entry)
@@ -165,14 +178,16 @@ export function migrateLegacyDefinitionYaml(): MigrationResult {
     // Collision: target file already exists → suffix with -dc.
     const targetExists = agents.getAgent(newDef.name) !== null
     if (targetExists) {
-      result.collisions.push(newDef.name)
-      const base = newDef.name
+      const originalName = newDef.name
+      result.collisions.push(originalName)
+      const base = originalName
       let n = 0
       let suffix = `${base}-dc`
       while (agents.getAgent(suffix)) {
         n++
         suffix = `${base}-dc${n}`
       }
+      renameMap.set(originalName, suffix)
       newDef = { ...newDef, name: suffix }
     }
 
@@ -197,6 +212,25 @@ export function migrateLegacyDefinitionYaml(): MigrationResult {
     }
 
     result.migrated++
+  }
+
+  // Rewrite bindings for any agent whose name was changed on collision.
+  // Without this, the binding's `agentId` still references the original
+  // slug — which now points at the unrelated terminal-CC agent that
+  // caused the collision. `resolveChat` would silently load the wrong
+  // agent definition, swapping the user's bound agent without notice.
+  if (renameMap.size > 0) {
+    for (const b of bindings.listBindings()) {
+      if (!b.agentId) continue
+      const newName = renameMap.get(b.agentId)
+      if (!newName) continue
+      try {
+        bindings.saveBinding({ ...b, agentId: newName })
+        result.bindingsRewritten++
+      } catch (err) {
+        console.error(`migrate v1.4: bindings rewrite for chat ${b.chatId} failed:`, err)
+      }
+    }
   }
 
   // Retire the legacy directory once we've walked everything — even if

@@ -2283,6 +2283,12 @@ async function main(): Promise<void> {
         result.collisions.length, result.collisions.join(', '),
       )
     }
+    if (result.bindingsRewritten > 0) {
+      logf(
+        'dc channel: rewrote %d binding(s) to point at renamed agents',
+        result.bindingsRewritten,
+      )
+    }
   } catch (err) {
     logf('dc channel: v1.4 agent migration failed: %v', err)
   }

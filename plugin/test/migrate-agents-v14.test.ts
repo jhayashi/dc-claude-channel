@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import YAML from 'yaml'
 import * as agents from '../agents'
+import * as bindings from '../bindings'
 import {
   mapLegacyToNew,
   migrateLegacyDefinitionYaml,
@@ -251,5 +252,121 @@ describe('migrateLegacyDefinitionYaml', () => {
     writeLegacy('real', { name: 'Real', model: 'claude-sonnet-4-6', system: 'x' })
     const result = migrateLegacyDefinitionYaml()
     expect(result.migrated).toBe(1)
+  })
+})
+
+describe('migrateLegacyDefinitionYaml — binding rewrites on collision', () => {
+  let root: string
+  let legacyDir: string
+  let newDir: string
+  let bindingsDir: string
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'dc-migrate-binding-'))
+    legacyDir = join(root, 'channels', 'deltachat', 'agents')
+    newDir = join(root, 'agents')
+    bindingsDir = join(root, 'bindings')
+    mkdirSync(legacyDir, { recursive: true })
+    mkdirSync(newDir, { recursive: true })
+    mkdirSync(bindingsDir, { recursive: true })
+    setLegacyAgentsDir(legacyDir)
+    agents.setAgentsDir(newDir)
+    bindings.setBindingsDir(bindingsDir)
+  })
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  function writeLegacy(id: string, def: Record<string, unknown>): void {
+    const dir = join(legacyDir, id)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'definition.yaml'), YAML.stringify({ id, ...def }))
+  }
+
+  test('rewrites binding agentId when target agent is renamed on collision', () => {
+    // Terminal CC already has `helper.md`.
+    writeFileSync(
+      join(newDir, 'helper.md'),
+      '---\nname: helper\nmodel: claude-sonnet-4-6\ntools: mcp__dc\n---\n\nterminal CC helper\n',
+    )
+    // DC v1.3 also has a `helper` agent.
+    writeLegacy('helper', {
+      name: 'Helper',
+      model: 'claude-opus-4-7',
+      system: 'DC helper system prompt',
+    })
+    // DC has a binding pointing chat 42 at the legacy DC helper.
+    bindings.saveBinding({
+      chatId: 42,
+      agentId: 'helper',
+      sessionId: 'sess-001',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    })
+
+    const result = migrateLegacyDefinitionYaml()
+    expect(result.collisions).toEqual(['helper'])
+
+    // The DC binding must now point at `helper-dc`, not `helper` (which
+    // is terminal CC's agent — a different definition).
+    expect(bindings.getBinding(42)?.agentId).toBe('helper-dc')
+
+    // Sanity: the migrated DC definition is at `helper-dc.md` with the
+    // DC system prompt; terminal CC's helper.md is untouched.
+    expect(agents.getAgent('helper-dc')?.body).toContain('DC helper system prompt')
+    expect(agents.getAgent('helper')?.body).toContain('terminal CC helper')
+  })
+
+  test('leaves other bindings untouched', () => {
+    // Pre-existing terminal CC helper triggers collision for `helper`.
+    writeFileSync(
+      join(newDir, 'helper.md'),
+      '---\nname: helper\nmodel: claude-sonnet-4-6\ntools: mcp__dc\n---\n\nterminal CC helper\n',
+    )
+    writeLegacy('helper', { name: 'Helper', model: 'claude-sonnet-4-6', system: 'x' })
+    writeLegacy('coder', { name: 'Coder', model: 'claude-sonnet-4-6', system: 'y' })
+
+    // Two bindings: one to the colliding `helper`, one to the non-colliding `coder`.
+    bindings.saveBinding({ chatId: 42, agentId: 'helper', createdAt: '2026-01-01T00:00:00Z' })
+    bindings.saveBinding({ chatId: 99, agentId: 'coder',  createdAt: '2026-01-01T00:00:00Z' })
+
+    migrateLegacyDefinitionYaml()
+
+    expect(bindings.getBinding(42)?.agentId).toBe('helper-dc')
+    // The non-colliding agent's binding is unchanged.
+    expect(bindings.getBinding(99)?.agentId).toBe('coder')
+  })
+
+  test('no-op when there are no collisions', () => {
+    writeLegacy('uncontested', { name: 'Uncontested', model: 'claude-sonnet-4-6', system: 'x' })
+    bindings.saveBinding({ chatId: 7, agentId: 'uncontested', createdAt: '2026-01-01T00:00:00Z' })
+    const result = migrateLegacyDefinitionYaml()
+    expect(result.collisions).toEqual([])
+    expect(bindings.getBinding(7)?.agentId).toBe('uncontested')
+  })
+
+  test('preserves other binding fields (sessionId, workingDir, createdAt)', () => {
+    writeFileSync(
+      join(newDir, 'helper.md'),
+      '---\nname: helper\nmodel: claude-sonnet-4-6\ntools: mcp__dc\n---\n\nterminal\n',
+    )
+    writeLegacy('helper', { name: 'Helper', model: 'claude-sonnet-4-6', system: 'x' })
+    bindings.saveBinding({
+      chatId: 42,
+      agentId: 'helper',
+      sessionId: 'sess-keepme',
+      workingDir: '/path/to/work',
+      inheritClaudeMd: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    })
+
+    migrateLegacyDefinitionYaml()
+
+    const after = bindings.getBinding(42)!
+    expect(after.agentId).toBe('helper-dc')
+    expect(after.sessionId).toBe('sess-keepme')
+    expect(after.workingDir).toBe('/path/to/work')
+    expect(after.inheritClaudeMd).toBe(true)
+    expect(after.createdAt).toBe('2026-01-01T00:00:00.000Z')
   })
 })
