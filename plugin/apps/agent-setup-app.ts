@@ -306,8 +306,8 @@ async function listExistingForPicker(sourceChatId: number): Promise<Array<{ id: 
       /* fall back to empty — client renders a placeholder */
     }
     return {
-      id: a.id,
-      name: a.name,
+      id: a.name,
+      name: agentDisplayName(a),
       model: a.model,
       archetype,
       icon: agents.iconForAgent(a),
@@ -316,9 +316,9 @@ async function listExistingForPicker(sourceChatId: number): Promise<Array<{ id: 
       tier,
       isTrusted: trust,
       iconDataUri,
-      bindingCount: bindings.countByAgentId(a.id),
-      isCurrentAgent: sourceBinding?.agentId === a.id,
-      isUndeletable: agents.isUndeletableAgent(a.id),
+      bindingCount: bindings.countByAgentId(a.name),
+      isCurrentAgent: sourceBinding?.agentId === a.name,
+      isUndeletable: agents.isUndeletableAgent(a.name),
     }
   }))
 }
@@ -1843,7 +1843,7 @@ export const agentSetupApp: WebXDCApp = {
         try {
           const defaultAgent = agents.ensureDefaultAgent()
           const newChatId = await createReuseChat(ctx, defaultAgent, ownerContactId)
-          ctx.logf('agent-setup: default-chat bound %s to chat %d for owner %d', defaultAgent.id, newChatId, ownerContactId)
+          ctx.logf('agent-setup: default-chat bound %s to chat %d for owner %d', defaultAgent.name, newChatId, ownerContactId)
           await sendChatReady(session, ctx, newChatId)
         } catch (err) {
           ctx.logf('agent-setup: start-default-chat failed: %v', err)
