@@ -39,6 +39,66 @@ function availableToolsPayload(ctx: AppContext) {
 }
 
 /**
+ * Adapter between the v1.4 AgentDef schema (in-memory) and the v1.3
+ * WebXDC form payload (which the agent-setup HTML still speaks). The
+ * full form rewrite is Slice 6; until then translate at the boundary.
+ *
+ * Splits the new `tools` CSV back into the legacy parallel allowlists
+ * (allowedBuiltinTools + allowedMcpServers) the form expects.
+ */
+function splitToolsCsv(tools: string): { allowedBuiltinTools: string[]; allowedMcpServers: string[] } {
+  const parts = tools.split(',').map(s => s.trim()).filter(Boolean)
+  const allowedBuiltinTools: string[] = []
+  const mcpServers = new Set<string>()
+  for (const t of parts) {
+    if (t.startsWith('mcp__')) {
+      // Take the server segment (the substring before any second __).
+      const rest = t.slice(5)
+      const sep = rest.indexOf('__')
+      mcpServers.add(sep < 0 ? rest : rest.slice(0, sep))
+    } else {
+      allowedBuiltinTools.push(t)
+    }
+  }
+  return { allowedBuiltinTools, allowedMcpServers: [...mcpServers] }
+}
+
+/**
+ * Resolve the human-friendly name for an agent. Prefers the explicit
+ * `x-dc-display-name` (if set), otherwise falls back to the agent's
+ * slug `name`. Used wherever the agent is surfaced in chat UI.
+ */
+function agentDisplayName(agent: agents.AgentDef): string {
+  const explicit = agent['x-dc-display-name']
+  return typeof explicit === 'string' && explicit.length > 0 ? explicit : agent.name
+}
+
+/**
+ * Build the legacy WebXDC form payload from a v1.4 AgentDef. Used by the
+ * "edit existing agent" handler when sending the draft to the card.
+ */
+function legacyDraftFromAgent(agent: agents.AgentDef): Record<string, unknown> {
+  const { allowedBuiltinTools, allowedMcpServers } = splitToolsCsv(agent.tools ?? '')
+  return {
+    id: agent.name,
+    name: agent['x-dc-display-name'] ?? agent.name,
+    model: agent.model,
+    system: agent.body,
+    tools: [],
+    skipPermissions: agents.getSkipPermissions(agent),
+    iconMirror: agents.getIconMirror(agent),
+    archetype: agents.getArchetype(agent),
+    icon: agents.iconForAgent(agent),
+    explicitIcon: agents.getExplicitIcon(agent),
+    glyph: agents.glyphForAgent(agent),
+    pattern: agents.patternForAgent(agent),
+    effort: agent.effort,
+    allowedBuiltinTools,
+    allowedMcpServers,
+  }
+}
+
+/**
  * Per-L2 summary for the new-agent-flow wall: one entry per distinct
  * `l2` group, with leaf count and up to 3 sample names. Server-side so
  * the WebXDC card doesn't have to re-iterate the full leaf catalog to
@@ -115,7 +175,7 @@ export function buildTeleportOutList(ctx: TeleportOutListCtx): TeleportOutChat[]
       chatId: b.chatId,
       chatName,
       agentId: b.agentId ?? null,
-      agentName: agent?.name ?? null,
+      agentName: agent ? ((agent['x-dc-display-name'] as string | undefined) ?? agent.name) : null,
       lastActiveMs: null,
       jobCount,
       isTrusted: !!agent && agents.getSkipPermissions(agent) === true,
@@ -422,7 +482,7 @@ export async function decorateAgentChat(
   try {
     await ctx.client.send(
       chatId,
-      `Hi! This is your new "${agent.name}" agent. Send a message here to get started.`,
+      `Hi! This is your new "${agentDisplayName(agent)}" agent. Send a message here to get started.`,
     )
   } catch (err) {
     ctx.logf('agent-setup: intro message send failed: %v', err)
@@ -456,10 +516,10 @@ export async function createReuseChat(
   agent: agents.AgentDef,
   ownerContactId: number,
 ): Promise<number> {
-  const newChatId = await ctx.client.createGroup(agent.name)
+  const newChatId = await ctx.client.createGroup(agentDisplayName(agent))
   await ctx.client.addContactToChat(newChatId, ownerContactId)
   access.addChat(newChatId, ownerContactId)
-  bindings.bindAgent(newChatId, agent.id, {
+  bindings.bindAgent(newChatId, agent.name, {
     inheritClaudeMd: agents.inheritClaudeMdForModel(agent.model),
   })
   await decorateAgentChat(ctx, newChatId, agent)
@@ -701,30 +761,29 @@ export async function graduateAgent(ctx: AppContext, chatId: number): Promise<vo
     // explicit. Keeping it here so a downstream change can't accidentally
     // hoist saveAgent earlier and re-introduce the partial-graduation
     // namespace fork via a retry.)
-    const agentId = agents.synthesizeAgentId(agentName)
-    const newAgent: agents.AgentDef = {
-      id: agentId,
-      name: agentName,
+    const agentId = agents.synthesizeAgentName(agentName)
+    // Coach metadata (x-dc-leaves, x-dc-personality-*, x-dc-coach-answers)
+    // lives under .passthrough() — not validated by the schema, but preserved
+    // on round-trip. Cast to unknown to keep the type system out of it.
+    const newAgent = {
+      name: agentId,
+      'x-dc-display-name': agentName,
       model: agents.DEFAULT_MODEL,
       description: '',
-      system: systemPrompt,
-      // Forward-compat hook (per CLAUDE.md): tools[] is a no-op marker; per-agent
-      // tool capabilities use allowedBuiltinTools/allowedMcpServers (not derived
-      // from coach answers in v1).
-      tools: [],
-      metadata: {
-        'x-dc-leaves': session.leafIds,
-        'x-dc-personality-preset': 'mentor',
-        'x-dc-personality-sliders': {},
-        'x-dc-coach-answers': answers as unknown as Record<string, unknown>,
-        // graduateAgent is only invoked for build-new (non-refine)
-        // sessions, where session.pattern is set by the review screen.
-        // Fall back to 'checker' for safety.
-        'x-dc-pattern': session.pattern ?? 'checker',
-        // Legacy compat — drives existing badge palette / archetype-aware logic.
-        'x-dc-archetype': 'role',
-      },
-    }
+      body: systemPrompt,
+      tools: 'mcp__dc',
+      memory: 'user' as const,
+      'x-dc-leaves': session.leafIds,
+      'x-dc-personality-preset': 'mentor',
+      'x-dc-personality-sliders': {},
+      'x-dc-coach-answers': answers as unknown as Record<string, unknown>,
+      // graduateAgent is only invoked for build-new (non-refine)
+      // sessions, where session.pattern is set by the review screen.
+      // Fall back to 'checker' for safety.
+      'x-dc-pattern': session.pattern ?? 'checker',
+      // Legacy compat — drives existing badge palette / archetype-aware logic.
+      'x-dc-archetype': 'role' as const,
+    } as unknown as agents.AgentDef
     // Roll a random orientation so same-model agents are visually
     // differentiable (mirrors the templated/create paths).
     agents.setIconMirror(newAgent, Math.random() < 0.5)
@@ -834,9 +893,9 @@ export async function graduateRefineSession(ctx: AppContext, chatId: number): Pr
       throw new Error(`agent ${refineCtx.agentId} disappeared during refine`)
     }
     const answers = collectAnswers(session.coachState)
-    const newSystem = refineSystemPrompt(agent.system, answers)
-    if (newSystem !== agent.system) {
-      agents.saveAgent({ ...agent, system: newSystem })
+    const newSystem = refineSystemPrompt(agent.body, answers)
+    if (newSystem !== agent.body) {
+      agents.saveAgent({ ...agent, body: newSystem })
       // Evict the cached subagent so the next message cold-spawns under
       // the new system prompt. Without this the user gets the "Done"
       // reply but keeps talking to a process whose prompt was baked in
@@ -1148,22 +1207,7 @@ export const agentSetupApp: WebXDCApp = {
           ctx.logf('agent-setup: edit requested agent %s not found', agentId)
           continue
         }
-        const editDraft = {
-          id: agent.id,
-          name: agent.name,
-          model: agent.model,
-          system: agent.system,
-          tools: agent.tools ?? [],
-          skipPermissions: agents.getSkipPermissions(agent),
-          iconMirror: agents.getIconMirror(agent),
-          archetype: agents.getArchetype(agent),
-          icon: agents.iconForAgent(agent),
-          explicitIcon: agents.getExplicitIcon(agent),
-          glyph: agents.glyphForAgent(agent),
-          pattern: agents.patternForAgent(agent),
-          allowedBuiltinTools: agent.allowedBuiltinTools ?? null,
-          allowedMcpServers: agent.allowedMcpServers ?? null,
-        }
+        const editDraft = legacyDraftFromAgent(agent)
         try {
           const update = JSON.stringify({
             payload: {
@@ -1586,6 +1630,8 @@ export const agentSetupApp: WebXDCApp = {
       }
 
       if (payload.type === 'saveEdit') {
+        // Legacy WebXDC form contract — full rewrite is Slice 6. This handler
+        // adapts the v1.3-shape payload onto the v1.4 AgentDef in-memory shape.
         const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
         if (!agentId) {
           ctx.logf('agent-setup: saveEdit missing agentId')
@@ -1596,46 +1642,54 @@ export const agentSetupApp: WebXDCApp = {
           ctx.logf('agent-setup: saveEdit requested agent %s not found', agentId)
           continue
         }
-        const parsed = agents.DraftAgentSchema.safeParse(payload.config)
-        if (!parsed.success) {
-          ctx.logf('agent-setup: invalid config from chat %d: %v', session.sourceChatId, parsed.error)
-          continue
+        // Translate the legacy config payload to a v1.4 AgentDef:
+        //   { id, name (display), model, system, tools:[], allowedBuiltinTools, allowedMcpServers }
+        //   →
+        //   { name (slug), x-dc-display-name, model, body, tools: CSV }
+        const config = (payload.config ?? {}) as Record<string, unknown>
+        const allowedBuiltinTools = (payload as { allowedBuiltinTools?: string[] | null }).allowedBuiltinTools
+          ?? (config.allowedBuiltinTools as string[] | null | undefined)
+          ?? undefined
+        const allowedMcpServers = (payload as { allowedMcpServers?: string[] | null }).allowedMcpServers
+          ?? (config.allowedMcpServers as string[] | null | undefined)
+          ?? undefined
+        const draft = {
+          name: typeof config.id === 'string' ? config.id : agentId,
+          description: typeof config.description === 'string' ? config.description : '',
+          model: typeof config.model === 'string' ? config.model : agent.model,
+          tools: [
+            ...(allowedBuiltinTools ?? []),
+            ...((allowedMcpServers ?? []).map(s => `mcp__${s}`)),
+          ].join(', '),
+          body: typeof config.system === 'string' ? config.system : agent.body,
+          'x-dc-display-name': typeof config.name === 'string' ? config.name : undefined,
         }
-        const draft = parsed.data
         const skipPerms = (payload as { skipPermissions?: boolean }).skipPermissions === true
         const iconMirror = (payload as { iconMirror?: boolean }).iconMirror === true
         const rawArchetype = (payload as { archetype?: unknown }).archetype
         const archetype = (typeof rawArchetype === 'string' && (agents.ARCHETYPES as readonly string[]).includes(rawArchetype))
           ? rawArchetype as agents.Archetype : null
-        const allowedBuiltinTools = (payload as { allowedBuiltinTools?: string[] | null }).allowedBuiltinTools ?? undefined
-        const allowedMcpServers = (payload as { allowedMcpServers?: string[] | null }).allowedMcpServers ?? undefined
-        // Snapshot the pre-edit state BEFORE mutating metadata below. We
-        // must clone metadata because `updated` shares the object otherwise,
-        // and the setters mutate in place — which would make the "changed"
-        // checks below always return false.
         const prevModel = agent.model
-        const prevSystem = agent.system
+        const prevSystem = agent.body
         const prevSkip = agents.getSkipPermissions(agent)
         const prevMirror = agents.getIconMirror(agent)
         const prevArchetype = agents.getArchetype(agent)
         const prevExplicitIcon = agents.getExplicitIcon(agent)
         try {
-          // Preserve existing metadata (e.g. x-dc-createdAt) across edits, then
-          // apply the new skipPermissions / iconMirror flags. Clone to avoid
-          // aliasing the original `agent.metadata` reference.
+          // Preserve any unknown frontmatter (via .passthrough()) by spreading
+          // the existing agent first, then overlaying the new fields. v1.4
+          // x-dc-* extensions live at top level — saveAgent's mcp__dc inject
+          // covers the tools field.
           const updated: agents.AgentDef = {
+            ...agent,
             ...draft,
-            id: agentId,
-            metadata: agent.metadata ? { ...agent.metadata } : undefined,
-            allowedBuiltinTools,
-            allowedMcpServers,
-          }
+            name: agentId,
+          } as agents.AgentDef
           agents.setSkipPermissions(updated, skipPerms)
           agents.setIconMirror(updated, iconMirror)
           if (archetype) agents.setArchetype(updated, archetype)
           const rawIcon = (payload as { icon?: unknown }).icon
           if (typeof rawIcon === 'string') {
-            // Trim whitespace; empty string clears the explicit icon.
             agents.setIcon(updated, rawIcon.trim() || null)
           }
           agents.saveAgent(updated)
@@ -1655,17 +1709,14 @@ export const agentSetupApp: WebXDCApp = {
           // There's no way to override it, so a model change requires a
           // fresh session.
           const modelChanged = prevModel !== draft.model
-          const systemChanged = prevSystem !== draft.system
+          const systemChanged = prevSystem !== draft.body
           const skipPermsChanged = prevSkip !== skipPerms
           const mirrorChanged = prevMirror !== iconMirror
           const archetypeChanged = archetype != null && prevArchetype !== archetype
           const newExplicitIcon = agents.getExplicitIcon(updated)
           const explicitIconChanged = prevExplicitIcon !== newExplicitIcon
-          const prevBuiltinTools = JSON.stringify(agent.allowedBuiltinTools ?? null)
-          const newBuiltinTools = JSON.stringify(allowedBuiltinTools ?? null)
-          const prevMcpServersList = JSON.stringify(agent.allowedMcpServers ?? null)
-          const newMcpServersList = JSON.stringify(allowedMcpServers ?? null)
-          const toolsChanged = prevBuiltinTools !== newBuiltinTools || prevMcpServersList !== newMcpServersList
+          // v1.4 single source: compare the tools CSV directly.
+          const toolsChanged = (agent.tools ?? '') !== draft.tools
           // Restart only for changes that are baked in at subagent spawn
           // time: the model (passed as --model and cached in the session
           // store) and the system prompt (read from disk at spawn). Cosmetic
@@ -1753,11 +1804,11 @@ export const agentSetupApp: WebXDCApp = {
           const newChatId = await ctx.client.createGroup(agent.name)
           await ctx.client.addContactToChat(newChatId, ownerContactId)
           access.addChat(newChatId, ownerContactId)
-          bindings.bindAgent(newChatId, agent.id, {
+          bindings.bindAgent(newChatId, agent.name, {
             inheritClaudeMd: agents.inheritClaudeMdForModel(agent.model),
           })
           await decorateAgentChat(ctx, newChatId, agent)
-          ctx.logf('agent-setup: bound existing agent %s to new chat %d for owner %d', agent.id, newChatId, ownerContactId)
+          ctx.logf('agent-setup: bound existing agent %s to new chat %d for owner %d', agent.name, newChatId, ownerContactId)
 
           const update = JSON.stringify({
             payload: { type: 'created', chatId: newChatId, name: agent.name },
@@ -1819,7 +1870,7 @@ export const agentSetupApp: WebXDCApp = {
         }
         try {
           const newChatId = await createReuseChat(ctx, agent, ownerContactId)
-          ctx.logf('agent-setup: reuse-chat bound %s to chat %d for owner %d', agent.id, newChatId, ownerContactId)
+          ctx.logf('agent-setup: reuse-chat bound %s to chat %d for owner %d', agent.name, newChatId, ownerContactId)
           await sendChatReady(session, ctx, newChatId)
         } catch (err) {
           ctx.logf('agent-setup: start-reuse-chat failed for agent %s: %v', agentId, err)
@@ -1845,12 +1896,25 @@ export const agentSetupApp: WebXDCApp = {
         const ownerContactId = await resolveOwner()
         if (!ownerContactId) continue
 
-        const agentId = agents.synthesizeAgentId(draft.name)
+        // Display name comes from the form's `name` payload field, slugged
+        // for the canonical `name`. The display label is preserved in
+        // x-dc-display-name.
+        const displayName = (draft as unknown as { name?: string }).name
+          ?? agents.DEFAULT_AGENT_ID
+        const agentId = agents.synthesizeAgentName(displayName)
         try {
-          const newChatId = await ctx.client.createGroup(draft.name)
+          const newChatId = await ctx.client.createGroup(displayName)
           await ctx.client.addContactToChat(newChatId, ownerContactId)
           access.addChat(newChatId, ownerContactId)
-          const newAgent: agents.AgentDef = { ...draft, id: agentId, allowedBuiltinTools, allowedMcpServers }
+          const newAgent: agents.AgentDef = {
+            ...draft,
+            name: agentId,
+            'x-dc-display-name': displayName,
+            tools: [
+              ...(allowedBuiltinTools ?? []),
+              ...((allowedMcpServers ?? []).map(s => `mcp__${s}`)),
+            ].join(', '),
+          } as agents.AgentDef
           agents.setSkipPermissions(newAgent, skipPerms)
           if (archetype) agents.setArchetype(newAgent, archetype)
           const rawIcon = (payload as { icon?: unknown }).icon

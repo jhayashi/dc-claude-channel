@@ -37,7 +37,10 @@ export function tryAutoApprove(
   logPermission({
     ts: now(),
     chatId,
-    agentId: resolved.agent.id,
+    // The permissions-log keeps its historic `agentId` field name on disk
+    // for compat with archive readers; v1.4 sources the value from the
+    // canonical `name` field.
+    agentId: resolved.agent.name,
     tool: frame.tool ?? 'unknown',
     inputPreview: buildArgPreview(
       (frame.input && typeof frame.input === 'object')

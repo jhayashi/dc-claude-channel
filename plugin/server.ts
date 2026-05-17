@@ -390,10 +390,15 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
       return { name: augmented.name, description: augmented.description, inputSchema: augmented.inputSchema }
     }),
   ].filter((t) => !SUBAGENT_TOOL_BLOCKLIST.has(t.name))
-  // Per-agent MCP server filtering: if the agent restricts servers,
-  // check whether 'dc' is in the allowed list. null/undefined = all allowed.
+  // Per-agent MCP server filtering: derive from the agent's tools CSV.
+  // saveAgent auto-injects `mcp__dc` so this is almost always true; the
+  // check guards hand-edited .md files that strip dc out.
   const agent = resolved?.agent
-  const dcServerAllowed = agent?.allowedMcpServers == null || agent.allowedMcpServers.includes('dc')
+  const agentTools = (agent?.tools ?? '').split(',').map(s => s.trim())
+  const dcServerAllowed =
+    agent == null ||
+    agentTools.length === 0 ||
+    agentTools.some(t => t === 'mcp__dc' || t.startsWith('mcp__dc__'))
   const filteredToolDefs = dcServerAllowed ? toolDefs : []
   const { settingsPath, mcpConfigPath, tempDir } = generateHookConfig({
     hookScriptPath: HOOK_SCRIPT,
@@ -469,10 +474,13 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     sessionName,
     userName,
     claudeVersion: CLAUDE_VERSION,
-    systemPrompt: [resolved?.agent.system, appInstructions].filter(Boolean).join('\n\n'),
+    systemPrompt: [resolved?.agent.body, appInstructions].filter(Boolean).join('\n\n'),
     suppressUserClaudeMd,
-    allowedBuiltinTools: agent?.allowedBuiltinTools,
-    allowedMcpServers: agent?.allowedMcpServers,
+    // Slice 5 (subagent-process rewrite) replaces these flag synths with
+    // `--agent <name>`; until then the dispatcher passes no tool allowlist
+    // and SubagentProcess falls back to "all built-ins + all known MCP
+    // servers". CC's own `--allowedTools` filtering then applies via the
+    // agent .md's tools CSV once Slice 5 lands.
     logf,
   })
   // Resume-fallback probe: if --resume was used and the child dies within
@@ -506,10 +514,9 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
         sessionName,
         userName,
         claudeVersion: CLAUDE_VERSION,
-        systemPrompt: [resolved?.agent.system, appInstructions].filter(Boolean).join('\n\n'),
+        systemPrompt: [resolved?.agent.body, appInstructions].filter(Boolean).join('\n\n'),
         suppressUserClaudeMd,
-        allowedBuiltinTools: agent?.allowedBuiltinTools,
-        allowedMcpServers: agent?.allowedMcpServers,
+        // Slice 5 wires --agent <name>; until then no tool allowlist filter.
         logf,
       })
     }
@@ -1548,29 +1555,29 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           ? modelArg as agents.AllowedModel
           : undefined
         const { agent: draft, inheritClaudeMd } = agents.draftAgentFromDescription(prompt, model)
-        const agentId = agents.synthesizeAgentId(name)
+        const agentName = agents.synthesizeAgentName(name)
         try {
           agents.saveAgent({
             ...draft,
-            id: agentId,
-            name,
-            system: prompt,
+            name: agentName,
+            'x-dc-display-name': name,
+            body: prompt,
           })
-          bindings.bindAgent(groupId, agentId, { inheritClaudeMd })
+          bindings.bindAgent(groupId, agentName, { inheritClaudeMd })
         } catch (err) {
           // Roll back so we don't leave a dangling agent or half-bound chat.
-          try { agents.deleteAgent(agentId) } catch {}
+          try { agents.deleteAgent(agentName) } catch {}
           try { bindings.deleteBinding(groupId) } catch {}
           return { content: [{ type: 'text' as const, text: `dc_create_agent: failed to persist agent: ${(err as Error).message}` }], isError: true }
         }
 
         // Send welcome message + set icon so the chat surfaces on the user's device.
-        const savedAgent = agents.getAgent(agentId)
+        const savedAgent = agents.getAgent(agentName)
         if (savedAgent) {
           await decorateAgentChat({ client, logf }, groupId, savedAgent)
         }
 
-        const result = `Created agent "${name}" (chat ${groupId}, agent_id=${agentId}).`
+        const result = `Created agent "${name}" (chat ${groupId}, agent_id=${agentName}).`
         return { content: [{ type: 'text' as const, text: result }] }
       }
 
@@ -1583,7 +1590,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         if (!resolved) {
           return { content: [{ type: 'text' as const, text: `No agent configured for chat ${chatId}.` }] }
         }
-        return { content: [{ type: 'text' as const, text: `Agent: ${resolved.agent.name}\nPrompt: ${resolved.agent.system}` }] }
+        return { content: [{ type: 'text' as const, text: `Agent: ${resolved.agent.name}\nPrompt: ${resolved.agent.body}` }] }
       }
 
       case 'dc_update_agent': {
@@ -1603,7 +1610,7 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         if (!resolved) {
           return { content: [{ type: 'text' as const, text: `No agent configured for chat ${chatId}. Use dc_open_agent_settings first.` }], isError: true }
         }
-        const agentId = resolved.agent.id
+        const agentId = resolved.agent.name
         const changes: string[] = []
         if (prompt) {
           if (!agents.updateAgentPrompt(agentId, prompt)) {
@@ -2556,20 +2563,20 @@ async function main(): Promise<void> {
         return true
       }
 
-      const yamlStr = readFileSync(msg.file, 'utf-8')
+      const text = readFileSync(msg.file, 'utf-8')
 
-      if (yamlStr.length > MAX_IMPORT_BYTES) {
+      if (text.length > MAX_IMPORT_BYTES) {
         await client.send(chatId, '\u26a0\ufe0f Agent import failed: file too large (max 256 KB).')
         return true
       }
 
-      const result = agents.importAgentFromYaml(yamlStr)
-      const idNote = result.idChanged ? ` (saved as "${result.agent.id}" to avoid a name conflict)` : ''
+      const result = agents.importAgentFromMarkdown(text)
+      const idNote = result.nameChanged ? ` (saved as "${result.agent.name}" to avoid a name conflict)` : ''
       await client.send(
         chatId,
         `\u2705 Imported agent "${result.agent.name}"${idNote}. To create a chat with it, use the agent setup card.`,
       )
-      logf('import: agent "%s" (id=%s) imported from attachment in chat %d', result.agent.name, result.agent.id, chatId)
+      logf('import: agent "%s" imported from attachment in chat %d', result.agent.name, chatId)
       return true
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -3038,7 +3045,7 @@ async function main(): Promise<void> {
     const resolvedAgent = bindings.resolveChat(msg.chatId)
     if (resolvedAgent) {
       meta.agent_name = resolvedAgent.agent.name
-      meta.agent_prompt = resolvedAgent.agent.system
+      meta.agent_prompt = resolvedAgent.agent.body
     }
 
     logf('dc channel: incoming message: content=%s meta=%s', msg.text, JSON.stringify(meta))
