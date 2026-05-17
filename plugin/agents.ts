@@ -33,7 +33,7 @@ import {
   type PatternId,
 } from './agent-icons/palettes.js'
 
-let AGENTS_DIR = join(homedir(), '.claude', 'channels', 'deltachat', 'agents')
+let AGENTS_DIR = join(homedir(), '.claude', 'agents')
 
 /** Override the storage directory (for tests). */
 export function setAgentsDir(dir: string): void {
@@ -61,17 +61,17 @@ export const DEFAULT_SYSTEM_PROMPT =
 export const DEFAULT_MODEL: string = models.DEFAULT_MODEL
 
 /**
- * Sentinel id for the built-in default agent. This agent is always
+ * Sentinel name for the built-in default agent. This agent is always
  * present (auto-seeded by listAgents / ensureDefaultAgent) and cannot
- * be deleted (deleteAgent throws on this id). Its name / model /
- * prompt / metadata are still editable — only the id and its existence
- * are immutable.
+ * be deleted (deleteAgent throws on this name). Its model / prompt /
+ * x-dc-* metadata is editable — only the name and its existence are
+ * immutable.
  */
 export const DEFAULT_AGENT_ID = 'claude-code'
 
-/** Whether an agent id is the undeletable built-in default. */
-export function isUndeletableAgent(id: string): boolean {
-  return id === DEFAULT_AGENT_ID
+/** Whether an agent name is the undeletable built-in default. */
+export function isUndeletableAgent(name: string): boolean {
+  return name === DEFAULT_AGENT_ID
 }
 
 /**
@@ -84,12 +84,13 @@ export function ensureDefaultAgent(): AgentDef {
   const existing = getAgent(DEFAULT_AGENT_ID)
   if (existing) return existing
   const seed: AgentDef = {
-    id: DEFAULT_AGENT_ID,
-    name: 'Claude Code',
-    model: DEFAULT_MODEL,
+    name: DEFAULT_AGENT_ID,
     description: '',
-    system: DEFAULT_SYSTEM_PROMPT,
-    tools: [],
+    model: DEFAULT_MODEL,
+    tools: 'Read, Edit, Write, Bash, Grep, Glob, mcp__dc',
+    permissionMode: 'bypassPermissions',
+    memory: 'user',
+    body: DEFAULT_SYSTEM_PROMPT,
   }
   saveAgent(seed)
   return seed
@@ -102,71 +103,74 @@ export function ensureDefaultAgent(): AgentDef {
 export const inheritClaudeMdForModel = models.inheritClaudeMdForModel
 
 /**
- * Agent definition schema. Matches the Claude Managed Agents API format
- * (name, model, description, system, tools, skills, mcp_servers,
- * metadata). Optional fields are accepted on import but not yet
- * exposed in the UI.
+ * Agent definition schema — matches Claude Code's `~/.claude/agents/<name>.md`
+ * frontmatter shape. The markdown body is held in `body`. DC-only fields
+ * use the `x-dc-` prefix (CC silently ignores unknown frontmatter keys).
+ *
+ * Pass-through fields (skills, hooks, maxTurns, background, isolation,
+ * initialPrompt) are preserved on read/write but not acted on by DC's
+ * long-lived per-chat lifecycle. They're meaningful when the same file
+ * is used from terminal CC.
  */
 export const AgentDefSchema = z.object({
-  id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'id must be a lowercase slug'),
-  name: z.string().min(1).max(256),
+  name: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'name must be a lowercase slug').max(64),
+  description: z.string().max(2048).default(''),
   model: z.string().refine(
     (v): v is string => models.isKnownModel(v),
     v => ({ message: `Unknown model "${v}". Allowed: ${ALLOWED_MODELS.join(', ')}` }),
   ),
-  description: z.string().max(2048).default(''),
-  system: z.string().max(100_000).default(''),
-  tools: z.array(z.object({ type: z.string() })).default([]),
-  skills: z.array(z.unknown()).optional(),
-  mcp_servers: z.array(z.unknown()).optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-  /**
-   * Allowlist of built-in tool names (Bash, Read, Write, etc.) this agent
-   * may use. null or absent = all tools allowed. [] = no tools allowed.
-   */
-  allowedBuiltinTools: z.array(z.string()).nullable().optional(),
-  /**
-   * Allowlist of MCP server prefixes (dc, claude_ai_Gmail, etc.) this agent
-   * may use. null or absent = all servers allowed. [] = no MCP servers.
-   */
-  allowedMcpServers: z.array(z.string()).nullable().optional(),
-  /** @deprecated Use allowedMcpServers. Kept for migration compat. */
-  allowedMcpTools: z.array(z.string()).nullable().optional(),
-  /**
-   * Reasoning effort level passed as `--effort <level>` when spawning
-   * the subagent. Per-agent override; absent = use the CLI's persisted
-   * default. Set via the `/effort` slash command.
-   */
+  tools: z.string().default(''),
+  disallowedTools: z.string().optional(),
+  permissionMode: z.enum([
+    'default', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions', 'plan',
+  ]).optional(),
   effort: z.enum(models.EFFORT_LEVELS).optional(),
+  memory: z.enum(['user', 'project', 'local']).optional(),
+  mcpServers: z.array(z.unknown()).optional(),
+  color: z.string().optional(),
+  // CC pass-through (preserved on round-trip; DC does not act on these)
+  skills: z.array(z.unknown()).optional(),
+  hooks: z.record(z.string(), z.unknown()).optional(),
+  maxTurns: z.number().int().positive().optional(),
+  background: z.boolean().optional(),
+  isolation: z.string().optional(),
+  initialPrompt: z.string().optional(),
+  // DC-only extensions (frontmatter top-level)
+  'x-dc-archetype': z.enum(['role', 'utility', 'project']).optional(),
+  'x-dc-icon': z.string().optional(),
+  'x-dc-glyph': z.string().optional(),
+  'x-dc-pattern': z.string().optional(),
+  'x-dc-icon-mirror': z.boolean().optional(),
+  'x-dc-display-name': z.string().max(256).optional(),
+  // Markdown body — the agent's system prompt.
+  body: z.string().max(100_000).default(''),
 })
 
 export type AgentDef = z.infer<typeof AgentDefSchema>
 
 /**
- * Draft agent — same shape as AgentDef but without an id. Used in the
+ * Draft agent — same shape as AgentDef but without a name. Used in the
  * WebXDC setup flow where the user edits a draft before committing, at
- * which point the id is synthesized from the final name.
+ * which point the name is synthesized from the human display name.
  */
-export const DraftAgentSchema = AgentDefSchema.omit({ id: true })
+export const DraftAgentSchema = AgentDefSchema.omit({ name: true })
 export type DraftAgent = z.infer<typeof DraftAgentSchema>
 
 /**
- * Per-agent directory layout (v1.3 slice 7 phase 1):
+ * v1.4 on-disk layout. The agent definition lives in a single markdown
+ * file alongside terminal CC's own agents; DC-private sidecar state
+ * (contacts/, chatmail/) lives in a sibling directory named `<name>.dc/`.
  *
- *   agents/<id>/definition.yaml       — what's on disk today
- *   agents/<id>/contacts/<cid>.json   — landed in phase 3
- *   agents/<id>/memory/               — v1.4
- *   agents/<id>/chatmail/             — v1.4
+ *   ~/.claude/agents/<name>.md             — agent definition (this file)
+ *   ~/.claude/agents/<name>.dc/contacts/   — DC trust annotations
+ *   ~/.claude/agents/<name>.dc/chatmail/   — managed-agent chatmail state (v1.4+)
+ *   ~/.claude/agent-memory/<name>/MEMORY.md — CC-owned persistent memory
  *
- * `agentDir(id)` is the per-agent root; `agentPath(id)` is its definition
- * YAML. Other per-agent subdirs hang off agentDir without colliding.
+ * `agentPath(name)` is the canonical .md path; the sidecar dir is owned
+ * by contacts.ts and not exposed from this module.
  */
-export function agentDir(id: string): string {
-  return join(AGENTS_DIR, id)
-}
-
-function agentPath(id: string): string {
-  return join(agentDir(id), 'definition.yaml')
+function agentPath(name: string): string {
+  return join(AGENTS_DIR, `${name}.md`)
 }
 
 /**
