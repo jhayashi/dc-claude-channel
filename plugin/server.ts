@@ -40,6 +40,7 @@ import * as tutorial from './tutorial.js'
 import { decideCleanup } from './cleanup.js'
 import { SocketServer, type SocketRequest } from './dispatcher/socket-server.js'
 import { SubagentCache, assertCanSpawn } from './dispatcher/subagent-cache.js'
+import { assertSupportedClaudeVersion } from './cc-version-check.js'
 import { cleanupOrphanSubagents } from './dispatcher/orphan-cleanup.js'
 import { RateLimiter } from './dispatcher/rate-limit.js'
 import { createSendRateLimiter } from './dispatcher/send-rate-limiter.js'
@@ -2210,6 +2211,18 @@ async function cleanupChatState(
 // ── Startup ─────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // v1.4 version gate: refuse to start on a Claude Code release older
+  // than what the dispatcher needs (--agent flag, memory auto-injection,
+  // permissionMode/effort frontmatter). Exit 2 so operator scripts can
+  // distinguish a version-gate failure from a generic startup crash.
+  try {
+    const version = assertSupportedClaudeVersion()
+    logf('dc channel: detected Claude Code %s', version.join('.'))
+  } catch (err) {
+    console.error(`dc channel: ${(err as Error).message}`)
+    process.exit(2)
+  }
+
   // Bootstrap: if deps are missing, fork `bun install` in the background.
   // All DC tool handlers + the voice handler await waitForReady() so tool
   // calls issued before install finishes transparently block rather than
