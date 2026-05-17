@@ -165,3 +165,68 @@ describe("migrateContactsToAgentScoped", () => {
     expect(existsSync(join(legacyPrincipalsDir, "humans", "77.json"))).toBe(false);
   });
 });
+
+describe("migrateContactsToSidecar (v1.3 → v1.4 backstop)", () => {
+  let tmpRoot: string;
+  let legacyAgentScopedDir: string;
+  let agentsDir: string;
+
+  beforeEach(() => {
+    tmpRoot = mkdtempSync(join(tmpdir(), "dc-contacts-sidecar-"));
+    legacyAgentScopedDir = join(tmpRoot, "channels", "deltachat", "agents.legacy");
+    agentsDir = join(tmpRoot, "agents");
+    mkdirSync(agentsDir, { recursive: true });
+    access.setContactsAgentsDir(agentsDir);
+    access.setLegacyAgentScopedDir(legacyAgentScopedDir);
+  });
+
+  afterEach(() => rmSync(tmpRoot, { recursive: true, force: true }));
+
+  test("moves <agent>/contacts/* to <agent>.dc/contacts/*", () => {
+    const legacy = join(legacyAgentScopedDir, "orphan", "contacts");
+    mkdirSync(legacy, { recursive: true });
+    writeFileSync(join(legacy, "7.json"), JSON.stringify({
+      kind: "human", contactId: 7, firstPairedAt: "2026-01-01T00:00:00Z",
+    }));
+    const moved = access.migrateContactsToSidecar();
+    expect(moved).toBe(1);
+    expect(existsSync(join(agentsDir, "orphan.dc", "contacts", "7.json"))).toBe(true);
+  });
+
+  test("returns 0 when legacy dir does not exist", () => {
+    expect(access.migrateContactsToSidecar()).toBe(0);
+  });
+
+  test("idempotent on second run (already-present target records skipped)", () => {
+    const legacy = join(legacyAgentScopedDir, "a", "contacts");
+    mkdirSync(legacy, { recursive: true });
+    writeFileSync(join(legacy, "1.json"), JSON.stringify({
+      kind: "human", contactId: 1, firstPairedAt: "2026-01-01T00:00:00Z",
+    }));
+    expect(access.migrateContactsToSidecar()).toBe(1);
+    expect(access.migrateContactsToSidecar()).toBe(0);
+  });
+
+  test("handles multiple agents in one pass", () => {
+    const a1 = join(legacyAgentScopedDir, "alice", "contacts");
+    const a2 = join(legacyAgentScopedDir, "bob", "contacts");
+    mkdirSync(a1, { recursive: true });
+    mkdirSync(a2, { recursive: true });
+    writeFileSync(join(a1, "1.json"), JSON.stringify({ kind: "human", contactId: 1, firstPairedAt: "2026-01-01T00:00:00Z" }));
+    writeFileSync(join(a2, "2.json"), JSON.stringify({ kind: "human", contactId: 2, firstPairedAt: "2026-01-01T00:00:00Z" }));
+
+    expect(access.migrateContactsToSidecar()).toBe(2);
+    expect(existsSync(join(agentsDir, "alice.dc", "contacts", "1.json"))).toBe(true);
+    expect(existsSync(join(agentsDir, "bob.dc", "contacts", "2.json"))).toBe(true);
+  });
+
+  test("skips non-JSON files in the legacy contacts dir", () => {
+    const legacy = join(legacyAgentScopedDir, "carol", "contacts");
+    mkdirSync(legacy, { recursive: true });
+    writeFileSync(join(legacy, "README.md"), "hi");
+    writeFileSync(join(legacy, "1.json"), JSON.stringify({ kind: "human", contactId: 1, firstPairedAt: "2026-01-01T00:00:00Z" }));
+    expect(access.migrateContactsToSidecar()).toBe(1);
+    expect(existsSync(join(agentsDir, "carol.dc", "contacts", "README.md"))).toBe(false);
+    expect(existsSync(join(agentsDir, "carol.dc", "contacts", "1.json"))).toBe(true);
+  });
+});

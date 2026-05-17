@@ -2289,7 +2289,7 @@ async function main(): Promise<void> {
 
   // v1.3 slice 7 phase 3 — copy any contact records still at the legacy
   // `principals/humans/<contactId>.json` path into the agent-scoped
-  // `agents/claude-code/contacts/` layout. Per-file idempotent so a
+  // `agents/claude-code.dc/contacts/` layout. Per-file idempotent so a
   // half-migrated install (target dir already exists from
   // `recordContactPair` writes or test leakage) still picks up legacy
   // records that pre-date v1.3. MUST run before `backfillFromAllowlist`
@@ -2300,6 +2300,18 @@ async function main(): Promise<void> {
     if (moved > 0) logf('dc channel: migrated %d contact record(s) to agent-scoped layout', moved)
   } catch (err) {
     logf('dc channel: contact layout migration failed: %v', err)
+  }
+
+  // v1.4 backstop — Slice 2's migrateLegacyDefinitionYaml already moves
+  // contacts during the agent migration, but orphaned dirs (whose
+  // sibling definition.yaml was missing/unreadable) get left behind in
+  // `agents.legacy/<id>/contacts/`. This pass moves them to the new
+  // `agents/<name>.dc/contacts/` sidecar location. Idempotent.
+  try {
+    const moved = access.migrateContactsToSidecar()
+    if (moved > 0) logf('dc channel: migrated %d orphan contact record(s) to sidecar layout', moved)
+  } catch (err) {
+    logf('dc channel: sidecar contact migration failed: %v', err)
   }
 
   // v1.3 startup sequence — make principals + chat membership the

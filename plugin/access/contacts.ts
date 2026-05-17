@@ -109,6 +109,22 @@ let _principalsDir = process.env.DC_TEST_PRINCIPALS_DIR ?? join(
   "principals",
 );
 
+// Legacy v1.3 agent-scoped dir (`channels/deltachat/agents.legacy/<id>/contacts/`).
+// Source for migrateContactsToSidecar — catches orphaned contact dirs whose
+// definition.yaml was missing/unreadable during Slice 2's agent migration.
+let _legacyAgentScopedDir = join(
+  homedir(),
+  ".claude",
+  "channels",
+  "deltachat",
+  "agents.legacy",
+);
+
+/** Override the legacy agent-scoped dir (for tests / non-default installs). */
+export function setLegacyAgentScopedDir(dir: string): void {
+  _legacyAgentScopedDir = dir;
+}
+
 /** Current principals directory path (legacy; migration source only). */
 export function getPrincipalsDir(): string { return _principalsDir }
 
@@ -386,6 +402,53 @@ export function migrateContactsToAgentScoped(): number {
   }
 
   return count;
+}
+
+/**
+ * v1.3 → v1.4 contacts backstop. Slice 2's `migrateLegacyDefinitionYaml`
+ * already moves contacts during the agent migration (from
+ * `channels/deltachat/agents/<id>/contacts/` → `agents/<name>.dc/contacts/`).
+ * This function catches orphaned per-agent contact dirs that survived
+ * because their sibling `definition.yaml` was missing / unreadable.
+ *
+ * Source: `_legacyAgentScopedDir/<agent>/contacts/*.json` (the directory
+ * Slice 2 renamed from `agents/` to `agents.legacy/`).
+ * Target: `_agentsDir/<agent>.dc/contacts/*.json`.
+ *
+ * Per-file idempotent — existing target records are skipped, not
+ * overwritten. Returns the number of records newly moved.
+ */
+export function migrateContactsToSidecar(): number {
+  if (!existsSync(_legacyAgentScopedDir)) return 0;
+  let entries: string[];
+  try {
+    entries = readdirSync(_legacyAgentScopedDir);
+  } catch (err) {
+    console.error("contacts.migrateContactsToSidecar: cannot read legacy dir:", err);
+    return 0;
+  }
+  let moved = 0;
+  for (const name of entries) {
+    const legacyContacts = join(_legacyAgentScopedDir, name, "contacts");
+    if (!existsSync(legacyContacts)) continue;
+    let files: string[];
+    try { files = readdirSync(legacyContacts); }
+    catch { continue; }
+    const targetDir = join(_agentsDir, `${name}.dc`, "contacts");
+    mkdirSync(targetDir, { recursive: true });
+    for (const f of files) {
+      if (!f.endsWith(".json")) continue;
+      const target = join(targetDir, f);
+      if (existsSync(target)) continue;
+      try {
+        copyFileSync(join(legacyContacts, f), target);
+        moved++;
+      } catch (err) {
+        console.error(`contacts.migrateContactsToSidecar: copy ${name}/${f} failed:`, err);
+      }
+    }
+  }
+  return moved;
 }
 
 // Derived queries (`chatsFor`, `isContactPermissioned`,
