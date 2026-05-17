@@ -609,29 +609,25 @@ export function slugifyName(name: string): string {
 }
 
 /**
- * Synthesize a slug-based agent id from a name, resolving collisions by
- * suffixing -2, -3, etc. The result always matches AgentDefSchema.id.
+ * Synthesize a slug-based agent name from a free-form display name,
+ * resolving collisions by suffixing -2, -3, etc.
  */
-export function synthesizeAgentId(name: string): string {
-  const base = slugifyName(name)
+export function synthesizeAgentName(displayName: string): string {
+  const base = slugifyName(displayName)
   if (!existsSync(AGENTS_DIR)) return base
-  // v1.3 slice 7 phase 1: agents are subdirectories now (each with
-  // its own definition.yaml). Collision check reads the directory
-  // listing — every entry that's a subdir AND has a definition.yaml
-  // is an existing agent id.
   const existing = new Set<string>()
   for (const entry of readdirSync(AGENTS_DIR)) {
-    const dirPath = join(AGENTS_DIR, entry)
-    try {
-      if (!statSync(dirPath).isDirectory()) continue
-      if (existsSync(join(dirPath, 'definition.yaml'))) existing.add(entry)
-    } catch { /* ignore */ }
+    if (!entry.endsWith('.md')) continue
+    existing.add(entry.slice(0, -'.md'.length))
   }
   if (!existing.has(base)) return base
   let n = 2
   while (existing.has(`${base}-${n}`)) n++
   return `${base}-${n}`
 }
+
+/** @deprecated Renamed to `synthesizeAgentName` in v1.4. */
+export const synthesizeAgentId = synthesizeAgentName
 
 /**
  * Result of importing an agent from YAML.

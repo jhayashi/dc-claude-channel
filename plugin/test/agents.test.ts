@@ -172,3 +172,20 @@ describe('listAgents', () => {
     expect(names).not.toContain('README')
   })
 })
+
+describe('synthesizeAgentName', () => {
+  test('returns the bare slug when no collision', () => {
+    expect(agents.synthesizeAgentName('Marketing Agent')).toBe('marketing-agent')
+  })
+
+  test('suffixes -2, -3 on collision', () => {
+    agents.saveAgent(makeDef({ name: 'helper' }))
+    expect(agents.synthesizeAgentName('Helper')).toBe('helper-2')
+    agents.saveAgent(makeDef({ name: 'helper-2' }))
+    expect(agents.synthesizeAgentName('Helper')).toBe('helper-3')
+  })
+
+  test('handles empty input', () => {
+    expect(agents.synthesizeAgentName('')).toBe('agent')
+  })
+})
