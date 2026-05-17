@@ -28,6 +28,11 @@ interface StreamFrame {
 export interface SubagentSpawnOptions {
   chatId: number
   subagentId: string
+  /**
+   * Agent name — passed via `--agent` so CC reads the .md for
+   * model / prompt / tools / memory / permissionMode. Required.
+   */
+  agentName: string
   /** Path to the generated per-subagent settings.json with the hook config. */
   settingsPath: string
   /** Path to the per-subagent mcp-config.json (loads dc tools-proxy). */
@@ -48,42 +53,31 @@ export interface SubagentSpawnOptions {
   cwd?: string
   /** Additional directories the subagent is allowed to touch. */
   addDirs?: string[]
-  /** Override the model (e.g. 'claude-opus-4-6'). Defaults to CLI default. */
-  model?: string
-  /** Reasoning effort level. Passed as `--effort <level>` if set; CLI uses its persisted default otherwise. */
-  effort?: EffortLevel
-  /** Agent display name (e.g. 'Marketing Agent'). */
-  agentName?: string
   /** Owner's display name from the DC contact card. */
   userName?: string
   /** Claude Code CLI version string (e.g. '2.1.100'). */
   claudeVersion?: string
   /** Session display name (synced with DC chat name). Passed as `--name`. */
   sessionName?: string
-  /** Extra system prompt appended to the standard env block. */
-  systemPrompt?: string
-  /**
-   * If true, attempt to suppress the user-level CLAUDE.md from being loaded.
-   * Phase 1: this is currently a no-op — there is no verified CLI flag for
-   * this and the plan defers the toggle to Phase 2. Accepted here so callers
-   * can pass it without breaking when the mechanism lands.
-   */
-  suppressUserClaudeMd?: boolean
   logf?: (fmt: string, ...args: unknown[]) => void
   /**
-   * Restrict which built-in tools the subagent can use.
-   * null or undefined → all built-in tools allowed (default).
-   * [] → no built-in tools (only MCP prefixes).
-   * ['Read', 'Grep'] → only those built-ins.
+   * @deprecated v1.4. CC reads model/effort/permissionMode/tools/system
+   * prompt from the agent .md. These options remain on the type for one
+   * release so callers compile while we migrate them, but they have no
+   * effect on the spawn argv. NL meta-commands mutate the .md directly
+   * via `agents.setAgentModel` / `setAgentEffort` / `setAgentTrust`.
    */
+  model?: string
+  /** @deprecated v1.4. CC reads `effort` from the agent .md. */
+  effort?: EffortLevel
+  /** @deprecated v1.4. CC reads the system prompt (markdown body) from the .md. */
+  systemPrompt?: string
+  /** @deprecated v1.4. CC reads `tools` (CSV) from the agent .md. */
   allowedBuiltinTools?: string[] | null
-  /**
-   * Restrict which MCP servers the subagent can use.
-   * null or undefined → all known servers allowed (default).
-   * [] → no MCP servers at all.
-   * ['dc', 'claude_ai_Gmail'] → only those server prefixes.
-   */
+  /** @deprecated v1.4. CC reads `tools` (CSV with `mcp__<server>` entries) from the agent .md. */
   allowedMcpServers?: string[] | null
+  /** @deprecated v1.4 no-op (no verified CLI flag). Kept for caller compat. */
+  suppressUserClaudeMd?: boolean
 }
 
 /** Known MCP server prefixes and their display names for the tool picker. */
@@ -146,6 +140,9 @@ export const BUILTIN_TOOL_DESCRIPTIONS: Record<string, string> = {
 export function buildSubagentArgs(
   opts: SubagentSpawnOptions,
 ): { args: string[]; envBlock: string } {
+  if (!opts.agentName) {
+    throw new Error('buildSubagentArgs: agentName is required (v1.4 delegates to CC via --agent)')
+  }
   const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return 'unknown' } })()
   const lines = [
     'Environment:',
@@ -153,54 +150,33 @@ export function buildSubagentArgs(
     `- Timezone: ${tz}`,
     `- Working directory: ${opts.cwd ?? process.cwd()}`,
     `- Bound chat: ${opts.chatId}`,
-    `- Model: ${opts.model ?? 'default'} (this is authoritative — if your conversation history says a different model, it is outdated; trust this value)`,
-    `- Effort: ${opts.effort ?? 'default'}`,
+    `- Agent name: ${opts.agentName}`,
   ]
-  if (opts.agentName) lines.push(`- Agent name: ${opts.agentName}`)
   if (opts.userName) lines.push(`- User: ${opts.userName}`)
   if (opts.claudeVersion) lines.push(`- Claude Code: ${opts.claudeVersion}`)
   lines.push('- For the current date/time, run `date` via Bash (auto-allowed). Other read-only inspection commands (`pwd`, `whoami`, `uname`) are also auto-allowed.')
-  let envBlock = lines.join('\n')
-  if (opts.systemPrompt && opts.systemPrompt.trim()) {
-    envBlock += '\n\n' + opts.systemPrompt.trim()
-  }
+  const envBlock = lines.join('\n')
 
   const args: string[] = [
     '-p',
+    '--agent', opts.agentName,
     ...(opts.resume ? ['--resume', opts.sessionId] : ['--session-id', opts.sessionId]),
     '--input-format', 'stream-json',
     '--output-format', 'stream-json',
     '--verbose',
     '--settings', opts.settingsPath,
-    // User-level settings (hooks, skills, superpowers, etc.) are
-    // inherited by default. This is especially useful for coding
-    // agents where the user's superpowers / skills / hooks give
-    // real value. Per-group opt-out will come through the group
-    // setup flow later.
-    '--permission-mode', 'default',
     '--append-system-prompt', envBlock,
   ]
-  if (opts.model) {
-    args.push('--model', opts.model)
-  }
-  if (opts.effort) {
-    args.push('--effort', opts.effort)
-  }
   if (opts.sessionName) {
     args.push('--name', opts.sessionName)
   }
   if (opts.mcpConfigPath) {
     // No --strict-mcp-config: our dc server is merged with the user's
     // global MCP config (Gmail, Calendar, Telegram, etc.) so subagents
-    // inherit the same MCP tools the terminal session has.
+    // inherit the same MCP tools the terminal session has. CC reads
+    // the agent's `tools` CSV from the .md and applies the allowlist
+    // itself; we no longer pass --allowedTools.
     args.push('--mcp-config', opts.mcpConfigPath)
-    const builtinTools = opts.allowedBuiltinTools ?? ALL_BUILTIN_TOOLS
-    const serverPrefixes = opts.allowedMcpServers ?? ALL_MCP_SERVER_PREFIXES
-    const mcpPrefixes = serverPrefixes.map(s => `mcp__${s}`)
-    args.push(
-      '--allowedTools',
-      [...mcpPrefixes, ...builtinTools].join(' '),
-    )
   }
   for (const dir of opts.addDirs ?? []) {
     args.push('--add-dir', dir)

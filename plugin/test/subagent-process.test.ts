@@ -1,10 +1,11 @@
 import { describe, test, expect } from 'bun:test'
-import { buildSubagentArgs, ALL_MCP_SERVER_PREFIXES, type SubagentSpawnOptions } from '../dispatcher/subagent-process'
+import { buildSubagentArgs, type SubagentSpawnOptions } from '../dispatcher/subagent-process'
 
 function baseOpts(extra: Partial<SubagentSpawnOptions> = {}): SubagentSpawnOptions {
   return {
     chatId: 7,
     subagentId: 'sub-7-abcd',
+    agentName: 'test-agent',
     settingsPath: '/tmp/settings.json',
     dispatcherSocket: '/tmp/sock',
     dispatcherSecret: 'secret',
@@ -15,82 +16,66 @@ function baseOpts(extra: Partial<SubagentSpawnOptions> = {}): SubagentSpawnOptio
 }
 
 describe('buildSubagentArgs', () => {
-  test('default args contain core flags and no --model', () => {
-    const { args, envBlock } = buildSubagentArgs(baseOpts())
+  test('default args contain --agent <name> and core flags', () => {
+    const { args, envBlock } = buildSubagentArgs(baseOpts({ agentName: 'developer' }))
     expect(args).toContain('-p')
+    expect(args).toContain('--agent')
+    expect(args[args.indexOf('--agent') + 1]).toBe('developer')
     expect(args).toContain('--session-id')
     expect(args).toContain('session-1')
-    expect(args).not.toContain('--resume')
+    expect(args).toContain('--input-format')
+    expect(args).toContain('stream-json')
+    expect(args).toContain('--output-format')
+    expect(args).toContain('--verbose')
     expect(args).toContain('--settings')
     expect(args).toContain('/tmp/settings.json')
-    expect(args).not.toContain('--setting-sources') // user-level settings inherited
-    expect(args).toContain('--permission-mode')
-    expect(args).toContain('default')
     expect(args).toContain('--append-system-prompt')
-    expect(args).not.toContain('--model')
     expect(envBlock).toContain('Bound chat: 7')
-    expect(envBlock).not.toContain('\n\n') // no extra system prompt
   })
 
-  test('resume=true uses --resume instead of --session-id', () => {
-    const { args } = buildSubagentArgs(baseOpts({ sessionId: 'abc-123', resume: true }))
+  test('does NOT pass --model / --effort / --permission-mode / --allowedTools', () => {
+    const { args } = buildSubagentArgs(baseOpts({
+      agentName: 'developer',
+      model: 'claude-opus-4-7',  // ignored — set on the .md
+      effort: 'max',              // ignored — set on the .md
+    }))
+    expect(args).not.toContain('--model')
+    expect(args).not.toContain('--effort')
+    expect(args).not.toContain('--permission-mode')
+    expect(args).not.toContain('--allowedTools')
+  })
+
+  test('--append-system-prompt contains env block only (no agent system prompt)', () => {
+    const { args, envBlock } = buildSubagentArgs(baseOpts({
+      agentName: 'developer',
+      systemPrompt: 'You are foo.',  // ignored; agent body lives in the .md
+    }))
+    const idx = args.indexOf('--append-system-prompt')
+    expect(args[idx + 1]).toBe(envBlock)
+    expect(envBlock).not.toContain('You are foo.')
+  })
+
+  test('resume=true uses --resume', () => {
+    const { args } = buildSubagentArgs(baseOpts({
+      agentName: 'developer', sessionId: 'abc-123', resume: true,
+    }))
     expect(args).toContain('--resume')
-    const i = args.indexOf('--resume')
-    expect(args[i + 1]).toBe('abc-123')
+    expect(args[args.indexOf('--resume') + 1]).toBe('abc-123')
     expect(args).not.toContain('--session-id')
   })
 
-  test('--model is added when model option is set', () => {
-    const { args } = buildSubagentArgs(baseOpts({ model: 'claude-opus-4-6' }))
-    const i = args.indexOf('--model')
-    expect(i).toBeGreaterThanOrEqual(0)
-    expect(args[i + 1]).toBe('claude-opus-4-6')
-  })
-
-  test('--effort is added when effort option is set', () => {
-    const { args, envBlock } = buildSubagentArgs(baseOpts({ effort: 'xhigh' }))
-    const i = args.indexOf('--effort')
-    expect(i).toBeGreaterThanOrEqual(0)
-    expect(args[i + 1]).toBe('xhigh')
-    expect(envBlock).toContain('Effort: xhigh')
-  })
-
-  test('--effort is omitted when effort option is unset', () => {
-    const { args, envBlock } = buildSubagentArgs(baseOpts())
-    expect(args).not.toContain('--effort')
-    expect(envBlock).toContain('Effort: default')
-  })
-
-  test('systemPrompt is appended to the env block', () => {
-    const { args, envBlock } = buildSubagentArgs(
-      baseOpts({ systemPrompt: 'You are a coding assistant.' }),
-    )
-    expect(envBlock).toContain('Bound chat: 7')
-    expect(envBlock).toContain('You are a coding assistant.')
-    const i = args.indexOf('--append-system-prompt')
-    expect(args[i + 1]).toBe(envBlock)
-  })
-
-  test('mcpConfigPath adds --mcp-config and --allowedTools (no --strict-mcp-config)', () => {
-    const { args } = buildSubagentArgs(baseOpts({ mcpConfigPath: '/tmp/mcp.json' }))
+  test('--mcp-config is still passed (DC tools-proxy)', () => {
+    const { args } = buildSubagentArgs(baseOpts({
+      agentName: 'developer', mcpConfigPath: '/tmp/mcp.json',
+    }))
     expect(args).toContain('--mcp-config')
-    expect(args).toContain('/tmp/mcp.json')
-    // User's global MCP servers merge in; we do NOT use --strict-mcp-config.
-    expect(args).not.toContain('--strict-mcp-config')
-    expect(args).toContain('--allowedTools')
-    const i = args.indexOf('--allowedTools')
-    const list = args[i + 1]
-    expect(list).toContain('mcp__dc')
-    expect(list).toContain('Skill')
-    expect(list).toContain('ToolSearch')
-    expect(list).toContain('WebSearch')
-    expect(list).toContain('LSP')
-    expect(list).not.toContain('CronCreate')
-    expect(list).not.toContain('RemoteTrigger')
+    expect(args[args.indexOf('--mcp-config') + 1]).toBe('/tmp/mcp.json')
   })
 
   test('addDirs are passed as --add-dir', () => {
-    const { args } = buildSubagentArgs(baseOpts({ addDirs: ['/foo', '/bar'] }))
+    const { args } = buildSubagentArgs(baseOpts({
+      agentName: 'developer', addDirs: ['/foo', '/bar'],
+    }))
     const dirs = args.reduce<string[]>((acc, v, i) => {
       if (args[i - 1] === '--add-dir') acc.push(v)
       return acc
@@ -98,116 +83,16 @@ describe('buildSubagentArgs', () => {
     expect(dirs).toEqual(['/foo', '/bar'])
   })
 
-  test('suppressUserClaudeMd is accepted (currently a no-op, no flag emitted)', () => {
-    const { args } = buildSubagentArgs(baseOpts({ suppressUserClaudeMd: true }))
-    expect(args).not.toContain('--no-user-claude-md')
-    expect(args).not.toContain('CLAUDE_DISABLE_USER_CLAUDE_MD')
+  test('sessionName is passed as --name', () => {
+    const { args } = buildSubagentArgs(baseOpts({
+      agentName: 'developer', sessionName: 'chat-foo',
+    }))
+    expect(args).toContain('--name')
+    expect(args[args.indexOf('--name') + 1]).toBe('chat-foo')
   })
 
-  test('allowedBuiltinTools filters the tool list (Read/Glob/Grep only)', () => {
-    const { args } = buildSubagentArgs(baseOpts({
-      mcpConfigPath: '/tmp/mcp.json',
-      allowedBuiltinTools: ['Read', 'Glob', 'Grep'],
-    }))
-    const i = args.indexOf('--allowedTools')
-    expect(i).toBeGreaterThanOrEqual(0)
-    const list = args[i + 1]
-    expect(list).toContain('mcp__dc')
-    expect(list).toContain('Read')
-    expect(list).toContain('Glob')
-    expect(list).toContain('Grep')
-    expect(list).not.toContain('Bash')
-    expect(list).not.toContain('Edit')
-    expect(list).not.toContain('Write')
-  })
-
-  test('allowedBuiltinTools: null means all tools', () => {
-    const { args } = buildSubagentArgs(baseOpts({
-      mcpConfigPath: '/tmp/mcp.json',
-      allowedBuiltinTools: null,
-    }))
-    const i = args.indexOf('--allowedTools')
-    expect(i).toBeGreaterThanOrEqual(0)
-    const list = args[i + 1]
-    expect(list).toContain('mcp__dc')
-    expect(list).toContain('Bash')
-    expect(list).toContain('Edit')
-    expect(list).toContain('Write')
-    expect(list).toContain('WebSearch')
-  })
-
-  test('allowedBuiltinTools: undefined (not set) means all tools', () => {
-    const { args } = buildSubagentArgs(baseOpts({
-      mcpConfigPath: '/tmp/mcp.json',
-      // allowedBuiltinTools not set
-    }))
-    const i = args.indexOf('--allowedTools')
-    expect(i).toBeGreaterThanOrEqual(0)
-    const list = args[i + 1]
-    expect(list).toContain('mcp__dc')
-    expect(list).toContain('Bash')
-    expect(list).toContain('Edit')
-    expect(list).toContain('Write')
-    expect(list).toContain('WebSearch')
-  })
-
-  test('allowedBuiltinTools: [] means only MCP server prefixes', () => {
-    const { args } = buildSubagentArgs(baseOpts({
-      mcpConfigPath: '/tmp/mcp.json',
-      allowedBuiltinTools: [],
-    }))
-    const i = args.indexOf('--allowedTools')
-    expect(i).toBeGreaterThanOrEqual(0)
-    const list = args[i + 1]
-    expect(list).toContain('mcp__dc')
-    expect(list).toContain('mcp__claude_ai_Gmail')
-    expect(list).not.toContain('Bash')
-  })
-
-  test('allowedMcpServers: null includes all known server prefixes', () => {
-    const { args } = buildSubagentArgs(baseOpts({
-      mcpConfigPath: '/tmp/mcp.json',
-      allowedMcpServers: null,
-    }))
-    const i = args.indexOf('--allowedTools')
-    const list = args[i + 1]
-    expect(list).toContain('mcp__dc')
-    expect(list).toContain('mcp__claude_ai_Gmail')
-    expect(list).toContain('mcp__claude_ai_Google_Calendar')
-    expect(list).toContain('mcp__plugin_telegram_telegram')
-  })
-
-  test('allowedMcpServers: explicit list includes only those prefixes', () => {
-    const { args } = buildSubagentArgs(baseOpts({
-      mcpConfigPath: '/tmp/mcp.json',
-      allowedMcpServers: ['dc', 'claude_ai_Gmail'],
-    }))
-    const i = args.indexOf('--allowedTools')
-    const list = args[i + 1]
-    expect(list).toContain('mcp__dc')
-    expect(list).toContain('mcp__claude_ai_Gmail')
-    expect(list).not.toContain('mcp__claude_ai_Google_Calendar')
-    expect(list).not.toContain('mcp__plugin_telegram_telegram')
-  })
-
-  test('allowedMcpServers: [] means no MCP prefixes', () => {
-    const { args } = buildSubagentArgs(baseOpts({
-      mcpConfigPath: '/tmp/mcp.json',
-      allowedMcpServers: [],
-    }))
-    const i = args.indexOf('--allowedTools')
-    const list = args[i + 1]
-    expect(list).not.toContain('mcp__')
-  })
-
-  test('allowedBuiltinTools + allowedMcpServers combine correctly', () => {
-    const { args } = buildSubagentArgs(baseOpts({
-      mcpConfigPath: '/tmp/mcp.json',
-      allowedBuiltinTools: ['Bash', 'Read'],
-      allowedMcpServers: ['dc'],
-    }))
-    const i = args.indexOf('--allowedTools')
-    const list = args[i + 1]
-    expect(list).toBe('mcp__dc Bash Read')
+  test('throws if agentName is missing', () => {
+    expect(() => buildSubagentArgs(baseOpts({ agentName: undefined as unknown as string })))
+      .toThrow(/agentName is required/)
   })
 })

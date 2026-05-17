@@ -354,13 +354,13 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
         // Clear any stale sessionId so a fresh session is created.
         const newBinding: bindings.Binding = {
           chatId,
-          agentId: defaultAgent.id,
+          agentId: defaultAgent.name,
           inheritClaudeMd: agents.inheritClaudeMdForModel(defaultAgent.model),
           createdAt: new Date().toISOString(),
         }
         bindings.saveBinding(newBinding)
         bindings.clearSessionId(chatId)
-        logf('subagent: auto-repaired chat %d with agent %s, cleared stale session', chatId, defaultAgent.id)
+        logf('subagent: auto-repaired chat %d with agent %s, cleared stale session', chatId, defaultAgent.name)
         // Recursively try to spawn now that binding is fixed and session is cleared
         return spawnSubagentForChat(chatId)
       } catch (err) {
@@ -406,12 +406,6 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     toolDefs: filteredToolDefs,
   })
   let { sessionId, created } = bindings.loadOrCreateSessionId(chatId)
-  // If the binding has an explicit inheritClaudeMd flag, honor it.
-  // Otherwise pass undefined so SubagentProcess uses its default (inherit).
-  const suppressUserClaudeMd =
-    resolved && resolved.binding.inheritClaudeMd !== undefined
-      ? !resolved.binding.inheritClaudeMd
-      : undefined
   // Resolve the owner's display name from their DC contact card.
   let userName: string | undefined
   const ownerContactId = access.firstPermissionedContact(chatId)
@@ -456,10 +450,17 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     chatId, sessionId, created ? 'NEW' : 'RESUME',
   )
 
+  // resolved is non-null here — the early return at the top of this
+  // function guarantees it once resolvedCheck succeeded. CC reads
+  // model/effort/permissionMode/tools/system prompt/memory from the
+  // agent .md via --agent <name>, so the dispatcher passes only DC
+  // runtime context.
+  const agentName = resolved!.agent.name
   let resumeFailed = false
   let sub = new SubagentProcess({
     chatId,
     subagentId,
+    agentName,
     settingsPath,
     mcpConfigPath,
     dispatcherSocket: DISPATCHER_SOCKET,
@@ -468,19 +469,9 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     resume: !created,
     cwd: workingDir,
     addDirs: [repoRoot],
-    model: resolved?.agent.model ?? models.DEFAULT_MODEL,
-    effort: resolved?.agent.effort,
-    agentName: resolved?.agent.name,
     sessionName,
     userName,
     claudeVersion: CLAUDE_VERSION,
-    systemPrompt: [resolved?.agent.body, appInstructions].filter(Boolean).join('\n\n'),
-    suppressUserClaudeMd,
-    // Slice 5 (subagent-process rewrite) replaces these flag synths with
-    // `--agent <name>`; until then the dispatcher passes no tool allowlist
-    // and SubagentProcess falls back to "all built-ins + all known MCP
-    // servers". CC's own `--allowedTools` filtering then applies via the
-    // agent .md's tools CSV once Slice 5 lands.
     logf,
   })
   // Resume-fallback probe: if --resume was used and the child dies within
@@ -500,6 +491,7 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
       sub = new SubagentProcess({
         chatId,
         subagentId,
+        agentName,
         settingsPath,
         mcpConfigPath,
         dispatcherSocket: DISPATCHER_SOCKET,
@@ -508,15 +500,9 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
         resume: false,
         cwd: workingDir,
         addDirs: [repoRoot],
-        model: resolved?.agent.model ?? models.DEFAULT_MODEL,
-        effort: resolved?.agent.effort,
-        agentName: resolved?.agent.name,
         sessionName,
         userName,
         claudeVersion: CLAUDE_VERSION,
-        systemPrompt: [resolved?.agent.body, appInstructions].filter(Boolean).join('\n\n'),
-        suppressUserClaudeMd,
-        // Slice 5 wires --agent <name>; until then no tool allowlist filter.
         logf,
       })
     }
