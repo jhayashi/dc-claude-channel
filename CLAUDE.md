@@ -4,13 +4,27 @@ Delta Chat channel plugin for Claude Code (TypeScript/Bun). Matches the official
 
 For deeper reference, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (file inventory, agent/subagent/resume/familiar deep dives) and [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) (testing setup + WebXDC contributor flow).
 
-## Agent model
+## Agent model (v1.4)
 
-A DC chat is bound to a reusable **agent definition** (YAML at `~/.claude/channels/deltachat/agents/<id>.yaml`) via a per-chat **binding** (JSON at `bindings/<chatId>.json`) that holds the claude session UUID for `--resume`. Editing an agent definition mutates in place — the next turn in every bound chat picks up the change. Agent definitions are reusable across chats; bindings are not.
+A DC chat is bound to a reusable **agent definition** (markdown + YAML frontmatter at `~/.claude/agents/<name>.md` — the same path terminal Claude Code reads) via a per-chat **binding** (JSON at `bindings/<chatId>.json`) that holds the claude session UUID for `--resume`. Editing the .md mutates in place — the next turn in every bound chat picks up the change. Agent definitions are reusable across chats and shared with terminal CC; bindings are not.
 
-Three NL meta-commands short-circuit before subagent dispatch in any bound chat: model-switch (`switch to opus`), trust-toggle (`trust me` / `be safer`), and refine (`let's refine you`) — classified by `plugin/nl-intents.ts`. All three evict the cached subagent so the next message picks up the change.
+The dispatcher spawns subagents with `claude -p --agent <name>` so CC itself reads the agent's `model`, system prompt (markdown body), `tools`, `permissionMode`, `mcpServers`, and `memory` fields. DC only appends a small environment block (bound chat ID, owner, working dir) via `--append-system-prompt`. Memory persists at `~/.claude/agent-memory/<name>/MEMORY.md` (CC-owned).
 
-For the import/export flow, the v1.2 wall+coach creation flow, per-agent tool-access restrictions, and sample on-disk YAML / JSON, see [`docs/ARCHITECTURE.md#agent-model-v010`](docs/ARCHITECTURE.md).
+DC-private per-agent state lives in a sidecar directory beside the agent file:
+
+```
+~/.claude/agents/<name>.md
+~/.claude/agents/<name>.dc/contacts/<cid>.json   (trust annotations)
+~/.claude/agents/<name>.dc/chatmail/             (v1.4 managed-agent state)
+```
+
+DC-only frontmatter extensions use the `x-dc-` prefix (CC ignores unknown frontmatter keys): `x-dc-archetype`, `x-dc-icon`, `x-dc-glyph`, `x-dc-pattern`, `x-dc-icon-mirror`, `x-dc-display-name`. Trust is now the standard CC `permissionMode: bypassPermissions`. The DC tools-proxy MCP is mandatory — `saveAgent` auto-injects `mcp__dc` into the `tools` CSV on every write, and spawn refuses to start an agent without it.
+
+Three NL meta-commands short-circuit before subagent dispatch in any bound chat: model-switch (`switch to opus`), trust-toggle (`trust me` / `be safer`), and refine (`let's refine you`) — classified by `plugin/nl-intents.ts`. All three mutate the .md and evict the cached subagent so the next message picks up the change.
+
+A v1.3 → v1.4 migration runs once at dispatcher startup: every `<id>/definition.yaml` becomes a `<name>.md` (collisions with a terminal-CC agent of the same name resolve by suffixing `-dc`), contacts move to the `<name>.dc/contacts/` sidecar, and the legacy `agents/` dir is retired to `agents.legacy/`. The dispatcher exits with code 2 if `claude --version` reports anything older than the pinned minimum.
+
+For the import/export flow, the v1.2 wall+coach creation flow, per-agent tool-access restrictions, and migration details, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and the spec at `docs/superpowers/specs/2026-05-16-cc-agent-compatibility-design.md`.
 
 ## Subagent model
 
@@ -24,7 +38,7 @@ For skip-permissions mode, scheduled jobs (`dc_schedule*`), shared memory semant
 
 ## Contacts (v1.3+; was "Principals" in v1.1.5–v1.2.2)
 
-Per-contact trust annotations — one record per DC contact in the bot's address book, regardless of whether the underlying entity is a human or a third-party bot. The `role` field carries the trust-tier distinction. On-disk at `~/.claude/channels/deltachat/agents/<agentId>/contacts/<contactId>.json` (v1.3 layout; legacy v1.2.2 path was `principals/humans/<contactId>.json`, retired to `principals.legacy/` on first v1.3 boot). Schema:
+Per-contact trust annotations — one record per DC contact in the bot's address book, regardless of whether the underlying entity is a human or a third-party bot. The `role` field carries the trust-tier distinction. On-disk at `~/.claude/agents/<name>.dc/contacts/<contactId>.json` (v1.4 sidecar layout; legacy v1.3 path was `~/.claude/channels/deltachat/agents/<id>/contacts/<contactId>.json`, retired to `agents.legacy/` on first v1.4 boot, with a backstop that walks any orphaned v1.3 dirs). Schema:
 
 ```json
 {
@@ -105,7 +119,11 @@ Top-level layout:
 - `plugin/agents.ts` / `plugin/bindings.ts` — agent definitions + per-chat bindings
 - `plugin/dc-client.ts` — `@deltachat/jsonrpc-client` wrapper
 - `plugin/webxdc/` — WebXDC HTML sources
-- State dir: `~/.claude/channels/deltachat/`
+- State dirs:
+  - `~/.claude/agents/<name>.md` — agent definitions (shared with terminal CC)
+  - `~/.claude/agents/<name>.dc/` — DC-private sidecars (contacts, chatmail)
+  - `~/.claude/agent-memory/<name>/MEMORY.md` — CC-owned per-agent memory
+  - `~/.claude/channels/deltachat/` — bindings, events, scheduler state
 
 For the full file inventory and component responsibilities, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 

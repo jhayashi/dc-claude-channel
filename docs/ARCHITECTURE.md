@@ -36,37 +36,45 @@ Full file/component inventory for the Delta Chat plugin. Updated as the codebase
 
 ## State directory
 
-`~/.claude/channels/deltachat/`:
+DC dispatcher state at `~/.claude/channels/deltachat/`:
 
 - `.env` — local environment overrides
 - `dc-data/` — Delta Chat account database (managed by dc-core)
-- `approved/<chatId>` — chat-allowlist + per-chat owner contactId (legacy; see Principals for v1.2.2+ read path)
-- `principals/humans/<contactId>.json` — per-contact identity records (v1.1.5+)
-- `agents/<agentId>.yaml` — reusable agent definitions
 - `bindings/<chatId>.json` — per-chat agent binding + session UUID
 - `schedules/<chatId>-<jobId>.json` — scheduled jobs
 - `session-agents/<sessionId>.json` — session→agent index for resume
 - `agent-badges/` — rendered PNG cache (regenerable via `bun run build:badges`)
-- `events/` — JSONL audit logs (`tools-*.log`, `turns-*.log`, `permissions-*.log`, `webxdc-*.log`)
+- `events/` — JSONL audit logs (`tools-*.log`, `turns-*.log`, `permissions-*.log`, `webxdc-*.log`, `agent-lifecycle-*.log`)
 - `familiars/` — persistent Familiar app state + handler source
 - `dispatcher.sock` — Unix socket subagents connect to
 - `debug.log` — dispatcher debug stream
 
-## Agent model (v0.10+)
+Agent definitions and DC sidecar state live under `~/.claude/agents/` (shared with terminal CC, v1.4+):
 
-An "agent chat" is a DC chat bound to a reusable **agent definition** (name, model, system prompt, tools) via a per-chat **binding** record that also holds the claude session UUID used for `--resume`.
+- `~/.claude/agents/<name>.md` — agent definition (markdown body + YAML frontmatter; readable by terminal CC and `claude -p --agent <name>`)
+- `~/.claude/agents/<name>.dc/contacts/<contactId>.json` — per-contact trust annotations
+- `~/.claude/agents/<name>.dc/chatmail/` — managed-agent chatmail state (v1.4+)
+- `~/.claude/agent-memory/<name>/MEMORY.md` — CC-owned persistent memory
+
+## Agent model (v1.4+)
+
+An "agent chat" is a DC chat bound to a reusable **agent definition** (name, model, system prompt, tools, permissionMode, memory) via a per-chat **binding** record that also holds the claude session UUID used for `--resume`.
 
 Three concerns, three storage locations:
 
-- **Agent definitions** — portable YAML files in `~/.claude/channels/deltachat/agents/<agentId>.yaml`. Schema matches Claude Managed Agents (`name`, `model`, `system`, `tools`) with `x-dc-createdAt` for the creation timestamp. Reusable across chats — one definition may be bound to many DC chats at once. Managed by `plugin/agents.ts`.
-- **Bindings** — host-local JSON files in `~/.claude/channels/deltachat/bindings/<chatId>.json`. Each record links a chat to an agent and holds runtime state: `agentId`, `sessionId` (for `--resume`), `inheritClaudeMd` flag, `createdAt`. Deleted on unpair; agent definitions are NOT deleted because they're reusable. Managed by `plugin/bindings.ts`.
-- **Subagent processes** — ephemeral `claude -p` children in an LRU cache, spawned on demand. See "Subagent model" below.
+- **Agent definitions** — Claude Code's native format: markdown + YAML frontmatter at `~/.claude/agents/<name>.md` (the same path the terminal `claude` CLI reads). `name` is the canonical identifier (filename stem). The markdown body is the system prompt. Frontmatter carries `model`, `tools` (CSV of built-in tool names plus `mcp__<server>` entries), `permissionMode`, `effort`, `memory`, and any CC pass-through fields (`skills`, `hooks`, `mcpServers`, …). DC-only extensions use the `x-dc-` prefix (`x-dc-archetype`, `x-dc-icon`, `x-dc-glyph`, `x-dc-pattern`, `x-dc-icon-mirror`, `x-dc-display-name`); CC silently ignores unknown frontmatter keys. Reusable across chats — one definition may be bound to many DC chats at once, and the same .md is what terminal CC sees. Managed by `plugin/agents.ts` and `plugin/agent-md.ts` (frontmatter ↔ markdown helpers).
+- **Bindings** — host-local JSON files in `~/.claude/channels/deltachat/bindings/<chatId>.json`. Each record links a chat to an agent and holds runtime state: `agentId` (= the agent's `name`), `sessionId` (for `--resume`), `inheritClaudeMd` flag, `createdAt`. Deleted on unpair; agent definitions are NOT deleted because they're reusable. Managed by `plugin/bindings.ts`.
+- **Subagent processes** — ephemeral `claude -p --agent <name>` children in an LRU cache, spawned on demand. CC reads model/prompt/tools/permissionMode/memory from the .md itself; the dispatcher passes only DC-runtime context (bound chat ID, owner name, working dir) via `--append-system-prompt`. See "Subagent model" below.
 
-`inheritClaudeMd` lives on the **binding**, not the agent, because it's a host-local/environment concern (whether to include the dispatcher's `CLAUDE.md` in the spawn) — an exported agent YAML should not carry host-specific assumptions.
+`inheritClaudeMd` lives on the **binding**, not the agent, because it's a host-local/environment concern (whether to include the dispatcher's `CLAUDE.md` in the spawn) — an exported agent .md should not carry host-specific assumptions.
 
 Editing an agent definition **mutates in place**: changes apply on the next turn in every chat bound to that agent. The resumed claude session keeps its prior history, so the next turn runs under the new prompt but "remembers" things said under the old one. Usually fine; if you want a clean slate, start a new chat.
 
-**Import/export (v0.10+):** Agent definitions can be exported as `.yaml` files via the agent-setup WebXDC card ("Export" button) and imported by sending a `.yaml` file attachment into any paired DC chat. The dispatcher intercepts `.yaml` attachments before the subagent sees them: valid definitions are saved (with automatic ID collision resolution via `-2`, `-3`, etc. suffixes); invalid YAML is rejected with an error message and the attachment is forwarded to the subagent. Export sends the full agent definition including `x-dc-*` metadata. Bindings (host-local chat mappings) are not exported — the user creates a new chat via the agent-setup card after importing. Round-trip compatible with Claude Managed Agents API YAML format.
+DC-private state lives in a sibling directory next to the .md, so that deleting `<name>.md` + `<name>.dc/` cleans up all DC-side state in one shot. CC's recursive scan of `~/.claude/agents/` would treat any `.md` inside `<name>.dc/` as a stray agent; `agents.ts:lintSidecarDirs` checks for that at startup and the write path (`contacts.writeContact`) only ever emits `.json`.
+
+**Memory delegation.** Every new agent gets `memory: user` in its frontmatter, so CC manages an `~/.claude/agent-memory/<name>/MEMORY.md` index plus per-memory files. The dispatcher does not read or write that directory; "Remember X" said in any DC chat persists to the same file that the terminal `claude --agent <name>` session would read.
+
+**Import/export (v1.4+):** Agent definitions can be exported as `.md` files via the agent-setup WebXDC card ("Export" button) and imported by sending a `.md` file attachment into any paired DC chat. The dispatcher intercepts `.md` attachments before the subagent sees them: valid definitions (frontmatter + markdown body) are saved via `importAgentFromMarkdown` (with automatic name collision resolution via `-2`, `-3`, etc. suffixes); invalid markdown / frontmatter is rejected with an error message and the attachment is forwarded to the subagent. Export sends the full agent definition including `x-dc-*` extensions. Bindings (host-local chat mappings) are not exported — the user creates a new chat via the agent-setup card after importing. Round-trip compatible with terminal CC's `~/.claude/agents/` directory.
 
 **Wall + coach + mash-up (v1.2.0+, default-on):** agent creation opens on a 26-tile specialty wall (155 leaves grouped by L2). The user filters or drills into a tile, opens a leaf detail card, optionally stacks 1–3 leaves via "pairs with" chips into a mash-up, then taps Build & start chatting. A coach state machine then asks 1–3 short questions (parameter / lead / voice / tools) and graduates by assembling a plain-prose 5-paragraph system prompt: Identity, Expertise (per leaf), Voice (preset+sliders), Preferences (the user's own words, quoted as data not directives), Scope (tools + per-leaf liability frames). Spec at `plugin/docs/superpowers/specs/2026-04-28-agent-creation-redesign-design.md`. Files: `plugin/leaves.ts` + `plugin/leaves/*.yaml` (catalog), `plugin/coach.ts` (state machine), `plugin/prompt-assembler.ts` (5-paragraph composer + incremental refine), `plugin/personality-presets.ts`, `plugin/liability-frames.ts`, `plugin/webxdc/agent-setup.html` (wall + coach UI). The legacy v1.x template-grid flow + `DC_NEW_AGENT_FLOW` env-var were removed in v1.3.1 (#90); `plugin/templates.ts` and the yaml files under `plugin/templates/` are now orphaned and slated for removal in a follow-up cleanup. Every agent carries `x-dc-archetype` (`role` / `utility` / `project`) — drives the runtime badge palette ("Agent badges" below).
 
@@ -76,21 +84,25 @@ Editing an agent definition **mutates in place**: changes apply on the next turn
 
 **NL meta-commands (v1.2.0+):** in any bound chat, three intents short-circuit before subagent dispatch — model-switch ("switch to opus"), trust-toggle ("trust me" / "be safer"), refine ("let's refine you"). Classifier in `plugin/nl-intents.ts`; dispatcher wiring in `plugin/nl-intent-handler.ts`. All three evict the cached subagent on success so the next message picks up the change immediately.
 
-**Per-agent tool access (v0.10+):** Each agent definition can restrict which built-in tools and MCP servers its subagent is allowed to use via two optional fields: `allowedBuiltinTools` (string array or null) and `allowedMcpServers` (string array or null). `null` or absent means "all tools/servers allowed" (the default for new agents); `[]` means "none." Each `allowedMcpServers` entry is a server prefix (e.g., `dc`, `claude_ai_Gmail`, `plugin_telegram_telegram`). Built-in tools have fine-grained per-tool control; MCP servers are all-or-nothing toggles. Restrictions are enforced at spawn time via `--allowedTools` CLI flag with `mcp__<prefix>` entries for each enabled server. The agent-setup WebXDC card includes a collapsible tool picker: per-tool checkboxes for built-in tools, per-server toggles for MCP servers. Changes take effect on next subagent spawn (idle timeout or restart).
-
-**Forward compat:** the `tools: []` field is written on every agent as a no-op hook. Per-agent tool capability restrictions use the separate `allowedBuiltinTools` and `allowedMcpServers` fields instead.
+**Per-agent tool access (v1.4+):** The `tools:` frontmatter field is a single comma-separated list of built-in tool names (e.g. `Read`, `Edit`, `Bash`) and MCP-tool prefixes (`mcp__<server>` to enable all tools from a server, or `mcp__<server>__<tool>` for one specific tool). CC enforces the allowlist at the LLM-tool layer using exactly this CSV — the dispatcher no longer translates between separate built-in / MCP arrays. `mcp__dc` is mandatory because every DC tool call (reply, react, history, schedule, …) routes through that prefix; `agents.ts:saveAgent` auto-injects it on every write, and `assertCanSpawn` in `dispatcher/subagent-cache.ts` refuses to spawn an agent whose CSV lacks it (chat-side error, the operator can reopen agent setup to fix). The agent-setup WebXDC card still surfaces a collapsible tool picker; under the hood the card's "built-ins" + "MCP servers" sub-pickers collapse to a single CSV on save and split back on edit.
 
 Sample files on disk:
 
-```yaml
-# ~/.claude/channels/deltachat/agents/marketing-agent.yaml
-id: marketing-agent
-name: Marketing Agent
+```markdown
+# ~/.claude/agents/marketing-agent.md
+---
+name: marketing-agent
+description: Marketing specialist who drafts copy and positioning
 model: claude-sonnet-4-6
-system: |
-  You are a marketing specialist...
-tools: []
-x-dc-createdAt: 2026-04-09T12:34:56.000Z
+tools: Read, Edit, Bash, mcp__dc, mcp__claude_ai_Gmail
+permissionMode: default
+memory: user
+x-dc-archetype: role
+x-dc-icon: '📣'
+x-dc-display-name: Marketing Agent
+---
+
+You are a marketing specialist...
 ```
 
 ```json
@@ -104,6 +116,25 @@ x-dc-createdAt: 2026-04-09T12:34:56.000Z
   "createdAt": "2026-04-09T12:34:56.000Z"
 }
 ```
+
+**Spawn semantics.** `buildSubagentArgs` in `plugin/dispatcher/subagent-process.ts` constructs:
+
+```
+claude -p --agent <name> \
+  --session-id <uuid> | --resume <uuid> \
+  --input-format stream-json --output-format stream-json --verbose \
+  --settings <generated settings.json> \
+  --append-system-prompt <env block> \
+  [--name <chat display name>] \
+  [--mcp-config <tools-proxy config>] \
+  [--add-dir <repo root>]
+```
+
+The env block lists platform, timezone, working dir, bound chat ID, agent name, owner display name, and CC version. The agent's own system prompt, model, effort, permissionMode, tool allowlist, and memory ALL live in the .md — CC reads them itself. NL meta-commands (`switch to opus`, `trust me`, `let's refine you`) mutate the .md and evict the cached subagent, so the next message picks up the new value on the next `claude -p` spawn.
+
+**v1.3 → v1.4 migration.** On first v1.4 boot, `plugin/migrate-agents-v14.ts` walks `~/.claude/channels/deltachat/agents/<id>/definition.yaml`, maps each into the new schema (`id` → `name`, `system` → markdown body, `metadata.x-dc-*` → top-level, `allowedBuiltinTools` + `allowedMcpServers` → `tools` CSV, `Agent` / `Task` / spawn-tools dropped per spec §5.9, `memory: user` injected), writes `~/.claude/agents/<name>.md`, and moves the per-agent `contacts/` dir into the new `<name>.dc/` sidecar. Collisions with a terminal-CC-authored agent of the same name resolve by suffixing `-dc`; the rename is recorded in a `renameMap` and every binding whose `agentId` was renamed is rewritten in place. The legacy `~/.claude/channels/deltachat/agents/` directory is renamed to `agents.legacy/` after a successful run; a contacts backstop (`access/contacts.ts:migrateContactsToSidecar`) catches any orphaned per-agent dirs that never had a `definition.yaml` to drive the agent migration. Re-running on a v1.4 install is a no-op.
+
+**Heal-on-bind.** When the dispatcher binds a chat to an agent (`bindings.bindAgent`), it re-saves the .md through `agents.saveAgent` so `ensureMcpDc` auto-injects `mcp__dc` into the tools CSV. This catches terminal-CC-authored agents that never went through DC's save path.
 
 ## Subagent model (v0.9+)
 
@@ -123,7 +154,7 @@ DC tool calls (`dc_send`, `dc_send_file`, `dc_chat_history`, etc.) from a subage
 
 **Edit-as-interrupt (v1.3.2+, #45):** `dc-client.ts`'s `MsgsChanged` event filter detects content edits on the user's own outgoing messages (compares `msg.text` against the prior snapshot via the client-side cache; status-only changes are ignored). A detected edit fires through the same `runSubagentTurn` path as a brand-new message: the cached subagent is evicted (which triggers the kill cascade above), then the next dispatch cold-spawns or rehydrates via `--resume` and processes the edited prompt. The subagent's session history still contains the original prompt — claude is aware of the prior phrasing — so the edit reads as a course-correction, not a context reset. Test coverage in `plugin/test/dc-client-edit.test.ts` covers the full filter pipeline with a fake MsgsChanged stream.
 
-**Skip-permissions mode:** An agent can opt into "trusted" mode via `metadata['x-dc-skipPermissions']` on its definition (exposed as a checkbox in the agent-setup WebXDC card, and via `getSkipPermissions` / `setSkipPermissions` in `agents.ts`). When a subagent bound to such an agent triggers the PreToolUse hook, the dispatcher short-circuits in `plugin/dispatcher/skip-permissions.ts` — it auto-approves the verdict and writes a `skip_auto` entry to the permission event log instead of showing the WebXDC permission card.
+**Skip-permissions mode:** An agent can opt into "trusted" mode by setting the standard CC `permissionMode: bypassPermissions` frontmatter field (exposed as a checkbox in the agent-setup WebXDC card, and via `getSkipPermissions` / `setSkipPermissions` in `agents.ts`). When a subagent bound to such an agent triggers the PreToolUse hook, the dispatcher short-circuits in `plugin/dispatcher/skip-permissions.ts` — it auto-approves the verdict and writes a `skip_auto` entry to the permission event log instead of showing the WebXDC permission card.
 
 **Scheduled jobs (v0.10+):** Subagents can create recurring or one-shot prompts via `dc_schedule` / `dc_schedule_list` / `dc_schedule_delete`. Jobs persist in `~/.claude/channels/deltachat/schedules/<chatId>-<jobId>.json` and are owned by the dispatcher's in-process scheduler — they survive subagent eviction, idle timeout, and crash. When a job fires the dispatcher cold-spawns (or reuses) the subagent for that chat and sends a synthetic user turn. Missed fires during dispatcher downtime are silently skipped (not caught up); past-due one-shots are reaped at startup with a log line. A soft warning is returned when a new schedule would fire more than 30 times in the next 7 days; there are no hard caps on job count or interval. The scheduler is deterministic TypeScript — it consumes zero model tokens on its own; tokens are only spent when a fire delivers a synthetic turn to the chat's bound agent.
 
