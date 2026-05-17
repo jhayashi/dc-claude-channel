@@ -136,3 +136,39 @@ describe('saveAgent / getAgent round-trip', () => {
     expect(() => agents.saveAgent(makeDef({ name: 'Has Capitals' }))).toThrow()
   })
 })
+
+describe('listAgents', () => {
+  test('returns all agents sorted by name', () => {
+    agents.saveAgent(makeDef({ name: 'zebra' }))
+    agents.saveAgent(makeDef({ name: 'apple' }))
+    agents.saveAgent(makeDef({ name: 'mango' }))
+    // ensureDefaultAgent auto-seeds claude-code on listAgents; expect 4.
+    const names = agents.listAgents().map(a => a.name)
+    expect(names).toEqual(['apple', 'claude-code', 'mango', 'zebra'])
+  })
+
+  test('auto-seeds the default agent when none exist', () => {
+    const list = agents.listAgents()
+    expect(list).toHaveLength(1)
+    expect(list[0].name).toBe('claude-code')
+  })
+
+  test('skips invalid .md files', () => {
+    agents.saveAgent(makeDef({ name: 'ok' }))
+    writeFileSync(join(testDir, 'broken.md'), 'not even frontmatter')
+    const names = agents.listAgents().map(a => a.name)
+    expect(names).toContain('ok')
+    expect(names).not.toContain('broken')
+  })
+
+  test('ignores non-.md entries (sidecar dirs, README, etc.)', () => {
+    agents.saveAgent(makeDef({ name: 'real' }))
+    mkdirSync(join(testDir, 'real.dc', 'contacts'), { recursive: true })
+    writeFileSync(join(testDir, 'real.dc', 'contacts', '1.json'), '{}')
+    writeFileSync(join(testDir, 'README.txt'), 'hi')
+    const names = agents.listAgents().map(a => a.name)
+    expect(names).toContain('real')
+    expect(names).not.toContain('real.dc')
+    expect(names).not.toContain('README')
+  })
+})

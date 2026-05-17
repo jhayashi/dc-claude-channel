@@ -216,25 +216,24 @@ export function migrateLegacyAgentYaml(): number {
 }
 
 /**
- * List all agent definitions on disk, sorted by id. Invalid records skipped.
- * Auto-seeds the built-in default agent (DEFAULT_AGENT_ID) if it's missing,
- * so the agent list is never empty.
+ * List all agent definitions on disk, sorted by name. Invalid files
+ * skipped. Auto-seeds the built-in default agent (DEFAULT_AGENT_ID) if
+ * it's missing, so the agent list is never empty.
+ *
+ * Scans for `*.md` entries — sidecar directories (`<name>.dc/`) and any
+ * other files are ignored.
  */
 export function listAgents(): AgentDef[] {
   mkdirSync(AGENTS_DIR, { recursive: true })
   ensureDefaultAgent()
   const out: AgentDef[] = []
   for (const entry of readdirSync(AGENTS_DIR)) {
-    // v1.3 slice 7 phase 1: agents are subdirectories now. Defensive
-    // skips for any leftover files (legacy YAMLs that didn't migrate).
-    const dirPath = join(AGENTS_DIR, entry)
-    let isDir = false
-    try { isDir = statSync(dirPath).isDirectory() } catch { /* ignore */ }
-    if (!isDir) continue
-    const agent = getAgent(entry)
+    if (!entry.endsWith('.md')) continue
+    const name = entry.slice(0, -'.md'.length)
+    const agent = getAgent(name)
     if (agent) out.push(agent)
   }
-  return out.sort((a, b) => a.id.localeCompare(b.id))
+  return out.sort((a, b) => a.name.localeCompare(b.name))
 }
 
 /**
