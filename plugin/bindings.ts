@@ -192,5 +192,12 @@ export function bindAgent(
     createdAt: existing?.createdAt ?? new Date().toISOString(),
   }
   saveBinding(binding)
+  // Heal-on-bind: re-save the agent definition so saveAgent auto-injects
+  // mcp__dc into tools if absent. Terminal-CC agents (and any hand-edited
+  // .md) likely lack mcp__dc; without this, the next dispatch would hit
+  // the spawn-time refusal in subagent-cache. Silent no-op if the agent
+  // is missing — that path is exercised by other code (e.g. resolveChat).
+  const def = agents.getAgent(agentId)
+  if (def) agents.saveAgent(def)
   return binding
 }

@@ -313,6 +313,42 @@ describe('bindAgent', () => {
   })
 })
 
+describe('bindAgent heals terminal-CC agents lacking mcp__dc', () => {
+  test('re-saves the agent on bind so saveAgent auto-injects mcp__dc', () => {
+    // Simulate a terminal-CC agent file with no mcp__dc in its tools.
+    // Write directly via fs to bypass saveAgent's auto-injection.
+    writeFileSync(
+      join(agentsDir, 'cc-only.md'),
+      '---\nname: cc-only\nmodel: claude-sonnet-4-6\ntools: Read, Bash\n---\nbody\n',
+    )
+    expect(agents.getAgent('cc-only')?.tools).not.toContain('mcp__dc')
+
+    bindings.bindAgent(42, 'cc-only', { inheritClaudeMd: false })
+
+    // Bind triggers a re-save through saveAgent, which auto-injects mcp__dc.
+    expect(agents.getAgent('cc-only')?.tools).toContain('mcp__dc')
+  })
+
+  test('no-op when the agent already has mcp__dc', () => {
+    // Use saveAgent so mcp__dc is already present; capture file mtime.
+    writeFileSync(
+      join(agentsDir, 'dc-native.md'),
+      '---\nname: dc-native\nmodel: claude-sonnet-4-6\ntools: Read, mcp__dc\n---\nbody\n',
+    )
+    bindings.bindAgent(42, 'dc-native', { inheritClaudeMd: false })
+    const tools = agents.getAgent('dc-native')!.tools
+    // Should appear exactly once.
+    const matches = tools.match(/mcp__dc/g) ?? []
+    expect(matches.length).toBe(1)
+  })
+
+  test('silently skips when the bound agent name does not resolve', () => {
+    // No file at agentsDir/ghost.md.
+    expect(() => bindings.bindAgent(42, 'ghost', { inheritClaudeMd: false }))
+      .not.toThrow()
+  })
+})
+
 describe('countByAgentId', () => {
   test('returns 0 when no bindings exist', () => {
     expect(bindings.countByAgentId('marketing')).toBe(0)
