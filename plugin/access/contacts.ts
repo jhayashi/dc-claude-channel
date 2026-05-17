@@ -80,15 +80,16 @@ export const DEFAULT_AGENT_ID = "claude-code";
 
 // ── Directory plumbing ───────────────────────────────────────────────────────
 
-// v1.3 slice 7 phase 3: contact records live at agents/<agentId>/contacts/.
+// v1.4: contact records live in a `<name>.dc/contacts/` sidecar dir
+// alongside the agent's .md definition under ~/.claude/agents/. The
+// sidecar is opaque to agents.ts and to CC's agent scanner (which only
+// looks at *.md files at the top level).
 // _agentsDir points to the agents root; contactPath() derives the per-record
 // path from it. Kept separate from _principalsDir (the legacy source used only
 // by the migration function).
 let _agentsDir = process.env.DC_TEST_CONTACTS_DIR ?? join(
   homedir(),
   ".claude",
-  "channels",
-  "deltachat",
   "agents",
 );
 
@@ -127,8 +128,8 @@ export function setPrincipalsDir(dir: string): void {
 let _onMutate: () => void = () => { /* no-op until policy registers */ };
 export function _setContactsMutateCallback(cb: () => void): void { _onMutate = cb; }
 
-function contactPath(agentId: string, contactId: number): string {
-  return join(_agentsDir, agentId, "contacts", `${contactId}.json`);
+function contactPath(agentName: string, contactId: number): string {
+  return join(_agentsDir, `${agentName}.dc`, "contacts", `${contactId}.json`);
 }
 
 // ── Atomic JSON write ────────────────────────────────────────────────────────
@@ -207,8 +208,8 @@ export function writeContact(agentId: string, p: Contact): void {
  * is used at startup and shouldn't take down the dispatcher because of
  * a single bad file. Errors are logged to stderr for operator visibility.
  */
-export function listContacts(agentId: string): Contact[] {
-  const dir = join(_agentsDir, agentId, "contacts");
+export function listContacts(agentName: string): Contact[] {
+  const dir = join(_agentsDir, `${agentName}.dc`, "contacts");
   let entries: string[];
   try {
     entries = readdirSync(dir);
@@ -221,10 +222,10 @@ export function listContacts(agentId: string): Contact[] {
     const id = parseInt(name.slice(0, -5), 10);
     if (Number.isNaN(id)) continue;
     try {
-      const p = loadContact(agentId, id);
+      const p = loadContact(agentName, id);
       if (p) out.push(p);
     } catch (err) {
-      console.error(`contacts.listContacts: skipping ${name} —`, err);
+      console.error(`contacts.listContacts: skipping ${name} — ${(err as Error).message}`);
     }
   }
   out.sort((a, b) => a.firstPairedAt.localeCompare(b.firstPairedAt) || a.contactId - b.contactId);
@@ -345,7 +346,7 @@ export function migrateContactsToAgentScoped(): number {
   const sourceDir = join(_principalsDir, "humans");
   if (!existsSync(sourceDir)) return 0;
 
-  const targetDir = join(_agentsDir, "claude-code", "contacts");
+  const targetDir = join(_agentsDir, "claude-code.dc", "contacts");
   let entries: string[];
   try {
     entries = readdirSync(sourceDir);

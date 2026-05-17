@@ -21,7 +21,7 @@ describe("migrateContactsToAgentScoped", () => {
 
   afterEach(() => rmSync(tmpRoot, { recursive: true, force: true }));
 
-  test("moves records from principals/humans/ to agents/claude-code/contacts/", () => {
+  test("moves records from principals/humans/ to agents/claude-code.dc/contacts/", () => {
     mkdirSync(join(legacyPrincipalsDir, "humans"), { recursive: true });
     writeFileSync(
       join(legacyPrincipalsDir, "humans", "42.json"),
@@ -35,8 +35,8 @@ describe("migrateContactsToAgentScoped", () => {
     const count = access.migrateContactsToAgentScoped();
 
     expect(count).toBe(2);
-    expect(existsSync(join(agentsDir, "claude-code", "contacts", "42.json"))).toBe(true);
-    expect(existsSync(join(agentsDir, "claude-code", "contacts", "99.json"))).toBe(true);
+    expect(existsSync(join(agentsDir, "claude-code.dc", "contacts", "42.json"))).toBe(true);
+    expect(existsSync(join(agentsDir, "claude-code.dc", "contacts", "99.json"))).toBe(true);
   });
 
   test("renames principals/ to principals.legacy/ after migration", () => {
@@ -69,9 +69,9 @@ describe("migrateContactsToAgentScoped", () => {
   test("copies legacy records the target dir is missing (half-migrated install)", () => {
     // Target dir already exists with a record written via the new path
     // (e.g. recordContactPair fired after partial slice-7 deploy).
-    mkdirSync(join(agentsDir, "claude-code", "contacts"), { recursive: true });
+    mkdirSync(join(agentsDir, "claude-code.dc", "contacts"), { recursive: true });
     writeFileSync(
-      join(agentsDir, "claude-code", "contacts", "42.json"),
+      join(agentsDir, "claude-code.dc", "contacts", "42.json"),
       JSON.stringify({ kind: "human", contactId: 42, firstPairedAt: "2026-04-01T00:00:00.000Z", role: "subscriber", capabilities: ["*"] }),
     );
     // Legacy record that never made it across.
@@ -84,18 +84,18 @@ describe("migrateContactsToAgentScoped", () => {
     const count = access.migrateContactsToAgentScoped();
 
     expect(count).toBe(1);
-    expect(existsSync(join(agentsDir, "claude-code", "contacts", "11.json"))).toBe(true);
+    expect(existsSync(join(agentsDir, "claude-code.dc", "contacts", "11.json"))).toBe(true);
     // Pre-existing target record untouched.
-    expect(existsSync(join(agentsDir, "claude-code", "contacts", "42.json"))).toBe(true);
+    expect(existsSync(join(agentsDir, "claude-code.dc", "contacts", "42.json"))).toBe(true);
     // Source dir retired since every legacy record is now mirrored.
     expect(existsSync(legacyPrincipalsDir)).toBe(false);
     expect(existsSync(`${legacyPrincipalsDir}.legacy`)).toBe(true);
   });
 
   test("does not overwrite a target record that already exists", () => {
-    mkdirSync(join(agentsDir, "claude-code", "contacts"), { recursive: true });
+    mkdirSync(join(agentsDir, "claude-code.dc", "contacts"), { recursive: true });
     writeFileSync(
-      join(agentsDir, "claude-code", "contacts", "5.json"),
+      join(agentsDir, "claude-code.dc", "contacts", "5.json"),
       JSON.stringify({ kind: "human", contactId: 5, firstPairedAt: "2026-04-01T00:00:00.000Z", role: "family-member", capabilities: ["chat"] }),
     );
     mkdirSync(join(legacyPrincipalsDir, "humans"), { recursive: true });
@@ -114,7 +114,7 @@ describe("migrateContactsToAgentScoped", () => {
 
   test("returns 0 when no legacy principals directory exists (clean install)", () => {
     expect(access.migrateContactsToAgentScoped()).toBe(0);
-    expect(existsSync(join(agentsDir, "claude-code", "contacts"))).toBe(false);
+    expect(existsSync(join(agentsDir, "claude-code.dc", "contacts"))).toBe(false);
   });
 
   test("skips non-JSON files during migration", () => {
@@ -128,7 +128,7 @@ describe("migrateContactsToAgentScoped", () => {
     const count = access.migrateContactsToAgentScoped();
 
     expect(count).toBe(1);
-    expect(readdirSync(join(agentsDir, "claude-code", "contacts"))).toEqual(["5.json"]);
+    expect(readdirSync(join(agentsDir, "claude-code.dc", "contacts"))).toEqual(["5.json"]);
   });
 
   test("loadContact reads from new path after migration", () => {
@@ -161,7 +161,7 @@ describe("migrateContactsToAgentScoped", () => {
       capabilities: ["chat", "low_stakes_*"],
     });
 
-    expect(existsSync(join(agentsDir, "claude-code", "contacts", "77.json"))).toBe(true);
+    expect(existsSync(join(agentsDir, "claude-code.dc", "contacts", "77.json"))).toBe(true);
     expect(existsSync(join(legacyPrincipalsDir, "humans", "77.json"))).toBe(false);
   });
 });

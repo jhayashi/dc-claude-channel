@@ -6,7 +6,9 @@ import * as access from "../access/index.js";
 
 const testRoot = mkdtempSync(join(tmpdir(), "dc-principals-test-"));
 const agentsDir = join(testRoot, "agents");
-const contactsDir = join(agentsDir, "claude-code", "contacts");
+// v1.4: per-agent contacts now live in the <name>.dc/ sidecar dir
+// alongside the agent's .md definition.
+const contactsDir = join(agentsDir, "claude-code.dc", "contacts");
 const approvedDir = join(testRoot, "approved");
 
 beforeEach(() => {
