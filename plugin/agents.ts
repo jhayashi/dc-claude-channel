@@ -23,6 +23,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import YAML from 'yaml'
 import { z } from 'zod'
+import { parseAgentMarkdown, serializeAgentMarkdown } from './agent-md.js'
 import * as bindings from './bindings.js'
 import * as models from './models.js'
 import {
@@ -248,27 +249,33 @@ export function migrateToolsToServers(agent: AgentDef): AgentDef {
   return agent
 }
 
-/** Get a single agent by id. Returns null if missing or invalid. */
-export function getAgent(id: string): AgentDef | null {
-  const path = agentPath(id)
+/** Get a single agent by name. Returns null if missing or invalid. */
+export function getAgent(name: string): AgentDef | null {
+  const path = agentPath(name)
   if (!existsSync(path)) return null
-  let raw: unknown
+  let parsed: { frontmatter: Record<string, unknown>; body: string }
   try {
-    raw = YAML.parse(readFileSync(path, 'utf-8'))
+    parsed = parseAgentMarkdown(readFileSync(path, 'utf-8'))
   } catch {
     return null
   }
-  const parsed = AgentDefSchema.safeParse(raw)
-  return parsed.success ? migrateToolsToServers(parsed.data) : null
+  const combined = { ...parsed.frontmatter, body: parsed.body }
+  const result = AgentDefSchema.safeParse(combined)
+  return result.success ? result.data : null
 }
 
 /** Save an agent definition. Atomic via temp + rename. */
 export function saveAgent(def: AgentDef): void {
   const validated = AgentDefSchema.parse(def)
-  mkdirSync(agentDir(validated.id), { recursive: true })
-  const finalPath = agentPath(validated.id)
+  mkdirSync(AGENTS_DIR, { recursive: true })
+  // Separate the body from the rest of the frontmatter — the body
+  // becomes the markdown after the closing `---`; everything else is
+  // YAML frontmatter.
+  const { body, ...frontmatter } = validated
+  const text = serializeAgentMarkdown(frontmatter as Record<string, unknown>, body)
+  const finalPath = agentPath(validated.name)
   const tmpPath = `${finalPath}.tmp.${process.pid}`
-  writeFileSync(tmpPath, YAML.stringify(validated))
+  writeFileSync(tmpPath, text)
   renameSync(tmpPath, finalPath)
 }
 

@@ -76,3 +76,63 @@ describe('AgentDef schema', () => {
     expect(() => agents.AgentDefSchema.parse(def)).not.toThrow()
   })
 })
+
+describe('saveAgent / getAgent round-trip', () => {
+  test('round-trips a full definition through .md', () => {
+    const def = makeDef({
+      name: 'round-trip',
+      description: 'a description',
+      tools: 'Read, Bash, mcp__dc',
+      permissionMode: 'bypassPermissions',
+      memory: 'user',
+      effort: 'high',
+      color: 'blue',
+      'x-dc-archetype': 'role',
+      'x-dc-icon': '👤',
+      'x-dc-pattern': 'quartered',
+      // body terminates with \n — serialize emits a trailing newline; parse
+      // preserves it verbatim, so round-trip equality requires the input to
+      // already have one.
+      body: 'You are a senior engineer.\n\nFollow conventions.\n',
+    })
+    agents.saveAgent(def)
+    expect(agents.getAgent('round-trip')).toEqual(def)
+  })
+
+  test('saved file is at <name>.md and contains frontmatter + body', () => {
+    const def = makeDef({ name: 'disk-agent', body: 'be quick' })
+    agents.saveAgent(def)
+    const contents = readFileSync(join(testDir, 'disk-agent.md'), 'utf-8')
+    expect(contents.startsWith('---\n')).toBe(true)
+    expect(contents).toContain('name: disk-agent')
+    expect(contents).toContain('model: claude-sonnet-4-6')
+    expect(contents).toContain('be quick')
+  })
+
+  test('getAgent returns null for missing name', () => {
+    expect(agents.getAgent('nonexistent')).toBeNull()
+  })
+
+  test('getAgent returns null for unparseable file', () => {
+    writeFileSync(join(testDir, 'broken.md'), '::: not: [valid frontmatter')
+    expect(agents.getAgent('broken')).toBeNull()
+  })
+
+  test('getAgent returns null for schema-invalid file', () => {
+    writeFileSync(
+      join(testDir, 'bad.md'),
+      '---\nname: bad\n---\nbody only, no model',
+    )
+    expect(agents.getAgent('bad')).toBeNull()
+  })
+
+  test('rejects invalid schema on save', () => {
+    expect(() =>
+      agents.saveAgent({ name: 'invalid' } as unknown as agents.AgentDef),
+    ).toThrow()
+  })
+
+  test('rejects name that is not a lowercase slug', () => {
+    expect(() => agents.saveAgent(makeDef({ name: 'Has Capitals' }))).toThrow()
+  })
+})
