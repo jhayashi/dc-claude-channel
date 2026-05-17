@@ -2314,6 +2314,22 @@ async function main(): Promise<void> {
     logf('dc channel: sidecar contact migration failed: %v', err)
   }
 
+  // v1.4 — lint the sidecar dirs for stray .md files. CC's recursive
+  // scan of ~/.claude/agents/ would pick them up as agents. The
+  // dispatcher only writes .json into <name>.dc/; any .md found
+  // represents a hand-edit or migration artifact.
+  try {
+    const stray = agents.lintSidecarDirs()
+    if (stray.length > 0) {
+      logf(
+        'dc channel: WARNING — %d stray .md file(s) in sidecar dirs (terminal CC may pick these up as agents): %s',
+        stray.length, stray.join(', '),
+      )
+    }
+  } catch (err) {
+    logf('dc channel: sidecar lint failed: %v', err)
+  }
+
   // v1.3 startup sequence — make principals + chat membership the
   // source of truth for the allowlist; retire legacy approved/ files.
   //

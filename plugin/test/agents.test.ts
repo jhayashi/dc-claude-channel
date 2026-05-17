@@ -259,3 +259,34 @@ describe('metadata accessors against top-level frontmatter', () => {
     expect(agents.getIconMirror(makeDef({ 'x-dc-icon-mirror': true }))).toBe(true)
   })
 })
+
+describe('lintSidecarDirs', () => {
+  test('returns empty list when no sidecar dirs exist', () => {
+    expect(agents.lintSidecarDirs()).toEqual([])
+  })
+
+  test('reports stray .md files inside <name>.dc/ subtrees', () => {
+    mkdirSync(join(testDir, 'foo.dc', 'contacts'), { recursive: true })
+    writeFileSync(join(testDir, 'foo.dc', 'contacts', 'stray.md'), '---\nname: stray\n---\n')
+    writeFileSync(join(testDir, 'foo.dc', 'top-level.md'), '---\nname: top\n---\n')
+    const stray = agents.lintSidecarDirs()
+    expect(stray).toHaveLength(2)
+    expect(stray.some(p => p.endsWith('stray.md'))).toBe(true)
+    expect(stray.some(p => p.endsWith('top-level.md'))).toBe(true)
+  })
+
+  test('ignores .json files inside sidecar dirs', () => {
+    mkdirSync(join(testDir, 'bar.dc', 'contacts'), { recursive: true })
+    writeFileSync(join(testDir, 'bar.dc', 'contacts', '1.json'), '{}')
+    expect(agents.lintSidecarDirs()).toEqual([])
+  })
+
+  test('only inspects subtrees with the .dc extension', () => {
+    // Plain agent .md file at top level should NOT be reported.
+    agents.saveAgent(makeDef({ name: 'real' }))
+    // A sibling directory not ending in .dc should be ignored entirely.
+    mkdirSync(join(testDir, 'other-stuff'), { recursive: true })
+    writeFileSync(join(testDir, 'other-stuff', 'thing.md'), '---\nname: x\n---\n')
+    expect(agents.lintSidecarDirs()).toEqual([])
+  })
+})

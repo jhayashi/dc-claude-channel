@@ -20,6 +20,7 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -174,6 +175,39 @@ export type DraftAgent = z.infer<typeof DraftAgentSchema>
  */
 function agentPath(name: string): string {
   return join(AGENTS_DIR, `${name}.md`)
+}
+
+/**
+ * Walk every `<name>.dc/` sidecar directory under AGENTS_DIR and report
+ * any `.md` files found inside. CC's recursive scan of ~/.claude/agents/
+ * would pick those up as agents — we want them ignored (and the
+ * operator notified). Returns the list of stray paths for logging.
+ *
+ * Dispatcher startup calls this and logs the result. The write path
+ * never produces stray .md (contacts.writeContact only emits .json), so
+ * any hits represent operator hand-edits or migration artifacts.
+ */
+export function lintSidecarDirs(): string[] {
+  if (!existsSync(AGENTS_DIR)) return []
+  const stray: string[] = []
+  for (const entry of readdirSync(AGENTS_DIR)) {
+    if (!entry.endsWith('.dc')) continue
+    const sidecar = join(AGENTS_DIR, entry)
+    walkForMarkdown(sidecar, stray)
+  }
+  return stray
+}
+
+function walkForMarkdown(dir: string, out: string[]): void {
+  let entries: string[]
+  try { entries = readdirSync(dir) } catch { return }
+  for (const e of entries) {
+    const p = join(dir, e)
+    let isDir = false
+    try { isDir = statSync(p).isDirectory() } catch { continue }
+    if (isDir) { walkForMarkdown(p, out); continue }
+    if (e.endsWith('.md')) out.push(p)
+  }
 }
 
 /**
