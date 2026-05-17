@@ -116,6 +116,16 @@ export const inheritClaudeMdForModel = models.inheritClaudeMdForModel
  * long-lived per-chat lifecycle. They're meaningful when the same file
  * is used from terminal CC.
  */
+/**
+ * `tools` / `disallowedTools` field schema. CC documents two on-disk
+ * forms (CSV string OR YAML list of strings); we accept both and
+ * normalise to a CSV string for the in-memory shape. saveAgent writes
+ * back as CSV. The required `tools` field defaults to `''` when absent;
+ * `disallowedTools` stays `undefined` when absent (no default).
+ */
+const ToolsField = z.union([z.string(), z.array(z.string())])
+  .transform(v => Array.isArray(v) ? v.join(', ') : v)
+
 export const AgentDefSchema = z.object({
   name: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'name must be a lowercase slug').max(64),
   description: z.string().max(2048).default(''),
@@ -123,8 +133,8 @@ export const AgentDefSchema = z.object({
     (v): v is string => models.isKnownModel(v),
     v => ({ message: `Unknown model "${v}". Allowed: ${ALLOWED_MODELS.join(', ')}` }),
   ),
-  tools: z.string().default(''),
-  disallowedTools: z.string().optional(),
+  tools: ToolsField.default(''),
+  disallowedTools: ToolsField.optional(),
   permissionMode: z.enum([
     'default', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions', 'plan',
   ]).optional(),
@@ -148,7 +158,7 @@ export const AgentDefSchema = z.object({
   'x-dc-display-name': z.string().max(256).optional(),
   // Markdown body — the agent's system prompt.
   body: z.string().max(100_000).default(''),
-})
+}).passthrough()  // Preserve forward-compat for CC fields we don't yet know about.
 
 export type AgentDef = z.infer<typeof AgentDefSchema>
 

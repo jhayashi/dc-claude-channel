@@ -75,6 +75,53 @@ describe('AgentDef schema', () => {
     })
     expect(() => agents.AgentDefSchema.parse(def)).not.toThrow()
   })
+
+  test('accepts tools as a YAML-list (string[]) and normalises to CSV', () => {
+    const parsed = agents.AgentDefSchema.parse({
+      name: 'list-form',
+      description: '',
+      model: 'claude-sonnet-4-6',
+      tools: ['Read', 'Bash', 'mcp__dc'],
+      body: 'x',
+    })
+    // After transform, tools is a CSV string.
+    expect(parsed.tools).toBe('Read, Bash, mcp__dc')
+  })
+
+  test('preserves unknown frontmatter keys (forward-compat with CC)', () => {
+    // CC may add fields we don't recognise yet; we must round-trip them
+    // through saveAgent without dropping.
+    const parsed = agents.AgentDefSchema.parse({
+      name: 'future',
+      description: '',
+      model: 'claude-sonnet-4-6',
+      tools: 'Read, mcp__dc',
+      body: 'x',
+      temperature: 0.7,            // hypothetical future CC field
+      futureFeature: { flag: true }, // arbitrary unknown shape
+    } as unknown as agents.AgentDef)
+    expect((parsed as Record<string, unknown>).temperature).toBe(0.7)
+    expect((parsed as Record<string, unknown>).futureFeature).toEqual({ flag: true })
+  })
+
+  test('saveAgent/getAgent round-trip preserves unknown frontmatter keys', () => {
+    // Round-trip through disk: define an agent with extra fields, save,
+    // reload, verify extras survive.
+    const def = {
+      name: 'with-extras',
+      description: '',
+      model: 'claude-sonnet-4-6',
+      tools: 'Read, mcp__dc',
+      body: 'hello\n',
+      temperature: 0.7,
+      futureFeature: { flag: true },
+    } as unknown as agents.AgentDef
+    agents.saveAgent(def)
+    const reloaded = agents.getAgent('with-extras') as Record<string, unknown> | null
+    expect(reloaded).not.toBeNull()
+    expect(reloaded!.temperature).toBe(0.7)
+    expect(reloaded!.futureFeature).toEqual({ flag: true })
+  })
 })
 
 describe('saveAgent / getAgent round-trip', () => {
