@@ -419,24 +419,23 @@ export const ARCHETYPE_DEFAULT_ICON: Record<Archetype, string> = {
 
 /** Read an agent's archetype. Defaults to 'role' when unset or invalid. */
 export function getArchetype(def: AgentDef): Archetype {
-  const raw = def.metadata?.[ARCHETYPE_META_KEY]
+  const raw = def[ARCHETYPE_META_KEY]
   return (ARCHETYPES as readonly string[]).includes(raw as string)
     ? (raw as Archetype)
     : 'role'
 }
 
 /**
- * Write the archetype to an agent's metadata bag in place. Setting the
- * default ('role') clears the key so exports stay minimal. Does not
- * persist — callers must follow with saveAgent.
+ * Write the archetype to an agent in place. Setting the default ('role')
+ * clears the key so exports stay minimal. Does not persist — callers
+ * must follow with saveAgent.
  */
 export function setArchetype(def: AgentDef, value: Archetype): void {
   if (value === 'role') {
-    if (def.metadata) delete def.metadata[ARCHETYPE_META_KEY]
+    delete def[ARCHETYPE_META_KEY]
     return
   }
-  if (!def.metadata) def.metadata = {}
-  def.metadata[ARCHETYPE_META_KEY] = value
+  def[ARCHETYPE_META_KEY] = value
 }
 
 /**
@@ -444,7 +443,7 @@ export function setArchetype(def: AgentDef, value: Archetype): void {
  * otherwise the default glyph for the archetype.
  */
 export function iconForAgent(def: AgentDef): string {
-  const explicit = def.metadata?.[ICON_META_KEY]
+  const explicit = def[ICON_META_KEY]
   if (typeof explicit === 'string' && explicit.length > 0) return explicit
   return ARCHETYPE_DEFAULT_ICON[getArchetype(def)]
 }
@@ -455,22 +454,21 @@ export function iconForAgent(def: AgentDef): string {
  * (vs. the rendered fallback).
  */
 export function getExplicitIcon(def: AgentDef): string | null {
-  const explicit = def.metadata?.[ICON_META_KEY]
+  const explicit = def[ICON_META_KEY]
   return typeof explicit === 'string' && explicit.length > 0 ? explicit : null
 }
 
 /**
- * Write an icon glyph to an agent's metadata bag. Passing null or an
- * empty string clears the explicit icon (reverts to archetype default).
+ * Write an icon glyph to an agent in place. Passing null or an empty
+ * string clears the explicit icon (reverts to archetype default).
  * Does not persist — callers must follow with saveAgent.
  */
 export function setIcon(def: AgentDef, value: string | null): void {
   if (!value) {
-    if (def.metadata) delete def.metadata[ICON_META_KEY]
+    delete def[ICON_META_KEY]
     return
   }
-  if (!def.metadata) def.metadata = {}
-  def.metadata[ICON_META_KEY] = value
+  def[ICON_META_KEY] = value
 }
 
 /** Metadata key for an agent's Lucide glyph name (e.g. "cog", "calendar"). */
@@ -482,22 +480,21 @@ export const GLYPH_META_KEY = 'x-dc-glyph'
  * palette — see glyphForAgent for the validated lookup.
  */
 export function getGlyph(def: AgentDef): string | null {
-  const v = def.metadata?.[GLYPH_META_KEY]
+  const v = def[GLYPH_META_KEY]
   return typeof v === 'string' && v.length > 0 ? v : null
 }
 
 /**
- * Write a Lucide glyph name to an agent's metadata bag. Passing null or
+ * Write a Lucide glyph name to an agent in place. Passing null or
  * an empty string clears the override (renderer falls back to archetype
  * default). Does not persist — caller must follow with saveAgent.
  */
 export function setGlyph(def: AgentDef, value: string | null): void {
   if (!value) {
-    if (def.metadata) delete def.metadata[GLYPH_META_KEY]
+    delete def[GLYPH_META_KEY]
     return
   }
-  if (!def.metadata) def.metadata = {}
-  def.metadata[GLYPH_META_KEY] = value
+  def[GLYPH_META_KEY] = value
 }
 
 /**
@@ -527,7 +524,7 @@ export const PATTERN_META_KEY = 'x-dc-pattern'
  * color regardless.
  */
 export function patternForAgent(def: AgentDef): PatternId {
-  const v = def.metadata?.[PATTERN_META_KEY]
+  const v = def[PATTERN_META_KEY]
   if (typeof v === 'string' && (PATTERN_IDS as readonly string[]).includes(v)) {
     return v as PatternId
   }
@@ -535,37 +532,30 @@ export function patternForAgent(def: AgentDef): PatternId {
 }
 
 /**
- * Write a background pattern into an agent's metadata bag in place.
- * Does not persist — callers must call saveAgent(def) afterwards.
- * Used by setSkipPermissions to roll a fresh random pattern when trust
+ * Write a background pattern into an agent in place. Does not persist
+ * — callers must call saveAgent(def) afterwards. Used by
+ * setSkipPermissions to roll a fresh random pattern when trust
  * transitions from off to on, so visually-similar same-tier agents
  * diverge each time they're trusted.
  */
 export function setPattern(def: AgentDef, pattern: PatternId): void {
-  if (!def.metadata) def.metadata = {}
-  def.metadata[PATTERN_META_KEY] = pattern
+  def[PATTERN_META_KEY] = pattern
 }
 
-/** Metadata key used to store the skipPermissions flag inside an agent's metadata bag. */
-export const SKIP_PERMISSIONS_META_KEY = 'x-dc-skipPermissions'
-
 /**
- * Read the skipPermissions flag from an agent definition. Defaults to
- * false when the metadata bag or key is absent. An agent with this
- * flag set has its subagent tool calls auto-approved by the dispatcher;
- * see plugin/dispatcher/permission-handler.ts for the short-circuit path.
+ * Read the skipPermissions flag from an agent definition. v1.4: this
+ * is `permissionMode === 'bypassPermissions'` (top-level CC field).
+ * Defaults to false when permissionMode is unset.
  */
 export function getSkipPermissions(def: AgentDef): boolean {
-  const meta = def.metadata
-  if (!meta) return false
-  return meta[SKIP_PERMISSIONS_META_KEY] === true
+  return def.permissionMode === 'bypassPermissions'
 }
 
 /**
- * Write the skipPermissions flag into an agent's metadata bag in place.
- * Setting false removes the key entirely so exported YAML stays minimal;
- * other metadata entries are preserved. Does not persist — callers must
- * call saveAgent(def) afterwards.
+ * Set the skip-permissions trust state on an agent in place by writing
+ * the top-level `permissionMode` field. Setting false deletes the key
+ * so exported frontmatter stays minimal. Does not persist — callers
+ * must follow with saveAgent.
  *
  * Side effect: when trust transitions from off → on, also rolls a fresh
  * random background pattern. Pattern is only visually meaningful while
@@ -576,17 +566,15 @@ export function getSkipPermissions(def: AgentDef): boolean {
 export function setSkipPermissions(def: AgentDef, value: boolean): void {
   const prev = getSkipPermissions(def)
   if (value) {
-    if (!def.metadata) def.metadata = {}
-    def.metadata[SKIP_PERMISSIONS_META_KEY] = true
+    def.permissionMode = 'bypassPermissions'
     if (!prev) setPattern(def, randomPatternId())
     return
   }
-  if (!def.metadata) return
-  delete def.metadata[SKIP_PERMISSIONS_META_KEY]
+  delete def.permissionMode
 }
 
-/** Metadata key for the icon mirror flag (true = facing-right variant). */
-export const ICON_MIRROR_META_KEY = 'x-dc-iconMirror'
+/** Frontmatter key for the icon mirror flag (true = facing-right variant). */
+export const ICON_MIRROR_META_KEY = 'x-dc-icon-mirror'
 
 /**
  * Read the icon mirror flag from an agent definition. Defaults to false
@@ -594,24 +582,20 @@ export const ICON_MIRROR_META_KEY = 'x-dc-iconMirror'
  * uses the horizontally-flipped variant so the agent's spy faces right.
  */
 export function getIconMirror(def: AgentDef): boolean {
-  const meta = def.metadata
-  if (!meta) return false
-  return meta[ICON_MIRROR_META_KEY] === true
+  return def[ICON_MIRROR_META_KEY] === true
 }
 
 /**
- * Write the icon mirror flag into an agent's metadata bag in place.
- * Setting false removes the key entirely so exported YAML stays minimal.
- * Does not persist — callers must call saveAgent(def) afterwards.
+ * Write the icon mirror flag to an agent in place. Setting false
+ * removes the key entirely so exported frontmatter stays minimal. Does
+ * not persist — callers must call saveAgent(def) afterwards.
  */
 export function setIconMirror(def: AgentDef, value: boolean): void {
   if (value) {
-    if (!def.metadata) def.metadata = {}
-    def.metadata[ICON_MIRROR_META_KEY] = true
+    def[ICON_MIRROR_META_KEY] = true
     return
   }
-  if (!def.metadata) return
-  delete def.metadata[ICON_MIRROR_META_KEY]
+  delete def[ICON_MIRROR_META_KEY]
 }
 
 /** Pure name → slug conversion — no collision check. */

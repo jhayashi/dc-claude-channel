@@ -211,3 +211,51 @@ describe('mcp__dc auto-injection', () => {
     expect(agents.getAgent('empty')?.tools).toBe('mcp__dc')
   })
 })
+
+describe('metadata accessors against top-level frontmatter', () => {
+  test('getSkipPermissions reads permissionMode === bypassPermissions', () => {
+    const def = makeDef({ permissionMode: 'bypassPermissions' })
+    expect(agents.getSkipPermissions(def)).toBe(true)
+    const def2 = makeDef({ permissionMode: 'default' })
+    expect(agents.getSkipPermissions(def2)).toBe(false)
+    expect(agents.getSkipPermissions(makeDef())).toBe(false)
+  })
+
+  test('setSkipPermissions(true) writes permissionMode: bypassPermissions and rolls pattern', () => {
+    const def = makeDef()
+    agents.setSkipPermissions(def, true)
+    expect(def.permissionMode).toBe('bypassPermissions')
+    expect(def['x-dc-pattern']).toBeDefined()
+  })
+
+  test('setSkipPermissions(false) deletes the permissionMode field', () => {
+    const def = makeDef({ permissionMode: 'bypassPermissions', 'x-dc-pattern': 'quartered' })
+    agents.setSkipPermissions(def, false)
+    expect(def.permissionMode).toBeUndefined()
+    // Pattern is preserved — only trust toggles affect it.
+    expect(def['x-dc-pattern']).toBe('quartered')
+  })
+
+  test('getArchetype reads top-level x-dc-archetype with role fallback', () => {
+    expect(agents.getArchetype(makeDef())).toBe('role')
+    expect(agents.getArchetype(makeDef({ 'x-dc-archetype': 'utility' }))).toBe('utility')
+  })
+
+  test('setArchetype writes top-level field; setting role clears the key', () => {
+    const def = makeDef({ 'x-dc-archetype': 'utility' })
+    agents.setArchetype(def, 'role')
+    expect(def['x-dc-archetype']).toBeUndefined()
+    agents.setArchetype(def, 'project')
+    expect(def['x-dc-archetype']).toBe('project')
+  })
+
+  test('iconForAgent returns explicit x-dc-icon or archetype default', () => {
+    expect(agents.iconForAgent(makeDef({ 'x-dc-icon': '🛠️' }))).toBe('🛠️')
+    expect(agents.iconForAgent(makeDef({ 'x-dc-archetype': 'utility' }))).toBe('⚙️')
+  })
+
+  test('getIconMirror reads top-level x-dc-icon-mirror', () => {
+    expect(agents.getIconMirror(makeDef())).toBe(false)
+    expect(agents.getIconMirror(makeDef({ 'x-dc-icon-mirror': true }))).toBe(true)
+  })
+})
