@@ -1,12 +1,16 @@
 /**
- * Agent definition registry — portable agent definitions stored as YAML
- * files that match the Claude Managed Agents schema, with x-dc-*
- * extensions for fields specific to this plugin.
+ * Agent definition registry — portable agent definitions stored as
+ * Claude Code's `~/.claude/agents/<name>.md` format: YAML frontmatter +
+ * markdown body. The body is the agent's system prompt. DC-specific
+ * fields use the `x-dc-` frontmatter prefix (CC ignores unknown keys).
  *
- * State stored in ~/.claude/channels/deltachat/agents/<agentId>.yaml.
- * Each agent has a slug-based id (filename) used as its reference key
- * from bindings. Agents are reusable — multiple chat bindings may point
- * to the same agent definition (Option D of the 2026-04-09 spec).
+ * Each agent's `name` is the canonical identifier (also the filename
+ * stem). Bindings reference agents by name. Agents are reusable —
+ * multiple chat bindings may point to the same agent definition.
+ *
+ * DC-private per-agent state (contacts, chatmail, …) lives in a
+ * sibling directory `~/.claude/agents/<name>.dc/` — owned by
+ * `access/contacts.ts`, opaque to this module.
  */
 
 import {
@@ -16,15 +20,13 @@ import {
   readdirSync,
   renameSync,
   rmSync,
-  statSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import YAML from 'yaml'
 import { z } from 'zod'
 import { parseAgentMarkdown, serializeAgentMarkdown } from './agent-md.js'
-import * as bindings from './bindings.js'
 import * as models from './models.js'
 import {
   ARCHETYPE_PALETTES,
@@ -175,47 +177,6 @@ function agentPath(name: string): string {
 }
 
 /**
- * Migrate legacy `agents/<id>.yaml` files to `agents/<id>/definition.yaml`.
- * Runs at dispatcher startup. Idempotent: skips ids whose directory shape
- * already exists. Safe across partial failure — never destructive, the
- * legacy file is `renameSync`d into the new location.
- *
- * Returns the number of agents migrated.
- */
-export function migrateLegacyAgentYaml(): number {
-  if (!existsSync(AGENTS_DIR)) return 0
-  let migrated = 0
-  let entries: string[]
-  try {
-    entries = readdirSync(AGENTS_DIR)
-  } catch {
-    return 0
-  }
-  for (const entry of entries) {
-    if (!entry.endsWith('.yaml')) continue
-    const id = entry.slice(0, -'.yaml'.length)
-    const oldPath = join(AGENTS_DIR, entry)
-    const newDir = agentDir(id)
-    const newPath = agentPath(id)
-    if (existsSync(newPath)) {
-      // Directory shape already exists; leave the legacy file alone for
-      // operator inspection. Don't delete — that would be destructive on
-      // an unexpected state.
-      console.error(`agents: legacy ${entry} coexists with ${id}/definition.yaml; leaving in place`)
-      continue
-    }
-    try {
-      mkdirSync(newDir, { recursive: true })
-      renameSync(oldPath, newPath)
-      migrated++
-    } catch (err) {
-      console.error(`agents: migrate ${entry} → ${id}/definition.yaml failed:`, err)
-    }
-  }
-  return migrated
-}
-
-/**
  * List all agent definitions on disk, sorted by name. Invalid files
  * skipped. Auto-seeds the built-in default agent (DEFAULT_AGENT_ID) if
  * it's missing, so the agent list is never empty.
@@ -234,18 +195,6 @@ export function listAgents(): AgentDef[] {
     if (agent) out.push(agent)
   }
   return out.sort((a, b) => a.name.localeCompare(b.name))
-}
-
-/**
- * Migrate legacy allowedMcpTools (per-tool names) to allowedMcpServers
- * (per-server prefixes). All DC tools map to the 'dc' server prefix.
- */
-export function migrateToolsToServers(agent: AgentDef): AgentDef {
-  if (agent.allowedMcpTools != null && agent.allowedMcpServers === undefined) {
-    agent.allowedMcpServers = agent.allowedMcpTools.length > 0 ? ['dc'] : []
-    agent.allowedMcpTools = undefined
-  }
-  return agent
 }
 
 /** Get a single agent by name. Returns null if missing or invalid. */
@@ -298,31 +247,40 @@ export function saveAgent(def: AgentDef): void {
 /**
  * Delete an agent. Returns true if anything was removed.
  *
- * Removes the entire `agents/<id>/` directory — that's where v1.4's
- * per-agent contacts/, memory/, and chatmail/ subdirs will live, so
- * deleting an agent removes ALL its associated state in one shot. v1.3
- * has only `definition.yaml` underneath today; the recursive remove is
- * still the right semantic.
+ * Removes the agent definition (`<name>.md`) AND the DC-private sidecar
+ * directory (`<name>.dc/`, containing contacts/ and chatmail/). The
+ * sidecar is owned by contacts.ts but lives here in the agents dir; we
+ * clean it up so deleting an agent removes ALL its DC-side state in one
+ * shot. CC-owned memory at `~/.claude/agent-memory/<name>/` is NOT
+ * deleted — preserved across re-creation.
  *
- * Throws if `id` is the built-in undeletable default agent — that
+ * Throws if `name` is the built-in undeletable default agent — that
  * definition is always resurrected by listAgents / ensureDefaultAgent
  * so a delete would be meaningless anyway.
  */
-export function deleteAgent(id: string): boolean {
-  if (isUndeletableAgent(id)) {
-    throw new Error(`cannot delete built-in default agent: ${id}`)
+export function deleteAgent(name: string): boolean {
+  if (isUndeletableAgent(name)) {
+    throw new Error(`cannot delete built-in default agent: ${name}`)
   }
-  const dir = agentDir(id)
-  if (!existsSync(dir)) return false
-  rmSync(dir, { recursive: true, force: true })
-  return true
+  const file = agentPath(name)
+  const sidecar = join(AGENTS_DIR, `${name}.dc`)
+  let removed = false
+  if (existsSync(file)) {
+    unlinkSync(file)
+    removed = true
+  }
+  if (existsSync(sidecar)) {
+    rmSync(sidecar, { recursive: true, force: true })
+    removed = true
+  }
+  return removed
 }
 
-/** Update just the system prompt on an agent. Returns false if missing. */
-export function updateAgentPrompt(id: string, system: string): boolean {
-  const agent = getAgent(id)
+/** Update just the markdown body (system prompt) on an agent. Returns false if missing. */
+export function updateAgentPrompt(name: string, body: string): boolean {
+  const agent = getAgent(name)
   if (!agent) return false
-  agent.system = system
+  agent.body = body
   saveAgent(agent)
   return true
 }
@@ -331,11 +289,11 @@ export function updateAgentPrompt(id: string, system: string): boolean {
  * Update just the model on an agent. Returns false if missing.
  * Throws on invalid model.
  */
-export function updateAgentModel(id: string, model: AllowedModel): boolean {
+export function updateAgentModel(name: string, model: AllowedModel): boolean {
   if (!ALLOWED_MODELS.includes(model)) {
     throw new Error(`invalid model: ${model}`)
   }
-  const agent = getAgent(id)
+  const agent = getAgent(name)
   if (!agent) return false
   agent.model = model
   saveAgent(agent)
@@ -631,58 +589,67 @@ export function synthesizeAgentName(displayName: string): string {
 export const synthesizeAgentId = synthesizeAgentName
 
 /**
- * Result of importing an agent from YAML.
+ * Result of importing an agent from a markdown file.
  */
 export interface ImportResult {
   agent: AgentDef
-  idChanged: boolean
+  /** True if the imported agent's name was suffixed to resolve a collision. */
+  nameChanged: boolean
 }
 
 /**
- * Parse a YAML string as an agent definition, resolve ID collisions,
- * and persist. Throws on parse/validation failure.
+ * Parse a markdown file (CC frontmatter + body) as an agent definition,
+ * resolve name collisions, and persist. Throws on parse/validation
+ * failure.
  *
- * If the YAML has no `id` field, one is synthesized from `name`.
- * If the id (provided or synthesized) collides with an existing agent,
- * a `-2`, `-3`, etc. suffix is appended and `idChanged` is set.
+ * If frontmatter has no `name` field, one is synthesized from
+ * `x-dc-display-name` (if set) or `description` (fallback). Collisions
+ * append `-2`, `-3`, etc. and set `nameChanged: true`.
  */
-export function importAgentFromYaml(yamlStr: string): ImportResult {
-  const raw = YAML.parse(yamlStr)
-  if (!raw || typeof raw !== 'object') {
-    throw new Error('YAML did not produce an object')
+export function importAgentFromMarkdown(text: string): ImportResult {
+  const { frontmatter, body } = parseAgentMarkdown(text)
+  const hasExplicitName =
+    typeof frontmatter.name === 'string' && (frontmatter.name as string).length > 0
+
+  if (!hasExplicitName) {
+    const fallbackSource =
+      (typeof frontmatter['x-dc-display-name'] === 'string'
+        ? (frontmatter['x-dc-display-name'] as string)
+        : '') ||
+      (typeof frontmatter.description === 'string'
+        ? (frontmatter.description as string)
+        : '') ||
+      'agent'
+    frontmatter.name = synthesizeAgentName(fallbackSource)
   }
 
-  const hasExplicitId = typeof raw.id === 'string' && raw.id.length > 0
+  const combined = { ...frontmatter, body }
+  const validated = AgentDefSchema.parse(combined)
 
-  if (!hasExplicitId) {
-    // Validate without id to catch missing name early, then synthesize.
-    AgentDefSchema.omit({ id: true }).parse(raw)
-    raw.id = synthesizeAgentId(raw.name)
-  }
-
-  // Validate the full schema now that id is present.
-  const validated = AgentDefSchema.parse(raw)
-
-  let finalId = validated.id
-  let idChanged = false
-
-  if (hasExplicitId && getAgent(finalId)) {
-    // Explicit id collides — suffix it directly.
-    const base = finalId
+  let finalName = validated.name
+  let nameChanged = false
+  if (hasExplicitName && getAgent(finalName)) {
+    const base = finalName
     let n = 2
     while (getAgent(`${base}-${n}`)) n++
-    finalId = `${base}-${n}`
-    idChanged = true
-  } else if (!hasExplicitId) {
-    // synthesizeAgentId already resolved collisions — detect whether
-    // it suffixed by comparing with the bare slug.
-    const bareSlug = slugifyName(validated.name)
-    if (finalId !== bareSlug) idChanged = true
+    finalName = `${base}-${n}`
+    nameChanged = true
+  } else if (!hasExplicitName) {
+    // synthesizeAgentName already resolved collisions — detect suffix.
+    const fallback =
+      (typeof frontmatter['x-dc-display-name'] === 'string'
+        ? (frontmatter['x-dc-display-name'] as string)
+        : '') ||
+      (typeof frontmatter.description === 'string'
+        ? (frontmatter.description as string)
+        : '') ||
+      'agent'
+    if (finalName !== slugifyName(fallback)) nameChanged = true
   }
 
-  const agent: AgentDef = { ...validated, id: finalId }
+  const agent: AgentDef = { ...validated, name: finalName }
   saveAgent(agent)
-  return { agent, idChanged }
+  return { agent, nameChanged }
 }
 
 /**
@@ -725,10 +692,12 @@ export function draftAgentFromDescription(
 
   return {
     agent: {
-      name,
+      description: name,
       model: effectiveModel,
-      system,
-      tools: [],
+      tools: 'mcp__dc',
+      body: system,
+      memory: 'user',
+      'x-dc-display-name': name,
     },
     inheritClaudeMd: inheritClaudeMdForModel(effectiveModel),
   }
