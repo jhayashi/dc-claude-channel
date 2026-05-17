@@ -24,6 +24,7 @@ import { DCClient } from './dc-client.js'
 import * as access from './access/index.js'
 import { applyCapabilityGate, withRequestorParam } from './access/gate.js'
 import * as agents from './agents.js'
+import * as migrateAgentsV14 from './migrate-agents-v14.js'
 import * as bindings from './bindings.js'
 import * as familiarRuntime from './familiar-runtime.js'
 import { apps } from './apps.js'
@@ -2267,15 +2268,23 @@ async function main(): Promise<void> {
 
   await mcp.connect(new StdioServerTransport())
 
-  // v1.3 slice 7 phase 1 — convert legacy `agents/<id>.yaml` files into
-  // `agents/<id>/definition.yaml` so each agent has a directory of its
-  // own (forward-compat for v1.4's per-agent contacts/, memory/, and
-  // chatmail/ subdirs). Idempotent; no-op for already-migrated installs.
+  // v1.4 — migrate v1.3 per-agent dirs to the CC-native single-file
+  // format at ~/.claude/agents/<name>.md. After this run, the legacy
+  // ~/.claude/channels/deltachat/agents/ directory is renamed to
+  // agents.legacy/ and the new path is canonical. Idempotent.
   try {
-    const migrated = agents.migrateLegacyAgentYaml()
-    if (migrated > 0) logf('dc channel: migrated %d agent YAML file(s) to per-agent directory layout', migrated)
+    const result = migrateAgentsV14.migrateLegacyDefinitionYaml()
+    if (result.migrated > 0) {
+      logf('dc channel: migrated %d agent(s) to ~/.claude/agents/<name>.md', result.migrated)
+    }
+    if (result.collisions.length > 0) {
+      logf(
+        'dc channel: %d agent(s) collided with existing CC files; wrote as <name>-dc.md: %s',
+        result.collisions.length, result.collisions.join(', '),
+      )
+    }
   } catch (err) {
-    logf('dc channel: agent layout migration failed: %v', err)
+    logf('dc channel: v1.4 agent migration failed: %v', err)
   }
 
   // v1.3 slice 7 phase 3 — copy any contact records still at the legacy
