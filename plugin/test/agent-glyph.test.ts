@@ -15,12 +15,11 @@ beforeAll(() => agents.setAgentsDir(testDir))
 
 function makeDef(overrides: Partial<agents.AgentDef> = {}): agents.AgentDef {
   return {
-    id: 'glyph-test',
-    name: 'Glyph Test',
-    model: 'claude-sonnet-4-6',
+    name: 'glyph-test',
     description: '',
-    system: 'you are helpful',
-    tools: [],
+    model: 'claude-sonnet-4-6',
+    tools: 'mcp__dc',
+    body: 'you are helpful\n',
     ...overrides,
   }
 }
@@ -65,15 +64,15 @@ describe('glyph helpers', () => {
   test('setGlyph writes, setGlyph(null) clears', () => {
     const def = makeDef()
     agents.setGlyph(def, 'calendar')
-    expect(def.metadata!['x-dc-glyph']).toBe('calendar')
+    expect(def['x-dc-glyph']).toBe('calendar')
     agents.setGlyph(def, null)
-    expect(def.metadata!['x-dc-glyph']).toBeUndefined()
+    expect(def['x-dc-glyph']).toBeUndefined()
   })
 
   test('setGlyph(empty string) clears', () => {
-    const def = makeDef({ metadata: { 'x-dc-glyph': 'cog' } })
+    const def = makeDef({ 'x-dc-glyph': 'cog' })
     agents.setGlyph(def, '')
-    expect(def.metadata!['x-dc-glyph']).toBeUndefined()
+    expect(def['x-dc-glyph']).toBeUndefined()
   })
 
   test('glyphForAgent falls back to archetype default when unset', () => {
@@ -105,7 +104,7 @@ describe('glyph helpers', () => {
   })
 
   test('glyph round-trips through YAML', () => {
-    const def = makeDef({ id: 'glyph-yaml' })
+    const def = makeDef({ name: 'glyph-yaml' })
     agents.setArchetype(def, 'project')
     agents.setGlyph(def, 'route')
     agents.saveAgent(def)

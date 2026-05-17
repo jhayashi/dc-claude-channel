@@ -50,14 +50,15 @@ afterAll(() => {
   rmSync(approvedDir, { recursive: true, force: true })
 })
 
-function makeAgent(id: string, overrides: Partial<agents.AgentDef> = {}): agents.AgentDef {
+function makeAgent(name: string, overrides: Partial<agents.AgentDef> = {}): agents.AgentDef {
   return {
-    id,
-    name: `Test ${id}`,
-    model: 'claude-sonnet-4-6',
+    name,
     description: '',
-    system: 'system prompt',
-    tools: [],
+    model: 'claude-sonnet-4-6',
+    tools: 'mcp__dc',
+    // Trailing newline — serializeAgentMarkdown emits one; parse preserves
+    // it verbatim. Round-trip equality requires the input to have one.
+    body: 'system prompt\n',
     ...overrides,
   }
 }
@@ -135,7 +136,7 @@ describe('resolveChat', () => {
   })
 
   test('joins binding and agent when both exist', () => {
-    const agent = makeAgent('marketing', { name: 'Marketing Agent' })
+    const agent = makeAgent('marketing', { 'x-dc-display-name': 'Marketing Agent' })
     agents.saveAgent(agent)
     bindings.saveBinding({
       chatId: 42,

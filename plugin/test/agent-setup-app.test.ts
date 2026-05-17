@@ -191,12 +191,12 @@ describe('createReuseChat', () => {
 
   function seedAgent(): agents.AgentDef {
     const def: agents.AgentDef = {
-      id: 'reuse-test-agent',
-      name: 'Reuse Test Agent',
+      name: 'reuse-test-agent',
+      'x-dc-display-name': 'Reuse Test Agent',
       model: 'claude-sonnet-4-6',
       description: '',
-      system: 'you are helpful',
-      tools: [],
+      body: 'you are helpful',
+      tools: 'mcp__dc',
     }
     agents.saveAgent(def)
     return def
@@ -219,7 +219,7 @@ describe('createReuseChat', () => {
     expect(returnedChatId).toBe(500)
     const binding = bindings.getBinding(500)
     expect(binding).not.toBeNull()
-    expect(binding!.agentId).toBe(agent.id)
+    expect(binding!.agentId).toBe(agent.name)
   })
 
   test('approves the new chat for the owner', async () => {
@@ -247,7 +247,7 @@ describe('createReuseChat', () => {
     // does end-to-end.
     expect(agents.getAgent(agents.DEFAULT_AGENT_ID)).toBeNull()
     const defaultAgent = agents.ensureDefaultAgent()
-    expect(defaultAgent.id).toBe(agents.DEFAULT_AGENT_ID)
+    expect(defaultAgent.name).toBe(agents.DEFAULT_AGENT_ID)
     const { ctx } = makeStubCtx(600)
     const newChatId = await createReuseChat(ctx, defaultAgent, 11)
     expect(newChatId).toBe(600)
@@ -263,11 +263,11 @@ describe('createReuseChat', () => {
     // Note: deleteAgent throws on undeletable; this is just a paranoia
     // path. In practice ensureDefaultAgent re-seeds from a missing-file
     // state.
-    // Force-remove the agent's directory manually.
-    rmSync(join(agentsDir, agents.DEFAULT_AGENT_ID), { recursive: true, force: true })
+    // Force-remove the agent's .md file manually (v1.4 layout).
+    rmSync(join(agentsDir, `${agents.DEFAULT_AGENT_ID}.md`), { force: true })
     expect(agents.getAgent(agents.DEFAULT_AGENT_ID)).toBeNull()
     const reseeded = agents.ensureDefaultAgent()
-    expect(reseeded.id).toBe(agents.DEFAULT_AGENT_ID)
+    expect(reseeded.name).toBe(agents.DEFAULT_AGENT_ID)
     expect(agents.getAgent(agents.DEFAULT_AGENT_ID)).not.toBeNull()
   })
 })

@@ -23,14 +23,13 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-function saveTrustedAgent(id: string): void {
+function saveTrustedAgent(name: string): void {
   const def: agents.AgentDef = {
-    id,
-    name: `${id} agent`,
-    model: 'claude-sonnet-4-6',
+    name,
     description: '',
-    system: '',
-    tools: [],
+    model: 'claude-sonnet-4-6',
+    tools: 'mcp__dc',
+    body: '',
   }
   agents.setSkipPermissions(def, true)
   agents.saveAgent(def)
@@ -92,12 +91,11 @@ describe('tryAutoApprove', () => {
 
   test('returns null and writes nothing for a chat bound to a non-skip agent', () => {
     const def: agents.AgentDef = {
-      id: 'careful',
-      name: 'Careful',
-      model: 'claude-sonnet-4-6',
+      name: 'careful',
       description: '',
-      system: '',
-      tools: [],
+      model: 'claude-sonnet-4-6',
+      tools: 'mcp__dc',
+      body: '',
     }
     agents.saveAgent(def)
     bindChat(7, 'careful')

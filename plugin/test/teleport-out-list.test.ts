@@ -37,9 +37,13 @@ describe('buildTeleportOutList', () => {
 
   test('includes paired chats with metadata', () => {
     agents.saveAgent({
-      id: 'marketer', name: 'Marketer', model: 'claude-sonnet-4-6',
-      description: '', system: '', tools: [],
-    } as agents.AgentDef)
+      name: 'marketer',
+      'x-dc-display-name': 'Marketer',
+      model: 'claude-sonnet-4-6',
+      description: '',
+      tools: 'mcp__dc',
+      body: '',
+    })
     bindings.saveBinding({
       chatId: 7, agentId: 'marketer', sessionId: 'sess-1',
       workingDir: '/tmp/proj', createdAt: '2026-04-01T00:00:00Z',
@@ -62,15 +66,18 @@ describe('buildTeleportOutList', () => {
   })
 
   test('marks trusted agents', () => {
-    const a: agents.AgentDef = {
-      id: 'trusted', name: 'Trusted', model: 'claude-sonnet-4-6',
-      description: '', system: '', tools: [],
-      metadata: { 'x-dc-skipPermissions': true },
-    } as agents.AgentDef
-    agents.saveAgent(a)
+    agents.saveAgent({
+      name: 'trusted',
+      'x-dc-display-name': 'Trusted',
+      model: 'claude-sonnet-4-6',
+      description: '',
+      tools: 'mcp__dc',
+      body: '',
+      permissionMode: 'bypassPermissions',
+    })
     bindings.saveBinding({ chatId: 8, agentId: 'trusted', createdAt: '2026-04-01T00:00:00Z' })
     access.addChat(8, 99)
     const list = buildTeleportOutList(stubCtx())
-    expect(list[0].isTrusted).toBe(true)
+    expect(list[0]!.isTrusted).toBe(true)
   })
 })

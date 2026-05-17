@@ -203,25 +203,25 @@ describe('agent-creation E2E (wall → coach → graduation)', () => {
     // the slug rule fails this test loudly.)
     expect(binding!.agentId).toBe('sleep-coach-2-more')
 
-    const agent = agents.getAgent(binding!.agentId)
+    const agent = agents.getAgent(binding!.agentId!)
     expect(agent).not.toBeNull()
-    const paragraphs = agent!.system.split(/\n\s*\n/).filter(p => p.trim())
+    const paragraphs = agent!.body.split(/\n\s*\n/).filter(p => p.trim())
     expect(paragraphs.length).toBe(5)              // 5-paragraph structure
-    expect(agent!.system).toContain('Sleep coach') // lead leaf named
-    expect(agent!.system).toContain('Stress-management coach')
-    expect(agent!.system).toContain('Mindfulness & meditation guide')
+    expect(agent!.body).toContain('Sleep coach') // lead leaf named
+    expect(agent!.body).toContain('Stress-management coach')
+    expect(agent!.body).toContain('Mindfulness & meditation guide')
     // Both `medical` (sleep-coach) and `mental-health` (stress-management-coach)
     // liability frames open with "not a licensed clinician" — assertion
     // covers either / both.
-    expect(agent!.system.toLowerCase()).toContain('not a licensed clinician')
+    expect(agent!.body.toLowerCase()).toContain('not a licensed clinician')
 
-    // Metadata — coach answers + leaves persisted for downstream tools.
-    expect(agent!.metadata?.['x-dc-leaves']).toEqual([
+    // x-dc-* frontmatter — coach answers + leaves persisted for downstream tools.
+    expect((agent as Record<string, unknown>)['x-dc-leaves']).toEqual([
       'sleep-coach',
       'stress-management-coach',
       'mindfulness-meditation-guide',
     ])
-    expect(agent!.metadata?.['x-dc-coach-answers']).toBeDefined()
+    expect((agent as Record<string, unknown>)['x-dc-coach-answers']).toBeDefined()
 
     // ---- assertion 2: lifecycle event captured -------------------------
 

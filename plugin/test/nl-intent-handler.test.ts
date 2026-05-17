@@ -74,14 +74,13 @@ function makeSpy(opts: {
   return { sendCalls, evictCalls, refreshCalls, refineCalls, logCalls, deps }
 }
 
-function seedAgent(id: string, model = 'claude-sonnet-4-6'): void {
+function seedAgent(name: string, model = 'claude-sonnet-4-6'): void {
   agents.saveAgent({
-    id,
-    name: id,
-    model,
+    name,
     description: '',
-    system: 'you are helpful',
-    tools: [],
+    model,
+    tools: 'mcp__dc',
+    body: 'you are helpful\n',
   })
 }
 
