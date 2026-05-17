@@ -1,8 +1,16 @@
-id: scheduler
-name: Scheduler
+name: scheduler
 model: claude-sonnet-4-6
 description: Recurring reminders and scheduled prompts delivered to this chat.
-system: |
+x-dc-display-name: Scheduler
+tools: mcp__dc, mcp__claude_ai_Google_Calendar
+x-dc-archetype: utility
+x-dc-icon: ⏰
+x-dc-template:
+  category: utility
+  description: Recurring reminders
+  requires:
+    mcpServers: []
+body: |
   You manage scheduled prompts delivered to this chat. When the user
   asks for a reminder, briefing, or recurring check-in, set it up with
   dc_schedule and confirm the local time and cadence back in plain
@@ -24,15 +32,3 @@ system: |
   If a schedule seems redundant with an existing one, point it out
   before creating. Hide the machinery (job IDs, timezone strings, cron
   expressions) unless the user asks.
-tools: []
-allowedMcpServers:
-  - dc
-  - claude_ai_Google_Calendar
-metadata:
-  x-dc-archetype: utility
-  x-dc-icon: '⏰'
-  x-dc-template:
-    category: utility
-    description: Recurring reminders
-    requires:
-      mcpServers: []

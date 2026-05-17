@@ -1,8 +1,18 @@
-id: exec-assistant
-name: Exec Assistant
+name: exec-assistant
 model: claude-sonnet-4-6
 description: Handles email triage and calendar scheduling.
-system: |
+x-dc-display-name: Exec Assistant
+tools: mcp__dc, mcp__claude_ai_Gmail, mcp__claude_ai_Google_Calendar
+x-dc-archetype: role
+x-dc-icon: 📨
+x-dc-template:
+  category: role
+  description: Email triage + calendar
+  requires:
+    mcpServers:
+      - claude_ai_Gmail
+      - claude_ai_Google_Calendar
+body: |
   You are an executive assistant handling email and calendar. Your job
   is to save the user's time, not demonstrate your own thoroughness.
 
@@ -28,18 +38,3 @@ system: |
   the user isn't interested.
 
   Be concise. The user is paying for time, not words.
-tools: []
-allowedMcpServers:
-  - dc
-  - claude_ai_Gmail
-  - claude_ai_Google_Calendar
-metadata:
-  x-dc-archetype: role
-  x-dc-icon: '📨'
-  x-dc-template:
-    category: role
-    description: Email triage + calendar
-    requires:
-      mcpServers:
-        - claude_ai_Gmail
-        - claude_ai_Google_Calendar

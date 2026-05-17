@@ -1,13 +1,15 @@
 /**
- * Agent template library — pre-filled `AgentDef` starting points with an
- * `x-dc-template` metadata block describing the template itself
- * (category, user-facing description, required MCP servers).
+ * Agent template library — pre-filled `AgentDef` starting points carrying
+ * an `x-dc-template` top-level frontmatter block describing the template
+ * itself (category, user-facing description, required MCP servers).
  *
- * Templates ship as YAML files in `plugin/templates/*.yaml`. The loader
- * reads them once at startup and exposes a read-only `Template` view for
- * the agent-setup WebXDC picker. `instantiate()` produces a fresh
- * `DraftAgent` (id-less) with the template metadata stripped so it won't
- * leak into user-created agents.
+ * Templates ship as YAML files in `plugin/templates/*.yaml` in v1.4 layout:
+ * the same shape as an agent .md frontmatter, just stored as one YAML
+ * document with the `body` field carrying the system prompt. The loader
+ * exposes a read-only `Template` view for the agent-setup WebXDC picker.
+ * `instantiate()` produces a fresh `DraftAgent` (name-less) with the
+ * template-only `x-dc-template` block stripped so it doesn't leak into
+ * user-created agents.
  */
 
 import { readFileSync, readdirSync } from 'node:fs'
@@ -24,7 +26,7 @@ import {
 import { ARCHETYPE_PALETTES, ARCHETYPE_DEFAULT_GLYPH } from './agent-icons/palettes.js'
 
 /**
- * The `x-dc-template` metadata block embedded in a template YAML file.
+ * The `x-dc-template` frontmatter block embedded in a template YAML.
  * Describes how the template appears in the picker UI and what external
  * dependencies it expects.
  */
@@ -47,22 +49,19 @@ export const TemplateMetaSchema = z.object({
 export type TemplateMeta = z.infer<typeof TemplateMetaSchema>
 
 /**
- * Schema for a template YAML file: a full `AgentDef` plus a non-optional
- * `x-dc-template` block living inside `metadata`.
+ * Schema for a template YAML file: a full `AgentDef` plus a required
+ * top-level `x-dc-template` field.
  */
 const TemplateFileSchema = AgentDefSchema.extend({
-  metadata: z
-    .record(z.string(), z.unknown())
-    .refine(
-      m => m['x-dc-template'] != null,
-      { message: "template YAML must contain metadata['x-dc-template']" },
-    ),
+  'x-dc-template': z.unknown().refine(v => v != null, {
+    message: 'template YAML must contain x-dc-template',
+  }),
 })
 
 /** View returned from `listTemplates` — normalized for the WebXDC picker. */
 export interface Template {
-  id: string
   name: string
+  displayName: string
   archetype: Archetype
   icon: string
   glyph: string
@@ -97,15 +96,14 @@ function readTemplate(path: string): { raw: z.infer<typeof TemplateFileSchema>; 
   }
   const parsed = TemplateFileSchema.safeParse(raw)
   if (!parsed.success) return null
-  const metaRaw = parsed.data.metadata!['x-dc-template']
-  const meta = TemplateMetaSchema.safeParse(metaRaw)
+  const meta = TemplateMetaSchema.safeParse(parsed.data['x-dc-template'])
   if (!meta.success) return null
   return { raw: parsed.data, meta: meta.data }
 }
 
 /**
  * List all templates shipped in `plugin/templates/`. Sorted alphabetically
- * by template id so section ordering in the UI is stable.
+ * by template name so section ordering in the UI is stable.
  */
 export function listTemplates(): Template[] {
   let entries: string[] = []
@@ -119,31 +117,35 @@ export function listTemplates(): Template[] {
     if (!entry.endsWith('.yaml')) continue
     const t = readTemplate(join(TEMPLATES_DIR, entry))
     if (!t) continue
-    const meta = t.raw.metadata ?? {}
-    const archetype = (ARCHETYPES as readonly string[]).includes(meta['x-dc-archetype'] as string)
-      ? (meta['x-dc-archetype'] as Archetype)
+    const raw = t.raw
+    const archetype = (ARCHETYPES as readonly string[]).includes(raw['x-dc-archetype'] as string)
+      ? (raw['x-dc-archetype'] as Archetype)
       : t.meta.category
     const icon =
-      typeof meta['x-dc-icon'] === 'string' && (meta['x-dc-icon'] as string).length > 0
-        ? (meta['x-dc-icon'] as string)
+      typeof raw['x-dc-icon'] === 'string' && (raw['x-dc-icon'] as string).length > 0
+        ? (raw['x-dc-icon'] as string)
         : defaultIconForCategory(archetype)
     const palette = ARCHETYPE_PALETTES[archetype] as readonly string[]
-    const explicitGlyph = typeof meta['x-dc-glyph'] === 'string' ? (meta['x-dc-glyph'] as string) : ''
+    const explicitGlyph = typeof raw['x-dc-glyph'] === 'string' ? (raw['x-dc-glyph'] as string) : ''
     const glyph = explicitGlyph && palette.includes(explicitGlyph)
       ? explicitGlyph
       : ARCHETYPE_DEFAULT_GLYPH[archetype]
+    const displayName =
+      typeof raw['x-dc-display-name'] === 'string' && (raw['x-dc-display-name'] as string).length > 0
+        ? (raw['x-dc-display-name'] as string)
+        : raw.name
     out.push({
-      id: t.raw.id,
-      name: t.raw.name,
+      name: raw.name,
+      displayName,
       archetype,
       icon,
       glyph,
-      model: t.raw.model,
+      model: raw.model,
       description: t.meta.description,
       requires: { mcpServers: t.meta.requires.mcpServers },
     })
   }
-  return out.sort((a, b) => a.id.localeCompare(b.id))
+  return out.sort((a, b) => a.name.localeCompare(b.name))
 }
 
 function defaultIconForCategory(category: Archetype): string {
@@ -151,13 +153,13 @@ function defaultIconForCategory(category: Archetype): string {
 }
 
 /**
- * Instantiate a template as a `DraftAgent` (id-less). Strips the
- * `x-dc-template` metadata block so it won't leak onto the user's new
- * agent. Preserves `x-dc-archetype` and `x-dc-icon` since those are
- * legitimate agent fields. Returns null if the template id is unknown
- * or the file is invalid.
+ * Instantiate a template as a `DraftAgent` (name-less). Strips the
+ * `x-dc-template` block so it won't leak onto the user's new agent.
+ * Preserves `x-dc-archetype` / `x-dc-icon` since those are legitimate
+ * agent fields. Returns null if the template name is unknown or the file
+ * is invalid.
  */
-export function instantiate(templateId: string): DraftAgent | null {
+export function instantiate(templateName: string): DraftAgent | null {
   let entries: string[] = []
   try {
     entries = readdirSync(TEMPLATES_DIR)
@@ -167,13 +169,9 @@ export function instantiate(templateId: string): DraftAgent | null {
   for (const entry of entries) {
     if (!entry.endsWith('.yaml')) continue
     const t = readTemplate(join(TEMPLATES_DIR, entry))
-    if (!t || t.raw.id !== templateId) continue
-    // Strip id and x-dc-template while preserving other metadata.
-    const { id: _id, ...rest } = t.raw
-    const metadata = { ...(rest.metadata ?? {}) }
-    delete metadata['x-dc-template']
-    const cleaned = { ...rest, metadata: Object.keys(metadata).length > 0 ? metadata : undefined }
-    const parsed = DraftAgentSchema.safeParse(cleaned)
+    if (!t || t.raw.name !== templateName) continue
+    const { name: _name, 'x-dc-template': _meta, ...rest } = t.raw
+    const parsed = DraftAgentSchema.safeParse(rest)
     return parsed.success ? parsed.data : null
   }
   return null

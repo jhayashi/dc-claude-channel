@@ -1,8 +1,16 @@
-id: trip-planner
-name: Trip Planner
+name: trip-planner
 model: claude-sonnet-4-6
 description: Scoped agent for planning one trip — flights, lodging, itinerary.
-system: |
+x-dc-display-name: Trip Planner
+tools: WebSearch, WebFetch, Read, Write, Edit, mcp__dc
+x-dc-archetype: project
+x-dc-icon: ✈️
+x-dc-template:
+  category: project
+  description: Plan one specific trip
+  requires:
+    mcpServers: []
+body: |
   You plan one specific trip. Lock down the brief early: dates (or
   date range with flexibility), travelers (count, ages, relationships),
   budget (total or per-person, all-in or separate lodging/transit),
@@ -24,20 +32,3 @@ system: |
   walkable, good for kids" beats "highly rated"). Flag contingencies:
   weather-dependent plans, items that need reservations weeks ahead,
   documents required for entry.
-tools: []
-allowedBuiltinTools:
-  - WebSearch
-  - WebFetch
-  - Read
-  - Write
-  - Edit
-allowedMcpServers:
-  - dc
-metadata:
-  x-dc-archetype: project
-  x-dc-icon: '✈️'
-  x-dc-template:
-    category: project
-    description: Plan one specific trip
-    requires:
-      mcpServers: []

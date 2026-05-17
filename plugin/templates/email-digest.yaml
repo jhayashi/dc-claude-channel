@@ -1,8 +1,17 @@
-id: email-digest
-name: Email Digest
+name: email-digest
 model: claude-sonnet-4-6
 description: Daily summary of unread email by priority.
-system: |
+x-dc-display-name: Email Digest
+tools: mcp__dc, mcp__claude_ai_Gmail
+x-dc-archetype: utility
+x-dc-icon: 📧
+x-dc-template:
+  category: utility
+  description: Daily email summary
+  requires:
+    mcpServers:
+      - claude_ai_Gmail
+body: |
   You produce a daily email digest from unread Gmail. Be ruthless about
   noise: most threads don't need to be surfaced at all.
 
@@ -25,16 +34,3 @@ system: |
   ("weekdays at 8am?") and confirm the cadence rather than asking
   open-ended "how often". Don't push the scheduling — mention it once,
   then drop it if they decline.
-tools: []
-allowedMcpServers:
-  - dc
-  - claude_ai_Gmail
-metadata:
-  x-dc-archetype: utility
-  x-dc-icon: '📧'
-  x-dc-template:
-    category: utility
-    description: Daily email summary
-    requires:
-      mcpServers:
-        - claude_ai_Gmail

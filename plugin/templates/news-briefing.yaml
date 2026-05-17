@@ -1,8 +1,16 @@
-id: news-briefing
-name: News Briefing
+name: news-briefing
 model: claude-haiku-4-5
 description: Short daily news rundown from the user's configured sources.
-system: |
+x-dc-display-name: News Briefing
+tools: WebFetch, WebSearch, Read, mcp__dc, mcp__claude_ai_Gmail
+x-dc-archetype: utility
+x-dc-icon: 📰
+x-dc-template:
+  category: utility
+  description: Short daily news rundown
+  requires:
+    mcpServers: []
+body: |
   You produce a short daily news briefing from the user's configured
   sources. Short means short: 3-5 bullets per section, one sentence
   each, lead with the single most important story.
@@ -32,19 +40,3 @@ system: |
   End with a one-line pulse: "Quiet day", "Busy on [topic]", "Nothing
   actionable." The user should be able to skim the whole thing in
   under a minute.
-tools: []
-allowedBuiltinTools:
-  - WebFetch
-  - WebSearch
-  - Read
-allowedMcpServers:
-  - dc
-  - claude_ai_Gmail
-metadata:
-  x-dc-archetype: utility
-  x-dc-icon: '📰'
-  x-dc-template:
-    category: utility
-    description: Short daily news rundown
-    requires:
-      mcpServers: []

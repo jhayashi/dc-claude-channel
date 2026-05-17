@@ -25,20 +25,18 @@ function writeTemplate(filename: string, body: string): void {
   writeFileSync(join(testDir, filename), body)
 }
 
-const validTemplate = `id: test-role
-name: Test Role
+const validTemplate = `name: test-role
 model: claude-sonnet-4-6
-system: hi
-tools: []
-metadata:
-  x-dc-archetype: role
-  x-dc-icon: 🐈
-  x-dc-template:
-    category: role
-    description: A test role
-    requires:
-      mcpServers:
-        - claude_ai_Gmail
+x-dc-display-name: Test Role
+x-dc-archetype: role
+x-dc-icon: 🐈
+x-dc-template:
+  category: role
+  description: A test role
+  requires:
+    mcpServers:
+      - claude_ai_Gmail
+body: hi
 `
 
 describe('listTemplates', () => {
@@ -60,9 +58,9 @@ describe('listTemplates', () => {
     writeTemplate('test-role.yaml', validTemplate)
     const list = templates.listTemplates()
     expect(list.length).toBe(1)
-    const t = list[0]
-    expect(t.id).toBe('test-role')
-    expect(t.name).toBe('Test Role')
+    const t = list[0]!
+    expect(t.name).toBe('test-role')
+    expect(t.displayName).toBe('Test Role')
     expect(t.archetype).toBe('role')
     expect(t.icon).toBe('🐈')
     expect(t.model).toBe('claude-sonnet-4-6')
@@ -71,20 +69,18 @@ describe('listTemplates', () => {
   })
 
   test('skips files that fail schema validation', () => {
-    writeTemplate('bad.yaml', 'id: bad\nname: Bad\n')  // missing model etc
+    writeTemplate('bad.yaml', 'name: bad\n')  // missing model etc
     writeTemplate('good.yaml', validTemplate)
     const list = templates.listTemplates()
-    expect(list.map(t => t.id)).toEqual(['test-role'])
+    expect(list.map(t => t.name)).toEqual(['test-role'])
   })
 
   test('skips files without x-dc-template metadata', () => {
     writeTemplate(
       'no-template-meta.yaml',
-      `id: no-meta
-name: No Meta
+      `name: no-meta
 model: claude-sonnet-4-6
-system: hi
-tools: []
+body: hi
 `,
     )
     expect(templates.listTemplates()).toEqual([])
@@ -93,30 +89,27 @@ tools: []
   test('falls back to archetype default icon when x-dc-icon unset', () => {
     writeTemplate(
       'no-icon.yaml',
-      `id: no-icon
-name: No Icon
+      `name: no-icon
 model: claude-sonnet-4-6
-system: hi
-tools: []
-metadata:
-  x-dc-template:
-    category: utility
-    description: no icon
-    requires:
-      mcpServers: []
+x-dc-template:
+  category: utility
+  description: no icon
+  requires:
+    mcpServers: []
+body: hi
 `,
     )
     const list = templates.listTemplates()
     expect(list.length).toBe(1)
-    expect(list[0].archetype).toBe('utility')
-    expect(list[0].icon).toBe('⚙️')
+    expect(list[0]!.archetype).toBe('utility')
+    expect(list[0]!.icon).toBe('⚙️')
   })
 
-  test('sorts by id alphabetically', () => {
-    writeTemplate('z.yaml', validTemplate.replace('test-role', 'z-agent'))
-    writeTemplate('a.yaml', validTemplate.replace('test-role', 'a-agent'))
+  test('sorts by name alphabetically', () => {
+    writeTemplate('z.yaml', validTemplate.replace('name: test-role', 'name: z-agent'))
+    writeTemplate('a.yaml', validTemplate.replace('name: test-role', 'name: a-agent'))
     const list = templates.listTemplates()
-    expect(list.map(t => t.id)).toEqual(['a-agent', 'z-agent'])
+    expect(list.map(t => t.name)).toEqual(['a-agent', 'z-agent'])
   })
 
   test('skips unparseable YAML', () => {
@@ -131,42 +124,42 @@ describe('instantiate', () => {
     writeTemplate('test-role.yaml', validTemplate)
     const draft = templates.instantiate('test-role')
     expect(draft).not.toBeNull()
-    expect(draft!.name).toBe('Test Role')
+    expect(draft!['x-dc-display-name']).toBe('Test Role')
     expect(draft!.model).toBe('claude-sonnet-4-6')
-    expect(draft!.metadata?.['x-dc-template']).toBeUndefined()
+    // x-dc-template (the template metadata block itself) must NOT
+    // appear on the instantiated draft.
+    expect((draft as Record<string, unknown>)['x-dc-template']).toBeUndefined()
   })
 
   test('preserves x-dc-archetype and x-dc-icon on the draft', () => {
     writeTemplate('test-role.yaml', validTemplate)
     const draft = templates.instantiate('test-role')
-    expect(draft!.metadata?.['x-dc-archetype']).toBe('role')
-    expect(draft!.metadata?.['x-dc-icon']).toBe('🐈')
+    expect(draft!['x-dc-archetype']).toBe('role')
+    expect(draft!['x-dc-icon']).toBe('🐈')
   })
 
-  test('returns null for an unknown template id', () => {
+  test('returns null for an unknown template name', () => {
     writeTemplate('test-role.yaml', validTemplate)
     expect(templates.instantiate('bogus')).toBeNull()
   })
 
-  test('metadata becomes undefined when template metadata was the only key', () => {
+  test('returns null for an unknown template name even with valid template', () => {
     writeTemplate(
       'only-template.yaml',
-      `id: only-template
-name: Only Template
+      `name: only-template
 model: claude-sonnet-4-6
-system: hi
-tools: []
-metadata:
-  x-dc-template:
-    category: role
-    description: only template meta
-    requires:
-      mcpServers: []
+x-dc-template:
+  category: role
+  description: only template meta
+  requires:
+    mcpServers: []
+body: hi
 `,
     )
     const draft = templates.instantiate('only-template')
     expect(draft).not.toBeNull()
-    expect(draft!.metadata).toBeUndefined()
+    // x-dc-template must be stripped.
+    expect((draft as Record<string, unknown>)['x-dc-template']).toBeUndefined()
   })
 })
 
@@ -182,7 +175,7 @@ describe('shipped templates', () => {
         'exec-assistant', 'homework-helper', 'marketer', 'news-briefing',
         'pm', 'scheduler', 'trip-planner', 'tutor',
       ]
-      expect(list.map(t => t.id).sort()).toEqual(expected.sort())
+      expect(list.map(t => t.name).sort()).toEqual(expected.sort())
     } finally {
       templates.setTemplatesDir(testDir)
     }

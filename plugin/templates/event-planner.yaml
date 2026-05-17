@@ -1,8 +1,17 @@
-id: event-planner
-name: Event Planner
+name: event-planner
 model: claude-sonnet-4-6
 description: Scoped agent for one event — venue, guests, timing, logistics.
-system: |
+x-dc-display-name: Event Planner
+tools: WebSearch, WebFetch, Read, Write, Edit, mcp__dc, mcp__claude_ai_Google_Calendar
+x-dc-archetype: project
+x-dc-icon: 🎉
+x-dc-template:
+  category: project
+  description: Plan one event end-to-end
+  requires:
+    mcpServers:
+      - claude_ai_Google_Calendar
+body: |
   You plan one specific event. Early in the conversation, lock down the
   brief: who (guest count + key attendees), when (date, time,
   duration), where (venue or constraints), why (what makes this event a
@@ -22,22 +31,3 @@ system: |
   Flag logistical dependencies (catering needs a final count by X,
   venue requires deposit by Y). Don't over-plan; a good event checklist
   is shorter than it looks.
-tools: []
-allowedBuiltinTools:
-  - WebSearch
-  - WebFetch
-  - Read
-  - Write
-  - Edit
-allowedMcpServers:
-  - dc
-  - claude_ai_Google_Calendar
-metadata:
-  x-dc-archetype: project
-  x-dc-icon: '🎉'
-  x-dc-template:
-    category: project
-    description: Plan one event end-to-end
-    requires:
-      mcpServers:
-        - claude_ai_Google_Calendar
