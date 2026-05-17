@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'bun:test'
-import { SubagentCache, type SubagentLike, type TurnTelemetry } from '../dispatcher/subagent-cache.js'
+import { describe, it, test, expect } from 'bun:test'
+import { assertCanSpawn, SubagentCache, type SubagentLike, type TurnTelemetry } from '../dispatcher/subagent-cache.js'
+import type * as agents from '../agents.js'
 
 class FakeSubagent implements SubagentLike {
   readonly subagentId: string
@@ -263,5 +264,41 @@ describe('SubagentCache turn telemetry', () => {
     expect(events).toHaveLength(1)
     expect(events[0].exitReason).toBe('user_abort')
     await cache.closeAll()
+  })
+})
+
+describe('assertCanSpawn', () => {
+  test('throws a typed error when agent tools exclude mcp__dc', () => {
+    const def: agents.AgentDef = {
+      name: 'no-dc',
+      description: '',
+      model: 'claude-sonnet-4-6',
+      tools: 'Read, Bash',
+      body: 'x',
+    }
+    expect(() => assertCanSpawn(def))
+      .toThrow(/no `mcp__dc` tool allowlist entry/)
+  })
+
+  test('accepts an agent with mcp__dc in tools', () => {
+    const def: agents.AgentDef = {
+      name: 'has-dc',
+      description: '',
+      model: 'claude-sonnet-4-6',
+      tools: 'Read, Bash, mcp__dc',
+      body: 'x',
+    }
+    expect(() => assertCanSpawn(def)).not.toThrow()
+  })
+
+  test('accepts an agent with mcp__dc__some-specific-tool in tools', () => {
+    const def: agents.AgentDef = {
+      name: 'specific-dc',
+      description: '',
+      model: 'claude-sonnet-4-6',
+      tools: 'Read, mcp__dc__dc_reply',
+      body: 'x',
+    }
+    expect(() => assertCanSpawn(def)).not.toThrow()
   })
 })

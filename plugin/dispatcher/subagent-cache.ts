@@ -20,6 +20,30 @@
 
 import { randomBytes } from 'node:crypto'
 import type { TurnExitReason } from '../events.js'
+import type { AgentDef } from '../agents.js'
+
+/**
+ * Refuse to spawn an agent whose tools CSV excludes `mcp__dc`. The DC
+ * tools-proxy MCP server is mandatory — without `mcp__dc` (or the more
+ * specific `mcp__dc__<tool>`) the agent has no way to call `dc_reply`,
+ * `dc_react`, etc., so its turns produce no chat output.
+ *
+ * agents.saveAgent auto-injects `mcp__dc` on every write, so this only
+ * fires for hand-edited .md files or agents written by terminal CC that
+ * never round-tripped through us. Throws a chat-friendly Error so the
+ * dispatcher's message router surfaces it to the chat instead of
+ * silently spawning a dead-end subagent.
+ */
+export function assertCanSpawn(def: AgentDef): void {
+  const tools = (def.tools ?? '').split(',').map(s => s.trim())
+  const ok = tools.some(t => t === 'mcp__dc' || t.startsWith('mcp__dc__'))
+  if (!ok) {
+    throw new Error(
+      `Agent '${def.name}' has no \`mcp__dc\` tool allowlist entry; ` +
+      `reopen agent setup to fix.`,
+    )
+  }
+}
 
 export interface SubagentLike {
   readonly chatId: number

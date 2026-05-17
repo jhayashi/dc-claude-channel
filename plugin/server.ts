@@ -39,7 +39,7 @@ import { handleSlash } from './slash-handler.js'
 import * as tutorial from './tutorial.js'
 import { decideCleanup } from './cleanup.js'
 import { SocketServer, type SocketRequest } from './dispatcher/socket-server.js'
-import { SubagentCache } from './dispatcher/subagent-cache.js'
+import { SubagentCache, assertCanSpawn } from './dispatcher/subagent-cache.js'
 import { cleanupOrphanSubagents } from './dispatcher/orphan-cleanup.js'
 import { RateLimiter } from './dispatcher/rate-limit.js'
 import { createSendRateLimiter } from './dispatcher/send-rate-limiter.js'
@@ -455,7 +455,19 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
   // model/effort/permissionMode/tools/system prompt/memory from the
   // agent .md via --agent <name>, so the dispatcher passes only DC
   // runtime context.
-  const agentName = resolved!.agent.name
+  const agentDef = resolved!.agent
+  try {
+    assertCanSpawn(agentDef)
+  } catch (err) {
+    logf('subagent: refused to spawn chat=%d: %v', chatId, err)
+    try {
+      await client.send(chatId, `⚠️ ${(err as Error).message}`)
+    } catch (sendErr) {
+      logf('subagent: failed to send mcp__dc-missing notice: %v', sendErr)
+    }
+    return null
+  }
+  const agentName = agentDef.name
   let resumeFailed = false
   let sub = new SubagentProcess({
     chatId,
