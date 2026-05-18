@@ -469,6 +469,11 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     return null
   }
   const agentName = agentDef.name
+  // CC's --agent flag doesn't propagate permissionMode / tools into the
+  // headless -p runtime's permission decisions; forward them explicitly
+  // so trusted agents skip prompts and MCP tools are pre-granted.
+  const permissionMode = agentDef.permissionMode
+  const allowedTools = agentDef.tools ?? ''
   let resumeFailed = false
   let sub = new SubagentProcess({
     chatId,
@@ -485,6 +490,8 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     sessionName,
     userName,
     claudeVersion: CLAUDE_VERSION,
+    permissionMode,
+    allowedTools,
     logf,
   })
   // Resume-fallback probe: if --resume was used and the child dies within
@@ -516,6 +523,8 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
         sessionName,
         userName,
         claudeVersion: CLAUDE_VERSION,
+        permissionMode,
+        allowedTools,
         logf,
       })
     }

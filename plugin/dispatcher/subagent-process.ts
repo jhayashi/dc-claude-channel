@@ -59,6 +59,22 @@ export interface SubagentSpawnOptions {
   claudeVersion?: string
   /** Session display name (synced with DC chat name). Passed as `--name`. */
   sessionName?: string
+  /**
+   * Permission mode forwarded to `--permission-mode`. CC reads the
+   * agent .md's `permissionMode` for some purposes, but does NOT use it
+   * to bypass tool-grant prompts in `-p` headless mode. The dispatcher
+   * reads the .md and forwards the value here so trusted agents (mode =
+   * `bypassPermissions`) can call MCP tools without deadlocking on a
+   * UI-less permission prompt.
+   */
+  permissionMode?: string
+  /**
+   * Pre-granted tool allowlist passed as `--allowed-tools`. The agent
+   * .md's `tools:` field declares the available surface but CC still
+   * prompts at use-time; pre-granting the same list here mirrors the
+   * v1.3 behavior. Pass the raw CSV from the .md.
+   */
+  allowedTools?: string
   logf?: (fmt: string, ...args: unknown[]) => void
   /**
    * @deprecated v1.4. CC reads model/effort/permissionMode/tools/system
@@ -167,15 +183,28 @@ export function buildSubagentArgs(
     '--settings', opts.settingsPath,
     '--append-system-prompt', envBlock,
   ]
+  // CC reads model / system prompt / tools / memory from the agent .md
+  // (via --agent), but does NOT propagate the .md's `permissionMode` into
+  // the headless `-p` runtime — it still asks for tool-grant approval
+  // for every MCP tool the agent calls, with no UI to grant. The hook in
+  // settings.json only matches built-ins (Bash/Edit/Write/…), not MCP
+  // tools, so MCP grants would deadlock. Forward the mode explicitly.
+  if (opts.permissionMode) {
+    args.push('--permission-mode', opts.permissionMode)
+  }
+  // Same story for the allowlist: the .md's `tools:` field declares the
+  // surface but CC still prompts at use-time for non-pre-granted tools.
+  // Pass --allowed-tools so MCP calls (and any built-ins) are pre-granted.
+  if (opts.allowedTools && opts.allowedTools.length > 0) {
+    args.push('--allowed-tools', opts.allowedTools)
+  }
   if (opts.sessionName) {
     args.push('--name', opts.sessionName)
   }
   if (opts.mcpConfigPath) {
     // No --strict-mcp-config: our dc server is merged with the user's
     // global MCP config (Gmail, Calendar, Telegram, etc.) so subagents
-    // inherit the same MCP tools the terminal session has. CC reads
-    // the agent's `tools` CSV from the .md and applies the allowlist
-    // itself; we no longer pass --allowedTools.
+    // inherit the same MCP tools the terminal session has.
     args.push('--mcp-config', opts.mcpConfigPath)
   }
   for (const dir of opts.addDirs ?? []) {

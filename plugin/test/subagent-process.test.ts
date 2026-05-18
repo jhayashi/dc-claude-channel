@@ -91,6 +91,33 @@ describe('buildSubagentArgs', () => {
     expect(args[args.indexOf('--name') + 1]).toBe('chat-foo')
   })
 
+  test('forwards permissionMode via --permission-mode', () => {
+    const { args } = buildSubagentArgs(baseOpts({
+      agentName: 'trusted', permissionMode: 'bypassPermissions',
+    }))
+    expect(args).toContain('--permission-mode')
+    expect(args[args.indexOf('--permission-mode') + 1]).toBe('bypassPermissions')
+  })
+
+  test('omits --permission-mode when unset', () => {
+    const { args } = buildSubagentArgs(baseOpts({ agentName: 'untrusted' }))
+    expect(args).not.toContain('--permission-mode')
+  })
+
+  test('forwards allowedTools via --allowed-tools', () => {
+    const { args } = buildSubagentArgs(baseOpts({
+      agentName: 'trusted',
+      allowedTools: 'Bash, Read, mcp__dc__dc_reply',
+    }))
+    expect(args).toContain('--allowed-tools')
+    expect(args[args.indexOf('--allowed-tools') + 1]).toBe('Bash, Read, mcp__dc__dc_reply')
+  })
+
+  test('omits --allowed-tools when allowedTools is empty', () => {
+    const { args } = buildSubagentArgs(baseOpts({ agentName: 'untrusted', allowedTools: '' }))
+    expect(args).not.toContain('--allowed-tools')
+  })
+
   test('throws if agentName is missing', () => {
     expect(() => buildSubagentArgs(baseOpts({ agentName: undefined as unknown as string })))
       .toThrow(/agentName is required/)
