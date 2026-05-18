@@ -2320,6 +2320,37 @@ async function main(): Promise<void> {
     logf('dc channel: v1.4 agent migration failed: %v', err)
   }
 
+  // Self-check: agents.DC_TOOL_NAMES is a hand-maintained mirror of the
+  // tools the dispatcher actually registers (coreTools + apps' tools).
+  // ensureMcpDc expands the bare `mcp__dc` server prefix into this set,
+  // so drift here means newly-saved agents will not include freshly-added
+  // tools (and `assertCanSpawn` / CC's allowlist won't catch the gap).
+  // Logged at boot rather than tested at build time so renaming/adding
+  // a tool surfaces in the dispatcher log on the very next restart.
+  try {
+    const registered = new Set([
+      ...coreTools.map(t => t.name),
+      ...apps.flatMap(a => a.tools()).map(t => t.name),
+    ])
+    const declared = new Set(agents.DC_TOOL_NAMES)
+    const missing = [...registered].filter(t => !declared.has(t)).sort()
+    const extra = [...declared].filter(t => !registered.has(t)).sort()
+    if (missing.length > 0) {
+      logf(
+        'dc channel: WARNING — %d DC tool(s) registered but missing from agents.DC_TOOL_NAMES (newly-saved agents will not include them in their tools CSV): %s',
+        missing.length, missing.join(', '),
+      )
+    }
+    if (extra.length > 0) {
+      logf(
+        'dc channel: WARNING — %d DC tool(s) in agents.DC_TOOL_NAMES but not registered (stale entries; saved agents allow tools that do not exist): %s',
+        extra.length, extra.join(', '),
+      )
+    }
+  } catch (err) {
+    logf('dc channel: DC_TOOL_NAMES drift check failed: %v', err)
+  }
+
   // v1.3 slice 7 phase 3 — copy any contact records still at the legacy
   // `principals/humans/<contactId>.json` path into the agent-scoped
   // `agents/claude-code.dc/contacts/` layout. Per-file idempotent so a
