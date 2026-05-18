@@ -431,6 +431,15 @@ export function migrateContactsToSidecar(): number {
   for (const name of entries) {
     const legacyContacts = join(_legacyAgentScopedDir, name, "contacts");
     if (!existsSync(legacyContacts)) continue;
+    // Guard against the collision-rename case: Slice 2's migration may
+    // have renamed `agents.legacy/helper` → `helper-dc.md`. Writing
+    // these contacts to `helper.dc/contacts/` would mis-attribute them
+    // to a different (terminal-CC-authored) `helper` agent. Only move
+    // contacts when an agent `.md` with the matching name actually
+    // exists — leave orphans in place for operator inspection.
+    if (!existsSync(join(_agentsDir, `${name}.md`))) {
+      continue;
+    }
     let files: string[];
     try { files = readdirSync(legacyContacts); }
     catch { continue; }

@@ -182,7 +182,23 @@ describe("migrateContactsToSidecar (v1.3 → v1.4 backstop)", () => {
 
   afterEach(() => rmSync(tmpRoot, { recursive: true, force: true }));
 
+  /**
+   * The backstop only fires when an `<name>.md` file already exists in
+   * the new agents dir — this guards the collision-rename case where
+   * Slice 2 renamed the migrated agent and the legacy contacts dir
+   * would otherwise be mis-attributed to an unrelated terminal-CC
+   * agent of the same slug. Helper so tests don't need to repeat the
+   * minimal .md write.
+   */
+  function seedAgentMd(name: string): void {
+    writeFileSync(
+      join(agentsDir, `${name}.md`),
+      `---\nname: ${name}\nmodel: claude-sonnet-4-6\n---\nbody\n`,
+    );
+  }
+
   test("moves <agent>/contacts/* to <agent>.dc/contacts/*", () => {
+    seedAgentMd("orphan");
     const legacy = join(legacyAgentScopedDir, "orphan", "contacts");
     mkdirSync(legacy, { recursive: true });
     writeFileSync(join(legacy, "7.json"), JSON.stringify({
@@ -197,7 +213,23 @@ describe("migrateContactsToSidecar (v1.3 → v1.4 backstop)", () => {
     expect(access.migrateContactsToSidecar()).toBe(0);
   });
 
+  test("skips contacts whose owning agent has no .md in the new dir", () => {
+    // Collision-rename guard: Slice 2's migration may have renamed
+    // `agents.legacy/helper` → `helper-dc.md`. Without the guard, this
+    // backstop would write to `helper.dc/contacts/` and silently attach
+    // to an unrelated terminal-CC `helper` agent (or nothing).
+    const legacy = join(legacyAgentScopedDir, "helper", "contacts");
+    mkdirSync(legacy, { recursive: true });
+    writeFileSync(join(legacy, "1.json"), JSON.stringify({
+      kind: "human", contactId: 1, firstPairedAt: "2026-01-01T00:00:00Z",
+    }));
+    // No seedAgentMd("helper") — guard fires.
+    expect(access.migrateContactsToSidecar()).toBe(0);
+    expect(existsSync(join(agentsDir, "helper.dc"))).toBe(false);
+  });
+
   test("idempotent on second run (already-present target records skipped)", () => {
+    seedAgentMd("a");
     const legacy = join(legacyAgentScopedDir, "a", "contacts");
     mkdirSync(legacy, { recursive: true });
     writeFileSync(join(legacy, "1.json"), JSON.stringify({
@@ -208,6 +240,8 @@ describe("migrateContactsToSidecar (v1.3 → v1.4 backstop)", () => {
   });
 
   test("handles multiple agents in one pass", () => {
+    seedAgentMd("alice");
+    seedAgentMd("bob");
     const a1 = join(legacyAgentScopedDir, "alice", "contacts");
     const a2 = join(legacyAgentScopedDir, "bob", "contacts");
     mkdirSync(a1, { recursive: true });
@@ -221,6 +255,7 @@ describe("migrateContactsToSidecar (v1.3 → v1.4 backstop)", () => {
   });
 
   test("skips non-JSON files in the legacy contacts dir", () => {
+    seedAgentMd("carol");
     const legacy = join(legacyAgentScopedDir, "carol", "contacts");
     mkdirSync(legacy, { recursive: true });
     writeFileSync(join(legacy, "README.md"), "hi");
