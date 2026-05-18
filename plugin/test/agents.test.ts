@@ -126,10 +126,13 @@ describe('AgentDef schema', () => {
 
 describe('saveAgent / getAgent round-trip', () => {
   test('round-trips a full definition through .md', () => {
+    // Use a specific mcp__dc__<tool> entry so ensureMcpDc no-ops the
+    // expansion — round-trip equality requires the on-disk tools CSV to
+    // be identical to the input.
     const def = makeDef({
       name: 'round-trip',
       description: 'a description',
-      tools: 'Read, Bash, mcp__dc',
+      tools: 'Read, Bash, mcp__dc__dc_react',
       permissionMode: 'bypassPermissions',
       memory: 'user',
       effort: 'high',
@@ -238,24 +241,53 @@ describe('synthesizeAgentName', () => {
 })
 
 describe('mcp__dc auto-injection', () => {
-  test('adds mcp__dc to tools when absent on save', () => {
-    agents.saveAgent(makeDef({ name: 'no-dc', tools: 'Read, Bash' }))
-    const reloaded = agents.getAgent('no-dc')
-    expect(reloaded?.tools).toContain('mcp__dc')
+  test('expands bare mcp__dc to the full mcp__dc__<tool> set on save', () => {
+    // CC's frontmatter `tools:` doesn't treat `mcp__dc` as a wildcard, so
+    // saveAgent expands the bare prefix into every concrete DC tool name.
+    agents.saveAgent(makeDef({ name: 'bare-dc', tools: 'Read, mcp__dc, Bash' }))
+    const reloaded = agents.getAgent('bare-dc')
     expect(reloaded?.tools).toContain('Read')
     expect(reloaded?.tools).toContain('Bash')
+    expect(reloaded?.tools).not.toContain(', mcp__dc,')  // bare prefix stripped
+    expect(reloaded?.tools).not.toMatch(/,\s*mcp__dc$/)  // bare prefix stripped
+    expect(reloaded?.tools).toContain('mcp__dc__dc_react')
+    expect(reloaded?.tools).toContain('mcp__dc__dc_chat_history')
+    expect(reloaded?.tools).toContain('mcp__dc__dc_open_agent_settings')
   })
 
-  test('leaves mcp__dc alone when already present', () => {
-    agents.saveAgent(makeDef({ name: 'has-dc', tools: 'Read, mcp__dc, Bash' }))
-    const reloaded = agents.getAgent('has-dc')
-    const matches = (reloaded?.tools ?? '').match(/mcp__dc/g) ?? []
-    expect(matches.length).toBe(1)
+  test('adds the full mcp__dc__<tool> set when no dc entry is present', () => {
+    agents.saveAgent(makeDef({ name: 'no-dc', tools: 'Read, Bash' }))
+    const reloaded = agents.getAgent('no-dc')
+    expect(reloaded?.tools).toContain('Read')
+    expect(reloaded?.tools).toContain('Bash')
+    expect(reloaded?.tools).toContain('mcp__dc__dc_react')
+    expect(reloaded?.tools).toContain('mcp__dc__dc_open_agent_settings')
   })
 
-  test('handles empty tools CSV by initialising to mcp__dc', () => {
+  test('respects narrow opt-in when specific mcp__dc__<tool> already present', () => {
+    // If a user (or test) already enumerated specific DC tools, leave the
+    // list alone — they're choosing a smaller surface.
+    agents.saveAgent(makeDef({
+      name: 'narrow-dc',
+      tools: 'Read, mcp__dc__dc_react, mcp__dc__dc_reply_with_text',
+    }))
+    const reloaded = agents.getAgent('narrow-dc')
+    expect(reloaded?.tools).toBe('Read, mcp__dc__dc_react, mcp__dc__dc_reply_with_text')
+  })
+
+  test('handles empty tools CSV by initialising to the full DC enumeration', () => {
     agents.saveAgent(makeDef({ name: 'empty', tools: '' }))
-    expect(agents.getAgent('empty')?.tools).toBe('mcp__dc')
+    const reloaded = agents.getAgent('empty')
+    expect(reloaded?.tools).toContain('mcp__dc__dc_react')
+    expect(reloaded?.tools).toContain('mcp__dc__dc_chat_history')
+    expect(reloaded?.tools).not.toMatch(/^mcp__dc$/)
+  })
+
+  test('DC_TOOL_NAMES is exported and non-empty', () => {
+    expect(Array.isArray(agents.DC_TOOL_NAMES)).toBe(true)
+    expect(agents.DC_TOOL_NAMES.length).toBeGreaterThan(0)
+    expect(agents.DC_TOOL_NAMES).toContain('dc_react')
+    expect(agents.DC_TOOL_NAMES).toContain('dc_open_agent_settings')
   })
 })
 

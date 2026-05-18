@@ -55,7 +55,9 @@ function makeAgent(name: string, overrides: Partial<agents.AgentDef> = {}): agen
     name,
     description: '',
     model: 'claude-sonnet-4-6',
-    tools: 'mcp__dc',
+    // Specific mcp__dc__<tool> so ensureMcpDc on save is a no-op — keeps
+    // round-trip equality clean (it expands the bare prefix otherwise).
+    tools: 'mcp__dc__dc_react',
     // Trailing newline — serializeAgentMarkdown emits one; parse preserves
     // it verbatim. Round-trip equality requires the input to have one.
     body: 'system prompt\n',
@@ -330,17 +332,16 @@ describe('bindAgent heals terminal-CC agents lacking mcp__dc', () => {
     expect(agents.getAgent('cc-only')?.tools).toContain('mcp__dc')
   })
 
-  test('no-op when the agent already has mcp__dc', () => {
-    // Use saveAgent so mcp__dc is already present; capture file mtime.
+  test('no-op when the agent already has specific mcp__dc__<tool> entries', () => {
+    // Specific dc tool present → ensureMcpDc no-ops on bind, so the user's
+    // narrower opt-in is preserved.
     writeFileSync(
       join(agentsDir, 'dc-native.md'),
-      '---\nname: dc-native\nmodel: claude-sonnet-4-6\ntools: Read, mcp__dc\n---\nbody\n',
+      '---\nname: dc-native\nmodel: claude-sonnet-4-6\ntools: Read, mcp__dc__dc_react\n---\nbody\n',
     )
     bindings.bindAgent(42, 'dc-native', { inheritClaudeMd: false })
     const tools = agents.getAgent('dc-native')!.tools
-    // Should appear exactly once.
-    const matches = tools.match(/mcp__dc/g) ?? []
-    expect(matches.length).toBe(1)
+    expect(tools).toBe('Read, mcp__dc__dc_react')
   })
 
   test('silently skips when the bound agent name does not resolve', () => {

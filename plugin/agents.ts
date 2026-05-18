@@ -257,19 +257,76 @@ export function getAgent(name: string): AgentDef | null {
 }
 
 /**
- * Ensure `mcp__dc` is present in a tools CSV. The DC tools-proxy MCP
- * server is mandatory for any agent that needs to interact with the
- * chat — without it the agent has no `dc_reply` / `dc_react` / etc.
- * Idempotent: leaves existing entries untouched (including the more
- * specific `mcp__dc__<tool>` form).
+ * Canonical list of DC tool names registered by the dispatcher (server.ts
+ * core tools + apps' tool registrations). Used by `ensureMcpDc` to expand
+ * the bare `mcp__dc` server prefix into specific `mcp__dc__<tool>` entries.
+ *
+ * Why expansion is necessary: CC's frontmatter `tools:` parser treats
+ * `mcp__<server>` as the *name* of a tool to allow (not a wildcard), so an
+ * agent whose .md only carries the prefix loses access to every concrete
+ * MCP tool at runtime ("Claude requested permissions to use
+ * mcp__dc__<tool>, but you haven't granted it yet"). The CLI `--allowed-
+ * tools` flag *does* treat the prefix as a wildcard, but DC also wants the
+ * .md to be portable to terminal CC's Task delegation path where the
+ * frontmatter is the only allowlist source.
+ *
+ * Maintenance note: if you add or rename a `dc_*` tool in `server.ts` /
+ * `apps/*.ts`, ALSO add it here. A dispatcher-startup check would be
+ * cleaner; tracked as follow-up.
+ */
+export const DC_TOOL_NAMES: readonly string[] = [
+  'dc_access_arm_pairing',
+  'dc_access_list',
+  'dc_access_pair',
+  'dc_access_revoke',
+  'dc_access_unpair',
+  'dc_chat_history',
+  'dc_check_contact',
+  'dc_create_agent',
+  'dc_download_attachment',
+  'dc_exit_session',
+  'dc_familiar_create',
+  'dc_familiar_delete',
+  'dc_familiar_list',
+  'dc_familiar_update',
+  'dc_get_agent_prompt',
+  'dc_invite_link',
+  'dc_open_agent_settings',
+  'dc_react',
+  'dc_resume_in_terminal',
+  'dc_schedule',
+  'dc_schedule_delete',
+  'dc_schedule_list',
+  'dc_send_attachment',
+  'dc_send_file',
+  'dc_send_slides',
+  'dc_send_webxdc',
+  'dc_show_events',
+  'dc_start_tutorial',
+  'dc_status',
+  'dc_test_permission',
+  'dc_update_agent',
+]
+
+/**
+ * Ensure DC tools are present in a tools CSV. The DC tools-proxy MCP
+ * server is mandatory — without `mcp__dc__<tool>` entries the agent
+ * has no `dc_reply` / `dc_react` / etc.
+ *
+ * Two-tier behavior:
+ *   - If any specific `mcp__dc__<tool>` is already present, leave the CSV
+ *     alone (user is opting into a narrow surface).
+ *   - Otherwise, drop the bare `mcp__dc` prefix (it doesn't work as a
+ *     wildcard in CC's frontmatter parsing) and emit the full
+ *     enumerated list from DC_TOOL_NAMES.
  */
 function ensureMcpDc(tools: string): string {
   const parts = tools.split(',').map(s => s.trim()).filter(Boolean)
-  if (parts.some(t => t === 'mcp__dc' || t.startsWith('mcp__dc__'))) {
+  if (parts.some(t => t.startsWith('mcp__dc__'))) {
     return parts.join(', ')
   }
-  parts.push('mcp__dc')
-  return parts.join(', ')
+  const filtered = parts.filter(t => t !== 'mcp__dc')
+  return [...filtered, ...DC_TOOL_NAMES.map(t => `mcp__dc__${t}`)].join(', ')
 }
 
 /** Save an agent definition. Atomic via temp + rename. */
