@@ -4,9 +4,51 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.0] — 2026-05-18
+
+The agent format aligns with Claude Code's own. Agent definitions move from `~/.claude/channels/deltachat/agents/<id>/definition.yaml` to `~/.claude/agents/<name>.md` — the same path the terminal `claude` CLI reads. The dispatcher delegates to CC via `claude -p --agent <name>`, so model / system prompt / tools / permissionMode / memory come straight from the .md. A terminal-CC agent and a DC-bound chat now share the same on-disk definition; memory written in either is visible in the other. Migration is one-shot at dispatcher startup with collision handling for terminal-CC files of the same name.
+
 ### Added
 
 - **Event-log retention (#85).** Dated log files under `$DC_EVENT_DIR` (`tools-`, `turns-`, `permissions-`, `webxdc-`, `agent-lifecycle-`) are now auto-deleted past `DC_EVENT_LOG_MAX_AGE_DAYS` days (default 30; set `0` to disable). Sweep runs once at dispatcher boot and once every 24 hours, driven by filename date (not mtime, so backup/snapshot tooling doesn't perturb retention). Non-matching files in the events dir are left alone; per-file unlink errors are collected and logged without aborting the sweep.
+
+- **CC-native agent format.** Agents are stored as markdown + YAML frontmatter at `~/.claude/agents/<name>.md` (shared with terminal CC). The frontmatter carries the standard CC fields (`name`, `model`, `tools`, `permissionMode`, `memory`, `effort`, `description`, plus CC pass-through like `skills`, `hooks`, `mcpServers`); DC-only extensions use the `x-dc-` prefix (`x-dc-archetype`, `x-dc-icon`, `x-dc-glyph`, `x-dc-pattern`, `x-dc-icon-mirror`, `x-dc-display-name`) so CC silently ignores them. The markdown body is the system prompt. New helpers `parseAgentMarkdown` / `serializeAgentMarkdown` (in `plugin/agent-md.ts`) handle the round-trip.
+
+- **`--agent <name>` spawn delegation.** The dispatcher's subagent spawn argv drops `--model`, `--effort`, `--permission-mode`, `--allowedTools`, and the inlined system-prompt block in favor of `--agent <name>`. CC reads the .md itself for those values. The dispatcher still passes a small `--append-system-prompt` env block (bound chat, working dir, user name) plus `--mcp-config` for the DC tools-proxy. Note: CC's headless `-p` runtime doesn't propagate the .md's `permissionMode` into runtime tool grants, so the dispatcher reads it back and forwards as `--permission-mode <value>` + `--allowed-tools <CSV>` explicitly — fixes a regression where MCP tool calls in trusted agents deadlocked on a UI-less permission prompt.
+
+- **Memory delegation.** New agents get `memory: user` in their frontmatter; CC owns `~/.claude/agent-memory/<name>/MEMORY.md` and the per-memory files. A chat saying "remember my favourite colour is cobalt" persists to the same file the terminal `claude --agent <name>` session would read. The dispatcher no longer touches that directory.
+
+- **DC-private sidecar (`<name>.dc/`).** Per-agent state DC owns (contact trust records, future chatmail state) moves into a sibling directory next to the .md: `~/.claude/agents/<name>.dc/contacts/<contactId>.json`. CC ignores the sidecar's `.dc` suffix; `lintSidecarDirs` at dispatcher boot walks every sidecar and logs any stray `.md` (which CC would otherwise pick up as a phantom agent). The write path in `contacts.writeContact` only emits `.json`, so stray .mds only appear from operator hand-edits.
+
+- **v1.3 → v1.4 migration (`plugin/migrate-agents-v14.ts`).** First v1.4 boot walks `~/.claude/channels/deltachat/agents/<id>/definition.yaml`, maps each to v1.4 frontmatter (`id` → `name`, `system` → markdown body, `metadata.x-dc-*` → top-level, `allowedBuiltinTools` + `allowedMcpServers` collapsed into a single `tools` CSV with `mcp__<server>__<tool>` enumeration, spawn-tools dropped per spec §5.9, `memory: user` auto-injected, `x-dc-skipPermissions: true` → `permissionMode: bypassPermissions`), writes the .md, moves the per-agent contacts/ to the sidecar, and retires the legacy dir to `agents.legacy/`. Collisions with a terminal-CC agent of the same name resolve by suffixing `-dc` and rewriting every binding's `agentId` to chase the rename. Idempotent: a second boot finds the legacy dir gone and no-ops. The migration refuses to run if both `agents/` and `agents.legacy/` exist (partial run / restored backup) — a guarded refusal up front prevents the per-agent loop from suffix-chaining `-dc-dc-dc` collisions on every boot.
+
+- **`mcp__dc` mandatory + auto-expand.** `saveAgent`'s `ensureMcpDc` helper auto-injects every DC tool's specific name (`mcp__dc__dc_react`, `mcp__dc__dc_chat_history`, …) into the tools CSV on every write. CC's frontmatter `tools:` parser treats `mcp__dc` (bare server prefix) as a literal tool name rather than a wildcard, so the migration writes the enumerated form. The bare prefix at the dispatcher's `--allowed-tools` CLI flag DOES wildcard correctly — so the .md form serves the terminal-CC Task delegation path. A new `DC_TOOL_NAMES` constant in `agents.ts` is the canonical list; a boot-time drift check warns if the dispatcher's runtime tool registrations diverge from the constant. `dispatcher/subagent-cache.ts:assertCanSpawn` refuses to spawn any agent whose tools CSV lacks `mcp__dc__*` (chat-side error so the operator can reopen agent setup to fix).
+
+- **Heal-on-bind.** Binding a chat to an agent now re-saves the agent .md through `saveAgent` so `ensureMcpDc` runs. Catches terminal-CC-authored agents that pre-date the DC mandate.
+
+- **Minimum-CC-version gate (`plugin/cc-version-check.ts`).** Dispatcher reads `claude --version` at startup and refuses to run on Claude Code older than `MINIMUM_CLAUDE_VERSION` (currently `2.1.100`). Exits with code 2 so operator scripts can distinguish a version-gate failure from a generic crash.
+
+- **NL meta-commands write to the .md.** `switch to opus`, `trust me`, `let's refine you` mutate the agent .md and evict the cached subagent so the next message picks up the new value on a fresh `claude -p` spawn. Trust toggles via the agent-setup WebXDC card also evict now (regression-fix on top of the new spawn-argv contract).
+
+### Changed
+
+- **Agent ID vocabulary.** "Agent ID" is retired; `name` is the canonical identifier across the codebase (slug, filename stem, binding `agentId`). `x-dc-display-name` carries the friendly label shown in chat UI; legacy form payload `id`/`name` adapters live in `agent-setup-app.ts` for the WebXDC card pending a Slice 6 form rewrite. `Template.id` becomes `Template.name`; shipped templates (12 of them) migrated to the v1.4 schema.
+
+- **Contact records relocated.** Per-contact trust annotations move from `~/.claude/channels/deltachat/agents/<id>/contacts/<contactId>.json` to `~/.claude/agents/<name>.dc/contacts/<contactId>.json`. A first-boot backstop walks orphaned per-agent dirs that the primary migration missed (for example, if the original `definition.yaml` was unreadable but the contacts dir was intact). The backstop only moves contacts when an `<name>.md` exists in the new agents dir to guard against the Slice 2 collision-rename mis-attribution case.
+
+- **Templates.** Shipped templates (`coach`, `developer`, `email-digest`, `event-planner`, `exec-assistant`, `homework-helper`, `marketer`, `news-briefing`, `pm`, `scheduler`, `trip-planner`, `tutor`) migrated from the v1.3 YAML schema (`id`/`system`/`tools:[]`/`metadata`) to the v1.4 .md frontmatter shape; the picker now surfaces `Template.name` instead of `Template.id`.
+
+### Fixed
+
+- **Trust toggle via the WebXDC card was a no-op on running subagents.** With v1.4's `--permission-mode bypassPermissions` baked at spawn time, the dispatcher's PreToolUse hook still re-reads the .md for built-in tools (Bash/Edit/Write/…) but the hook never matches MCP tool calls. So flipping trust via the UI left the running subagent on its old mode for MCP. Fix: include `skipPermsChanged` in `needsRestart` so the card evicts the cached subagent and the new mode takes effect on the next message. The NL meta-command "trust me" path already evicted via its own handler.
+
+- **Migration idempotence (Oliver P1-2).** `migrateLegacyDefinitionYaml` had no top-level guard against the "both source and `.legacy/` dirs exist" state. Running the per-agent loop in that state suffix-renamed every previously-migrated agent as a fresh collision and rewrote bindings to chase the rename — confirmed live during the v1.4 rollout. The old "leaving in place for manual inspection" log fired AFTER the damage. Guard moved to the top of the function with an actionable error message.
+
+- **Caller sweep gaps.** Three sites still referenced `defaultAgent.id` (which doesn't exist in v1.4); bindings written through those paths got `agentId: undefined` (auto-repair self-healed on the next message but emitted misleading "auto-bound chat N to agent undefined" log lines). One site in `startRefineCoach` still referenced `def.system`. All swept to `.name` / `.body`.
+
+- **`DC_TOOL_NAMES` was missing `reply`.** The cross-chat post tool is registered without a `dc_` prefix and slipped past the initial drift catalog; the boot drift-check warned but newly-saved agents silently lost cross-chat reply access until added.
+
+[1.4.0]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.2...v1.4.0
 
 ## [1.3.2] — 2026-05-14
 

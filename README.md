@@ -22,7 +22,7 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
 ### For productivity
 
 - **Scheduled actions** — D4C adds cron-like scheduling to Claude Code. Get pre-scheduled summaries of your email, news, or pipeline reports when you want, in any chat, even if the agent has been put to sleep. Schedules require an always-on computer that you control.
-- **Multiple, customized agents** — D4C makes it easy to set up new chats with custom agents you control — one for marketing, one for research, one for email and calendar. Build from a 155-leaf specialty catalog (sleep coach, tax prep, naturalist, knowledge worker, …), stack 1–3 leaves into a mash-up, and a coach interview shapes the agent in two or three short questions. Tweak any agent in chat ("let's refine you", "switch to opus", "trust me") — or pick a saved agent / the default and start chatting in two taps. Agents use the [Claude Managed Agents](https://docs.anthropic.com/en/docs/agents-and-tools/managed-agents) definition format and can be imported, exported, and shared with others.
+- **Multiple, customized agents** — D4C makes it easy to set up new chats with custom agents you control — one for marketing, one for research, one for email and calendar. Build from a 155-leaf specialty catalog (sleep coach, tax prep, naturalist, knowledge worker, …), stack 1–3 leaves into a mash-up, and a coach interview shapes the agent in two or three short questions. Tweak any agent in chat ("let's refine you", "switch to opus", "trust me") — or pick a saved agent / the default and start chatting in two taps. Agents use the same [Claude Code subagent](https://docs.anthropic.com/en/docs/claude-code/sub-agents) markdown format that terminal Claude Code uses — definitions live at `~/.claude/agents/<name>.md` and are shared between terminal CC and D4C, so the same agent works in both places.
 - **GUIs when you need them** — D4C comes with three helper apps: one for permissions, one for file review (which also renders Marp slide decks inline), and one for agent and chat configuration.
 - **Files, screenshots, and more** — Delta Chat makes it easy to send files, screenshots, links, and voice recordings to specific agents for whatever action you can imagine — archive in Notion or Obsidian, process and summarize URLs, you name it.
 
@@ -57,7 +57,7 @@ Delta Chat's strong privacy and support for chat-native applications make it a g
 
 ## Prerequisites
 
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) v2.1.80 or later
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) v2.1.100 or later (D4C v1.4 reads CC's native subagent format and requires the `claude -p --agent <name>` flag)
 - [Bun](https://bun.sh/) (v1.1+) on your `$PATH`
 - [Delta Chat](https://delta.chat/) on your phone with a [chatmail](https://chatmail.at/) account. Tested on **Android 2.49**, **iOS 2.48**, **macOS 2.49**, with **dc-core 2.49**. Older versions may work but are unsupported.
 
