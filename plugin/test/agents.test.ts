@@ -269,10 +269,10 @@ describe('mcp__dc auto-injection', () => {
     // list alone — they're choosing a smaller surface.
     agents.saveAgent(makeDef({
       name: 'narrow-dc',
-      tools: 'Read, mcp__dc__dc_react, mcp__dc__dc_reply_with_text',
+      tools: 'Read, mcp__dc__dc_react, mcp__dc__reply',
     }))
     const reloaded = agents.getAgent('narrow-dc')
-    expect(reloaded?.tools).toBe('Read, mcp__dc__dc_react, mcp__dc__dc_reply_with_text')
+    expect(reloaded?.tools).toBe('Read, mcp__dc__dc_react, mcp__dc__reply')
   })
 
   test('handles empty tools CSV by initialising to the full DC enumeration', () => {

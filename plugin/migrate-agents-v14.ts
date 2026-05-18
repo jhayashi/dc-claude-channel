@@ -129,10 +129,35 @@ export interface MigrationResult {
  * and no-ops. Non-destructive: never overwrites an existing v1.4 file;
  * collisions write with a `-dc` suffix and append the name to the
  * result's `collisions` list for the caller to log.
+ *
+ * Refuses to run if both the source dir AND the retire-target `.legacy/`
+ * already exist. That can happen after a partial run / restored backup /
+ * manual mv. Running the migration anyway treats every previously-migrated
+ * agent as a fresh collision, suffix-renaming each one to `-dc`,
+ * `-dc-dc`, `-dc-dc-dc` on successive boots and chasing the moving
+ * target with every binding rewrite. Better to fail fast and tell the
+ * operator to merge the two dirs by hand.
  */
 export function migrateLegacyDefinitionYaml(): MigrationResult {
   const result: MigrationResult = { migrated: 0, collisions: [], bindingsRewritten: 0 }
   if (!existsSync(LEGACY_AGENTS_DIR)) return result
+
+  // Refuse-to-run guard: see docblock. This MUST come before the
+  // per-agent loop — the "leaving in place for manual inspection"
+  // path at the bottom of the function fires too late to prevent
+  // damage (the loop has already collision-renamed every agent and
+  // rewritten bindings to chase them).
+  const legacyTarget = `${LEGACY_AGENTS_DIR}.legacy`
+  if (existsSync(legacyTarget)) {
+    console.error(
+      `migrate v1.4: refusing to migrate — both ${LEGACY_AGENTS_DIR} and ` +
+      `${legacyTarget} exist. A prior run already retired one set; running ` +
+      `again would suffix-rename every agent as a collision. Move ` +
+      `${LEGACY_AGENTS_DIR} aside (or merge into ${legacyTarget}) before ` +
+      `restarting the dispatcher.`,
+    )
+    return result
+  }
 
   let entries: string[]
   try {
@@ -235,14 +260,10 @@ export function migrateLegacyDefinitionYaml(): MigrationResult {
 
   // Retire the legacy directory once we've walked everything — even if
   // some entries failed (they're logged; operator can recover from
-  // `agents.legacy/` if needed).
+  // `agents.legacy/` if needed). The "target exists" case is handled
+  // by the top-of-function guard; if we reach here, the rename is safe.
   try {
-    const legacyTarget = `${LEGACY_AGENTS_DIR}.legacy`
-    if (existsSync(legacyTarget)) {
-      console.error(`migrate v1.4: ${legacyTarget} already exists; leaving ${LEGACY_AGENTS_DIR} in place for manual inspection`)
-    } else {
-      renameSync(LEGACY_AGENTS_DIR, legacyTarget)
-    }
+    renameSync(LEGACY_AGENTS_DIR, legacyTarget)
   } catch (err) {
     console.error(`migrate v1.4: legacy dir retire failed:`, err)
   }

@@ -296,7 +296,7 @@ describe('assertCanSpawn', () => {
       name: 'specific-dc',
       description: '',
       model: 'claude-sonnet-4-6',
-      tools: 'Read, mcp__dc__dc_reply',
+      tools: 'Read, mcp__dc__reply',
       body: 'x',
     }
     expect(() => assertCanSpawn(def)).not.toThrow()

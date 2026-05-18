@@ -253,6 +253,29 @@ describe('migrateLegacyDefinitionYaml', () => {
     const result = migrateLegacyDefinitionYaml()
     expect(result.migrated).toBe(1)
   })
+
+  test('refuses to migrate when both source and .legacy/ already exist', () => {
+    // Simulate a partial-rollback / restored-backup state: a prior boot
+    // successfully retired agents/ → agents.legacy/, then something
+    // (backup tool, manual mv, partial revert) put fresh content back
+    // into agents/. Running the loop would treat every entry as a fresh
+    // collision and start suffix-chasing.
+    writeLegacy('keep-me', { name: 'KeepMe', model: 'claude-sonnet-4-6', system: 'x' })
+    // Pre-create the retire-target so the guard fires.
+    mkdirSync(`${legacyDir}.legacy`, { recursive: true })
+    writeFileSync(`${legacyDir}.legacy/previous-run-artifact.txt`, '')
+
+    const result = migrateLegacyDefinitionYaml()
+
+    // No migration ran.
+    expect(result.migrated).toBe(0)
+    expect(result.collisions).toEqual([])
+    expect(result.bindingsRewritten).toBe(0)
+    // Source dir is untouched — operator can inspect both dirs and
+    // decide how to merge.
+    expect(existsSync(join(legacyDir, 'keep-me', 'definition.yaml'))).toBe(true)
+    expect(existsSync(`${legacyDir}.legacy/previous-run-artifact.txt`)).toBe(true)
+  })
 })
 
 describe('migrateLegacyDefinitionYaml — binding rewrites on collision', () => {

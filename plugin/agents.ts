@@ -294,6 +294,11 @@ export const DC_TOOL_NAMES: readonly string[] = [
   'dc_open_agent_settings',
   'dc_react',
   'dc_resume_in_terminal',
+  // The cross-chat post tool. Registered without a `dc_` prefix because
+  // it pre-dates the project's naming convention; exposed via MCP as
+  // `mcp__dc__reply`. Easy to miss when extending the list — the boot
+  // drift check in server.ts will scream if you do.
+  'reply',
   'dc_schedule',
   'dc_schedule_delete',
   'dc_schedule_list',

@@ -1264,7 +1264,7 @@ export const agentSetupApp: WebXDCApp = {
                 await ctx.evictSubagent(b.chatId)
                 bindings.saveBinding({
                   chatId: b.chatId,
-                  agentId: defaultAgent.id,
+                  agentId: defaultAgent.name,
                   inheritClaudeMd: agents.inheritClaudeMdForModel(defaultAgent.model),
                   createdAt: new Date().toISOString(),
                 })
@@ -1717,12 +1717,17 @@ export const agentSetupApp: WebXDCApp = {
           const explicitIconChanged = prevExplicitIcon !== newExplicitIcon
           // v1.4 single source: compare the tools CSV directly.
           const toolsChanged = (agent.tools ?? '') !== draft.tools
-          // Restart only for changes that are baked in at subagent spawn
-          // time: the model (passed as --model and cached in the session
-          // store) and the system prompt (read from disk at spawn). Cosmetic
-          // changes (name, icon orientation) and skipPermissions — which the
-          // dispatcher re-reads on every hook call — don't need a restart.
-          const needsRestart = modelChanged || systemChanged || toolsChanged
+          // Restart on any change that's baked into the subagent at spawn
+          // time. v1.4: --permission-mode is passed at spawn so toggling
+          // skipPermissions via this card MUST evict, otherwise the running
+          // subagent keeps the old mode for MCP tool calls (which don't
+          // route through the PreToolUse hook, so the dispatcher can't
+          // re-read the .md mid-flight). The NL meta-command "trust me"
+          // path evicts via its own handler; this card is the regression
+          // surface (Oliver P1-4). Cosmetic changes (icon orientation,
+          // archetype, mirror) don't affect spawn argv — no restart needed.
+          const needsRestart =
+            modelChanged || systemChanged || toolsChanged || skipPermsChanged
           const iconChanged =
             modelChanged || skipPermsChanged || mirrorChanged ||
             archetypeChanged || explicitIconChanged

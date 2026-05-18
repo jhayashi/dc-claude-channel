@@ -392,13 +392,15 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     }),
   ].filter((t) => !SUBAGENT_TOOL_BLOCKLIST.has(t.name))
   // Per-agent MCP server filtering: derive from the agent's tools CSV.
-  // saveAgent auto-injects `mcp__dc` so this is almost always true; the
-  // check guards hand-edited .md files that strip dc out.
+  // saveAgent auto-injects mcp__dc__<tool> entries so this is almost
+  // always true; the check guards hand-edited .md files that strip dc
+  // out. (No agentTools.length === 0 fallback — String.split(',') on an
+  // empty string returns [''] not [], so length-0 is unreachable; the
+  // some() check correctly returns false for [''].)
   const agent = resolved?.agent
-  const agentTools = (agent?.tools ?? '').split(',').map(s => s.trim())
+  const agentTools = (agent?.tools ?? '').split(',').map(s => s.trim()).filter(Boolean)
   const dcServerAllowed =
     agent == null ||
-    agentTools.length === 0 ||
     agentTools.some(t => t === 'mcp__dc' || t.startsWith('mcp__dc__'))
   const filteredToolDefs = dcServerAllowed ? toolDefs : []
   const { settingsPath, mcpConfigPath, tempDir } = generateHookConfig({
@@ -1397,12 +1399,12 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           const defaultAgent = agents.ensureDefaultAgent()
           const binding: bindings.Binding = {
             chatId,
-            agentId: defaultAgent.id,
+            agentId: defaultAgent.name,
             inheritClaudeMd: true,
             createdAt: new Date().toISOString(),
           }
           bindings.saveBinding(binding)
-          logf('dc channel: auto-bound chat %d to agent %s', chatId, defaultAgent.id)
+          logf('dc channel: auto-bound chat %d to agent %s', chatId, defaultAgent.name)
         } catch (err) {
           logf('dc channel: auto-bind failed for chat %d: %v', chatId, err)
         }
@@ -2828,7 +2830,7 @@ async function main(): Promise<void> {
     if (coachSessions.has(chatId)) return null
     const def = agents.getAgent(agentId)
     if (!def) throw new Error(`agent ${agentId} not found`)
-    const coachState = startRefineCoach({ agentId, existingPrompt: def.system })
+    const coachState = startRefineCoach({ agentId, existingPrompt: def.body })
     // Refine sessions don't need their own sessionId — the chat's
     // existing binding owns the claude session UUID. Leaving sessionId
     // undefined here (CoachSession.sessionId is optional) makes that

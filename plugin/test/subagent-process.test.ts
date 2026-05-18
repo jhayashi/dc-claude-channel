@@ -105,12 +105,16 @@ describe('buildSubagentArgs', () => {
   })
 
   test('forwards allowedTools via --allowed-tools', () => {
+    // Use a real tool name (mcp__dc__reply — the cross-chat post tool;
+    // registered as `reply` without a dc_ prefix) so this test doesn't
+    // perpetuate the "dc_reply" naming confusion that caused the
+    // original DC_TOOL_NAMES drift Oliver flagged.
     const { args } = buildSubagentArgs(baseOpts({
       agentName: 'trusted',
-      allowedTools: 'Bash, Read, mcp__dc__dc_reply',
+      allowedTools: 'Bash, Read, mcp__dc__reply',
     }))
     expect(args).toContain('--allowed-tools')
-    expect(args[args.indexOf('--allowed-tools') + 1]).toBe('Bash, Read, mcp__dc__dc_reply')
+    expect(args[args.indexOf('--allowed-tools') + 1]).toBe('Bash, Read, mcp__dc__reply')
   })
 
   test('omits --allowed-tools when allowedTools is empty', () => {
