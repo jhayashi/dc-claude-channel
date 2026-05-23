@@ -133,4 +133,39 @@ test.describe("file-reviewer smoke", () => {
 
     expect(defaultPrevented).toBe(false);
   });
+
+  // Regression: `* **[long link](url)** — long tail` rendered as columns
+  // because .md-list-custom > li uses display:flex and the hand-rolled
+  // markdown produces inline children only (no <p> wrap). The <strong>
+  // and the trailing text became separate flex items; the long tail won
+  // flex space and the bold link shrank to its min-content width (the
+  // widest single word), collapsing into a one-word-per-line column.
+  // Fix: wrap post-bullet children in a single .li-content flex item.
+  test("bold link in a bullet does not collapse to one-word-per-line column", async () => {
+    h = await createHarness(findFileReviewerXdc());
+    const appVersion = await h.getAppVersion();
+
+    await h.push({
+      type: "file",
+      title: "Briefing",
+      content:
+        "# Briefing\n\n" +
+        "* **[Trump Defiant After Bad Week Pushes Ahead on Politically Unpopular Ideas](https://example.com/a)** — The President continues acting as politically all-powerful despite mounting signs he isn't, doubling down on contested moves after a rough stretch.\n",
+      version: appVersion,
+    });
+
+    await h.page.waitForSelector('a[href*="example.com"]');
+
+    const strongRect = await h.page
+      .locator('li[data-paragraph] strong')
+      .first()
+      .boundingBox();
+    expect(strongRect).not.toBeNull();
+    // At the harness's 390px iPhone-portrait viewport, the bug squeezed
+    // <strong> to the width of "Politically" (~90px). With the fix it
+    // wraps as normal inline content and spans most of the content
+    // column. 200px is a comfortable line in the sand: well above the
+    // bug's per-word ceiling, well below the available width (~330px).
+    expect(strongRect!.width).toBeGreaterThan(200);
+  });
 });

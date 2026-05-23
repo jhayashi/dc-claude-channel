@@ -481,6 +481,17 @@ body.searching .sidebar { display: none; }
   user-select: none;
   padding-top: 6px;  /* match the li padding so bullet aligns with text */
 }
+/* The hand-rolled renderer emits <li>s with inline children only (no <p>
+   wrap). Combined with the flex layout above, each inline child became
+   its own flex item — for `* **[long link](url)** — long tail`, the
+   trailing text won flex space and the <strong> shrank to min-content,
+   collapsing the link into a one-word-per-line column. Wrapping
+   post-bullet children in a single .li-content keeps the whole body
+   as one flex item; min-width:0 lets normal inline wrapping happen. */
+.content .md-list-custom > li > .li-content {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .content h4 { font-size: 16px; margin: 16px 0 8px; color: var(--ink); }
 .content h5 { font-size: 14px; margin: 14px 0 6px; color: var(--ink); }
 .content h6 { font-size: 13px; margin: 12px 0 6px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.05em; }
@@ -1207,7 +1218,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.58;
+var APP_VERSION = 1.59;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -1628,11 +1639,22 @@ function renderBlocksInto(container, children, paraIdx, comments) {
         var item = items[li];
         item.setAttribute('data-paragraph', String(paraIdx));
         if (!item.classList.contains('task')) {
+          // Wrap the original inline children in a single .li-content
+          // div before prepending the bullet. The hand-rolled renderer
+          // produces tight lists (no <p> wrap), so without this wrap
+          // each inline child (<strong>, <a>, raw text node, ...) is
+          // its own flex item under the <li>'s display:flex layout,
+          // and a long trailing text squeezes a leading bold/link run
+          // to its widest single word.
+          var content = document.createElement('div');
+          content.className = 'li-content';
+          while (item.firstChild) content.appendChild(item.firstChild);
           var bullet = document.createElement('span');
           bullet.className = 'bullet';
           bullet.setAttribute('aria-hidden', 'true');
           bullet.textContent = isOrdered ? (li + 1) + '.' : '•';
-          item.insertBefore(bullet, item.firstChild);
+          item.appendChild(bullet);
+          item.appendChild(content);
         }
         if (comments[paraIdx]) {
           item.classList.add('commented');
