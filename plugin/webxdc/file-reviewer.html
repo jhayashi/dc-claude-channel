@@ -1207,7 +1207,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.57;
+var APP_VERSION = 1.58;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -2034,6 +2034,12 @@ function attachLongPress(el, callback) {
     // Right-click + middle-click on a mouse don't start long-press; they
     // route through contextmenu instead.
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // Tap on a link should navigate, not long-press-comment. The sync
+    // preventDefault below would suppress the synthetic click; bail out
+    // so the browser's link-handling runs. (Regression from #75 — the
+    // preventDefault is admitted defense-in-depth there; the CSS
+    // user-select / touch-callout rules are the actual long-press cure.)
+    if (e.target && e.target.closest && e.target.closest('a[href]')) return;
     clear();
     pointerId = e.pointerId;
     try { el.setPointerCapture(e.pointerId); } catch (_) {}

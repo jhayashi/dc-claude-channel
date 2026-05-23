@@ -89,4 +89,42 @@ test.describe("file-reviewer smoke", () => {
     expect(typeof entry.paragraph).toBe("number");
     expect(entry.line).toBeUndefined();
   });
+
+  // Regression: #75's attachLongPress rewrite added a synchronous
+  // preventDefault on pointerdown for "defense in depth". The block-level
+  // listener intercepts pointerdown bubbling up from links inside the
+  // block, and preventDefault on a primary pointerdown suppresses the
+  // synthetic click — links became unclickable. Fix bails from the
+  // handler when the pointerdown target is an <a href>.
+  test("tapping a link does not preventDefault (regression for #75 fallout)", async () => {
+    h = await createHarness(findFileReviewerXdc());
+    const appVersion = await h.getAppVersion();
+
+    await h.push({
+      type: "file",
+      title: "Linky",
+      content: "# Heading\n\nPara with a [link](https://example.com/) in the middle.\n",
+      version: appVersion,
+    });
+
+    await h.page.waitForSelector('a[href*="example.com"]');
+
+    const defaultPrevented = await h.page.evaluate(() => {
+      const a = document.querySelector(
+        'a[href*="example.com"]',
+      ) as HTMLElement | null;
+      if (!a) return null;
+      const ev = new PointerEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        pointerType: "touch",
+        pointerId: 1,
+        button: 0,
+      });
+      a.dispatchEvent(ev);
+      return ev.defaultPrevented;
+    });
+
+    expect(defaultPrevented).toBe(false);
+  });
 });
