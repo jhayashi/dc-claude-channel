@@ -45,10 +45,19 @@ body {
   padding: 8px 8px 0;
   display: flex;
   gap: 6px;
-  overflow-x: auto;
   flex-shrink: 0;
 }
-.sidebar:empty { display: none; }
+/* Inner horizontal scroller for doc-tabs. Sibling .kebab-btn sits outside
+   this element so it stays pinned to the right edge even when tabs overflow
+   (issue #99). min-width:0 lets the flex item actually shrink below its
+   content's intrinsic width so the kebab is never pushed off. */
+.sidebar-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .doc-tab {
   position: relative;
   padding: 8px 10px 10px 12px;
@@ -144,7 +153,6 @@ body {
    Single ⋮ button pinned right; tap opens a popover with menu items.
    Tapping outside or pressing Esc closes the menu. */
 .sidebar .kebab-btn {
-  margin-left: auto;
   margin-bottom: -1px;
   padding: 8px 12px 10px;
   background: transparent;
@@ -1199,7 +1207,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.56;
+var APP_VERSION = 1.57;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -2429,14 +2437,15 @@ function showDocument(index) {
 // touches page or sidebar vertical scroll.
 function scrollTabIntoView(tab) {
   if (!tab) return;
-  var sidebar = document.getElementById('sidebar');
-  if (!sidebar) return;
-  var sRect = sidebar.getBoundingClientRect();
+  // #99: scroller is the inner .sidebar-tabs now, not the outer .sidebar.
+  var scroller = document.querySelector('#sidebar .sidebar-tabs');
+  if (!scroller) return;
+  var sRect = scroller.getBoundingClientRect();
   var tRect = tab.getBoundingClientRect();
   if (tRect.left < sRect.left) {
-    sidebar.scrollLeft += tRect.left - sRect.left;
+    scroller.scrollLeft += tRect.left - sRect.left;
   } else if (tRect.right > sRect.right) {
-    sidebar.scrollLeft += tRect.right - sRect.right;
+    scroller.scrollLeft += tRect.right - sRect.right;
   }
 }
 
@@ -2901,6 +2910,12 @@ function wireSearchBar() {
 function rebuildSidebar() {
   var sidebar = document.getElementById('sidebar');
   sidebar.replaceChildren();
+  // #99: replaces the previous "tabs and kebab share one scroller" layout.
+  // Outer .sidebar is the flex row; inner .sidebar-tabs owns overflow so the
+  // kebab (appended below as a sibling) stays pinned right.
+  var tabsContainer = document.createElement('div');
+  tabsContainer.className = 'sidebar-tabs';
+  sidebar.appendChild(tabsContainer);
   for (var i = documents.length - 1; i >= 0; i--) {
     var tab = document.createElement('div');
     tab.className = 'doc-tab' + (i === activeIndex ? ' active' : '');
@@ -2933,7 +2948,7 @@ function rebuildSidebar() {
     titleEl.addEventListener('click', function() {
       showDocument(Number(this.parentNode.getAttribute('data-index')));
     });
-    sidebar.appendChild(tab);
+    tabsContainer.appendChild(tab);
   }
   // Kebab menu (⋮) at the right edge of the strip. Frees up
   // horizontal space for file tabs vs the previous side-by-side
@@ -2956,6 +2971,10 @@ function rebuildSidebar() {
     });
     sidebar.appendChild(kebabBtn);
   }
+  // Replaces the old `.sidebar:empty { display: none }` rule — the outer
+  // .sidebar now always contains the inner .sidebar-tabs div, so :empty
+  // never fires. Hide explicitly when no docs are open.
+  sidebar.style.display = documents.length === 0 ? 'none' : '';
 }
 
 var pendingCloseIndex = -1;
