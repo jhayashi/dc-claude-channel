@@ -4,6 +4,20 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.1] — 2026-05-23
+
+File-reviewer WebXDC bugfixes.
+
+### Fixed
+
+- **Bullets with bold links no longer collapse to a one-word column.** Markdown list items whose content was a bold link rendered as a single narrow column instead of flowing across the row.
+- **Tapping a link no longer eats the click.** The link tap handler swallowed the event so the intended navigation didn't fire.
+- **Kebab menu pinned outside the tab scroll (#99).** The kebab menu scrolled away with the tab content instead of staying fixed.
+
+### Internal
+
+- Repaired the long-press Playwright smoke test after the #75 handler rewrite.
+
 ## [1.4.0] — 2026-05-18
 
 The agent format aligns with Claude Code's own. Agent definitions move from `~/.claude/channels/deltachat/agents/<id>/definition.yaml` to `~/.claude/agents/<name>.md` — the same path the terminal `claude` CLI reads. The dispatcher delegates to CC via `claude -p --agent <name>`, so model / system prompt / tools / permissionMode / memory come straight from the .md. A terminal-CC agent and a DC-bound chat now share the same on-disk definition; memory written in either is visible in the other. Migration is one-shot at dispatcher startup with collision handling for terminal-CC files of the same name.
@@ -48,6 +62,7 @@ The agent format aligns with Claude Code's own. Agent definitions move from `~/.
 
 - **`DC_TOOL_NAMES` was missing `reply`.** The cross-chat post tool is registered without a `dc_` prefix and slipped past the initial drift catalog; the boot drift-check warned but newly-saved agents silently lost cross-chat reply access until added.
 
+[1.4.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.2...v1.4.0
 
 ## [1.3.2] — 2026-05-14
