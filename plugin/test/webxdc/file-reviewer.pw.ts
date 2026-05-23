@@ -52,11 +52,17 @@ test.describe("file-reviewer smoke", () => {
     const paraText = await h.page.textContent('[data-paragraph="1"]');
     expect(paraText?.trim()).toBe("This is one paragraph.");
 
-    // Long-press: fire mousedown (button 0) and wait past the 500 ms
-    // timer in attachLongPress() without releasing. The handler ignores
-    // mouseup that never arrives.
+    // Long-press: fire pointerdown (primary button) and wait past the
+    // 500 ms timer in attachLongPress() without releasing. The handler
+    // listens only on pointerdown (#75 unified touchstart/mousedown into
+    // pointerdown); dispatching mousedown alone never triggers it.
     await h.clearOutbound();
-    await h.page.locator('[data-paragraph="1"]').dispatchEvent("mousedown", { button: 0 });
+    await h.page.locator('[data-paragraph="1"]').dispatchEvent("pointerdown", {
+      pointerType: "touch",
+      pointerId: 1,
+      button: 0,
+      isPrimary: true,
+    });
     await h.page.waitForSelector("#comment-card", { state: "visible", timeout: 2_000 });
 
     // Type the comment and save it.
