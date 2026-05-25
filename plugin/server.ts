@@ -73,6 +73,7 @@ import {
   type STTConfig,
 } from './stt.js'
 import { checkReady, runInstallInBackground, _signalComplete, waitForReady } from './bootstrap.js'
+import { DC_TOOLS, type ToolCtx } from './dispatcher/dc-tools.js'
 
 // ── Security hardening ──────────────────────────────────────────────────
 // Freeze Object.prototype at startup to block prototype-pollution from any
@@ -891,19 +892,6 @@ const socketServer = new SocketServer({
 
 const coreTools = [
   {
-    name: 'reply',
-    requiresCapability: 'chat',
-    description: 'Reply on Delta Chat. Pass chat_id from the inbound <channel> tag.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        chat_id: { type: 'string', description: 'Chat ID from the inbound channel message' },
-        text: { type: 'string', description: 'Message text to send' },
-      },
-      required: ['chat_id', 'text'],
-    },
-  },
-  {
     name: 'dc_react',
     requiresCapability: 'chat',
     description: 'Add or clear an emoji reaction on a Delta Chat message. Pass an empty emoji to remove your previous reaction. Only one reaction per sender per message — reacting again replaces the previous one.',
@@ -1187,6 +1175,15 @@ const coreTools = [
   },
 ]
 
+// ── Registry dispatch ───────────────────────────────────────────────────
+// All five deps (client, access, bindings, agents, logf) are module-scope,
+// so toolCtx and registryHandlers can be built here at module scope too.
+
+const toolCtx: ToolCtx = { client, access, bindings, agents, logf }
+const registryHandlers = new Map(
+  DC_TOOLS.filter(t => t.handler).map(t => [t.name, t.handler!] as const),
+)
+
 // ── Tool list ───────────────────────────────────────────────────────────
 
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -1286,32 +1283,9 @@ function startTutorialForChat(chatId: number): void {
 }
 
 async function callCoreTool(name: string, args: Record<string, unknown>, callerChatId?: number): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean } | null> {
+  const h = registryHandlers.get(name)
+  if (h) return h(args, toolCtx, callerChatId)
   switch (name) {
-      case 'reply': {
-        const chatIdRaw = args.chat_id as string
-        if (!chatIdRaw) {
-          return { content: [{ type: 'text' as const, text: 'reply: chat_id is required' }], isError: true }
-        }
-        const chatId = Number(chatIdRaw)
-        if (!chatId || Number.isNaN(chatId)) {
-          return { content: [{ type: 'text' as const, text: `reply: invalid chat_id: ${chatIdRaw}` }], isError: true }
-        }
-        if (!access.isAllowed(chatId)) {
-          return { content: [{ type: 'text' as const, text: `reply: chat ${chatId} is not accessible (not paired, or chat was deleted)` }], isError: true }
-        }
-        const text = args.text as string
-        if (!text) {
-          return { content: [{ type: 'text' as const, text: 'reply: text is required' }], isError: true }
-        }
-        try {
-          const msgId = await client.send(chatId, text)
-          return { content: [{ type: 'text' as const, text: `sent (id: ${msgId})` }] }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : JSON.stringify(err)
-          return { content: [{ type: 'text' as const, text: `reply: send failed: ${msg}` }], isError: true }
-        }
-      }
-
       case 'dc_react': {
         const chatId = Number(args.chat_id as string)
         const messageId = Number(args.message_id as string)

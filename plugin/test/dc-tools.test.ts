@@ -24,3 +24,17 @@ describe('DC_TOOLS registry', () => {
     expect(new Set(names).size).toBe(names.length)
   })
 })
+
+test('reply sends to an allowed chat and returns the message id', async () => {
+  const def = DC_TOOLS.find(t => t.name === 'reply')!
+  const sent: Array<[number, string]> = []
+  const ctx = makeToolCtx({
+    access: { isAllowed: (id: number) => id === 42 } as unknown as ToolCtx['access'],
+    client: { send: async (id: number, text: string) => { sent.push([id, text]); return 7 } } as unknown as ToolCtx['client'],
+  })
+  const ok = await def.handler!({ chat_id: '42', text: 'hi' }, ctx)
+  expect(ok).toEqual({ content: [{ type: 'text', text: 'sent (id: 7)' }] })
+  expect(sent).toEqual([[42, 'hi']])
+  const denied = await def.handler!({ chat_id: '99', text: 'hi' }, ctx)
+  expect(denied.isError).toBe(true)
+})
