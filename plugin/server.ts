@@ -15,7 +15,7 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
-import { readFileSync, appendFileSync, chmodSync } from 'node:fs'
+import { readFileSync, appendFileSync, chmodSync, existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
@@ -428,12 +428,19 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
   // above but no agentId yet, and we don't want the cwd to drift if the
   // dispatcher is relaunched from elsewhere before the user picks an agent.
   const existing = bindings.getBinding(chatId)
-  let workingDir = existing?.workingDir
-  if (!workingDir) {
-    workingDir = process.cwd()
-    if (existing) {
-      bindings.saveBinding({ ...existing, workingDir })
-    }
+  const resolvedWd = bindings.resolveWorkingDir(existing?.workingDir, process.cwd(), existsSync)
+  const workingDir = resolvedWd.workingDir
+  if (resolvedWd.healedFrom) {
+    // The recorded dir is gone (e.g. a temporary worktree was cleaned up).
+    // Spawning into a missing cwd hangs claude until the turn timeout, so heal
+    // to the dispatcher's cwd and persist it rather than wedging the chat.
+    logf(
+      'subagent: chat=%d workingDir %s no longer exists; healing to %s',
+      chatId, resolvedWd.healedFrom, workingDir,
+    )
+  }
+  if (resolvedWd.changed && existing) {
+    bindings.saveBinding({ ...existing, workingDir })
   }
 
   // Ghost-session check: a previous spawn may have persisted a sessionId
