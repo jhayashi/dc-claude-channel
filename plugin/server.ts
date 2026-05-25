@@ -73,7 +73,7 @@ import {
   type STTConfig,
 } from './stt.js'
 import { checkReady, runInstallInBackground, _signalComplete, waitForReady } from './bootstrap.js'
-import { DC_TOOLS, type ToolCtx } from './dispatcher/dc-tools.js'
+import { DC_TOOLS, type ToolCtx, type ToolResult } from './dispatcher/dc-tools.js'
 
 // ── Security hardening ──────────────────────────────────────────────────
 // Freeze Object.prototype at startup to block prototype-pollution from any
@@ -316,7 +316,7 @@ export function getConnectedMcpServers(): string[] {
 /** Available MCP servers for the agent-setup tool picker. */
 export function getAvailableMcpServers(): Array<{ prefix: string; label: string; toolCount: number }> {
   const dcTools = [
-    ...coreTools.map(t => t.name),
+    ...DC_TOOLS.map(t => t.name),
     ...apps.flatMap(a => a.tools()).map(t => t.name),
   ].filter(n => !SUBAGENT_TOOL_BLOCKLIST.has(n))
 
@@ -384,7 +384,7 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
   const repoRoot = join(import.meta.dir, '..')
   const resolved = bindings.resolveChat(chatId)
   const toolDefs = [
-    ...coreTools.map((t) => {
+    ...DC_TOOLS.map((t) => {
       const augmented = withRequestorParam(t)
       return { name: augmented.name, description: augmented.description, inputSchema: augmented.inputSchema }
     }),
@@ -890,295 +890,21 @@ const socketServer = new SocketServer({
 
 // ── Core tool definitions ───────────────────────────────────────────────
 
-const coreTools = [
-  {
-    name: 'dc_access_pair',
-    requiresCapability: 'infrastructure',
-    description: 'Complete a pending pairing request. The user provides the code shown in their Delta Chat.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        code: { type: 'string', description: 'The pairing code from the Delta Chat message' },
-      },
-      required: ['code'],
-    },
-  },
-  {
-    name: 'dc_access_unpair',
-    requiresCapability: 'infrastructure',
-    description: 'Terminal escape hatch for unpair. No args: list paired contacts (display name, address, chat count). With contact_id: unpair that contact — posts a farewell in each owned chat and either freezes (leaves the chat read-only) or deletes the chats. Mirrors the Paired devices screen in the agent-setup WebXDC card.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        contact_id: { type: 'string', description: 'Contact ID to unpair (optional — omit to list).' },
-        mode: { type: 'string', description: 'freeze (default, chats become read-only) or delete (chats removed).', enum: ['freeze', 'delete'] },
-      },
-    },
-  },
-  {
-    name: 'dc_start_tutorial',
-    requiresCapability: 'chat',
-    description: 'Manually (re)start the onboarding tour in a paired chat. Resets the tutorial state machine and re-sends the permission + file-reviewer app cards. Used by /deltachat:setup tour and the in-chat /tour command. With no chat_id, starts the tour in the only paired chat (errors if there are zero or multiple).',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        chat_id: { type: 'string', description: 'Chat ID to run the tour in. Optional; omit to auto-select when only one chat is paired.' },
-      },
-    },
-  },
-  {
-    name: 'dc_create_agent',
-    requiresCapability: 'infrastructure',
-    description: 'Create a Delta Chat agent with a behavior prompt. The bot creates an encrypted group, adds the user, and stores the prompt. Future messages in this agent will be handled according to the prompt.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        name: { type: 'string', description: 'Agent name (e.g., "Marketing Agent")' },
-        prompt: { type: 'string', description: 'Short behavior instruction for this agent (e.g., "Summarize any links shared. Tag by topic.")' },
-        user_chat_id: { type: 'string', description: 'The chat_id from the user\'s 1:1 conversation (used to find their contact ID to add to the agent)' },
-        model: {
-          type: 'string',
-          description: 'Model for this agent. Use opus for coding/software tasks, haiku for simple Q&A, sonnet for everything else.',
-          enum: [...models.MODEL_IDS],
-        },
-      },
-      required: ['name', 'prompt', 'user_chat_id'],
-    },
-  },
-  {
-    name: 'dc_update_agent',
-    requiresCapability: 'infrastructure',
-    description: 'Update the behavior prompt and/or model for an existing agent. Use when the user asks to change how Claude handles messages in an agent, or to switch which model (haiku/sonnet/opus) runs it. At least one of prompt or model must be provided. Changes apply to all chats bound to the same agent (agent definitions are now shared/reusable); cached subagents are evicted so the next message respawns under the new config.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        chat_id: { type: 'string', description: 'Chat ID of an agent chat (used to look up which agent definition to update)' },
-        prompt: { type: 'string', description: 'Updated behavior prompt (optional)' },
-        model: {
-          type: 'string',
-          description: `Updated subagent model (optional). One of: ${models.MODEL_IDS.join(', ')}.`,
-          enum: [...models.MODEL_IDS],
-        },
-      },
-      required: ['chat_id'],
-    },
-  },
-  {
-    name: 'dc_send_webxdc',
-    requiresCapability: 'private_data_write',
-    description: 'Send a .xdc WebXDC app file to a Delta Chat chat. Use this to send interactive apps (games, tools) as self-contained WebXDC bundles. WHEN TALKING WITH A USER OVER DELTA CHAT, this is also the channel for ALL visual output — UI mockups, design comparisons, before/after demos, diagrams, charts, data visualizations. If you would otherwise build a standalone HTML page, a demo site, or any static web preview to show the user something, build it as a WebXDC instead and send it through this tool. The WebXDC renders inline in the chat, stays accessible from the DC app list across devices, and is the native canvas for visuals here — do not offer to host a website, share a markdown sketch, or describe visuals in prose when this option is available. The webxdc-builder skill has the HTML rules and patterns.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        chat_id: { type: 'string', description: 'Chat ID to send to' },
-        xdc_path: { type: 'string', description: 'Absolute path to the .xdc file to send' },
-      },
-      required: ['chat_id', 'xdc_path'],
-    },
-  },
-  {
-    name: 'dc_send_attachment',
-    requiresCapability: 'private_data_write',
-    description: 'Send a file (image, PDF, document, etc.) to a Delta Chat chat. Delta Chat auto-detects the type. Provide an optional caption.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        chat_id: { type: 'string', description: 'Chat ID to send to' },
-        file_path: { type: 'string', description: 'Absolute path to the file to send' },
-        caption: { type: 'string', description: 'Optional caption text' },
-      },
-      required: ['chat_id', 'file_path'],
-    },
-  },
-  {
-    name: 'dc_schedule',
-    requiresCapability: 'real_world_action',
-    description: 'Schedule a recurring or one-shot prompt that the dispatcher will fire into this chat as a synthetic user turn. Jobs persist across dispatcher restarts and run independently of subagent lifetime. Returns a job_id, next_fire_at, and an optional warning when the schedule would fire more than 30 times in the next 7 days.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        chat_id:    { type: 'string',  description: 'Chat ID (must match the calling subagent\'s bound chat)' },
-        cron:       { type: 'string',  description: 'Standard 5-field cron expression (M H DoM Mon DoW), local server timezone' },
-        prompt:     { type: 'string',  description: 'The text that becomes the fired user turn body (max 4000 chars)' },
-        recurring:  { type: 'boolean', description: 'If false, the job is deleted after the first fire. Default true.' },
-        expires_at: { type: 'string',  description: 'Optional ISO-8601 timestamp; absent means the job runs until explicitly deleted or the chat is unpaired' },
-      },
-      required: ['chat_id', 'cron', 'prompt'],
-    },
-  },
-  {
-    name: 'dc_schedule_list',
-    requiresCapability: 'chat',
-    description: 'List all scheduled jobs for this chat. Returns an array of {job_id, cron, prompt, recurring, next_fire_at, expires_at, created_at, last_fired_at}.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        chat_id: { type: 'string', description: 'Chat ID (must match the calling subagent\'s bound chat)' },
-      },
-      required: ['chat_id'],
-    },
-  },
-  {
-    name: 'dc_schedule_delete',
-    requiresCapability: 'real_world_action',
-    description: 'Delete a scheduled job by its job_id. Returns {deleted: true} on success or {deleted: false} if the job did not exist.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        chat_id: { type: 'string', description: 'Chat ID (must match the calling subagent\'s bound chat)' },
-        job_id:  { type: 'string', description: 'The job ID returned from dc_schedule' },
-      },
-      required: ['chat_id', 'job_id'],
-    },
-  },
-  {
-    name: 'dc_resume_in_terminal',
-    requiresCapability: 'infrastructure',
-    description:
-      'Emit a one-line `cd … && claude --resume <uuid>` command that resumes this DC chat\'s conversation in the user\'s terminal. Call this when the user asks to continue the chat from their terminal, or to "teleport" the chat to their desk (both phrasings route here). Returns the command plus a warning telling the user to wait for the current turn to finish before pasting — the session file lock releases when the turn ends.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        chat_id: { type: 'string', description: 'The chat to resume from.' },
-      },
-      required: ['chat_id'],
-    },
-  },
-  {
-    name: 'dc_show_events',
-    requiresCapability: 'chat',
-    description:
-      'Show structured DC runtime events (tool calls, subagent turns, permission verdicts, WebXDC updates) for the user. Reads the JSONL event log in $DC_EVENT_DIR, filters by time window / stream / tool / error flag, and sends the result as a markdown file via the file reviewer. Use when the user asks "what did my agent do?", "show me errors", "why was X denied?", etc.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        chat_id: { type: 'string', description: 'Chat to deliver the events file to.' },
-        stream: {
-          type: 'string',
-          description: 'Which log stream to read. Default "all".',
-          enum: ['tools', 'turns', 'permissions', 'webxdc', 'all'],
-        },
-        since: { type: 'string', description: 'Time window. ISO-8601 timestamp, or "<N>h" / "<N>d" relative offset. Default "24h".' },
-        tool: { type: 'string', description: 'Optional tool name filter (tools stream only).' },
-        only_errors: { type: 'boolean', description: 'When true, keep only error events (tools ok=false, permissions deny, webxdc unverified, turns crash/timeout/resume-fallback). Default false.' },
-      },
-      required: ['chat_id'],
-    },
-  },
-]
-
-// ── Registry dispatch ───────────────────────────────────────────────────
-// All five deps (client, access, bindings, agents, logf) are module-scope,
-// so toolCtx and registryHandlers can be built here at module scope too.
+// ── Tail tool handlers + unified dispatch ───────────────────────────────
+// The tail tools' *definitions* (name/description/inputSchema/capability)
+// live in DC_TOOLS (dispatcher/dc-tools.ts) with no handler. Their bodies
+// stay here because they close over module-scope singletons that aren't
+// part of ToolCtx (scheduler, scheduleStore, subagentCache, tutorial,
+// startTutorialForChat, resume, cleanupChatState, ctx, appToolMap). All
+// five ToolCtx deps (client, access, bindings, agents, logf) are also
+// module-scope, so toolCtx and the unified dispatch Map are built here too.
 
 const toolCtx: ToolCtx = { client, access, bindings, agents, logf }
-const registryHandlers = new Map(
-  DC_TOOLS.filter(t => t.handler).map(t => [t.name, t.handler!] as const),
-)
 
-// ── Tool list ───────────────────────────────────────────────────────────
+type Dispatch = (args: Record<string, unknown>, callerChatId?: number) => Promise<ToolResult | null>
 
-mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
-    ...coreTools.map(withRequestorParam),
-    ...apps.flatMap(a => a.tools()).map(withRequestorParam),
-  ],
-}))
-
-/**
- * v1.3 — current-driver tracking for the capability gate.
- *
- * When a real inbound message triggers a subagent turn, we record the
- * sender's contact id here so the gate's default originator becomes the
- * actual sender — NOT the chat's pairing contact. This makes role
- * tiers (family-member, untrusted-agent, guest) actually enforce
- * differently from subscriber, instead of relying on the subagent to
- * self-declare `requestor_contact_id`.
- *
- * Set in `runSubagentTurn` around the `subagentCache.dispatch` call;
- * cleared in finally. Synthetic / scheduler / `dispatchAndCollect`
- * paths don't touch this map — they fall through to the chat's pairing
- * contact (the previous default), which is the correct semantic for
- * non-message-triggered runs.
- *
- * Subagent runs are serialized per chat by the cache, so a single
- * Map<chatId, contactId> is race-free.
- */
-const _currentDriver = new Map<number, number>()
-function defaultOriginatorFor(chatId: number): number | null {
-  const driver = _currentDriver.get(chatId)
-  if (driver !== undefined) return driver
-  return access.firstPermissionedContact(chatId)
-}
-
-/**
- * v1.3 slice 3 — tool name → required capability lookup. Built lazily
- * on first call (every app's `tools()` is eagerly registered before
- * any tool call lands, so this is safe). The cache is invalidated
- * never; tool annotations don't change at runtime.
- */
-let _requiredCapMap: Map<string, string> | null = null
-function requiredCapabilityFor(toolName: string): string | undefined {
-  if (_requiredCapMap === null) {
-    _requiredCapMap = new Map()
-    for (const t of coreTools) {
-      if (t.requiresCapability) _requiredCapMap.set(t.name, t.requiresCapability)
-    }
-    for (const app of apps) {
-      for (const t of app.tools()) {
-        if (t.requiresCapability) _requiredCapMap.set(t.name, t.requiresCapability)
-      }
-    }
-  }
-  return _requiredCapMap.get(toolName)
-}
-
-// ── Tool dispatch ───────────────────────────────────────────────────────
-
-/**
- * Start the onboarding tutorial for a paired chat. Sends the permission,
- * file-reviewer, and agent-setup .xdc app cards, then the tutorial welcome message.
- * Called from dc_access_pair (fresh pair), dc_start_tutorial (manual
- * restart via /deltachat:setup tour), and the /tour chat command.
- */
-function startTutorialForChat(chatId: number): void {
-  const action = tutorial.startTutorial(chatId)
-  if (!action.sendApps) return
-  ;(async () => {
-    try {
-      const permissions = await import('./permissions.js')
-      const { xdcPath: permPath } = await permissions.buildPermissionsXDC()
-      const permMsgId = await client.sendWebXDC(chatId, permPath)
-      const permApp = appToolMap.get('dc_test_permission')
-      if (permApp) ctx.registerWebXDCMsg(permMsgId, permApp, chatId)
-      const { registerPermissionsSession } = await import('./apps/permissions-app.js')
-      registerPermissionsSession(chatId, permMsgId)
-      try { (await import('node:fs')).unlinkSync(permPath) } catch {}
-
-      const fileReviewer = await import('./file-reviewer.js')
-      const { xdcPath: viewerPath } = await fileReviewer.buildViewerXDC()
-      const viewerMsgId = await client.sendWebXDC(chatId, viewerPath)
-      fileReviewer.setViewer(chatId, viewerMsgId)
-      const fileApp = appToolMap.get('dc_send_file')
-      if (fileApp) ctx.registerWebXDCMsg(viewerMsgId, fileApp, chatId)
-      try { (await import('node:fs')).unlinkSync(viewerPath) } catch {}
-
-      const { summonAgentSettings } = await import('./apps/agent-setup-app.js')
-      await summonAgentSettings(ctx, chatId)
-    } catch (err) {
-      logf('dc channel: tutorial sendApps error: %v', err)
-    }
-    for (const msg of action.messages) {
-      client.send(chatId, msg).catch(() => {})
-    }
-  })()
-}
-
-async function callCoreTool(name: string, args: Record<string, unknown>, callerChatId?: number): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean } | null> {
-  const h = registryHandlers.get(name)
-  if (h) return h(args, toolCtx, callerChatId)
-  switch (name) {
-      case 'dc_access_pair': {
+const tailHandlers: Record<string, Dispatch> = {
+  dc_access_pair: async (args, _callerChatId) => {
         const code = ((args.code as string) ?? '').trim()
         if (!code) {
           return { content: [{ type: 'text' as const, text: 'dc_access_pair: code is required' }], isError: true }
@@ -1215,9 +941,9 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         startTutorialForChat(chatId)
 
         return { content: [{ type: 'text' as const, text: `Paired chat ${chatId} successfully.` }] }
-      }
+  },
 
-      case 'dc_access_unpair': {
+  dc_access_unpair: async (args, _callerChatId) => {
         const contactIdStr = (args.contact_id as string | undefined)?.trim()
         const rawMode = (args.mode as string | undefined)?.trim()
         const mode: 'freeze' | 'delete' = rawMode === 'delete' ? 'delete' : 'freeze'
@@ -1282,9 +1008,9 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         logf('dc channel: terminal-unpaired contact %d (%s, %d chat(s))', contactId, mode, chatIds.length)
         const verb = mode === 'delete' ? 'deleted' : 'frozen (read-only)'
         return { content: [{ type: 'text' as const, text: `Unpaired ${display} (contact ${contactId}): ${chatIds.length} chat(s) ${verb}.` }] }
-      }
+  },
 
-      case 'dc_start_tutorial': {
+  dc_start_tutorial: async (args, _callerChatId) => {
         const chatIdArg = (args.chat_id as string | undefined)?.trim()
         let chatId: number
         if (chatIdArg) {
@@ -1309,9 +1035,9 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         logf('dc channel: manual tutorial restart chat=%d', chatId)
         startTutorialForChat(chatId)
         return { content: [{ type: 'text' as const, text: `Started tutorial in chat ${chatId}.` }] }
-      }
+  },
 
-      case 'dc_create_agent': {
+  dc_create_agent: async (args, _callerChatId) => {
         const name = ((args.name as string) ?? '').trim()
         const prompt = ((args.prompt as string) ?? '').trim()
         const userChatIdStr = args.user_chat_id as string
@@ -1362,9 +1088,9 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
 
         const result = `Created agent "${name}" (chat ${groupId}, agent_id=${agentName}).`
         return { content: [{ type: 'text' as const, text: result }] }
-      }
+  },
 
-      case 'dc_update_agent': {
+  dc_update_agent: async (args, callerChatId) => {
         const chatId = Number(args.chat_id as string)
         const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
         const model = typeof args.model === 'string' ? args.model.trim() : ''
@@ -1415,9 +1141,9 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           }),
         )
         return { content: [{ type: 'text' as const, text: `Updated ${changes.join(', ')} for agent ${agentId} (${affected.length} chat(s) bound).` }] }
-      }
+  },
 
-      case 'dc_send_webxdc': {
+  dc_send_webxdc: async (args, _callerChatId) => {
         const chatId = Number(args.chat_id as string)
         const xdcPath = ((args.xdc_path as string) ?? '').trim()
         if (!chatId || Number.isNaN(chatId) || !xdcPath) {
@@ -1432,9 +1158,9 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         }
         const msgId = await client.sendWebXDC(chatId, xdcPath)
         return { content: [{ type: 'text' as const, text: `Sent WebXDC app to chat ${chatId} (msg id: ${msgId}).` }] }
-      }
+  },
 
-      case 'dc_send_attachment': {
+  dc_send_attachment: async (args, _callerChatId) => {
         const chatId = Number(args.chat_id as string)
         const filePath = ((args.file_path as string) ?? '').trim()
         const caption = (args.caption as string | undefined) ?? undefined
@@ -1450,9 +1176,9 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         }
         const msgId = await client.sendAttachment(chatId, filePath, caption)
         return { content: [{ type: 'text' as const, text: `Sent attachment to chat ${chatId} (msg id: ${msgId}).` }] }
-      }
+  },
 
-      case 'dc_schedule': {
+  dc_schedule: async (args, callerChatId) => {
         const chatIdRaw = args.chat_id as string
         const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
         if (!Number.isFinite(chatId)) {
@@ -1513,9 +1239,9 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           body.warning = `This schedule will fire ${fireCount} times in the next 7 days. Consider whether you need it that often.`
         }
         return { content: [{ type: 'text' as const, text: JSON.stringify(body, null, 2) }] }
-      }
+  },
 
-      case 'dc_schedule_list': {
+  dc_schedule_list: async (args, callerChatId) => {
         const chatIdRaw = args.chat_id as string
         const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
         if (!Number.isFinite(chatId)) {
@@ -1550,9 +1276,9 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           }
         })
         return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] }
-      }
+  },
 
-      case 'dc_schedule_delete': {
+  dc_schedule_delete: async (args, callerChatId) => {
         const chatIdRaw = args.chat_id as string
         const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
         if (!Number.isFinite(chatId)) {
@@ -1568,9 +1294,9 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         if (!jobId) return { content: [{ type: 'text' as const, text: 'dc_schedule_delete: job_id is required' }], isError: true }
         const existed = scheduler.remove(chatId, jobId)
         return { content: [{ type: 'text' as const, text: JSON.stringify({ deleted: existed }) }] }
-      }
+  },
 
-      case 'dc_resume_in_terminal': {
+  dc_resume_in_terminal: async (args, _callerChatId) => {
         const chatIdRaw = args.chat_id as string
         const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
         if (!Number.isFinite(chatId)) {
@@ -1631,9 +1357,9 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
           `Resume command already sent to chat ${chatId} ${detail}.\n\n` +
           `Do NOT repeat the command in your reply. Send a brief one-line message telling the user to wait for your turn to end, then paste the command in their terminal.`
         }] }
-      }
+  },
 
-      case 'dc_show_events': {
+  dc_show_events: async (args, _callerChatId) => {
         const chatIdRaw = args.chat_id as string
         const chatId = chatIdRaw ? Number(chatIdRaw) : NaN
         if (!Number.isFinite(chatId)) {
@@ -1677,11 +1403,118 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         }, ctx)
         if (result?.isError) return result
         return { content: [{ type: 'text' as const, text: `Sent ${hits.length} event(s) to chat ${chatId} as "${title}".` }] }
-      }
+  },
+}
 
-      default:
-        return null
+const coreToolDispatch = new Map<string, Dispatch>([
+  ...DC_TOOLS.filter(t => t.handler).map(t => [t.name, ((a, c) => t.handler!(a, toolCtx, c)) as Dispatch] as [string, Dispatch]),
+  ...Object.entries(tailHandlers),
+])
+
+/** Exposed for the structural completeness test. */
+export function coreToolNames(): string[] { return [...coreToolDispatch.keys()] }
+
+// ── Tool list ───────────────────────────────────────────────────────────
+
+mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [
+    ...DC_TOOLS.map(withRequestorParam),
+    ...apps.flatMap(a => a.tools()).map(withRequestorParam),
+  ],
+}))
+
+/**
+ * v1.3 — current-driver tracking for the capability gate.
+ *
+ * When a real inbound message triggers a subagent turn, we record the
+ * sender's contact id here so the gate's default originator becomes the
+ * actual sender — NOT the chat's pairing contact. This makes role
+ * tiers (family-member, untrusted-agent, guest) actually enforce
+ * differently from subscriber, instead of relying on the subagent to
+ * self-declare `requestor_contact_id`.
+ *
+ * Set in `runSubagentTurn` around the `subagentCache.dispatch` call;
+ * cleared in finally. Synthetic / scheduler / `dispatchAndCollect`
+ * paths don't touch this map — they fall through to the chat's pairing
+ * contact (the previous default), which is the correct semantic for
+ * non-message-triggered runs.
+ *
+ * Subagent runs are serialized per chat by the cache, so a single
+ * Map<chatId, contactId> is race-free.
+ */
+const _currentDriver = new Map<number, number>()
+function defaultOriginatorFor(chatId: number): number | null {
+  const driver = _currentDriver.get(chatId)
+  if (driver !== undefined) return driver
+  return access.firstPermissionedContact(chatId)
+}
+
+/**
+ * v1.3 slice 3 — tool name → required capability lookup. Built lazily
+ * on first call (every app's `tools()` is eagerly registered before
+ * any tool call lands, so this is safe). The cache is invalidated
+ * never; tool annotations don't change at runtime.
+ */
+let _requiredCapMap: Map<string, string> | null = null
+function requiredCapabilityFor(toolName: string): string | undefined {
+  if (_requiredCapMap === null) {
+    _requiredCapMap = new Map()
+    for (const t of DC_TOOLS) {
+      if (t.requiresCapability) _requiredCapMap.set(t.name, t.requiresCapability)
+    }
+    for (const app of apps) {
+      for (const t of app.tools()) {
+        if (t.requiresCapability) _requiredCapMap.set(t.name, t.requiresCapability)
+      }
+    }
   }
+  return _requiredCapMap.get(toolName)
+}
+
+// ── Tool dispatch ───────────────────────────────────────────────────────
+
+/**
+ * Start the onboarding tutorial for a paired chat. Sends the permission,
+ * file-reviewer, and agent-setup .xdc app cards, then the tutorial welcome message.
+ * Called from dc_access_pair (fresh pair), dc_start_tutorial (manual
+ * restart via /deltachat:setup tour), and the /tour chat command.
+ */
+function startTutorialForChat(chatId: number): void {
+  const action = tutorial.startTutorial(chatId)
+  if (!action.sendApps) return
+  ;(async () => {
+    try {
+      const permissions = await import('./permissions.js')
+      const { xdcPath: permPath } = await permissions.buildPermissionsXDC()
+      const permMsgId = await client.sendWebXDC(chatId, permPath)
+      const permApp = appToolMap.get('dc_test_permission')
+      if (permApp) ctx.registerWebXDCMsg(permMsgId, permApp, chatId)
+      const { registerPermissionsSession } = await import('./apps/permissions-app.js')
+      registerPermissionsSession(chatId, permMsgId)
+      try { (await import('node:fs')).unlinkSync(permPath) } catch {}
+
+      const fileReviewer = await import('./file-reviewer.js')
+      const { xdcPath: viewerPath } = await fileReviewer.buildViewerXDC()
+      const viewerMsgId = await client.sendWebXDC(chatId, viewerPath)
+      fileReviewer.setViewer(chatId, viewerMsgId)
+      const fileApp = appToolMap.get('dc_send_file')
+      if (fileApp) ctx.registerWebXDCMsg(viewerMsgId, fileApp, chatId)
+      try { (await import('node:fs')).unlinkSync(viewerPath) } catch {}
+
+      const { summonAgentSettings } = await import('./apps/agent-setup-app.js')
+      await summonAgentSettings(ctx, chatId)
+    } catch (err) {
+      logf('dc channel: tutorial sendApps error: %v', err)
+    }
+    for (const msg of action.messages) {
+      client.send(chatId, msg).catch(() => {})
+    }
+  })()
+}
+
+async function callCoreTool(name: string, args: Record<string, unknown>, callerChatId?: number): Promise<ToolResult | null> {
+  const d = coreToolDispatch.get(name)
+  return d ? d(args, callerChatId) : null
 }
 
 mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
@@ -1960,7 +1793,7 @@ async function main(): Promise<void> {
   }
 
   // Self-check: agents.DC_TOOL_NAMES is a hand-maintained mirror of the
-  // tools the dispatcher actually registers (coreTools + apps' tools).
+  // tools the dispatcher actually registers (DC_TOOLS + apps' tools).
   // ensureMcpDc expands the bare `mcp__dc` server prefix into this set,
   // so drift here means newly-saved agents will not include freshly-added
   // tools (and `assertCanSpawn` / CC's allowlist won't catch the gap).
@@ -1968,7 +1801,7 @@ async function main(): Promise<void> {
   // a tool surfaces in the dispatcher log on the very next restart.
   try {
     const registered = new Set([
-      ...coreTools.map(t => t.name),
+      ...DC_TOOLS.map(t => t.name),
       ...apps.flatMap(a => a.tools()).map(t => t.name),
     ])
     const declared = new Set(agents.DC_TOOL_NAMES)

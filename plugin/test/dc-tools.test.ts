@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { DC_TOOLS, type ToolCtx } from '../dispatcher/dc-tools'
+import { coreToolNames } from '../server'
 
 /**
  * Build a ToolCtx whose members throw unless a test overrides them, so each
@@ -23,6 +24,13 @@ describe('DC_TOOLS registry', () => {
     const names = DC_TOOLS.map(t => t.name)
     expect(new Set(names).size).toBe(names.length)
   })
+})
+
+test('every DC_TOOLS tool has exactly one dispatch entry, and vice versa', () => {
+  const registry = new Set(DC_TOOLS.map(t => t.name))
+  const dispatch = new Set(coreToolNames())
+  expect([...registry].filter(n => !dispatch.has(n))).toEqual([])
+  expect([...dispatch].filter(n => !registry.has(n))).toEqual([])
 })
 
 test('reply sends to an allowed chat and returns the message id', async () => {

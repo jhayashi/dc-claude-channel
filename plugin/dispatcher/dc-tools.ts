@@ -2,6 +2,7 @@ import type { DCClient } from '../dc-client.js'
 import type * as accessNs from '../access/index.js'
 import type * as bindingsNs from '../bindings.js'
 import type * as agentsNs from '../agents.js'
+import { MODEL_IDS } from '../models.js'
 
 export type ToolResult = {
   content: Array<{ type: 'text'; text: string }>
@@ -413,6 +414,186 @@ export const DC_TOOLS: readonly DcToolDef[] = [
         ctx.logf('dc_download_attachment: downloaded unpermissioned attachment msgId=%d fromId=%d (include_unpermissioned)', msgId, msg.fromId ?? 0)
       }
       return { content: [{ type: 'text' as const, text: msg.file }] }
+    },
+  },
+  // ── Tail tools ──────────────────────────────────────────────────────────
+  // Data-only defs. Their handlers close over server.ts module-scope
+  // singletons (scheduler, scheduleStore, subagentCache, tutorial, resume,
+  // cleanupChatState, ctx, appToolMap) that aren't part of ToolCtx, so the
+  // implementations live as closures in server.ts's `tailHandlers` and are
+  // wired into the unified dispatch Map there.
+  {
+    name: 'dc_access_pair',
+    requiresCapability: 'infrastructure',
+    description: 'Complete a pending pairing request. The user provides the code shown in their Delta Chat.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        code: { type: 'string', description: 'The pairing code from the Delta Chat message' },
+      },
+      required: ['code'],
+    },
+  },
+  {
+    name: 'dc_access_unpair',
+    requiresCapability: 'infrastructure',
+    description: 'Terminal escape hatch for unpair. No args: list paired contacts (display name, address, chat count). With contact_id: unpair that contact — posts a farewell in each owned chat and either freezes (leaves the chat read-only) or deletes the chats. Mirrors the Paired devices screen in the agent-setup WebXDC card.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        contact_id: { type: 'string', description: 'Contact ID to unpair (optional — omit to list).' },
+        mode: { type: 'string', description: 'freeze (default, chats become read-only) or delete (chats removed).', enum: ['freeze', 'delete'] },
+      },
+    },
+  },
+  {
+    name: 'dc_start_tutorial',
+    requiresCapability: 'chat',
+    description: 'Manually (re)start the onboarding tour in a paired chat. Resets the tutorial state machine and re-sends the permission + file-reviewer app cards. Used by /deltachat:setup tour and the in-chat /tour command. With no chat_id, starts the tour in the only paired chat (errors if there are zero or multiple).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string', description: 'Chat ID to run the tour in. Optional; omit to auto-select when only one chat is paired.' },
+      },
+    },
+  },
+  {
+    name: 'dc_create_agent',
+    requiresCapability: 'infrastructure',
+    description: 'Create a Delta Chat agent with a behavior prompt. The bot creates an encrypted group, adds the user, and stores the prompt. Future messages in this agent will be handled according to the prompt.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Agent name (e.g., "Marketing Agent")' },
+        prompt: { type: 'string', description: 'Short behavior instruction for this agent (e.g., "Summarize any links shared. Tag by topic.")' },
+        user_chat_id: { type: 'string', description: 'The chat_id from the user\'s 1:1 conversation (used to find their contact ID to add to the agent)' },
+        model: {
+          type: 'string',
+          description: 'Model for this agent. Use opus for coding/software tasks, haiku for simple Q&A, sonnet for everything else.',
+          enum: [...MODEL_IDS],
+        },
+      },
+      required: ['name', 'prompt', 'user_chat_id'],
+    },
+  },
+  {
+    name: 'dc_update_agent',
+    requiresCapability: 'infrastructure',
+    description: 'Update the behavior prompt and/or model for an existing agent. Use when the user asks to change how Claude handles messages in an agent, or to switch which model (haiku/sonnet/opus) runs it. At least one of prompt or model must be provided. Changes apply to all chats bound to the same agent (agent definitions are now shared/reusable); cached subagents are evicted so the next message respawns under the new config.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string', description: 'Chat ID of an agent chat (used to look up which agent definition to update)' },
+        prompt: { type: 'string', description: 'Updated behavior prompt (optional)' },
+        model: {
+          type: 'string',
+          description: `Updated subagent model (optional). One of: ${MODEL_IDS.join(', ')}.`,
+          enum: [...MODEL_IDS],
+        },
+      },
+      required: ['chat_id'],
+    },
+  },
+  {
+    name: 'dc_send_webxdc',
+    requiresCapability: 'private_data_write',
+    description: 'Send a .xdc WebXDC app file to a Delta Chat chat. Use this to send interactive apps (games, tools) as self-contained WebXDC bundles. WHEN TALKING WITH A USER OVER DELTA CHAT, this is also the channel for ALL visual output — UI mockups, design comparisons, before/after demos, diagrams, charts, data visualizations. If you would otherwise build a standalone HTML page, a demo site, or any static web preview to show the user something, build it as a WebXDC instead and send it through this tool. The WebXDC renders inline in the chat, stays accessible from the DC app list across devices, and is the native canvas for visuals here — do not offer to host a website, share a markdown sketch, or describe visuals in prose when this option is available. The webxdc-builder skill has the HTML rules and patterns.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string', description: 'Chat ID to send to' },
+        xdc_path: { type: 'string', description: 'Absolute path to the .xdc file to send' },
+      },
+      required: ['chat_id', 'xdc_path'],
+    },
+  },
+  {
+    name: 'dc_send_attachment',
+    requiresCapability: 'private_data_write',
+    description: 'Send a file (image, PDF, document, etc.) to a Delta Chat chat. Delta Chat auto-detects the type. Provide an optional caption.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string', description: 'Chat ID to send to' },
+        file_path: { type: 'string', description: 'Absolute path to the file to send' },
+        caption: { type: 'string', description: 'Optional caption text' },
+      },
+      required: ['chat_id', 'file_path'],
+    },
+  },
+  {
+    name: 'dc_schedule',
+    requiresCapability: 'real_world_action',
+    description: 'Schedule a recurring or one-shot prompt that the dispatcher will fire into this chat as a synthetic user turn. Jobs persist across dispatcher restarts and run independently of subagent lifetime. Returns a job_id, next_fire_at, and an optional warning when the schedule would fire more than 30 times in the next 7 days.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chat_id:    { type: 'string',  description: 'Chat ID (must match the calling subagent\'s bound chat)' },
+        cron:       { type: 'string',  description: 'Standard 5-field cron expression (M H DoM Mon DoW), local server timezone' },
+        prompt:     { type: 'string',  description: 'The text that becomes the fired user turn body (max 4000 chars)' },
+        recurring:  { type: 'boolean', description: 'If false, the job is deleted after the first fire. Default true.' },
+        expires_at: { type: 'string',  description: 'Optional ISO-8601 timestamp; absent means the job runs until explicitly deleted or the chat is unpaired' },
+      },
+      required: ['chat_id', 'cron', 'prompt'],
+    },
+  },
+  {
+    name: 'dc_schedule_list',
+    requiresCapability: 'chat',
+    description: 'List all scheduled jobs for this chat. Returns an array of {job_id, cron, prompt, recurring, next_fire_at, expires_at, created_at, last_fired_at}.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string', description: 'Chat ID (must match the calling subagent\'s bound chat)' },
+      },
+      required: ['chat_id'],
+    },
+  },
+  {
+    name: 'dc_schedule_delete',
+    requiresCapability: 'real_world_action',
+    description: 'Delete a scheduled job by its job_id. Returns {deleted: true} on success or {deleted: false} if the job did not exist.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string', description: 'Chat ID (must match the calling subagent\'s bound chat)' },
+        job_id:  { type: 'string', description: 'The job ID returned from dc_schedule' },
+      },
+      required: ['chat_id', 'job_id'],
+    },
+  },
+  {
+    name: 'dc_resume_in_terminal',
+    requiresCapability: 'infrastructure',
+    description:
+      'Emit a one-line `cd … && claude --resume <uuid>` command that resumes this DC chat\'s conversation in the user\'s terminal. Call this when the user asks to continue the chat from their terminal, or to "teleport" the chat to their desk (both phrasings route here). Returns the command plus a warning telling the user to wait for the current turn to finish before pasting — the session file lock releases when the turn ends.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string', description: 'The chat to resume from.' },
+      },
+      required: ['chat_id'],
+    },
+  },
+  {
+    name: 'dc_show_events',
+    requiresCapability: 'chat',
+    description:
+      'Show structured DC runtime events (tool calls, subagent turns, permission verdicts, WebXDC updates) for the user. Reads the JSONL event log in $DC_EVENT_DIR, filters by time window / stream / tool / error flag, and sends the result as a markdown file via the file reviewer. Use when the user asks "what did my agent do?", "show me errors", "why was X denied?", etc.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string', description: 'Chat to deliver the events file to.' },
+        stream: {
+          type: 'string',
+          description: 'Which log stream to read. Default "all".',
+          enum: ['tools', 'turns', 'permissions', 'webxdc', 'all'],
+        },
+        since: { type: 'string', description: 'Time window. ISO-8601 timestamp, or "<N>h" / "<N>d" relative offset. Default "24h".' },
+        tool: { type: 'string', description: 'Optional tool name filter (tools stream only).' },
+        only_errors: { type: 'boolean', description: 'When true, keep only error events (tools ok=false, permissions deny, webxdc unverified, turns crash/timeout/resume-fallback). Default false.' },
+      },
+      required: ['chat_id'],
     },
   },
 ]
