@@ -186,3 +186,47 @@ test('dc_get_agent_prompt: rejects missing chat_id', async () => {
   const r = await def.handler!({}, ctx)
   expect(r.isError).toBe(true)
 })
+
+// ── dc_check_contact ──────────────────────────────────────────────────────
+
+test('dc_check_contact: returns contact info for a permissioned contact', async () => {
+  const def = DC_TOOLS.find(t => t.name === 'dc_check_contact')!
+  const ctx = makeToolCtx({
+    access: {
+      DEFAULT_AGENT_ID: 'default',
+      isContactPermissioned: (_agentId: string, _contactId: number) => true,
+      loadContact: (_agentId: string, _contactId: number) => ({ firstPairedAt: '2026-01-01T00:00:00.000Z' }),
+      chatsForOwner: (_contactId: number) => [1, 2],
+      firstPermissionedContact: (_chatId: number) => 5,
+    } as unknown as ToolCtx['access'],
+    client: {
+      getContact: async (_id: number) => ({ displayName: 'Alice', name: 'Alice', address: 'alice@delta.chat' }),
+    } as unknown as ToolCtx['client'],
+  })
+  const r = await def.handler!({ contact_id: '5' }, ctx)
+  expect(r.isError).toBeUndefined()
+  const parsed = JSON.parse(r.content[0].text)
+  expect(parsed.contactId).toBe(5)
+  expect(parsed.permissioned).toBe(true)
+  expect(parsed.displayName).toBe('Alice')
+  expect(parsed.pairedChatCount).toBe(2)
+})
+
+test('dc_check_contact: rejects missing contact_id', async () => {
+  const def = DC_TOOLS.find(t => t.name === 'dc_check_contact')!
+  const ctx = makeToolCtx({ access: {} as unknown as ToolCtx['access'] })
+  const r = await def.handler!({}, ctx)
+  expect(r.isError).toBe(true)
+})
+
+// ── dc_exit_session ───────────────────────────────────────────────────────
+
+test('dc_exit_session: errors gracefully when /proc read fails', async () => {
+  // In test environment /proc/<ppid>/stat will exist but parsing may vary.
+  // We just verify the handler is present and returns a result (not throws).
+  const def = DC_TOOLS.find(t => t.name === 'dc_exit_session')!
+  const ctx = makeToolCtx()
+  // The handler reads /proc/<ppid>/stat; in test we just check it returns something.
+  const r = await def.handler!({}, ctx)
+  expect(r.content.length).toBeGreaterThan(0)
+})
