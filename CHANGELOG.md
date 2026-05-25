@@ -4,6 +4,23 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.3] — 2026-05-24
+
+Robustness follow-ups to the v1.4.2 cold-spawn hotfix.
+
+### Fixed
+
+- **A chat bound to a deleted directory no longer hangs.** When a binding's `workingDir` pointed at a directory that no longer exists (e.g. a temporary git worktree cleaned up after a release/merge), the subagent spawned into the missing cwd and produced no output until the 1-hour turn timeout, silently wedging the chat. `resolveWorkingDir` now detects the missing dir at spawn time, heals to the dispatcher's cwd, persists the heal onto the binding, and logs it. The pre-existing unset-dir fallback is folded into the same helper.
+
+### Added
+
+- **`DC_CHANNEL_FLAG_PRESENT=1`** explicitly overrides the SessionStart hook's heuristic ancestor-tree walk for the `--dangerously-load-development-channels` flag — for launch wrappers (or the hook's own tests) where the flag is in effect but an intermediate process hides it from the walk.
+
+### Internal
+
+- Documented that a binding's `workingDir` can reference a deleted worktree, and how to repoint it (CLAUDE.md gotcha).
+- Repaired the `session-start-hook` tests, which pre-dated the channel-flag detection and never established the flag-present precondition.
+
 ## [1.4.2] — 2026-05-24
 
 Hotfix for a cold-spawn deadlock that made every chat hang.
@@ -70,6 +87,7 @@ The agent format aligns with Claude Code's own. Agent definitions move from `~/.
 
 - **`DC_TOOL_NAMES` was missing `reply`.** The cross-chat post tool is registered without a `dc_` prefix and slipped past the initial drift catalog; the boot drift-check warned but newly-saved agents silently lost cross-chat reply access until added.
 
+[1.4.3]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.2...v1.4.0
