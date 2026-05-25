@@ -230,3 +230,75 @@ test('dc_exit_session: errors gracefully when /proc read fails', async () => {
   const r = await def.handler!({}, ctx)
   expect(r.content.length).toBeGreaterThan(0)
 })
+
+// ── dc_chat_history ───────────────────────────────────────────────────────
+
+test('dc_chat_history: returns formatted message lines', async () => {
+  const def = DC_TOOLS.find(t => t.name === 'dc_chat_history')!
+  const ctx = makeToolCtx({
+    access: {
+      isAllowed: (id: number) => id === 10,
+      DEFAULT_AGENT_ID: 'default',
+      isContactTrustedForContent: (_agentId: string, _contactId: number) => true,
+    } as unknown as ToolCtx['access'],
+    client: {
+      getChatHistory: async (_chatId: number, _count: number) => [
+        { fromId: 5, text: 'Hello', timestamp: new Date(1000000), id: 1, senderName: 'Alice' },
+      ],
+    } as unknown as ToolCtx['client'],
+    bindings: { getBinding: () => null } as unknown as ToolCtx['bindings'],
+  })
+  const r = await def.handler!({ chat_id: '10', count: 5 }, ctx)
+  expect(r.isError).toBeUndefined()
+  expect(r.content[0].text.length).toBeGreaterThan(0)
+})
+
+test('dc_chat_history: rejects inaccessible chat', async () => {
+  const def = DC_TOOLS.find(t => t.name === 'dc_chat_history')!
+  const ctx = makeToolCtx({
+    access: { isAllowed: () => false } as unknown as ToolCtx['access'],
+  })
+  const r = await def.handler!({ chat_id: '99' }, ctx)
+  expect(r.isError).toBe(true)
+})
+
+// ── dc_download_attachment ────────────────────────────────────────────────
+
+test('dc_download_attachment: returns file path for permitted sender', async () => {
+  const def = DC_TOOLS.find(t => t.name === 'dc_download_attachment')!
+  const ctx = makeToolCtx({
+    access: {
+      DEFAULT_AGENT_ID: 'default',
+      isContactTrustedForContent: (_agentId: string, _contactId: number) => true,
+    } as unknown as ToolCtx['access'],
+    client: {
+      downloadMessage: async (_id: number) => ({ file: '/tmp/attachment.jpg', fromId: 5, chatId: 10 }),
+    } as unknown as ToolCtx['client'],
+    bindings: { getBinding: () => null } as unknown as ToolCtx['bindings'],
+  })
+  const r = await def.handler!({ message_id: '77' }, ctx)
+  expect(r.isError).toBeUndefined()
+  expect(r.content[0].text).toBe('/tmp/attachment.jpg')
+})
+
+test('dc_download_attachment: blocks unpermissioned sender by default', async () => {
+  const def = DC_TOOLS.find(t => t.name === 'dc_download_attachment')!
+  const ctx = makeToolCtx({
+    access: {
+      DEFAULT_AGENT_ID: 'default',
+      isContactTrustedForContent: (_agentId: string, _contactId: number) => false,
+    } as unknown as ToolCtx['access'],
+    client: {
+      downloadMessage: async (_id: number) => ({ file: '/tmp/evil.pdf', fromId: 999, chatId: 10 }),
+    } as unknown as ToolCtx['client'],
+  })
+  const r = await def.handler!({ message_id: '88' }, ctx)
+  expect(r.isError).toBe(true)
+})
+
+test('dc_download_attachment: rejects missing message_id', async () => {
+  const def = DC_TOOLS.find(t => t.name === 'dc_download_attachment')!
+  const ctx = makeToolCtx({ client: {} as unknown as ToolCtx['client'] })
+  const r = await def.handler!({}, ctx)
+  expect(r.isError).toBe(true)
+})
