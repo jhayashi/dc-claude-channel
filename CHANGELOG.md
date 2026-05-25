@@ -4,6 +4,16 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.4] — 2026-05-25
+
+Fixes a regression in 1.4.2/1.4.3 that stopped the dispatcher from launching.
+
+### Fixed
+
+- **Dispatcher failed to start after a restart (regression introduced in 1.4.2).** v1.4.2 emptied `plugin/.mcp.json` to stop subagents from booting a rival dispatcher — but the `deltachat` server it removed is *also* how the host session launches the dispatcher (there is no channel-launch command in `plugin.json`). Any install that restarted on 1.4.2 or 1.4.3 came up with no dispatcher, and Delta Chat went dark. The `deltachat` server is restored, and the rival-dispatcher problem is now solved at the source: `server.ts` probes the dispatcher socket at startup (`isDispatcherListening`, `dispatcher/dispatcher-singleton.ts`) and a duplicate instance exits immediately instead of blocking forever on the DC account-DB lock. The host's first instance proceeds normally. Because this no longer relies on `--strict-mcp-config`, subagents keep inheriting the user's global MCP servers (Gmail/Calendar/…).
+
+**Upgrade note:** 1.4.4 supersedes 1.4.2 and 1.4.3. Installs on those versions should update to 1.4.4 to avoid the dispatcher-launch failure on the next restart.
+
 ## [1.4.3] — 2026-05-24
 
 Robustness follow-ups to the v1.4.2 cold-spawn hotfix.
@@ -87,6 +97,7 @@ The agent format aligns with Claude Code's own. Agent definitions move from `~/.
 
 - **`DC_TOOL_NAMES` was missing `reply`.** The cross-chat post tool is registered without a `dc_` prefix and slipped past the initial drift catalog; the boot drift-check warned but newly-saved agents silently lost cross-chat reply access until added.
 
+[1.4.4]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.0...v1.4.1
