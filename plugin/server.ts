@@ -892,12 +892,6 @@ const socketServer = new SocketServer({
 
 const coreTools = [
   {
-    name: 'dc_access_arm_pairing',
-    requiresCapability: 'infrastructure',
-    description: 'Arm a 5-minute pairing window: the next verified-contact event will materialize a `Claude` chat with that contact. Called by /deltachat:setup before the user scans the QR.',
-    inputSchema: { type: 'object' as const, properties: {} },
-  },
-  {
     name: 'dc_access_pair',
     requiresCapability: 'infrastructure',
     description: 'Complete a pending pairing request. The user provides the code shown in their Delta Chat.',
@@ -1184,42 +1178,6 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
   const h = registryHandlers.get(name)
   if (h) return h(args, toolCtx, callerChatId)
   switch (name) {
-      case 'dc_access_arm_pairing': {
-        // Clean up any previous armed group (stale or unused). Re-arming
-        // always produces a fresh "Claude" group so the QR is unique and
-        // the user can't accidentally land in a pre-existing leftover.
-        const prevGroup = access.getArmedGroupChatId()
-        if (prevGroup !== null) {
-          try {
-            await client.deleteChat(prevGroup)
-            logf('dc channel: deleted previous armed group chat=%d', prevGroup)
-          } catch (err) {
-            logf('dc channel: failed to delete previous armed group chat=%d: %v', prevGroup, err)
-          }
-        }
-        let groupChatId: number
-        try {
-          groupChatId = await client.createGroup('Claude')
-        } catch (err) {
-          logf('dc channel: createGroup failed: %v', err)
-          return { content: [{ type: 'text' as const, text: `dc_access_arm_pairing: failed to create group: ${err}` }], isError: true }
-        }
-        // Stamp the default agent's composed badge on the group so the user
-        // sees the agent's identity immediately after scanning the QR (before
-        // the binding is actually created by dc_access_pair).
-        try {
-          const defaultAgent = agents.ensureDefaultAgent()
-          await setAgentIcon({ client, logf }, groupChatId, defaultAgent)
-        } catch (err) {
-          logf('dc channel: setAgentIcon for armed group %d failed: %v', groupChatId, err)
-        }
-        access.armPairing(groupChatId)
-        const expires = access.getArmedUntil()
-        const iso = expires ? new Date(expires).toISOString() : 'unknown'
-        logf('dc channel: pairing armed until %s with group chat=%d', iso, groupChatId)
-        return { content: [{ type: 'text' as const, text: `Pairing armed for 5 minutes (until ${iso}).` }] }
-      }
-
       case 'dc_access_pair': {
         const code = ((args.code as string) ?? '').trim()
         if (!code) {

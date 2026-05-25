@@ -190,6 +190,48 @@ export const DC_TOOLS: readonly DcToolDef[] = [
     },
   },
   {
+    name: 'dc_access_arm_pairing',
+    requiresCapability: 'infrastructure',
+    description: 'Arm a 5-minute pairing window: the next verified-contact event will materialize a `Claude` chat with that contact. Called by /deltachat:setup before the user scans the QR.',
+    inputSchema: { type: 'object', properties: {} },
+    handler: async (_args, ctx) => {
+      // Clean up any previous armed group (stale or unused). Re-arming
+      // always produces a fresh "Claude" group so the QR is unique and
+      // the user can't accidentally land in a pre-existing leftover.
+      const prevGroup = ctx.access.getArmedGroupChatId()
+      if (prevGroup !== null) {
+        try {
+          await ctx.client.deleteChat(prevGroup)
+          ctx.logf('dc channel: deleted previous armed group chat=%d', prevGroup)
+        } catch (err) {
+          ctx.logf('dc channel: failed to delete previous armed group chat=%d: %v', prevGroup, err)
+        }
+      }
+      let groupChatId: number
+      try {
+        groupChatId = await ctx.client.createGroup('Claude')
+      } catch (err) {
+        ctx.logf('dc channel: createGroup failed: %v', err)
+        return { content: [{ type: 'text' as const, text: `dc_access_arm_pairing: failed to create group: ${err}` }], isError: true }
+      }
+      // Stamp the default agent's composed badge on the group so the user
+      // sees the agent's identity immediately after scanning the QR (before
+      // the binding is actually created by dc_access_pair).
+      try {
+        const defaultAgent = ctx.agents.ensureDefaultAgent()
+        const { setAgentIcon } = await import('../apps/agent-setup-app.js')
+        await setAgentIcon({ client: ctx.client, logf: ctx.logf }, groupChatId, defaultAgent)
+      } catch (err) {
+        ctx.logf('dc channel: setAgentIcon for armed group %d failed: %v', groupChatId, err)
+      }
+      ctx.access.armPairing(groupChatId)
+      const expires = ctx.access.getArmedUntil()
+      const iso = expires ? new Date(expires).toISOString() : 'unknown'
+      ctx.logf('dc channel: pairing armed until %s with group chat=%d', iso, groupChatId)
+      return { content: [{ type: 'text' as const, text: `Pairing armed for 5 minutes (until ${iso}).` }] }
+    },
+  },
+  {
     name: 'dc_check_contact',
     requiresCapability: 'chat',
     description: 'Look up a contact and check whether they are permissioned to interact with the bot. Use when reasoning about whether to trust content originating from a specific contact (e.g. when a chat history message tagged [UNPERMISSIONED] surfaces and you need to decide what to do). Permissioned contacts have completed the bot\'s pair ceremony or have an existing trust record; unpermissioned contacts are chat members the bot can see but doesn\'t trust as principals.',

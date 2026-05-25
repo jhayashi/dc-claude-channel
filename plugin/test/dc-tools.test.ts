@@ -302,3 +302,54 @@ test('dc_download_attachment: rejects missing message_id', async () => {
   const r = await def.handler!({}, ctx)
   expect(r.isError).toBe(true)
 })
+
+// ── dc_access_arm_pairing ─────────────────────────────────────────────────
+
+test('dc_access_arm_pairing: creates group and arms pairing', async () => {
+  const def = DC_TOOLS.find(t => t.name === 'dc_access_arm_pairing')!
+  const deletedChats: number[] = []
+  const ctx = makeToolCtx({
+    access: {
+      getArmedGroupChatId: () => null,
+      isArmed: () => false,
+      armPairing: (_id: number) => {},
+      getArmedUntil: () => Date.now() + 300_000,
+    } as unknown as ToolCtx['access'],
+    client: {
+      deleteChat: async (id: number) => { deletedChats.push(id) },
+      createGroup: async (_name: string) => 55,
+      setChatProfileImage: async () => {},
+    } as unknown as ToolCtx['client'],
+    agents: {
+      ensureDefaultAgent: () => ({ name: 'default', body: '', 'x-dc-icon': undefined }),
+    } as unknown as ToolCtx['agents'],
+  })
+  const r = await def.handler!({}, ctx)
+  // May succeed or error on setAgentIcon (best-effort), but returns a result
+  expect(r.content[0].text).toContain('Pairing armed')
+  expect(deletedChats).toEqual([]) // no previous group
+})
+
+test('dc_access_arm_pairing: deletes previous armed group before re-arming', async () => {
+  const def = DC_TOOLS.find(t => t.name === 'dc_access_arm_pairing')!
+  const deletedChats: number[] = []
+  const ctx = makeToolCtx({
+    access: {
+      getArmedGroupChatId: () => 30,
+      isArmed: () => true,
+      armPairing: (_id: number) => {},
+      getArmedUntil: () => Date.now() + 300_000,
+    } as unknown as ToolCtx['access'],
+    client: {
+      deleteChat: async (id: number) => { deletedChats.push(id) },
+      createGroup: async (_name: string) => 56,
+      setChatProfileImage: async () => {},
+    } as unknown as ToolCtx['client'],
+    agents: {
+      ensureDefaultAgent: () => ({ name: 'default', body: '' }),
+    } as unknown as ToolCtx['agents'],
+  })
+  const r = await def.handler!({}, ctx)
+  expect(r.content[0].text).toContain('Pairing armed')
+  expect(deletedChats).toContain(30)
+})
