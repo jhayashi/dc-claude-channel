@@ -23,8 +23,18 @@ afterEach(() => {
 })
 
 function runHook(): { stdout: string; exitCode: number } {
+  // These tests exercise the paired/unpaired banner logic, which only runs
+  // once the channel flag is present. Under `bun test` the ancestor walk can't
+  // find the flag (no `claude --dangerously-load-development-channels` parent),
+  // so set the explicit override; otherwise the hook short-circuits to the
+  // "channel flag MISSING" banner and preempts what we're testing.
   const proc = Bun.spawnSync([HOOK], {
-    env: { ...process.env, HOME: tmpHome, CLAUDE_PLUGIN_ROOT: pluginRoot },
+    env: {
+      ...process.env,
+      HOME: tmpHome,
+      CLAUDE_PLUGIN_ROOT: pluginRoot,
+      DC_CHANNEL_FLAG_PRESENT: '1',
+    },
   })
   return { stdout: proc.stdout.toString(), exitCode: proc.exitCode ?? -1 }
 }

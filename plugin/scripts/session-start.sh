@@ -62,8 +62,14 @@ while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ] && [ "$i" -lt 8 ];
 done
 # If we successfully read at least one ancestor and none had the flag,
 # declare it missing. If every read failed, assume the flag is present.
+#
+# DC_CHANNEL_FLAG_PRESENT=1 is an explicit override of the heuristic walk
+# above — for launch wrappers (or this hook's own tests) where the flag is
+# known to be in effect but an intermediate process hides it from the walk.
 channel_flag_present=1
-if [ "$any_cmd_seen" = "1" ] && [ "$flag_found" = "0" ]; then
+if [ "${DC_CHANNEL_FLAG_PRESENT:-}" = "1" ]; then
+  channel_flag_present=1
+elif [ "$any_cmd_seen" = "1" ] && [ "$flag_found" = "0" ]; then
   channel_flag_present=0
 fi
 
