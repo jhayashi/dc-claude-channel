@@ -105,7 +105,7 @@ When the conversation calls for visual output — UI mockups, design comparisons
 - WebXDC status updates must wrap data as `{payload: {...}}` — the applet receives `update.payload`.
 - WebXDC icons must be square — Delta Chat crops non-square to a square thumbnail.
 - Channel permission protocol only supports `allow`/`deny` — no "always allow" option.
-- Plugin source lives in `plugin/` subdirectory (not repo root) to prevent `.mcp.json` from being auto-loaded as a project MCP.
+- Plugin source lives in `plugin/` subdirectory (not repo root) to keep its `.mcp.json` out of a repo-root project scope. **But** subagents spawn with `cwd` = the plugin dir under `permissionMode: bypassPermissions`, which DOES auto-load `plugin/.mcp.json` — so it must never declare a server that launches the dispatcher (`bun … start` / `server.ts`). Every cold spawn would boot a rival dispatcher that deadlocks on the DC account-DB lock (zero output → 1-hour turn timeout; the v1.4.2 hotfix). Subagents get DC tools from the per-subagent tools-proxy (`dc`), not this file. Guarded by `plugin/test/mcp-json-no-self-dispatch.test.ts`.
 - **Version bump required:** When modifying any WebXDC `*.html`, bump `APP_VERSION` in the HTML (e.g., 1.00 → 1.01). The builder reads the HTML fresh from disk and parses the version automatically. Old apps auto-upgrade by detecting version mismatch. No server restart needed.
 
 ## Architecture

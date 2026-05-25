@@ -4,6 +4,14 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.2] — 2026-05-24
+
+Hotfix for a cold-spawn deadlock that made every chat hang.
+
+### Fixed
+
+- **All chats hanging with `Error: timeout after 3600000ms`.** The project-scoped `plugin/.mcp.json` declared a `deltachat` MCP server whose command launched the dispatcher itself (`bun … start`). Because subagents spawn with cwd = the plugin dir under `permissionMode: bypassPermissions`, Claude Code auto-loaded that server on every **cold** spawn, booting a rival dispatcher that blocked forever on the DC account-DB file lock the live dispatcher holds — so the subagent produced zero output and the turn died at the 1-hour timeout. Chats kept working only until their warm subagents idled out, then went silent. The `deltachat` entry is removed: subagents get the DC tools from the per-subagent tools-proxy (server name `dc`), not this file. A regression test (`plugin/test/mcp-json-no-self-dispatch.test.ts`) guards against re-adding any dispatcher-launching server.
+
 ## [1.4.1] — 2026-05-23
 
 File-reviewer WebXDC bugfixes.
@@ -62,6 +70,7 @@ The agent format aligns with Claude Code's own. Agent definitions move from `~/.
 
 - **`DC_TOOL_NAMES` was missing `reply`.** The cross-chat post tool is registered without a `dc_` prefix and slipped past the initial drift catalog; the boot drift-check warned but newly-saved agents silently lost cross-chat reply access until added.
 
+[1.4.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.2...v1.4.0
 
