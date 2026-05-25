@@ -24,21 +24,21 @@ For longer-form architecture documentation, see [`docs/ARCHITECTURE.md`](docs/AR
 
 ## Identity and trust
 
-**Agent definition** — Reusable role description authored as YAML at `~/.claude/channels/deltachat/agents/<id>.yaml`. Holds name, model, system prompt, allowed tools, etc. One agent definition can be bound to many chats over time.
+**Agent definition** — Reusable role description authored as markdown + YAML frontmatter at `~/.claude/agents/<name>.md` — the same path terminal Claude Code reads, so one definition works in both CC and DC (v1.4). Frontmatter holds model, tools, permissionMode, memory, etc.; the markdown body is the system prompt. DC-only fields use the `x-dc-` prefix. One agent definition can be bound to many chats over time.
 
-**Binding** — Per-chat record at `bindings/<chatId>.json` linking the chat to an agent definition + claude session UUID for `--resume`. Bindings are not reusable across chats; agent definitions are.
+**Binding** — Per-chat record at `bindings/<chatId>.json` linking the chat to an agent definition (by `name`) + claude session UUID for `--resume`. Bindings are not reusable across chats; agent definitions are.
 
-**Principal** — Per-contact identity record at `principals/humans/<contactId>.json`. The source of truth for "is this contact trusted to interact with the bot." A principal record exists once a contact has paired; it persists across chats.
+**Contact** — Per-contact trust record at `~/.claude/agents/<name>.dc/contacts/<contactId>.json` (the DC-private sidecar beside the agent .md). The source of truth for "is this contact trusted to interact with the bot," carrying a `role` and capability bundle. A contact record exists once a contact has paired; it persists across chats. (Named "Principal" in v1.1.5–v1.2.2.)
 
 **Trust filter** — The dispatcher's gate between DC's full-fidelity local DB and the subagent's context window. Tags every inbound line as `[permissioned]` or `[UNPERMISSIONED]`; lives in `plugin/dispatcher/trust-filter.ts`.
 
-**Permissioned content** — A message whose sender has a principal record. Subagents see permissioned content directly; unpermissioned content is redacted unless the subagent explicitly opts in.
+**Permissioned content** — A message whose sender has a contact record with non-empty capabilities. Subagents see permissioned content directly; unpermissioned content is redacted unless the subagent explicitly opts in.
 
 **Capability** — Token-based authorization for cross-contact tool calls (#71, v1.3). A capability says "this contact may invoke this tool." Replaces and refines the older "is the chat owner" check.
 
-**Pairing** — The QR / verification ceremony that creates a principal record. Two paths today: securejoin (DC's native verification) and the agent-setup wall (in-app code exchange).
+**Pairing** — The QR / verification ceremony that creates a contact record. Two paths today: securejoin (DC's native verification) and the agent-setup wall (in-app code exchange).
 
-**Auto-pair** — When a contact who already has a principal record sends in a *new* chat with the bot, the dispatcher silently approves the chat without re-running the ceremony. The trust boundary is contact identity, not chatId.
+**Auto-pair** — When a contact who already has a contact record sends in a *new* chat with the bot, the dispatcher silently approves the chat without re-running the ceremony. The trust boundary is contact identity, not chatId.
 
 **Skip-permissions mode** — Per-binding flag that bypasses the permissions WebXDC card for tool calls. Sometimes called "trusted mode."
 
@@ -80,15 +80,15 @@ For longer-form architecture documentation, see [`docs/ARCHITECTURE.md`](docs/AR
 
 ## State and storage
 
-**Channel state dir** — `~/.claude/channels/deltachat/`. Contains `agents/`, `bindings/`, `principals/`, `approved/`, `events/`, `schedules/`, `dc-data/`, etc.
+**Channel state dir** — `~/.claude/channels/deltachat/`. Contains `bindings/`, `events/`, `schedules/`, `dc-data/`, etc. Agent definitions live outside it (in CC's `~/.claude/agents/`), and contact records live in the agent's `.dc/` sidecar beside the .md.
 
-**Approved chats** — Legacy per-chat allowlist at `approved/<chatId>`. Still consulted as a fallback gate during the v1.2 → v1.3 transition; v1.3 derives the allowlist from principals + chat membership instead.
+**Approved chats** — Retired per-chat allowlist (`approved/<chatId>`), renamed to `approved.legacy/` in v1.3. The chat allowlist is now an in-memory cache derived from contact records ∩ chat membership.
 
 **Event logs** — Four append-only NDJSON streams under `events/`: `tools-*.log`, `turns-*.log`, `permissions-*.log`, `webxdc-*.log`. Surfaced via the `dc_show_events` tool.
 
 **Schedules** — Persistent cron-style jobs at `schedules/<jobId>.json`. Created via `dc_schedule*`; runs deliver synthetic user turns to the target chat's subagent.
 
-**Auto-memory** — Filesystem-based memory at `~/.claude/projects/<cwd-hash>/memory/` with a `MEMORY.md` index and per-fact files. Shared across the dispatcher and all subagents because they share the working directory. Per-agent isolation is being added (#81).
+**Auto-memory** — Per-agent filesystem memory at `~/.claude/agent-memory/<name>/MEMORY.md` + per-fact files (v1.4). CC owns it: a subagent spawned with `--agent <name>` and a terminal `claude --agent <name>` session read and write the same store, and the dispatcher no longer touches it. (Pre-v1.4 this was a single cwd-shared store; per-agent isolation came from delegating to CC's memory.)
 
 ---
 
