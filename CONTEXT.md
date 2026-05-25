@@ -20,6 +20,10 @@ For longer-form architecture documentation, see [`docs/ARCHITECTURE.md`](docs/AR
 
 **Tools proxy** — The MCP server the dispatcher exposes to subagents over a Unix socket. Every `dc_*` tool call from a subagent goes through this proxy.
 
+**DC tool registry** — `plugin/dispatcher/dc-tools.ts`. The single source of truth for the core `dc_*` MCP tools: one `DC_TOOLS` entry per tool with its schema, `requiresCapability`, and (for pure tools) its handler. ListTools, the Tools-proxy manifest, `requiredCapabilityFor`, and the boot-injected `DC_TOOL_NAMES` all derive from it. Tail (state-mutating) tools keep their handler as a `server.ts` closure but still register their definition here.
+
+**ToolCtx** — The small dependency bundle a pure DC tool registry handler receives: `{ client, access, bindings, agents, logf }`. Lets each pure handler be unit-tested with a fake; tail handlers needing more (scheduler, subagent cache, tutorial, resume) stay as dispatcher closures instead.
+
 ---
 
 ## Identity and trust
