@@ -39,6 +39,7 @@ import { handleSlash } from './slash-handler.js'
 import * as tutorial from './tutorial.js'
 import { decideCleanup } from './cleanup.js'
 import { SocketServer, type SocketRequest } from './dispatcher/socket-server.js'
+import { isDispatcherListening } from './dispatcher/dispatcher-singleton.js'
 import { SubagentCache, assertCanSpawn } from './dispatcher/subagent-cache.js'
 import { assertSupportedClaudeVersion } from './cc-version-check.js'
 import { cleanupOrphanSubagents } from './dispatcher/orphan-cleanup.js'
@@ -2229,6 +2230,20 @@ async function cleanupChatState(
 // ── Startup ─────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // Singleton guard: if a dispatcher is already listening on the socket, this
+  // process is a duplicate — almost always a subagent's project `.mcp.json`
+  // `deltachat` server starting (cwd = plugin dir, bypassPermissions) while the
+  // host session's dispatcher already holds the DC account-DB lock. Exit at
+  // once instead of blocking forever on that lock — the failure mode where
+  // every cold subagent spawn hung until the 1-hour turn timeout. The host's
+  // first dispatcher sees no listener and proceeds. Keeping `.mcp.json` intact
+  // preserves how the host launches us AND lets subagents keep inheriting the
+  // user's global MCP servers (Gmail/Calendar/…).
+  if (await isDispatcherListening(DISPATCHER_SOCKET)) {
+    logf('dc channel: a dispatcher is already listening at %s; exiting duplicate instance', DISPATCHER_SOCKET)
+    process.exit(0)
+  }
+
   // v1.4 version gate: refuse to start on a Claude Code release older
   // than what the dispatcher needs (--agent flag, memory auto-injection,
   // permissionMode/effort frontmatter). Exit 2 so operator scripts can
