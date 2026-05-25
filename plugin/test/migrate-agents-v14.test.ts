@@ -139,6 +139,11 @@ describe('migrateLegacyDefinitionYaml', () => {
     mkdirSync(newDir, { recursive: true })
     setLegacyAgentsDir(legacyDir)
     agents.setAgentsDir(newDir)
+    // Mirror dispatcher boot: the migration runs `saveAgent` → `ensureMcpDc`,
+    // which expands the bare `mcp__dc` prefix using the injected tool-name
+    // set. In production server.ts injects this before the migration; seed it
+    // here so migrated agents get concrete mcp__dc__<tool> entries.
+    agents.setDcToolNames(['reply', 'dc_react', 'dc_chat_history', 'dc_status'])
   })
 
   afterEach(() => {
@@ -295,6 +300,9 @@ describe('migrateLegacyDefinitionYaml — binding rewrites on collision', () => 
     setLegacyAgentsDir(legacyDir)
     agents.setAgentsDir(newDir)
     bindings.setBindingsDir(bindingsDir)
+    // See note in the sibling describe's beforeEach: seed the boot-injected
+    // DC tool-name set so the migration's saveAgent expands `mcp__dc`.
+    agents.setDcToolNames(['reply', 'dc_react', 'dc_chat_history', 'dc_status'])
   })
 
   afterEach(() => {

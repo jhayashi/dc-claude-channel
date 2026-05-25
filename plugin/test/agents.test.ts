@@ -14,8 +14,23 @@ import * as agents from '../agents'
 
 const testDir = mkdtempSync(join(tmpdir(), 'dc-agents-test-'))
 
+// The DC tool-name set is injected at dispatcher boot from the live tool
+// registrations (server.ts `main()`). Tests exercise `ensureMcpDc` (via
+// `saveAgent`) directly, so seed the set here with the names the assertions
+// below depend on; otherwise `getDcToolNames()` is empty and no
+// `mcp__dc__<tool>` entries would be emitted.
+const TEST_DC_TOOLS = [
+  'reply',
+  'dc_react',
+  'dc_chat_history',
+  'dc_open_agent_settings',
+  'dc_status',
+  'dc_send_file',
+]
+
 beforeAll(() => agents.setAgentsDir(testDir))
 beforeEach(() => {
+  agents.setDcToolNames(TEST_DC_TOOLS)
   if (existsSync(testDir)) {
     for (const f of readdirSync(testDir)) {
       rmSync(join(testDir, f), { recursive: true, force: true })
@@ -283,11 +298,21 @@ describe('mcp__dc auto-injection', () => {
     expect(reloaded?.tools).not.toMatch(/^mcp__dc$/)
   })
 
-  test('DC_TOOL_NAMES is exported and non-empty', () => {
-    expect(Array.isArray(agents.DC_TOOL_NAMES)).toBe(true)
-    expect(agents.DC_TOOL_NAMES.length).toBeGreaterThan(0)
-    expect(agents.DC_TOOL_NAMES).toContain('dc_react')
-    expect(agents.DC_TOOL_NAMES).toContain('dc_open_agent_settings')
+  test('getDcToolNames reflects the injected set (deduped + sorted)', () => {
+    agents.setDcToolNames(['dc_react', 'reply', 'dc_react', 'dc_open_agent_settings'])
+    const names = agents.getDcToolNames()
+    expect(names).toEqual(['dc_open_agent_settings', 'dc_react', 'reply'])
+    expect(names).toContain('dc_react')
+    expect(names).toContain('dc_open_agent_settings')
+  })
+
+  test('ensureMcpDc emits nothing concrete when the injected set is empty', () => {
+    agents.setDcToolNames([])
+    agents.saveAgent(makeDef({ name: 'no-names', tools: 'Read, mcp__dc' }))
+    const reloaded = agents.getAgent('no-names')
+    // Bare prefix stripped; no concrete mcp__dc__<tool> entries to add.
+    expect(reloaded?.tools).toBe('Read')
+    expect(reloaded?.tools).not.toContain('mcp__dc__')
   })
 })
 

@@ -24,6 +24,10 @@ describe('DC_TOOLS registry', () => {
     const names = DC_TOOLS.map(t => t.name)
     expect(new Set(names).size).toBe(names.length)
   })
+
+  test('every registry tool name is a valid mcp__dc identifier', () => {
+    for (const t of DC_TOOLS) expect(t.name).toMatch(/^(reply|dc_[a-z_]+)$/)
+  })
 })
 
 test('every DC_TOOLS tool has exactly one dispatch entry, and vice versa', () => {

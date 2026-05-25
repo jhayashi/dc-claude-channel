@@ -257,9 +257,10 @@ export function getAgent(name: string): AgentDef | null {
 }
 
 /**
- * Canonical list of DC tool names registered by the dispatcher (server.ts
- * core tools + apps' tool registrations). Used by `ensureMcpDc` to expand
- * the bare `mcp__dc` server prefix into specific `mcp__dc__<tool>` entries.
+ * The set of DC tool names registered by the dispatcher (core registry in
+ * dispatcher/dc-tools.ts + apps' tool registrations). Used by `ensureMcpDc`
+ * to expand the bare `mcp__dc` server prefix into specific `mcp__dc__<tool>`
+ * entries.
  *
  * Why expansion is necessary: CC's frontmatter `tools:` parser treats
  * `mcp__<server>` as the *name* of a tool to allow (not a wildcard), so an
@@ -270,49 +271,19 @@ export function getAgent(name: string): AgentDef | null {
  * .md to be portable to terminal CC's Task delegation path where the
  * frontmatter is the only allowlist source.
  *
- * Maintenance note: if you add or rename a `dc_*` tool in `server.ts` /
- * `apps/*.ts`, ALSO add it here. A dispatcher-startup check would be
- * cleaner; tracked as follow-up.
+ * The set is injected once at dispatcher boot from the live registrations
+ * (see `setDcToolNames` in server.ts `main()`) so it can never drift from
+ * what the dispatcher actually serves. Empty until injected; the boot call
+ * MUST run before any `saveAgent`/`ensureMcpDc` (notably the v1.4 migration).
  */
-export const DC_TOOL_NAMES: readonly string[] = [
-  'dc_access_arm_pairing',
-  'dc_access_list',
-  'dc_access_pair',
-  'dc_access_revoke',
-  'dc_access_unpair',
-  'dc_chat_history',
-  'dc_check_contact',
-  'dc_create_agent',
-  'dc_download_attachment',
-  'dc_exit_session',
-  'dc_familiar_create',
-  'dc_familiar_delete',
-  'dc_familiar_list',
-  'dc_familiar_update',
-  'dc_get_agent_prompt',
-  'dc_invite_link',
-  'dc_open_agent_settings',
-  'dc_react',
-  'dc_resume_in_terminal',
-  // The cross-chat post tool. Registered without a `dc_` prefix because
-  // it pre-dates the project's naming convention; exposed via MCP as
-  // `mcp__dc__reply`. Easy to miss when extending the list — the boot
-  // drift check in server.ts will scream if you do.
-  'reply',
-  'dc_schedule',
-  'dc_schedule_delete',
-  'dc_schedule_list',
-  'dc_send_attachment',
-  'dc_send_file',
-  'dc_send_slides',
-  'dc_send_webxdc',
-  'dc_show_events',
-  'dc_start_tutorial',
-  'dc_status',
-  'dc_test_permission',
-  'dc_update_agent',
-]
-
+let _dcToolNames: readonly string[] = []
+/** Set once at dispatcher boot from the live tool registrations (core registry + apps). */
+export function setDcToolNames(names: readonly string[]): void {
+  _dcToolNames = [...new Set(names)].sort()
+}
+export function getDcToolNames(): readonly string[] {
+  return _dcToolNames
+}
 /**
  * Ensure DC tools are present in a tools CSV. The DC tools-proxy MCP
  * server is mandatory — without `mcp__dc__<tool>` entries the agent
@@ -322,8 +293,8 @@ export const DC_TOOL_NAMES: readonly string[] = [
  *   - If any specific `mcp__dc__<tool>` is already present, leave the CSV
  *     alone (user is opting into a narrow surface).
  *   - Otherwise, drop the bare `mcp__dc` prefix (it doesn't work as a
- *     wildcard in CC's frontmatter parsing) and emit the full
- *     enumerated list from DC_TOOL_NAMES.
+ *     wildcard in CC's frontmatter parsing) and emit the full set
+ *     injected at boot via `setDcToolNames`.
  */
 function ensureMcpDc(tools: string): string {
   const parts = tools.split(',').map(s => s.trim()).filter(Boolean)
@@ -331,7 +302,7 @@ function ensureMcpDc(tools: string): string {
     return parts.join(', ')
   }
   const filtered = parts.filter(t => t !== 'mcp__dc')
-  return [...filtered, ...DC_TOOL_NAMES.map(t => `mcp__dc__${t}`)].join(', ')
+  return [...filtered, ...getDcToolNames().map(t => `mcp__dc__${t}`)].join(', ')
 }
 
 /** Save an agent definition. Atomic via temp + rename. */

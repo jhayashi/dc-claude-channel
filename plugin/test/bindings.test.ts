@@ -42,6 +42,10 @@ beforeEach(() => {
   // clears the cache too — call it between tests so state from a
   // prior test doesn't leak.
   access.setApprovedDir(approvedDir)
+  // The DC tool-name set is injected at dispatcher boot (server.ts); seed it
+  // here so saveAgent's `ensureMcpDc` can expand the bare `mcp__dc` prefix
+  // into concrete mcp__dc__<tool> entries (the heal-on-bind test relies on it).
+  agents.setDcToolNames(['reply', 'dc_react', 'dc_chat_history', 'dc_status'])
 })
 
 afterAll(() => {

@@ -73,7 +73,7 @@ import {
   type STTConfig,
 } from './stt.js'
 import { checkReady, runInstallInBackground, _signalComplete, waitForReady } from './bootstrap.js'
-import { DC_TOOLS, type ToolCtx, type ToolResult } from './dispatcher/dc-tools.js'
+import { DC_TOOLS, dcToolNames, type ToolCtx, type ToolResult } from './dispatcher/dc-tools.js'
 
 // ── Security hardening ──────────────────────────────────────────────────
 // Freeze Object.prototype at startup to block prototype-pollution from any
@@ -1767,6 +1767,19 @@ async function main(): Promise<void> {
 
   await mcp.connect(new StdioServerTransport())
 
+  // Inject the canonical DC tool-name set into `agents` from the live
+  // registrations (core registry + every app's tools). `ensureMcpDc`
+  // (invoked by `saveAgent`) reads this set to expand the bare `mcp__dc`
+  // prefix into concrete `mcp__dc__<tool>` entries. `apps` is a module-level
+  // import (top of file), so it is fully populated here. ORDERING IS
+  // CRITICAL: this MUST run before the v1.4 migration below, which calls
+  // `saveAgent` → `ensureMcpDc`; if the set were still empty, migrated
+  // agents would be written with no DC tools at all.
+  agents.setDcToolNames([
+    ...dcToolNames(),
+    ...apps.flatMap(a => a.tools()).map(t => t.name),
+  ])
+
   // v1.4 — migrate v1.3 per-agent dirs to the CC-native single-file
   // format at ~/.claude/agents/<name>.md. After this run, the legacy
   // ~/.claude/channels/deltachat/agents/ directory is renamed to
@@ -1790,37 +1803,6 @@ async function main(): Promise<void> {
     }
   } catch (err) {
     logf('dc channel: v1.4 agent migration failed: %v', err)
-  }
-
-  // Self-check: agents.DC_TOOL_NAMES is a hand-maintained mirror of the
-  // tools the dispatcher actually registers (DC_TOOLS + apps' tools).
-  // ensureMcpDc expands the bare `mcp__dc` server prefix into this set,
-  // so drift here means newly-saved agents will not include freshly-added
-  // tools (and `assertCanSpawn` / CC's allowlist won't catch the gap).
-  // Logged at boot rather than tested at build time so renaming/adding
-  // a tool surfaces in the dispatcher log on the very next restart.
-  try {
-    const registered = new Set([
-      ...DC_TOOLS.map(t => t.name),
-      ...apps.flatMap(a => a.tools()).map(t => t.name),
-    ])
-    const declared = new Set(agents.DC_TOOL_NAMES)
-    const missing = [...registered].filter(t => !declared.has(t)).sort()
-    const extra = [...declared].filter(t => !registered.has(t)).sort()
-    if (missing.length > 0) {
-      logf(
-        'dc channel: WARNING — %d DC tool(s) registered but missing from agents.DC_TOOL_NAMES (newly-saved agents will not include them in their tools CSV): %s',
-        missing.length, missing.join(', '),
-      )
-    }
-    if (extra.length > 0) {
-      logf(
-        'dc channel: WARNING — %d DC tool(s) in agents.DC_TOOL_NAMES but not registered (stale entries; saved agents allow tools that do not exist): %s',
-        extra.length, extra.join(', '),
-      )
-    }
-  } catch (err) {
-    logf('dc channel: DC_TOOL_NAMES drift check failed: %v', err)
   }
 
   // v1.3 slice 7 phase 3 — copy any contact records still at the legacy
