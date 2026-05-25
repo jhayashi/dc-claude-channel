@@ -892,32 +892,6 @@ const socketServer = new SocketServer({
 
 const coreTools = [
   {
-    name: 'dc_react',
-    requiresCapability: 'chat',
-    description: 'Add or clear an emoji reaction on a Delta Chat message. Pass an empty emoji to remove your previous reaction. Only one reaction per sender per message — reacting again replaces the previous one.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        chat_id: { type: 'string', description: 'Chat ID the message belongs to (for authorization)' },
-        message_id: { type: 'string', description: 'Delta Chat message id from the inbound <channel> tag' },
-        emoji: { type: 'string', description: 'Single emoji (e.g. "👍"). Pass an empty string to clear.' },
-      },
-      required: ['chat_id', 'message_id', 'emoji'],
-    },
-  },
-  {
-    name: 'dc_status',
-    requiresCapability: 'chat',
-    description: 'Show the current bot identity and connection status.',
-    inputSchema: { type: 'object' as const, properties: {} },
-  },
-  {
-    name: 'dc_invite_link',
-    requiresCapability: 'chat',
-    description: 'Return the current invite link for users to add this bot as a verified contact.',
-    inputSchema: { type: 'object' as const, properties: {} },
-  },
-  {
     name: 'dc_access_arm_pairing',
     requiresCapability: 'infrastructure',
     description: 'Arm a 5-minute pairing window: the next verified-contact event will materialize a `Claude` chat with that contact. Called by /deltachat:setup before the user scans the QR.',
@@ -933,24 +907,6 @@ const coreTools = [
         code: { type: 'string', description: 'The pairing code from the Delta Chat message' },
       },
       required: ['code'],
-    },
-  },
-  {
-    name: 'dc_access_list',
-    requiresCapability: 'chat',
-    description: 'List all approved Delta Chat chat IDs.',
-    inputSchema: { type: 'object' as const, properties: {} },
-  },
-  {
-    name: 'dc_access_revoke',
-    requiresCapability: 'infrastructure',
-    description: 'Remove a chat from the approved allowlist.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        chat_id: { type: 'string', description: 'Chat ID to revoke' },
-      },
-      required: ['chat_id'],
     },
   },
   {
@@ -993,18 +949,6 @@ const coreTools = [
         },
       },
       required: ['name', 'prompt', 'user_chat_id'],
-    },
-  },
-  {
-    name: 'dc_get_agent_prompt',
-    requiresCapability: 'chat',
-    description: 'Get the behavior prompt for a Delta Chat agent.',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        chat_id: { type: 'string', description: 'Group chat ID' },
-      },
-      required: ['chat_id'],
     },
   },
   {
@@ -1286,50 +1230,6 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
   const h = registryHandlers.get(name)
   if (h) return h(args, toolCtx, callerChatId)
   switch (name) {
-      case 'dc_react': {
-        const chatId = Number(args.chat_id as string)
-        const messageId = Number(args.message_id as string)
-        const emoji = typeof args.emoji === 'string' ? args.emoji : ''
-        if (!chatId || Number.isNaN(chatId)) {
-          return { content: [{ type: 'text' as const, text: 'dc_react: chat_id is required' }], isError: true }
-        }
-        if (!messageId || Number.isNaN(messageId)) {
-          return { content: [{ type: 'text' as const, text: 'dc_react: message_id is required' }], isError: true }
-        }
-        if (!access.isAllowed(chatId)) {
-          return { content: [{ type: 'text' as const, text: `dc_react: chat ${chatId} is not accessible` }], isError: true }
-        }
-        try {
-          await client.sendReaction(messageId, emoji)
-        } catch (err) {
-          return { content: [{ type: 'text' as const, text: `dc_react: failed: ${err}` }], isError: true }
-        }
-        return { content: [{ type: 'text' as const, text: emoji ? `reacted ${emoji} to msg ${messageId}` : `cleared reaction on msg ${messageId}` }] }
-      }
-
-      case 'dc_status': {
-        const status = await client.status()
-        const text = `Address: ${status.address}\nConnected: ${status.connected}\nInvite link: ${status.inviteLink}`
-        return { content: [{ type: 'text' as const, text }] }
-      }
-
-      case 'dc_invite_link': {
-        // When /deltachat:setup has armed a group chat, return its
-        // securejoin QR so the joiner lands in "Claude" (a group) rather
-        // than a 1:1 where DC hides the bot's display name.
-        const armedGroup = access.getArmedGroupChatId()
-        if (armedGroup !== null && access.isArmed()) {
-          try {
-            const link = await client.getGroupInviteLink(armedGroup)
-            return { content: [{ type: 'text' as const, text: link }] }
-          } catch (err) {
-            logf('dc channel: getGroupInviteLink failed for chat=%d, falling back to personal QR: %v', armedGroup, err)
-          }
-        }
-        const link = await client.inviteLink()
-        return { content: [{ type: 'text' as const, text: link }] }
-      }
-
       case 'dc_access_arm_pairing': {
         // Clean up any previous armed group (stale or unused). Re-arming
         // always produces a fresh "Claude" group so the QR is unique and
@@ -1403,27 +1303,6 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
         startTutorialForChat(chatId)
 
         return { content: [{ type: 'text' as const, text: `Paired chat ${chatId} successfully.` }] }
-      }
-
-      case 'dc_access_list': {
-        const chats = access.allowedChats()
-        if (chats.length === 0) {
-          return { content: [{ type: 'text' as const, text: 'No approved chats.' }] }
-        }
-        return { content: [{ type: 'text' as const, text: 'Approved chats:\n' + chats.join('\n') }] }
-      }
-
-      case 'dc_access_revoke': {
-        const chatIdStr = args.chat_id as string
-        if (!chatIdStr) {
-          return { content: [{ type: 'text' as const, text: 'dc_access_revoke: chat_id is required' }], isError: true }
-        }
-        const chatId = Number(chatIdStr)
-        if (Number.isNaN(chatId)) {
-          return { content: [{ type: 'text' as const, text: `invalid chat_id: ${chatIdStr}` }], isError: true }
-        }
-        access.removeChat(chatId)
-        return { content: [{ type: 'text' as const, text: `Revoked chat ${chatId}.` }] }
       }
 
       case 'dc_access_unpair': {
@@ -1571,18 +1450,6 @@ async function callCoreTool(name: string, args: Record<string, unknown>, callerC
 
         const result = `Created agent "${name}" (chat ${groupId}, agent_id=${agentName}).`
         return { content: [{ type: 'text' as const, text: result }] }
-      }
-
-      case 'dc_get_agent_prompt': {
-        const chatId = Number(args.chat_id as string)
-        if (!chatId || Number.isNaN(chatId)) {
-          return { content: [{ type: 'text' as const, text: 'dc_get_agent_prompt: chat_id is required' }], isError: true }
-        }
-        const resolved = bindings.resolveChat(chatId)
-        if (!resolved) {
-          return { content: [{ type: 'text' as const, text: `No agent configured for chat ${chatId}.` }] }
-        }
-        return { content: [{ type: 'text' as const, text: `Agent: ${resolved.agent.name}\nPrompt: ${resolved.agent.body}` }] }
       }
 
       case 'dc_update_agent': {
