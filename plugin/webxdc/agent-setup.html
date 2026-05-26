@@ -1421,6 +1421,16 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
           </span>
           <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
         </button>
+        <button class="home-action" id="home-rebind-btn" onclick="gotoRebindPicker()" style="display:none">
+          <span class="home-action-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/></svg>
+          </span>
+          <span class="home-action-body">
+            <span class="home-action-label">Switch this chat's agent</span>
+            <span class="home-action-desc">Move this chat to a different agent. Starts fresh.</span>
+          </span>
+          <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
+        </button>
         <button class="home-action" onclick="gotoBuildCustom()">
           <span class="home-action-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8 19 13"/><path d="M15 9h0"/><path d="M17.8 6.2 19 5"/><path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/></svg>
@@ -1841,7 +1851,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 2.11;
+var APP_VERSION = 2.12;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -2314,7 +2324,14 @@ function renderReusePickList() {
     var a = sorted[i];
     var row = document.createElement('div');
     row.className = 'agent-row';
-    row.onclick = (function(id){ return function(){ confirmReuseAgent(id); }; })(a.id);
+    var isCurrent = (reusePickerMode === 'rebind' && a.isCurrentAgent);
+    if (isCurrent) {
+      row.className = 'agent-row disabled';
+    } else if (reusePickerMode === 'rebind') {
+      row.onclick = (function(id){ return function(){ confirmRebindAgent(id); }; })(a.id);
+    } else {
+      row.onclick = (function(id){ return function(){ confirmReuseAgent(id); }; })(a.id);
+    }
 
     var avatar = document.createElement('div');
     avatar.className = 'avatar';
@@ -2353,6 +2370,16 @@ function renderReusePickList() {
       trustText.textContent = 'Trusted';
       meta.appendChild(trustText);
     }
+    if (isCurrent) {
+      var sepC = document.createElement('span');
+      sepC.className = 'sep';
+      sepC.textContent = '•';
+      meta.appendChild(sepC);
+      var curText = document.createElement('span');
+      curText.className = 'trusted';
+      curText.textContent = 'Current';
+      meta.appendChild(curText);
+    }
     info.appendChild(meta);
     row.appendChild(info);
 
@@ -2373,7 +2400,8 @@ function renderReusePickList() {
 // off the default-agent quick path — Retry uses it to re-fire the
 // correct payload.
 var reuseConfirmAgentId = null;
-var reuseConfirmMode = null;  // 'reuse' | 'default' | 'custom'
+var reuseConfirmMode = null;  // 'reuse' | 'default' | 'custom' | 'rebind'
+var reusePickerMode = 'new';  // 'new' | 'rebind' — affects picker row tap + current-agent display
 // For 'custom': the leaf ids the user picked on the wall + the pattern.
 // Held here so Retry can re-fire the same payload.
 var reuseConfirmCustomLeafIds = null;
@@ -2387,6 +2415,21 @@ function confirmReuseAgent(agentId) {
   document.getElementById('reuse-confirm-heading').textContent =
     'Start a new chat with "' + agent.name + '"?';
   document.getElementById('reuse-confirm-sub').textContent = '';
+  setReuseConfirmState('idle');
+  document.getElementById('reuse-confirm-modal').classList.add('visible');
+}
+
+// Rebind: same modal/list as reuse, but retargets THIS chat (issue #86)
+// instead of creating a new one. Dispatches `rebind-chat` on OK.
+function confirmRebindAgent(agentId) {
+  var agent = (existingAgents || []).find(function(a){ return a.id === agentId; });
+  if (!agent) return;
+  reuseConfirmAgentId = agentId;
+  reuseConfirmMode = 'rebind';
+  document.getElementById('reuse-confirm-heading').textContent =
+    'Move this chat to "' + agent.name + '"?';
+  document.getElementById('reuse-confirm-sub').textContent =
+    'Your next message starts a fresh conversation with the new agent.';
   setReuseConfirmState('idle');
   document.getElementById('reuse-confirm-modal').classList.add('visible');
 }
@@ -2429,6 +2472,15 @@ function reuseConfirmOk() {
         senderAddr: webxdc.selfAddr,
       },
     }, '');
+  } else if (reuseConfirmMode === 'rebind' && reuseConfirmAgentId) {
+    setReuseConfirmState('processing');
+    webxdc.sendUpdate({
+      payload: {
+        type: 'rebind-chat',
+        agentId: reuseConfirmAgentId,
+        senderAddr: webxdc.selfAddr,
+      },
+    }, '');
   } else if (reuseConfirmMode === 'default') {
     setReuseConfirmState('processing');
     webxdc.sendUpdate({
@@ -2453,7 +2505,7 @@ function setReuseConfirmState(s) {
   var ok = document.getElementById('reuse-confirm-ok');
   buttons.style.display = (s === 'idle' || s === 'error') ? '' : 'none';
   processing.style.display = (s === 'processing') ? '' : 'none';
-  ok.textContent = (s === 'error') ? 'Retry' : 'Start chat';
+  ok.textContent = (s === 'error') ? 'Retry' : (reuseConfirmMode === 'rebind' ? 'Move' : 'Start chat');
 }
 
 function closeReuseConfirm() {
@@ -2484,6 +2536,12 @@ function renderHomeCount() {
   if (ver) ver.textContent = 'v' + APP_VERSION.toFixed(2);
   var manageBtn = document.getElementById('home-manage-btn');
   if (manageBtn) manageBtn.disabled = existingAgents.length === 0;
+  var rebindBtn = document.getElementById('home-rebind-btn');
+  if (rebindBtn) {
+    // Only meaningful when THIS chat is already bound to an agent.
+    var isBound = (existingAgents || []).some(function(a){ return a.isCurrentAgent; });
+    rebindBtn.style.display = isBound ? '' : 'none';
+  }
 }
 
 var availableBuiltinTools = [];
@@ -2939,6 +2997,13 @@ function gotoBuildCustom() {
 }
 
 function gotoReusePicker() {
+  reusePickerMode = 'new';
+  renderReusePickList();
+  show('reuse-picker');
+}
+
+function gotoRebindPicker() {
+  reusePickerMode = 'rebind';
   renderReusePickList();
   show('reuse-picker');
 }
