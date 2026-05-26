@@ -3,6 +3,8 @@ import {
   prefixToDisplayName,
   displayNameToPrefix,
   buildCatalog,
+  getAvailableMcpServers,
+  getConnectedMcpServers,
   type CatalogSources,
 } from '../mcp-catalog'
 
@@ -86,5 +88,24 @@ describe('buildCatalog', () => {
     expect(cat.filter(s => s.prefix === 'claude_ai_Gmail')).toHaveLength(1)
     // curated entry's connected status (true, not awaiting auth) is kept
     expect(cat.find(s => s.prefix === 'claude_ai_Gmail')!.connected).toBe(true)
+  })
+})
+
+// fs-invariant smoke tests for the wrappers (hold regardless of ~/.claude state).
+describe('getAvailableMcpServers', () => {
+  test('annotates only the dc entry with toolCount', () => {
+    const servers = getAvailableMcpServers(42)
+    const dc = servers.find(s => s.prefix === 'dc')
+    expect(dc).toBeDefined()
+    expect(dc!.toolCount).toBe(42)
+    for (const s of servers) {
+      if (s.prefix !== 'dc') expect(s.toolCount).toBeUndefined()
+    }
+  })
+})
+
+describe('getConnectedMcpServers', () => {
+  test('always includes dc', () => {
+    expect(getConnectedMcpServers()).toContain('dc')
   })
 })
