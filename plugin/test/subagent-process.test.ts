@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { buildSubagentArgs, type SubagentSpawnOptions } from '../dispatcher/subagent-process'
+import { buildSubagentArgs, planKillTree, type SubagentSpawnOptions } from '../dispatcher/subagent-process'
 
 function baseOpts(extra: Partial<SubagentSpawnOptions> = {}): SubagentSpawnOptions {
   return {
@@ -123,5 +123,48 @@ describe('buildSubagentArgs', () => {
       .toThrow(/agent\.name is required/)
     expect(() => buildSubagentArgs(baseOpts({ agent: undefined as unknown as SubagentSpawnOptions['agent'] })))
       .toThrow(/agent\.name is required/)
+  })
+})
+
+describe('planKillTree', () => {
+  test('win32: force-kills the process tree via taskkill /T /F, then direct-child kill as fallback', () => {
+    const steps = planKillTree('win32', 4242, [], 'SIGKILL')
+    // taskkill runs first (while the tree is still intact) so /T can walk it;
+    // the direct child.kill is a belt-and-suspenders fallback in case taskkill
+    // is unavailable, so Windows is never worse than the pre-fix direct kill.
+    expect(steps).toEqual([
+      { kind: 'taskkill', argv: ['/T', '/F', '/PID', '4242'] },
+      { kind: 'child-kill', signal: 'SIGKILL' },
+    ])
+  })
+
+  test('win32: uses /F even for SIGTERM (Windows has no graceful tree-kill)', () => {
+    const steps = planKillTree('win32', 7, [], 'SIGTERM')
+    expect(steps[0]).toEqual({ kind: 'taskkill', argv: ['/T', '/F', '/PID', '7'] })
+    // the fallback child-kill still carries the original signal
+    expect(steps[1]).toEqual({ kind: 'child-kill', signal: 'SIGTERM' })
+  })
+
+  test('win32: descendants are ignored (taskkill /T walks the tree itself)', () => {
+    const withKids = planKillTree('win32', 100, [101, 102, 103], 'SIGKILL')
+    const without = planKillTree('win32', 100, [], 'SIGKILL')
+    expect(withKids).toEqual(without)
+  })
+
+  test('posix: kills descendants depth-first (deepest first), then the root', () => {
+    // descendants arrive BFS-ordered (shallowest first); kill in reverse so a
+    // child dies before its parent.
+    const steps = planKillTree('linux', 100, [101, 102, 103], 'SIGTERM')
+    expect(steps).toEqual([
+      { kind: 'process-kill', pid: 103, signal: 'SIGTERM' },
+      { kind: 'process-kill', pid: 102, signal: 'SIGTERM' },
+      { kind: 'process-kill', pid: 101, signal: 'SIGTERM' },
+      { kind: 'process-kill', pid: 100, signal: 'SIGTERM' },
+    ])
+  })
+
+  test('posix: with no descendants, just kills the root', () => {
+    const steps = planKillTree('darwin', 55, [], 'SIGKILL')
+    expect(steps).toEqual([{ kind: 'process-kill', pid: 55, signal: 'SIGKILL' }])
   })
 })

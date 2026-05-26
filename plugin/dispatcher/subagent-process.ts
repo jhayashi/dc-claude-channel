@@ -190,6 +190,50 @@ export interface TurnResult {
   durationMs?: number
 }
 
+/** A single side-effecting kill action; executed by `killTree`. */
+export type KillStep =
+  /** POSIX: `process.kill(pid, signal)` on a specific tree member. */
+  | { kind: 'process-kill'; pid: number; signal: 'SIGTERM' | 'SIGKILL' }
+  /** Windows: `taskkill <argv>` — `/T` walks the tree, `/F` forces. */
+  | { kind: 'taskkill'; argv: string[] }
+  /** Windows fallback: `this.child.kill(signal)` on the direct child. */
+  | { kind: 'child-kill'; signal: 'SIGTERM' | 'SIGKILL' }
+
+/**
+ * Pure planner for `killTree` — given the platform, the child pid, its
+ * descendant pids (POSIX only; empty on Windows), and the signal, return the
+ * ordered list of kill steps. Extracted from `killTree` so the per-platform
+ * decision can be unit-tested without spawning a real process (the win32
+ * branch in particular can't be exercised live on Linux/macOS CI).
+ *
+ * - **POSIX**: kill descendants depth-first (the BFS-ordered `descendants`
+ *   reversed, so a child dies before its parent), then the root pid.
+ * - **Windows**: `taskkill /T /F /PID <pid>` first, while the tree is still
+ *   intact for `/T` to walk; then a direct `child.kill` fallback so a missing
+ *   or failed `taskkill` is never worse than the pre-fix direct-child kill.
+ *   `/F` is unconditional — Windows has no graceful tree-kill analog to
+ *   SIGTERM — so both signals route to the same forced teardown.
+ */
+export function planKillTree(
+  platform: NodeJS.Platform,
+  pid: number,
+  descendants: number[],
+  signal: 'SIGTERM' | 'SIGKILL',
+): KillStep[] {
+  if (platform === 'win32') {
+    return [
+      { kind: 'taskkill', argv: ['/T', '/F', '/PID', String(pid)] },
+      { kind: 'child-kill', signal },
+    ]
+  }
+  const steps: KillStep[] = []
+  for (let i = descendants.length - 1; i >= 0; i--) {
+    steps.push({ kind: 'process-kill', pid: descendants[i], signal })
+  }
+  steps.push({ kind: 'process-kill', pid, signal })
+  return steps
+}
+
 export class SubagentProcess {
   readonly chatId: number
   readonly subagentId: string
@@ -407,9 +451,15 @@ export class SubagentProcess {
    * boundaries entirely — same shape as Windows `taskkill /T /F`. Wrapped in
    * try/catch per kill; ESRCH (already-exited) is benign.
    *
-   * Windows path: tracked as #95 (taskkill /T /F /PID). For now Windows
-   * falls back to direct-child kill with a documented grandchild-leak
-   * limitation.
+   * Windows path (#95): `taskkill /T /F /PID` walks and force-kills the whole
+   * tree (no POSIX process groups there). A direct `child.kill` runs after as
+   * a fallback so a missing/failed taskkill is never worse than the pre-fix
+   * direct-child kill. NOTE: not exercised on Linux/macOS CI — verified by the
+   * `planKillTree` unit tests (argv correctness) plus the PowerShell smoke
+   * script; live Windows verification still pending a Windows user.
+   *
+   * The per-platform step ordering lives in the pure `planKillTree`; this
+   * method just snapshots the tree and runs the steps.
    *
    * Race: between `collectDescendants` and the kill loop, claude could spawn
    * new grandchildren that we miss. Window is single-digit ms; long-running
@@ -419,19 +469,19 @@ export class SubagentProcess {
   private killTree(signal: 'SIGTERM' | 'SIGKILL'): void {
     const pid = this.child.pid
     if (pid === undefined) return  // spawn failed; nothing to signal
-    if (process.platform === 'win32') {
-      try { this.child.kill(signal) } catch {}
-      return
-    }
     // Snapshot the tree BEFORE killing — once the parent dies, descendants
-    // reparent to init and we lose the linkage.
-    const tree = this.collectDescendants(pid)
-    // Kill descendants depth-first (children before parents) so each layer
-    // dies cleanly before its parent is gone.
-    for (let i = tree.length - 1; i >= 0; i--) {
-      try { process.kill(tree[i], signal) } catch {}
+    // reparent to init and we lose the linkage. (Windows walks the tree via
+    // taskkill /T itself, so no snapshot is needed there.)
+    const descendants = process.platform === 'win32' ? [] : this.collectDescendants(pid)
+    // Each step is wrapped in try/catch: ESRCH (already-exited), a missing
+    // taskkill binary, etc. are all benign on shutdown.
+    for (const step of planKillTree(process.platform, pid, descendants, signal)) {
+      try {
+        if (step.kind === 'taskkill') execFileSync('taskkill', step.argv, { stdio: 'ignore' })
+        else if (step.kind === 'child-kill') this.child.kill(step.signal)
+        else process.kill(step.pid, step.signal)
+      } catch {}
     }
-    try { process.kill(pid, signal) } catch {}
   }
 
   /**
