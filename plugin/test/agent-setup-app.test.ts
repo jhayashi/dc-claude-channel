@@ -7,6 +7,7 @@ import {
   composeIdentityPreamble,
   composeAgentName,
   createReuseChat,
+  rebindChat,
   resolveAttachAgent,
   handleListContacts,
   handleAssignRole,
@@ -269,6 +270,91 @@ describe('createReuseChat', () => {
     const reseeded = agents.ensureDefaultAgent()
     expect(reseeded.name).toBe(agents.DEFAULT_AGENT_ID)
     expect(agents.getAgent(agents.DEFAULT_AGENT_ID)).not.toBeNull()
+  })
+})
+
+describe('rebindChat', () => {
+  const agentsDir = mkdtempSync(join(tmpdir(), 'dc-rebind-agents-'))
+  const bindingsDir = mkdtempSync(join(tmpdir(), 'dc-rebind-bindings-'))
+  const accessDir = mkdtempSync(join(tmpdir(), 'dc-rebind-access-'))
+
+  beforeEach(() => {
+    agents.setAgentsDir(agentsDir)
+    bindings.setBindingsDir(bindingsDir)
+    access.setApprovedDir(accessDir)
+    for (const dir of [agentsDir, bindingsDir, accessDir]) {
+      if (existsSync(dir)) {
+        for (const f of readdirSync(dir)) {
+          try { rmSync(join(dir, f), { recursive: true, force: true }) } catch { /* ignore */ }
+        }
+      }
+    }
+  })
+
+  function makeStubCtx(): { ctx: AppContext; send: ReturnType<typeof mock>; evict: ReturnType<typeof mock> } {
+    const send = mock(async () => 1)
+    const setChatProfileImage = mock(async () => {})
+    const evict = mock(async () => {})
+    const client = { send, setChatProfileImage } as unknown as AppContext['client']
+    const ctx: AppContext = {
+      client,
+      mcp: {} as unknown as AppContext['mcp'],
+      isAllowed: (chatId: number) => access.isAllowed(chatId),
+      allowedChats: () => access.allowedChats(),
+      logf: () => {},
+      safeName: (s: string) => s,
+      registerWebXDCMsg: () => {},
+      unregisterWebXDCMsg: () => {},
+      evictSubagent: evict,
+      getAvailableMcpServers: () => [],
+      getConnectedMcpServers: () => [],
+      scheduleStore: {} as unknown as AppContext['scheduleStore'],
+      subagentCache: { evictChat: async () => {} },
+      cleanupChatState: async () => {},
+    }
+    return { ctx, send, evict }
+  }
+
+  function seedAgent(name: string, model = 'claude-sonnet-4-6'): agents.AgentDef {
+    const def: agents.AgentDef = {
+      name, 'x-dc-display-name': name, model, description: '', body: 'x', tools: 'mcp__dc',
+    }
+    agents.saveAgent(def)
+    return def
+  }
+
+  test('swaps agentId, starts a fresh session, preserves workingDir + createdAt', async () => {
+    const oldAgent = seedAgent('old-agent')
+    const newAgent = seedAgent('new-agent')
+    bindings.bindAgent(700, oldAgent.name, { inheritClaudeMd: false })
+    const seeded = bindings.getBinding(700)!
+    bindings.saveBinding({ ...seeded, sessionId: 'sess-OLD', workingDir: '/repo/x' })
+
+    const { ctx, evict } = makeStubCtx()
+    await rebindChat(ctx, 700, newAgent)
+
+    const after = bindings.getBinding(700)!
+    expect(after.agentId).toBe('new-agent')
+    expect(after.sessionId).toBeUndefined()        // fresh session
+    expect(after.workingDir).toBe('/repo/x')        // project context preserved
+    expect(after.createdAt).toBe(seeded.createdAt)  // not a new binding
+    expect(evict).toHaveBeenCalledWith(700)         // in-flight subagent dropped
+  })
+
+  test('decorates the chat (avatar swap + intro line) on the SAME chat id', async () => {
+    seedAgent('old-agent')
+    const newAgent = seedAgent('new-agent')
+    bindings.bindAgent(701, 'old-agent', { inheritClaudeMd: false })
+    const { ctx, send } = makeStubCtx()
+    await rebindChat(ctx, 701, newAgent)
+    expect(send.mock.calls.some((c) => c[0] === 701)).toBe(true)
+  })
+
+  test('throws when the chat is already on that agent (no-op rebind)', async () => {
+    const agent = seedAgent('same-agent')
+    bindings.bindAgent(702, 'same-agent', { inheritClaudeMd: false })
+    const { ctx } = makeStubCtx()
+    await expect(rebindChat(ctx, 702, agent)).rejects.toThrow(/already on/i)
   })
 })
 

@@ -527,6 +527,34 @@ export async function createReuseChat(
 }
 
 /**
+ * Rebind an EXISTING chat to a different agent (issue #86). Unlike
+ * createReuseChat this does NOT create a new DC chat — it retargets the
+ * source chat in place. Starts a fresh CC session (clearSessionId) so the
+ * new agent doesn't inherit the old agent's transcript, evicts the
+ * in-flight subagent so the next message spawns with the new .md, and
+ * re-decorates the chat with the new agent's badge/intro.
+ *
+ * Throws if the chat is already bound to `agent` (caller surfaces it as a
+ * chat-failed). Exported for unit testing with a stub AppContext.
+ */
+export async function rebindChat(
+  ctx: AppContext,
+  sourceChatId: number,
+  agent: agents.AgentDef,
+): Promise<void> {
+  const current = bindings.getBinding(sourceChatId)
+  if (current?.agentId === agent.name) {
+    throw new Error('This chat is already on that agent.')
+  }
+  bindings.clearSessionId(sourceChatId)   // fresh CC session for the new agent
+  bindings.bindAgent(sourceChatId, agent.name, {
+    inheritClaudeMd: agents.inheritClaudeMdForModel(agent.model),
+  })
+  await ctx.evictSubagent(sourceChatId)   // next message picks up the new .md
+  await decorateAgentChat(ctx, sourceChatId, agent)
+}
+
+/**
  * Reply to a Phase-12 mode-picker flow on the source setup card with the
  * new chat's id. The card listens for chat-ready in setUpdateListener,
  * closes the confirmation modal, and routes back to the home screen.
