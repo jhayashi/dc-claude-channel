@@ -30,6 +30,7 @@
  */
 
 import type { CapabilityDecision } from "./capabilities.js";
+import { decideCapability } from "./capabilities.js";
 
 export interface GateDeps {
   agentId: string;
@@ -44,7 +45,14 @@ export interface GateDeps {
    * the subagent self-declared the requestor.
    */
   defaultOriginator: (chatId: number) => number | null;
-  evaluateCapability: (agentId: string, originator: number | null, required: string | null | undefined) => CapabilityDecision;
+  /**
+   * Resolves the originator's capability set, or `null` for a terminal /
+   * unowned originator (decideCapability treats null as the subscriber).
+   * The production impl is cache-aware: it returns the per-message cached
+   * caps when `originator` is the message sender, else loads fresh. May
+   * throw on a corrupt Contact record (routed to capability_lookup_error).
+   */
+  capsFor: (chatId: number, originator: number | null) => readonly string[] | null;
   getChatContacts: (chatId: number) => Promise<number[]>;
   logf?: (fmt: string, ...args: unknown[]) => void;
 }
@@ -209,11 +217,13 @@ export async function applyCapabilityGate(
   // the slice-3-5 review fix). Catch and route to lookup-error so the
   // operator's `jq` queries can distinguish "we said no" from "we
   // couldn't decide" (security review T4).
-  let decision: CapabilityDecision;
+  // Resolve caps (may throw on a corrupt Contact record — security review
+  // T4: distinguish "we said no" from "we couldn't decide"); decide purely.
+  let caps: readonly string[] | null;
   try {
-    decision = deps.evaluateCapability(deps.agentId, originator, required);
+    caps = deps.capsFor(chatId, originator);
   } catch (err) {
-    deps.logf?.("capability gate: evaluateCapability threw for chat=%d tool=%s: %v", chatId, toolName, err);
+    deps.logf?.("capability gate: capsFor threw for chat=%d tool=%s: %v", chatId, toolName, err);
     return {
       outcome: {
         kind: "deny",
@@ -226,6 +236,7 @@ export async function applyCapabilityGate(
       scrubbedArgs,
     };
   }
+  const decision: CapabilityDecision = decideCapability(caps, required);
 
   if (decision.decision === "would_deny") {
     return {

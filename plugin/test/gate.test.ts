@@ -1,5 +1,4 @@
 import { describe, test, expect } from "bun:test";
-import type { CapabilityDecision } from "../access/capabilities.js";
 import type { GateDeps, GateOutcome } from "../access/gate.js";
 import { applyCapabilityGate, withRequestorParam } from "../access/gate.js";
 
@@ -9,23 +8,11 @@ function makeDeps(overrides: Partial<GateDeps> = {}): GateDeps {
   return {
     agentId: 'claude-code',
     defaultOriginator: () => 50, // default subscriber
-    evaluateCapability: () => ({
-      required: "chat",
-      originatorCapabilities: ["*"],
-      decision: "allow",
-    }),
+    capsFor: () => ["*"],        // wildcard → allow; tests override to drive deny
     getChatContacts: async () => [1, 50],
     logf: () => {},
     ...overrides,
   };
-}
-
-function decision(
-  originatorCapabilities: readonly string[],
-  required: string,
-  d: "allow" | "would_deny",
-): CapabilityDecision {
-  return { required, originatorCapabilities, decision: d };
 }
 
 // ── Happy path ──────────────────────────────────────────────────────────────
@@ -34,10 +21,9 @@ describe("applyCapabilityGate — allow paths", () => {
   test("default originator (pairing contact), capability covered → allow", async () => {
     const result = await applyCapabilityGate(7, "dc_send_file", {}, "private_data_write", makeDeps({
       defaultOriginator: () => 50,
-      evaluateCapability: (_agentId, id, req) => {
+      capsFor: (_chatId, id) => {
         expect(id).toBe(50);
-        expect(req).toBe("private_data_write");
-        return decision(["*"], "private_data_write", "allow");
+        return ["*"];
       },
     }));
     expect(result.outcome.kind).toBe("allow");
@@ -52,9 +38,9 @@ describe("applyCapabilityGate — allow paths", () => {
     const result = await applyCapabilityGate(7, "dc_send", { requestor_contact_id: "200" }, "chat", makeDeps({
       defaultOriginator: () => 50,
       getChatContacts: async () => [1, 50, 200],
-      evaluateCapability: (_agentId, id) => {
+      capsFor: (_chatId, id) => {
         expect(id).toBe(200); // gate uses declared requestor, not pairing contact
-        return decision(["chat", "low_stakes_*"], "chat", "allow");
+        return ["chat", "low_stakes_*"];
       },
     }));
     expect(result.outcome.kind).toBe("allow");
@@ -67,17 +53,14 @@ describe("applyCapabilityGate — allow paths", () => {
   test("requestor_contact_id passed as number (not string) is accepted", async () => {
     const result = await applyCapabilityGate(7, "dc_send", { requestor_contact_id: 200 }, "chat", makeDeps({
       getChatContacts: async () => [1, 50, 200],
-      evaluateCapability: () => decision(["chat"], "chat", "allow"),
+      capsFor: () => ["chat"],
     }));
     expect(result.outcome.kind).toBe("allow");
   });
 
   test("missing requiresCapability defaults to chat tier", async () => {
     const result = await applyCapabilityGate(7, "unknown_tool", {}, undefined, makeDeps({
-      evaluateCapability: (_agentId, _id, req) => {
-        expect(req).toBe("chat");
-        return decision(["chat"], "chat", "allow");
-      },
+      capsFor: () => ["chat"],
     }));
     expect(result.outcome.kind).toBe("allow");
     if (result.outcome.kind === "allow") expect(result.outcome.required).toBe("chat");
@@ -132,7 +115,7 @@ describe("applyCapabilityGate — capability_invalid_requestor", () => {
   test("null requestor_contact_id is treated as absent (default originator path)", async () => {
     const result = await applyCapabilityGate(7, "dc_send", { requestor_contact_id: null }, "chat", makeDeps({
       defaultOriginator: () => 50,
-      evaluateCapability: () => decision(["*"], "chat", "allow"),
+      capsFor: () => ["*"],
     }));
     // null acts as "not declared" — fall through to pairing contact.
     expect(result.outcome.kind).toBe("allow");
@@ -155,10 +138,10 @@ describe("applyCapabilityGate — capability_lookup_error", () => {
     }
   });
 
-  test("evaluateCapability throws (corrupt principal record)", async () => {
+  test("capsFor throws (corrupt Contact record)", async () => {
     const result = await applyCapabilityGate(7, "dc_send", {}, "chat", makeDeps({
       defaultOriginator: () => 50,
-      evaluateCapability: () => { throw new Error("schema mismatch in /path/principal/50.json") },
+      capsFor: () => { throw new Error("schema mismatch in /path/principal/50.json") },
     }));
     expect(result.outcome.kind).toBe("deny");
     if (result.outcome.kind === "deny") {
@@ -175,7 +158,7 @@ describe("applyCapabilityGate — capability_deny", () => {
   test("would_deny propagates as capability_deny with originator + caps", async () => {
     const result = await applyCapabilityGate(7, "dc_send_file", {}, "private_data_write", makeDeps({
       defaultOriginator: () => 200,
-      evaluateCapability: () => decision(["chat", "low_stakes_*"], "private_data_write", "would_deny"),
+      capsFor: () => ["chat", "low_stakes_*"], // does not cover private_data_write → would_deny
     }));
     expect(result.outcome.kind).toBe("deny");
     if (result.outcome.kind === "deny") {
@@ -194,9 +177,9 @@ describe("applyCapabilityGate — capability_deny", () => {
     const result = await applyCapabilityGate(7, "dc_send_file", { requestor_contact_id: 200 }, "private_data_write", makeDeps({
       defaultOriginator: () => 50, // subscriber, would have * caps
       getChatContacts: async () => [1, 50, 200],
-      evaluateCapability: (_agentId, id) => {
+      capsFor: (_chatId, id) => {
         expect(id).toBe(200); // gate must check requestor's caps, not subscriber's
-        return decision(["chat"], "private_data_write", "would_deny");
+        return ["chat"]; // does not cover private_data_write → would_deny
       },
     }));
     expect(result.outcome.kind).toBe("deny");
@@ -213,7 +196,7 @@ describe("applyCapabilityGate — scrubbedArgs", () => {
   test("requestor_contact_id is stripped from scrubbedArgs on allow", async () => {
     const result = await applyCapabilityGate(7, "dc_send", { chat_id: "7", text: "hi", requestor_contact_id: "200" }, "chat", makeDeps({
       getChatContacts: async () => [1, 50, 200],
-      evaluateCapability: () => decision(["chat"], "chat", "allow"),
+      capsFor: () => ["chat"],
     }));
     expect(result.scrubbedArgs).toEqual({ chat_id: "7", text: "hi" });
     expect("requestor_contact_id" in result.scrubbedArgs).toBe(false);
@@ -222,14 +205,14 @@ describe("applyCapabilityGate — scrubbedArgs", () => {
   test("requestor_contact_id is stripped from scrubbedArgs on deny", async () => {
     const result = await applyCapabilityGate(7, "dc_send", { chat_id: "7", requestor_contact_id: "200" }, "chat", makeDeps({
       getChatContacts: async () => [1, 50, 200],
-      evaluateCapability: () => decision(["chat"], "chat", "would_deny"),
+      capsFor: () => [], // empty caps → would_deny for "chat"
     }));
     expect("requestor_contact_id" in result.scrubbedArgs).toBe(false);
   });
 
   test("scrubbedArgs equals input when no requestor_contact_id was present", async () => {
     const result = await applyCapabilityGate(7, "dc_send", { chat_id: "7", text: "hi" }, "chat", makeDeps({
-      evaluateCapability: () => decision(["*"], "chat", "allow"),
+      capsFor: () => ["*"],
     }));
     expect(result.scrubbedArgs).toEqual({ chat_id: "7", text: "hi" });
   });

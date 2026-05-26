@@ -787,7 +787,11 @@ const socketServer = new SocketServer({
         {
           agentId: access.DEFAULT_AGENT_ID,
           defaultOriginator: defaultOriginatorFor,
-          evaluateCapability: access.evaluateCapability,
+          capsFor: (cid, originator) => {
+            if (originator === null) return null
+            const cached = currentDriverCaps(cid, originator)
+            return cached !== undefined ? cached : access.getCapabilitiesFor(access.DEFAULT_AGENT_ID, originator)
+          },
           getChatContacts: (id) => client.getChatContacts(id),
           logf,
         },
