@@ -4,6 +4,15 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.5] — 2026-05-25
+
+Two internal architecture refactors — no user-visible change (identical tool behavior and authorization decisions).
+
+### Changed
+
+- **Unified the DC tool registry.** The core `dc_*` MCP tools are now defined once in `plugin/dispatcher/dc-tools.ts` (`DC_TOOLS`) instead of being split across a `coreTools` array, a ~600-line `callCoreTool` switch, and a hand-maintained `DC_TOOL_NAMES` list kept in sync by a boot-time drift check. Pure tools carry their handler as an `(args, ToolCtx)` unit (now individually unit-tested); state-mutating "tail" tools keep their dispatcher closures. `DC_TOOL_NAMES` is boot-injected from the live registrations, so the drift check is gone. Adding a tool is now a single registry entry.
+- **Consolidated the capability decision.** The message sender's capability bundle is resolved **once per message** (cached in the dispatcher's per-message driver context) instead of re-loading the Contact record on every tool call. The `evaluateCapability` pass-through is replaced by a pure `decideCapability(caps, required)` plus a cache-aware `capsFor` resolver in the gate; a declared `requestor_contact_id` re-resolves fresh. Role changes now take effect on the sender's next message.
+
 ## [1.4.4] — 2026-05-25
 
 Fixes a regression in 1.4.2/1.4.3 that stopped the dispatcher from launching.
@@ -97,6 +106,7 @@ The agent format aligns with Claude Code's own. Agent definitions move from `~/.
 
 - **`DC_TOOL_NAMES` was missing `reply`.** The cross-chat post tool is registered without a `dc_` prefix and slipped past the initial drift catalog; the boot drift-check warned but newly-saved agents silently lost cross-chat reply access until added.
 
+[1.4.5]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.4...v1.4.5
 [1.4.4]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.1...v1.4.2
