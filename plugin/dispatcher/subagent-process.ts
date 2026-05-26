@@ -72,29 +72,6 @@ export interface SubagentSpawnOptions {
 }
 
 /**
- * Known MCP server prefixes and their display names for the tool picker.
- *
- * Drift surface — hand-maintained. New servers shipped by claude.ai (e.g.
- * Excalidraw, Audible, Bitly, Spotify, Zoom — observable in this session's
- * deferred-tool list) won't appear in the picker until added here. The
- * impact is UI-only: a subagent can still call any MCP tool the user
- * granted access to via OAuth — the picker just can't render a toggle
- * for the server. Not load-bearing for correctness.
- */
-export const KNOWN_MCP_SERVERS: Record<string, string> = {
-  dc: 'DC Tools',
-  claude_ai_Gmail: 'Gmail',
-  claude_ai_Google_Calendar: 'Google Calendar',
-  claude_ai_Slack: 'Slack',
-  claude_ai_Notion: 'Notion',
-  claude_ai_Asana: 'Asana',
-  plugin_telegram_telegram: 'Telegram',
-}
-
-/** All known MCP server prefixes. */
-export const ALL_MCP_SERVER_PREFIXES = Object.keys(KNOWN_MCP_SERVERS)
-
-/**
  * Default built-in Claude Code tools list. Used by the agent-setup UI
  * picker and by the v1.3 → v1.4 migration as the "all built-ins"
  * fallback when a legacy agent had no `allowedBuiltinTools` field.
