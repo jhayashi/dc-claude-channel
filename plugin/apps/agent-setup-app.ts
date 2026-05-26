@@ -1912,6 +1912,28 @@ export const agentSetupApp: WebXDCApp = {
         continue
       }
 
+      if (payload.type === 'rebind-chat') {
+        const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
+        if (!agentId) {
+          await sendChatFailed(session, ctx, 'Missing agent id.')
+          continue
+        }
+        const agent = agents.getAgent(agentId)
+        if (!agent) {
+          await sendChatFailed(session, ctx, `Agent "${agentId}" no longer exists.`)
+          continue
+        }
+        try {
+          await rebindChat(ctx, session.sourceChatId, agent)
+          ctx.logf('agent-setup: rebound chat %d -> %s', session.sourceChatId, agentId)
+          await sendChatReady(session, ctx, session.sourceChatId)
+        } catch (err) {
+          ctx.logf('agent-setup: rebind-chat failed for agent %s: %v', agentId, err)
+          await sendChatFailed(session, ctx, err instanceof Error ? err.message : 'unknown error')
+        }
+        continue
+      }
+
       if (payload.type === 'create') {
         const parsed = agents.DraftAgentSchema.safeParse(payload.config)
         if (!parsed.success) {
