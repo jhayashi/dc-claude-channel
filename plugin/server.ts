@@ -45,7 +45,8 @@ import { assertSupportedClaudeVersion } from './cc-version-check.js'
 import { cleanupOrphanSubagents } from './dispatcher/orphan-cleanup.js'
 import { RateLimiter } from './dispatcher/rate-limit.js'
 import { createSendRateLimiter } from './dispatcher/send-rate-limiter.js'
-import { SubagentProcess, KNOWN_MCP_SERVERS } from './dispatcher/subagent-process.js'
+import { SubagentProcess } from './dispatcher/subagent-process.js'
+import { getAvailableMcpServers, getConnectedMcpServers } from './mcp-catalog.js'
 import { generateHookConfig } from './dispatcher/hook-config.js'
 import { createMessageRouter } from './dispatcher/message-router.js'
 import { ReactionRouter } from './dispatcher/reaction-router.js'
@@ -251,89 +252,12 @@ const SUBAGENT_TOOL_BLOCKLIST = new Set([
   'dc_start_tutorial',
 ])
 
-/**
- * Read ~/.claude/mcp-needs-auth-cache.json and return the set of display
- * names that currently need auth (i.e. are NOT connected). Best-effort —
- * returns empty set if the file is missing or unparseable.
- */
-function readMcpNeedsAuthDisplayNames(): Set<string> {
-  const path = join(homedir(), '.claude', 'mcp-needs-auth-cache.json')
-  try {
-    const raw = readFileSync(path, 'utf-8')
-    const parsed = JSON.parse(raw)
-    if (parsed && typeof parsed === 'object') return new Set(Object.keys(parsed))
-  } catch {
-    // Missing file or bad JSON — treat as nothing needs auth.
-  }
-  return new Set()
-}
-
-/**
- * Convert a KNOWN_MCP_SERVERS prefix (e.g. `claude_ai_Gmail`) to the
- * display name that Claude Code uses in its `mcp-needs-auth-cache.json`
- * (e.g. `claude.ai Gmail`). Returns null if the prefix isn't a
- * claude_ai_* server.
- */
-export function mcpPrefixToAuthCacheKey(prefix: string): string | null {
-  if (!prefix.startsWith('claude_ai_')) return null
-  const rest = prefix.slice('claude_ai_'.length).replace(/_/g, ' ')
-  return `claude.ai ${rest}`
-}
-
-/**
- * Pure helper — given the set of display names that need auth, return
- * the list of prefixes that are considered "connected". Extracted for
- * unit testing; production callers should use `getConnectedMcpServers()`.
- */
-export function filterConnectedPrefixes(needsAuth: ReadonlySet<string>): string[] {
-  const out: string[] = []
-  for (const prefix of Object.keys(KNOWN_MCP_SERVERS)) {
-    if (prefix === 'dc') {
-      out.push(prefix)
-      continue
-    }
-    const cacheKey = mcpPrefixToAuthCacheKey(prefix)
-    if (cacheKey && needsAuth.has(cacheKey)) continue
-    out.push(prefix)
-  }
-  return out
-}
-
-/**
- * Return the list of MCP server prefixes considered "connected" (i.e.
- * usable without further auth). The `dc` server is always connected.
- * For `claude_ai_*` servers, we consult `mcp-needs-auth-cache.json` as
- * a best-effort signal — servers listed there need auth and are
- * treated as NOT connected. Other known servers are assumed connected.
- *
- * This is surfaced in the agent-setup WebXDC snapshot so the create
- * flow can warn when a template depends on an unconnected service.
- */
-export function getConnectedMcpServers(): string[] {
-  return filterConnectedPrefixes(readMcpNeedsAuthDisplayNames())
-}
-
-/** Available MCP servers for the agent-setup tool picker. */
-export function getAvailableMcpServers(): Array<{ prefix: string; label: string; toolCount: number }> {
-  const dcTools = [
+/** Count of DC tools surfaced to subagents (for the agent-setup picker's dc entry). */
+function dcToolCount(): number {
+  return [
     ...DC_TOOLS.map(t => t.name),
     ...apps.flatMap(a => a.tools()).map(t => t.name),
-  ].filter(n => !SUBAGENT_TOOL_BLOCKLIST.has(n))
-
-  const servers: Array<{ prefix: string; label: string; toolCount: number }> = []
-
-  // DC tools are always available — we know the exact count.
-  servers.push({ prefix: 'dc', label: KNOWN_MCP_SERVERS.dc, toolCount: dcTools.length })
-
-  // Other known servers: we can't enumerate their tools at this layer,
-  // but we include them so the picker can show toggles. Claude Code
-  // silently ignores --allowedTools prefixes for absent servers.
-  for (const [prefix, label] of Object.entries(KNOWN_MCP_SERVERS)) {
-    if (prefix === 'dc') continue
-    servers.push({ prefix, label, toolCount: 0 })
-  }
-
-  return servers
+  ].filter(n => !SUBAGENT_TOOL_BLOCKLIST.has(n)).length
 }
 
 async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | null> {
@@ -655,7 +579,7 @@ ctx = {
       logf('ctx.evictSubagent: evict failed chat=%d: %v', chatId, err),
     )
   },
-  getAvailableMcpServers,
+  getAvailableMcpServers: () => getAvailableMcpServers(dcToolCount()),
   getConnectedMcpServers,
   async dispatchAndCollect(chatId: number, text: string): Promise<string> {
     const result = await subagentCache.dispatch(chatId, text)

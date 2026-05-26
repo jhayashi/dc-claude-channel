@@ -55,7 +55,7 @@ export interface AppContext {
   /** Evict a cached subagent for a chat so the next message triggers a respawn (e.g. after model change). */
   evictSubagent: (chatId: number) => Promise<void>
   /** Returns available MCP servers for the agent-setup tool picker. */
-  getAvailableMcpServers: () => Array<{ prefix: string; label: string; toolCount: number }>
+  getAvailableMcpServers: () => Array<{ prefix: string; label: string; toolCount?: number }>
   /** Returns MCP server prefixes considered "connected" (usable without further auth). */
   getConnectedMcpServers: () => string[]
   /** Dispatch a synthetic user message to a chat's subagent and return the response text. */
