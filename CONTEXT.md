@@ -38,7 +38,7 @@ For longer-form architecture documentation, see [`docs/ARCHITECTURE.md`](docs/AR
 
 **Permissioned content** — A message whose sender has a contact record with non-empty capabilities. Subagents see permissioned content directly; unpermissioned content is redacted unless the subagent explicitly opts in.
 
-**Capability** — Token-based authorization for cross-contact tool calls (#71, v1.3). A capability says "this contact may invoke this tool." Replaces and refines the older "is the chat owner" check.
+**Capability** — Token-based authorization for cross-contact tool calls (#71, v1.3). A capability says "this contact may invoke this tool." Replaces and refines the older "is the chat owner" check. The sender's capability set is resolved once per message (cached in the dispatcher's per-message driver context) and decided purely via `decideCapability(caps, required)`; a declared `requestor_contact_id` re-resolves fresh.
 
 **Pairing** — The QR / verification ceremony that creates a contact record. Two paths today: securejoin (DC's native verification) and the agent-setup wall (in-app code exchange).
 
