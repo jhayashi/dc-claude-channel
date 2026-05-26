@@ -551,7 +551,14 @@ export async function rebindChat(
     inheritClaudeMd: agents.inheritClaudeMdForModel(agent.model),
   })
   await ctx.evictSubagent(sourceChatId)   // next message picks up the new .md
-  await decorateAgentChat(ctx, sourceChatId, agent)
+  // Decoration is cosmetic (avatar swap + intro line). The rebind already
+  // took effect above, so don't fail it — and mislead the user into a retry
+  // that hits the same-agent guard — over a badge/send hiccup.
+  try {
+    await decorateAgentChat(ctx, sourceChatId, agent)
+  } catch (err) {
+    ctx.logf('agent-setup: rebind decorate failed chat=%d: %v', sourceChatId, err)
+  }
 }
 
 /**
