@@ -1442,11 +1442,16 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
  * Subagent runs are serialized per chat by the cache, so a single
  * Map<chatId, contactId> is race-free.
  */
-const _currentDriver = new Map<number, number>()
+const _currentDriver = new Map<number, { contactId: number; caps: readonly string[] }>()
 function defaultOriginatorFor(chatId: number): number | null {
   const driver = _currentDriver.get(chatId)
-  if (driver !== undefined) return driver
+  if (driver !== undefined) return driver.contactId
   return access.firstPermissionedContact(chatId)
+}
+/** Caps resolved once for the current message's sender; undefined for synthetic/scheduled turns or a different contact. */
+function currentDriverCaps(chatId: number, contactId: number): readonly string[] | undefined {
+  const driver = _currentDriver.get(chatId)
+  return driver && driver.contactId === contactId ? driver.caps : undefined
 }
 
 /**
@@ -2412,7 +2417,10 @@ async function main(): Promise<void> {
     // the capability gate runs against THEIR caps (not the chat owner's)
     // for every tool call the subagent makes during this turn.
     if (msg.fromId && msg.fromId > 0) {
-      _currentDriver.set(chatId, msg.fromId)
+      _currentDriver.set(chatId, {
+        contactId: msg.fromId,
+        caps: access.getCapabilitiesFor(access.DEFAULT_AGENT_ID, msg.fromId),
+      })
     }
     try {
       const result = await subagentCache.dispatch(chatId, formatSubagentInput(enrichedMsg))
