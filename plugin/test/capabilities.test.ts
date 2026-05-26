@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import * as access from "../access/index.js";
+import { decideCapability } from "../access/capabilities.js";
 
 const root = mkdtempSync(join(tmpdir(), "dc-capabilities-"));
 const agentsDir = join(root, "agents");
@@ -176,5 +177,26 @@ describe("evaluateCapability — relay case (requestor_contact_id)", () => {
     expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 300, "chat").decision).toBe("allow");
     expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 300, "private_data_read").decision).toBe("would_deny");
     expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 300, "infrastructure").decision).toBe("would_deny");
+  });
+});
+
+describe("decideCapability", () => {
+  test("null caps (terminal session) → allow with wildcard bundle", () => {
+    const d = decideCapability(null, "chat");
+    expect(d.decision).toBe("allow");
+    expect(d.originatorCapabilities).toEqual(["*"]);
+    expect(d.required).toBe("chat");
+  });
+  test("caps cover the requirement → allow", () => {
+    expect(decideCapability(["*"], "low_stakes_email").decision).toBe("allow");
+    expect(decideCapability(["chat"], "chat").decision).toBe("allow");
+  });
+  test("caps lack the requirement → would_deny", () => {
+    expect(decideCapability(["chat"], "low_stakes_email").decision).toBe("would_deny");
+    expect(decideCapability([], "chat").decision).toBe("would_deny");
+  });
+  test("missing/empty required defaults to chat tier", () => {
+    expect(decideCapability(["chat"], undefined).required).toBe("chat");
+    expect(decideCapability(["chat"], "").required).toBe("chat");
   });
 });

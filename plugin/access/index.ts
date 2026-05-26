@@ -11,6 +11,8 @@
  *   Split out in v1.3 to break a chat-allowlist ↔ contacts cycle.
  * - `./capability-bundles.ts` — role → capability set
  * - `./capabilities.ts` — per-tool capability evaluator
+ *   (`evaluateCapability` resolves + decides; `decideCapability` is the
+ *   pure decision over an already-resolved cap set)
  * - `./gate.ts` — orchestration helper for the dispatcher's capability gate
  */
 

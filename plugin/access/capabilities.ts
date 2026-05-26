@@ -73,3 +73,23 @@ export function evaluateCapability(
   const decision = hasCapability(originatorCapabilities, required) ? "allow" : "would_deny";
   return { required, originatorCapabilities, decision };
 }
+
+/**
+ * Pure capability decision: given an already-resolved capability set
+ * (or `null` for a terminal session, which is the subscriber by
+ * definition), decide whether it covers the requirement. No filesystem
+ * access — the caller resolves caps (once per message, cache-aware).
+ */
+export function decideCapability(
+  caps: readonly string[] | null,
+  requiredCapability: string | null | undefined,
+): CapabilityDecision {
+  const required = requiredCapability && requiredCapability.length > 0
+    ? requiredCapability
+    : DEFAULT_REQUIRED_CAPABILITY;
+  if (caps === null) {
+    return { required, originatorCapabilities: TERMINAL_BUNDLE, decision: "allow" };
+  }
+  const decision = hasCapability(caps, required) ? "allow" : "would_deny";
+  return { required, originatorCapabilities: caps, decision };
+}
