@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { DC_TOOLS, type ToolCtx } from '../dispatcher/dc-tools'
-import { coreToolNames } from '../server'
+import { coreDispatchToolNames } from '../server'
 
 /**
  * Build a ToolCtx whose members throw unless a test overrides them, so each
@@ -32,7 +32,7 @@ describe('DC_TOOLS registry', () => {
 
 test('every DC_TOOLS tool has exactly one dispatch entry, and vice versa', () => {
   const registry = new Set(DC_TOOLS.map(t => t.name))
-  const dispatch = new Set(coreToolNames())
+  const dispatch = new Set(coreDispatchToolNames())
   expect([...registry].filter(n => !dispatch.has(n))).toEqual([])
   expect([...dispatch].filter(n => !registry.has(n))).toEqual([])
 })
@@ -320,16 +320,18 @@ test('dc_download_attachment: rejects missing message_id', async () => {
 test('dc_access_arm_pairing: creates group and arms pairing', async () => {
   const def = DC_TOOLS.find(t => t.name === 'dc_access_arm_pairing')!
   const deletedChats: number[] = []
+  let armedWith: number | undefined
+  let groupCreated = false
   const ctx = makeToolCtx({
     access: {
       getArmedGroupChatId: () => null,
       isArmed: () => false,
-      armPairing: (_id: number) => {},
+      armPairing: (id: number) => { armedWith = id },
       getArmedUntil: () => Date.now() + 300_000,
     } as unknown as ToolCtx['access'],
     client: {
       deleteChat: async (id: number) => { deletedChats.push(id) },
-      createGroup: async (_name: string) => 55,
+      createGroup: async (_name: string) => { groupCreated = true; return 55 },
       setChatProfileImage: async () => {},
     } as unknown as ToolCtx['client'],
     agents: {
@@ -337,9 +339,10 @@ test('dc_access_arm_pairing: creates group and arms pairing', async () => {
     } as unknown as ToolCtx['agents'],
   })
   const r = await def.handler!({}, ctx)
-  // May succeed or error on setAgentIcon (best-effort), but returns a result
   expect(r.content[0].text).toContain('Pairing armed')
   expect(deletedChats).toEqual([]) // no previous group
+  expect(groupCreated).toBe(true)
+  expect(armedWith).toBe(55)
 })
 
 test('dc_access_arm_pairing: deletes previous armed group before re-arming', async () => {

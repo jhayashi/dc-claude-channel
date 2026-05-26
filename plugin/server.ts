@@ -1411,14 +1411,14 @@ const coreToolDispatch = new Map<string, Dispatch>([
   ...Object.entries(tailHandlers),
 ])
 
-/** Exposed for the structural completeness test. */
-export function coreToolNames(): string[] { return [...coreToolDispatch.keys()] }
+/** Dispatch-side tool names (registry handlers + tail closures). Exposed for the structural completeness test; compare against the registry-side dcToolNames(). */
+export function coreDispatchToolNames(): string[] { return [...coreToolDispatch.keys()] }
 
 // ── Tool list ───────────────────────────────────────────────────────────
 
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
-    ...DC_TOOLS.map(withRequestorParam),
+    ...DC_TOOLS.map(t => withRequestorParam({ name: t.name, description: t.description, inputSchema: t.inputSchema, requiresCapability: t.requiresCapability })),
     ...apps.flatMap(a => a.tools()).map(withRequestorParam),
   ],
 }))
