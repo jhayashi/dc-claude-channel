@@ -464,9 +464,11 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
 
   // resolved is non-null here — the early return at the top of this
   // function guarantees it once resolvedCheck succeeded. CC reads
-  // model/effort/permissionMode/tools/system prompt/memory from the
-  // agent .md via --agent <name>, so the dispatcher passes only DC
-  // runtime context.
+  // model/effort/system prompt/memory from the agent .md via --agent
+  // <name>, so the dispatcher passes only DC runtime context. The lone
+  // exception is permissionMode/tools, which `-p` mode does NOT apply to
+  // its grant decisions — SubagentProcess re-forwards those as explicit
+  // --permission-mode / --allowed-tools flags (see SpawnAgent).
   const agentDef = resolved!.agent
   try {
     assertCanSpawn(agentDef)
