@@ -14,7 +14,6 @@
  */
 
 import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import type { EffortLevel } from '../models.js'
 
 interface StreamFrame {
   type: string
@@ -25,14 +24,24 @@ interface StreamFrame {
   [k: string]: unknown
 }
 
+/** The slice of an agent definition the spawn needs. AgentDef satisfies it. */
+export interface SpawnAgent {
+  name: string
+  permissionMode?: string
+  tools?: string
+}
+
 export interface SubagentSpawnOptions {
   chatId: number
   subagentId: string
   /**
-   * Agent name — passed via `--agent` so CC reads the .md for
-   * model / prompt / tools / memory / permissionMode. Required.
+   * The agent to spawn. `name` → `--agent` (CC reads model / prompt / tools /
+   * memory from the .md). `permissionMode` / `tools` are forwarded as
+   * `--permission-mode` / `--allowed-tools` because CC's headless `-p` runtime
+   * does NOT apply the .md's permissionMode/tools to its grant decisions —
+   * without this, trusted agents deadlock on a UI-less permission prompt.
    */
-  agentName: string
+  agent: SpawnAgent
   /** Path to the generated per-subagent settings.json with the hook config. */
   settingsPath: string
   /** Path to the per-subagent mcp-config.json (loads dc tools-proxy). */
@@ -59,41 +68,7 @@ export interface SubagentSpawnOptions {
   claudeVersion?: string
   /** Session display name (synced with DC chat name). Passed as `--name`. */
   sessionName?: string
-  /**
-   * Permission mode forwarded to `--permission-mode`. CC reads the
-   * agent .md's `permissionMode` for some purposes, but does NOT use it
-   * to bypass tool-grant prompts in `-p` headless mode. The dispatcher
-   * reads the .md and forwards the value here so trusted agents (mode =
-   * `bypassPermissions`) can call MCP tools without deadlocking on a
-   * UI-less permission prompt.
-   */
-  permissionMode?: string
-  /**
-   * Pre-granted tool allowlist passed as `--allowed-tools`. The agent
-   * .md's `tools:` field declares the available surface but CC still
-   * prompts at use-time; pre-granting the same list here mirrors the
-   * v1.3 behavior. Pass the raw CSV from the .md.
-   */
-  allowedTools?: string
   logf?: (fmt: string, ...args: unknown[]) => void
-  /**
-   * @deprecated v1.4. CC reads model/effort/permissionMode/tools/system
-   * prompt from the agent .md. These options remain on the type for one
-   * release so callers compile while we migrate them, but they have no
-   * effect on the spawn argv. NL meta-commands mutate the .md directly
-   * via `agents.setAgentModel` / `setAgentEffort` / `setAgentTrust`.
-   */
-  model?: string
-  /** @deprecated v1.4. CC reads `effort` from the agent .md. */
-  effort?: EffortLevel
-  /** @deprecated v1.4. CC reads the system prompt (markdown body) from the .md. */
-  systemPrompt?: string
-  /** @deprecated v1.4. CC reads `tools` (CSV) from the agent .md. */
-  allowedBuiltinTools?: string[] | null
-  /** @deprecated v1.4. CC reads `tools` (CSV with `mcp__<server>` entries) from the agent .md. */
-  allowedMcpServers?: string[] | null
-  /** @deprecated v1.4 no-op (no verified CLI flag). Kept for caller compat. */
-  suppressUserClaudeMd?: boolean
 }
 
 /**
@@ -174,8 +149,8 @@ export const BUILTIN_TOOL_DESCRIPTIONS: Record<string, string> = {
 export function buildSubagentArgs(
   opts: SubagentSpawnOptions,
 ): { args: string[]; envBlock: string } {
-  if (!opts.agentName) {
-    throw new Error('buildSubagentArgs: agentName is required (v1.4 delegates to CC via --agent)')
+  if (!opts.agent || !opts.agent.name) {
+    throw new Error('buildSubagentArgs: agent.name is required (v1.4 delegates to CC via --agent)')
   }
   const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return 'unknown' } })()
   const lines = [
@@ -184,7 +159,7 @@ export function buildSubagentArgs(
     `- Timezone: ${tz}`,
     `- Working directory: ${opts.cwd ?? process.cwd()}`,
     `- Bound chat: ${opts.chatId}`,
-    `- Agent name: ${opts.agentName}`,
+    `- Agent name: ${opts.agent.name}`,
   ]
   if (opts.userName) lines.push(`- User: ${opts.userName}`)
   if (opts.claudeVersion) lines.push(`- Claude Code: ${opts.claudeVersion}`)
@@ -193,7 +168,7 @@ export function buildSubagentArgs(
 
   const args: string[] = [
     '-p',
-    '--agent', opts.agentName,
+    '--agent', opts.agent.name,
     ...(opts.resume ? ['--resume', opts.sessionId] : ['--session-id', opts.sessionId]),
     '--input-format', 'stream-json',
     '--output-format', 'stream-json',
@@ -207,14 +182,15 @@ export function buildSubagentArgs(
   // for every MCP tool the agent calls, with no UI to grant. The hook in
   // settings.json only matches built-ins (Bash/Edit/Write/…), not MCP
   // tools, so MCP grants would deadlock. Forward the mode explicitly.
-  if (opts.permissionMode) {
-    args.push('--permission-mode', opts.permissionMode)
+  if (opts.agent.permissionMode) {
+    args.push('--permission-mode', opts.agent.permissionMode)
   }
   // Same story for the allowlist: the .md's `tools:` field declares the
   // surface but CC still prompts at use-time for non-pre-granted tools.
   // Pass --allowed-tools so MCP calls (and any built-ins) are pre-granted.
-  if (opts.allowedTools && opts.allowedTools.length > 0) {
-    args.push('--allowed-tools', opts.allowedTools)
+  const allowedTools = opts.agent.tools ?? ''
+  if (allowedTools.length > 0) {
+    args.push('--allowed-tools', allowedTools)
   }
   if (opts.sessionName) {
     args.push('--name', opts.sessionName)
@@ -263,13 +239,6 @@ export class SubagentProcess {
     this.sessionId = opts.sessionId
     this.logf = opts.logf ?? (() => {})
 
-    if (opts.suppressUserClaudeMd) {
-      this.logf(
-        'subagent %s: suppressUserClaudeMd=true requested, but no verified ' +
-        'mechanism exists yet (Phase 1 deferred toggle). Ignoring.',
-        opts.subagentId,
-      )
-    }
     const { args } = buildSubagentArgs(opts)
     this.logf(
       'subagent %s: spawning chat=%d session=%s resume=%s',

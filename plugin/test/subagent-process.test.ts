@@ -5,7 +5,7 @@ function baseOpts(extra: Partial<SubagentSpawnOptions> = {}): SubagentSpawnOptio
   return {
     chatId: 7,
     subagentId: 'sub-7-abcd',
-    agentName: 'test-agent',
+    agent: { name: 'test-agent' },
     settingsPath: '/tmp/settings.json',
     dispatcherSocket: '/tmp/sock',
     dispatcherSecret: 'secret',
@@ -17,7 +17,7 @@ function baseOpts(extra: Partial<SubagentSpawnOptions> = {}): SubagentSpawnOptio
 
 describe('buildSubagentArgs', () => {
   test('default args contain --agent <name> and core flags', () => {
-    const { args, envBlock } = buildSubagentArgs(baseOpts({ agentName: 'developer' }))
+    const { args, envBlock } = buildSubagentArgs(baseOpts({ agent: { name: 'developer' } }))
     expect(args).toContain('-p')
     expect(args).toContain('--agent')
     expect(args[args.indexOf('--agent') + 1]).toBe('developer')
@@ -31,33 +31,29 @@ describe('buildSubagentArgs', () => {
     expect(args).toContain('/tmp/settings.json')
     expect(args).toContain('--append-system-prompt')
     expect(envBlock).toContain('Bound chat: 7')
+    expect(envBlock).toContain('Agent name: developer')
   })
 
-  test('does NOT pass --model / --effort / --permission-mode / --allowedTools', () => {
-    const { args } = buildSubagentArgs(baseOpts({
-      agentName: 'developer',
-      model: 'claude-opus-4-7',  // ignored — set on the .md
-      effort: 'max',              // ignored — set on the .md
-    }))
+  test('a bare agent yields no --model / --effort / --permission-mode / --allowed-tools', () => {
+    // CC reads model/effort/permissionMode/tools/system prompt from the .md
+    // (via --agent); the dispatcher only forwards permissionMode/tools when
+    // the agent carries them. A bare agent forwards none of these flags.
+    const { args } = buildSubagentArgs(baseOpts({ agent: { name: 'developer' } }))
     expect(args).not.toContain('--model')
     expect(args).not.toContain('--effort')
     expect(args).not.toContain('--permission-mode')
-    expect(args).not.toContain('--allowedTools')
+    expect(args).not.toContain('--allowed-tools')
   })
 
-  test('--append-system-prompt contains env block only (no agent system prompt)', () => {
-    const { args, envBlock } = buildSubagentArgs(baseOpts({
-      agentName: 'developer',
-      systemPrompt: 'You are foo.',  // ignored; agent body lives in the .md
-    }))
+  test('--append-system-prompt contains the env block only (no agent system prompt)', () => {
+    const { args, envBlock } = buildSubagentArgs(baseOpts({ agent: { name: 'developer' } }))
     const idx = args.indexOf('--append-system-prompt')
     expect(args[idx + 1]).toBe(envBlock)
-    expect(envBlock).not.toContain('You are foo.')
   })
 
   test('resume=true uses --resume', () => {
     const { args } = buildSubagentArgs(baseOpts({
-      agentName: 'developer', sessionId: 'abc-123', resume: true,
+      agent: { name: 'developer' }, sessionId: 'abc-123', resume: true,
     }))
     expect(args).toContain('--resume')
     expect(args[args.indexOf('--resume') + 1]).toBe('abc-123')
@@ -66,7 +62,7 @@ describe('buildSubagentArgs', () => {
 
   test('--mcp-config is still passed (DC tools-proxy)', () => {
     const { args } = buildSubagentArgs(baseOpts({
-      agentName: 'developer', mcpConfigPath: '/tmp/mcp.json',
+      agent: { name: 'developer' }, mcpConfigPath: '/tmp/mcp.json',
     }))
     expect(args).toContain('--mcp-config')
     expect(args[args.indexOf('--mcp-config') + 1]).toBe('/tmp/mcp.json')
@@ -74,7 +70,7 @@ describe('buildSubagentArgs', () => {
 
   test('addDirs are passed as --add-dir', () => {
     const { args } = buildSubagentArgs(baseOpts({
-      agentName: 'developer', addDirs: ['/foo', '/bar'],
+      agent: { name: 'developer' }, addDirs: ['/foo', '/bar'],
     }))
     const dirs = args.reduce<string[]>((acc, v, i) => {
       if (args[i - 1] === '--add-dir') acc.push(v)
@@ -85,46 +81,47 @@ describe('buildSubagentArgs', () => {
 
   test('sessionName is passed as --name', () => {
     const { args } = buildSubagentArgs(baseOpts({
-      agentName: 'developer', sessionName: 'chat-foo',
+      agent: { name: 'developer' }, sessionName: 'chat-foo',
     }))
     expect(args).toContain('--name')
     expect(args[args.indexOf('--name') + 1]).toBe('chat-foo')
   })
 
-  test('forwards permissionMode via --permission-mode', () => {
+  test('forwards agent.permissionMode via --permission-mode', () => {
     const { args } = buildSubagentArgs(baseOpts({
-      agentName: 'trusted', permissionMode: 'bypassPermissions',
+      agent: { name: 'trusted', permissionMode: 'bypassPermissions' },
     }))
     expect(args).toContain('--permission-mode')
     expect(args[args.indexOf('--permission-mode') + 1]).toBe('bypassPermissions')
   })
 
-  test('omits --permission-mode when unset', () => {
-    const { args } = buildSubagentArgs(baseOpts({ agentName: 'untrusted' }))
+  test('omits --permission-mode when agent.permissionMode is unset', () => {
+    const { args } = buildSubagentArgs(baseOpts({ agent: { name: 'untrusted' } }))
     expect(args).not.toContain('--permission-mode')
   })
 
-  test('forwards allowedTools via --allowed-tools', () => {
+  test('forwards agent.tools via --allowed-tools', () => {
     // Use a real tool name (mcp__dc__reply — the cross-chat post tool;
     // registered as `reply` without a dc_ prefix) so this test doesn't
     // perpetuate the "dc_reply" naming confusion. The tool-name set is now
     // computed from the live registrations at boot, so there is no longer a
     // hand-maintained list to drift from.
     const { args } = buildSubagentArgs(baseOpts({
-      agentName: 'trusted',
-      allowedTools: 'Bash, Read, mcp__dc__reply',
+      agent: { name: 'trusted', tools: 'Bash, Read, mcp__dc__reply' },
     }))
     expect(args).toContain('--allowed-tools')
     expect(args[args.indexOf('--allowed-tools') + 1]).toBe('Bash, Read, mcp__dc__reply')
   })
 
-  test('omits --allowed-tools when allowedTools is empty', () => {
-    const { args } = buildSubagentArgs(baseOpts({ agentName: 'untrusted', allowedTools: '' }))
+  test('omits --allowed-tools when agent.tools is empty', () => {
+    const { args } = buildSubagentArgs(baseOpts({ agent: { name: 'untrusted', tools: '' } }))
     expect(args).not.toContain('--allowed-tools')
   })
 
-  test('throws if agentName is missing', () => {
-    expect(() => buildSubagentArgs(baseOpts({ agentName: undefined as unknown as string })))
-      .toThrow(/agentName is required/)
+  test('throws if agent.name is missing', () => {
+    expect(() => buildSubagentArgs(baseOpts({ agent: { name: undefined as unknown as string } })))
+      .toThrow(/agent\.name is required/)
+    expect(() => buildSubagentArgs(baseOpts({ agent: undefined as unknown as SubagentSpawnOptions['agent'] })))
+      .toThrow(/agent\.name is required/)
   })
 })
