@@ -149,9 +149,11 @@ export function isContactTrustedForContent(agentId: string, contactId: number): 
  *   4. Neither → `["*"]` (legacy backfill safety; pre-v1.3 records
  *      written without role/capabilities are treated as `subscriber`).
  *
- * Intentionally NOT memoized — role changes via `setHumanRole`
- * (slice 6/7) must take effect on the next tool call. The lookup is
- * one stat + one small JSON read; cheap.
+ * Not memoized inside this function. The dispatcher resolves the message
+ * sender's caps once per message (cached in `_currentDriver`) and re-resolves
+ * fresh for a declared `requestor_contact_id`, so a role change via
+ * `setContactRole` takes effect on the sender's next message. The lookup is
+ * one stat + one small JSON read.
  */
 export function getCapabilitiesFor(agentId: string, contactId: number): string[] {
   const p = loadContact(agentId, contactId);
