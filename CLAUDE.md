@@ -6,7 +6,7 @@ For deeper reference, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (file i
 
 ## Agent model (v1.4)
 
-A DC chat is bound to a reusable **agent definition** (markdown + YAML frontmatter at `~/.claude/agents/<name>.md` — the same path terminal Claude Code reads) via a per-chat **binding** (JSON at `bindings/<chatId>.json`) that holds the claude session UUID for `--resume`. Editing the .md mutates in place — the next turn in every bound chat picks up the change. Agent definitions are reusable across chats and shared with terminal CC; bindings are not.
+A DC chat is bound to a reusable **agent definition** (markdown + YAML frontmatter at `~/.claude/agents/<name>.md` — the same path terminal Claude Code reads) via a per-chat **binding** (JSON at `bindings/<chatId>.json`) that holds the claude session UUID for `--resume`. Editing the .md mutates in place — the next turn in every bound chat picks up the change. Agent definitions are reusable across chats and shared with terminal CC; bindings are not. A bound chat can be re-pointed to a different agent from the agent-setup card ("Switch this chat's agent" → `rebindChat` in `apps/agent-setup-app.ts`); rebinding keeps the same DC chat and `workingDir` but clears the session UUID so the new agent starts a fresh conversation.
 
 The dispatcher spawns subagents with `claude -p --agent <name>` so CC itself reads the agent's `model`, system prompt (markdown body), `tools`, `permissionMode`, `mcpServers`, and `memory` fields. DC only appends a small environment block (bound chat ID, owner, working dir) via `--append-system-prompt`. Memory persists at `~/.claude/agent-memory/<name>/MEMORY.md` (CC-owned).
 

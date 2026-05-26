@@ -4,6 +4,22 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.6] — 2026-05-26
+
+Adds in-place agent switching for a chat, plus two internal consolidations.
+
+### Added
+
+- **Switch a chat's agent without creating a new chat (#86, #54).** From the agent-setup card opened in a bound chat, a new **"Switch this chat's agent"** action opens the agent picker (the chat's current agent shown disabled with a **Current** chip) and rebinds the *same* DC chat to a different agent on confirm. The rebind starts a **fresh CC session** for the new agent (the prior transcript is not resumed) while preserving the chat's `workingDir`/project context, evicts the in-flight subagent, and re-decorates the chat with the new agent's badge — effective on the next message with no restart.
+
+### Changed
+
+- **The MCP-server picker now reflects real configuration.** The agent-setup tool picker's server list is built by a new `plugin/mcp-catalog.ts` that unions the curated claude.ai integrations, the user's `~/.claude.json` `mcpServers`, and the needs-auth cache — replacing a hand-maintained list that had drifted. It now surfaces servers the old list omitted (e.g. Google Drive, Zoom) with accurate connected/disabled status, and shows the Telegram plugin only when it is actually configured. `KNOWN_MCP_SERVERS` and the five scattered `server.ts` helpers are retired into the new module; the picker's per-server `toolCount` is now reported only for the `dc` server (a real count) instead of a placeholder `0`.
+
+### Internal
+
+- **Spawn-flags mapping consolidated.** The Agent-definition → `claude -p` CLI-flag translation moved into `subagent-process.ts`: `SubagentSpawnOptions` now takes a single `agent` (`{ name, permissionMode?, tools? }`) and `buildSubagentArgs` derives `--agent` / `--permission-mode` / `--allowed-tools` from it. Six dead `@deprecated v1.4` spawn options were removed. Identical spawn argv — no behavior change.
+
 ## [1.4.5] — 2026-05-25
 
 Two internal architecture refactors — no user-visible change (identical tool behavior and authorization decisions).
@@ -721,6 +737,7 @@ First public release of the Delta Chat channel for Claude Code.
 
 [1.3.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.0...v1.3.1
+[1.4.6]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.5...v1.4.6
 [1.3.0]: https://github.com/jhayashi/dc-claude-channel/compare/v1.2.2...v1.3.0
 [1.2.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.2.0...v1.2.1
