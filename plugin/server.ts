@@ -1446,7 +1446,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
  * Subagent runs are serialized per chat by the cache, so a single
  * Map<chatId, contactId> is race-free.
  */
-const _currentDriver = new Map<number, { contactId: number; caps: readonly string[] }>()
+const _currentDriver = new Map<number, { contactId: number; caps?: readonly string[] }>()
 function defaultOriginatorFor(chatId: number): number | null {
   const driver = _currentDriver.get(chatId)
   if (driver !== undefined) return driver.contactId
@@ -2421,10 +2421,17 @@ async function main(): Promise<void> {
     // the capability gate runs against THEIR caps (not the chat owner's)
     // for every tool call the subagent makes during this turn.
     if (msg.fromId && msg.fromId > 0) {
-      _currentDriver.set(chatId, {
-        contactId: msg.fromId,
-        caps: access.getCapabilitiesFor(access.DEFAULT_AGENT_ID, msg.fromId),
-      })
+      // Resolve the sender's caps once for the turn. If the Contact record is
+      // corrupt (getCapabilitiesFor throws), leave caps uncached so the gate
+      // resolves per-tool-call and routes the error to capability_lookup_error
+      // — rather than failing the whole turn here, outside the dispatch try.
+      let caps: readonly string[] | undefined
+      try {
+        caps = access.getCapabilitiesFor(access.DEFAULT_AGENT_ID, msg.fromId)
+      } catch (err) {
+        logf('currentDriver: caps resolve failed chat=%d contact=%d: %v', chatId, msg.fromId, err)
+      }
+      _currentDriver.set(chatId, { contactId: msg.fromId, caps })
     }
     try {
       const result = await subagentCache.dispatch(chatId, formatSubagentInput(enrichedMsg))
