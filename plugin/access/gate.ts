@@ -13,13 +13,11 @@
  *   2. Validate `requestor_contact_id` if present: positive integer +
  *      chat membership. Reject malformed/non-member values with
  *      `capability_invalid_requestor`.
- *   3. Run `evaluateCapability(originator, requiredCapability)` —
- *      wrapped in try/catch per security review T4. Principal-store
- *      errors (corrupt records, FS errors that aren't ENOENT) deny
- *      with `capability_lookup_error`. Coverage gap from slice 4
- *      (Oliver P2 #1) is fixed by the loadContact change in this same
- *      review batch.
- *   4. If `evaluateCapability` returns `would_deny`, deny with
+ *   3. Resolve the originator's caps via `capsFor` (cache-aware; wrapped
+ *      in try/catch per security review T4 — corrupt records / non-ENOENT
+ *      FS errors deny with `capability_lookup_error`), then decide purely
+ *      with `decideCapability(caps, requiredCapability)`.
+ *   4. If `decideCapability` returns `would_deny`, deny with
  *      `capability_deny`.
  *   5. Otherwise, allow. server.ts then dispatches the tool.
  *
@@ -211,14 +209,12 @@ export async function applyCapabilityGate(
     originator = n;
   }
 
-  // Run the capability check. `evaluateCapability` may throw if the
-  // principal store has a corrupt record (loadContact propagates non-
-  // ENOENT FS errors and JSON-parse / schema-mismatch failures since
-  // the slice-3-5 review fix). Catch and route to lookup-error so the
-  // operator's `jq` queries can distinguish "we said no" from "we
-  // couldn't decide" (security review T4).
-  // Resolve caps (may throw on a corrupt Contact record — security review
-  // T4: distinguish "we said no" from "we couldn't decide"); decide purely.
+  // Run the capability check. capsFor may throw if the Contact store has a
+  // corrupt record (loadContact propagates non-ENOENT FS errors and
+  // JSON-parse / schema-mismatch failures). Catch and route to lookup-error
+  // so the operator's `jq` queries can distinguish "we said no" from "we
+  // couldn't decide" (security review T4). decideCapability is pure and
+  // never throws.
   let caps: readonly string[] | null;
   try {
     caps = deps.capsFor(chatId, originator);

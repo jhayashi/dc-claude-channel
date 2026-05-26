@@ -1534,11 +1534,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     : null
   const start = Date.now()
   const emit = (ok: boolean, errorCode: string | null): void => {
-    // Terminal calls have no contact-id originator — evaluateCapability
+    // Terminal calls have no contact-id originator — decideCapability
     // returns `allow` with the wildcard bundle. The capability fields
     // are still logged for symmetry with subagent calls.
     const requiredCapability = requiredCapabilityFor(req.params.name)
-    const cap = access.evaluateCapability(access.DEFAULT_AGENT_ID, null, requiredCapability)
+    const cap = access.decideCapability(null, requiredCapability)
     logToolCall({
       ts: new Date().toISOString(),
       source: 'terminal',

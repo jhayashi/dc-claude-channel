@@ -19,8 +19,8 @@ export interface ToolDef {
   /**
    * Capability category required to invoke this tool (v1.3+).
    *
-   * Resolved against the originator's capability bundle by
-   * `plugin/access/capabilities.ts:evaluateCapability`. Tools without
+   * Resolved against the originator's capability bundle by the dispatcher's
+   * capability gate (`plugin/access/gate.ts`). Tools without
    * an annotation are treated as `chat`-tier (the safest default for
    * tools that read non-private data and post chat-shaped messages).
    *

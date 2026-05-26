@@ -26,7 +26,6 @@
  */
 
 import { hasCapability } from "./capability-bundles.js";
-import { getCapabilitiesFor } from "./contact-policy.js";
 
 /** Tool annotations without `requiresCapability` default to chat-tier. */
 const DEFAULT_REQUIRED_CAPABILITY = "chat";
@@ -44,34 +43,6 @@ export interface CapabilityDecision {
    * `would_deny` — bundle lacks the requirement; slice 4 will refuse the call.
    */
   decision: "allow" | "would_deny";
-}
-
-/**
- * Evaluate whether `originatorContactId` (null for terminal sessions)
- * has the capability required by a tool. Returns the decision plus
- * the data the audit log needs.
- */
-export function evaluateCapability(
-  agentId: string,
-  originatorContactId: number | null,
-  requiredCapability: string | null | undefined,
-): CapabilityDecision {
-  const required = requiredCapability && requiredCapability.length > 0
-    ? requiredCapability
-    : DEFAULT_REQUIRED_CAPABILITY;
-
-  // Terminal calls bypass — the terminal session is the subscriber.
-  if (originatorContactId === null) {
-    return {
-      required,
-      originatorCapabilities: TERMINAL_BUNDLE,
-      decision: "allow",
-    };
-  }
-
-  const originatorCapabilities = getCapabilitiesFor(agentId, originatorContactId);
-  const decision = hasCapability(originatorCapabilities, required) ? "allow" : "would_deny";
-  return { required, originatorCapabilities, decision };
 }
 
 /**

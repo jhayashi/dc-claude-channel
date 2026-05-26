@@ -18,7 +18,15 @@ beforeEach(() => {
 
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
-describe("evaluateCapability — happy path", () => {
+// Resolve + decide, the way the dispatcher composes it for the default
+// originator: getCapabilitiesFor(contactId) → decideCapability(caps, required).
+// A null contactId is a terminal session (no record load; subscriber bundle).
+function decide(contactId: number | null, required: string | null | undefined) {
+  const caps = contactId === null ? null : access.getCapabilitiesFor(access.DEFAULT_AGENT_ID, contactId);
+  return access.decideCapability(caps, required);
+}
+
+describe("capability decision (role → caps → decision) — happy path", () => {
   test("subscriber gets allow on every annotated capability", () => {
     access.writeContact(access.DEFAULT_AGENT_ID, {
       kind: "human",
@@ -28,9 +36,9 @@ describe("evaluateCapability — happy path", () => {
       capabilities: ["*"],
     });
     for (const cap of ["chat", "private_data_read", "private_data_write", "real_world_action", "infrastructure"]) {
-      const decision = access.evaluateCapability(access.DEFAULT_AGENT_ID, 50, cap);
-      expect(decision.decision).toBe("allow");
-      expect(decision.required).toBe(cap);
+      const d = decide(50, cap);
+      expect(d.decision).toBe("allow");
+      expect(d.required).toBe(cap);
     }
   });
 
@@ -42,10 +50,10 @@ describe("evaluateCapability — happy path", () => {
       role: "family-member",
       capabilities: ["chat", "low_stakes_*"],
     });
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 60, "chat").decision).toBe("allow");
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 60, "low_stakes_chat").decision).toBe("allow");
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 60, "private_data_read").decision).toBe("would_deny");
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 60, "real_world_action").decision).toBe("would_deny");
+    expect(decide(60, "chat").decision).toBe("allow");
+    expect(decide(60, "low_stakes_chat").decision).toBe("allow");
+    expect(decide(60, "private_data_read").decision).toBe("would_deny");
+    expect(decide(60, "real_world_action").decision).toBe("would_deny");
   });
 
   test("guest gets allow on chat, deny on everything else", () => {
@@ -56,22 +64,21 @@ describe("evaluateCapability — happy path", () => {
       role: "guest",
       capabilities: ["chat"],
     });
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 70, "chat").decision).toBe("allow");
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 70, "private_data_read").decision).toBe("would_deny");
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 70, "infrastructure").decision).toBe("would_deny");
+    expect(decide(70, "chat").decision).toBe("allow");
+    expect(decide(70, "private_data_read").decision).toBe("would_deny");
+    expect(decide(70, "infrastructure").decision).toBe("would_deny");
   });
 });
 
-describe("evaluateCapability — fail-closed paths", () => {
+describe("capability decision — fail-closed paths", () => {
   test("unknown contact gets would_deny on every capability", () => {
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 9999, "chat").decision).toBe("would_deny");
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 9999, "private_data_read").decision).toBe("would_deny");
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 9999, "infrastructure").decision).toBe("would_deny");
+    expect(decide(9999, "chat").decision).toBe("would_deny");
+    expect(decide(9999, "private_data_read").decision).toBe("would_deny");
+    expect(decide(9999, "infrastructure").decision).toBe("would_deny");
   });
 
   test("unknown contact reports empty originator capabilities", () => {
-    const decision = access.evaluateCapability(access.DEFAULT_AGENT_ID, 9999, "chat");
-    expect(decision.originatorCapabilities).toEqual([]);
+    expect(decide(9999, "chat").originatorCapabilities).toEqual([]);
   });
 
   test("explicit empty capabilities array denies even subscribers", () => {
@@ -82,11 +89,11 @@ describe("evaluateCapability — fail-closed paths", () => {
       role: "subscriber",
       capabilities: [],
     });
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 80, "chat").decision).toBe("would_deny");
+    expect(decide(80, "chat").decision).toBe("would_deny");
   });
 });
 
-describe("evaluateCapability — null/missing required capability", () => {
+describe("capability decision — null/missing required capability", () => {
   test("null required capability is treated as `chat` tier (safe default)", () => {
     access.writeContact(access.DEFAULT_AGENT_ID, {
       kind: "human",
@@ -96,9 +103,9 @@ describe("evaluateCapability — null/missing required capability", () => {
       capabilities: ["chat"],
     });
     // Tool authors who haven't annotated yet get chat-tier behavior.
-    const decision = access.evaluateCapability(access.DEFAULT_AGENT_ID, 90, null);
-    expect(decision.decision).toBe("allow");
-    expect(decision.required).toBe("chat");
+    const d = decide(90, null);
+    expect(d.decision).toBe("allow");
+    expect(d.required).toBe("chat");
   });
 
   test("undefined required capability is treated as `chat` tier", () => {
@@ -109,29 +116,27 @@ describe("evaluateCapability — null/missing required capability", () => {
       role: "guest",
       capabilities: ["chat"],
     });
-    const decision = access.evaluateCapability(access.DEFAULT_AGENT_ID, 91, undefined);
-    expect(decision.decision).toBe("allow");
-    expect(decision.required).toBe("chat");
+    const d = decide(91, undefined);
+    expect(d.decision).toBe("allow");
+    expect(d.required).toBe("chat");
   });
 });
 
-describe("evaluateCapability — null originator (terminal calls)", () => {
-  test("null originator gets allow with would_deny=false (terminal session)", () => {
-    // Terminal-CC calls have no originator contact id. Slice 3 logs them
-    // as `allow` (the terminal IS the subscriber by definition); slice 4
-    // keeps this behavior — terminal calls are unrestricted.
-    const decision = access.evaluateCapability(access.DEFAULT_AGENT_ID, null, "infrastructure");
-    expect(decision.decision).toBe("allow");
-    expect(decision.required).toBe("infrastructure");
-    expect(decision.originatorCapabilities).toEqual(["*"]);
+describe("capability decision — null originator (terminal calls)", () => {
+  test("null originator gets allow with the wildcard bundle (terminal session)", () => {
+    // Terminal-CC calls have no originator contact id — the terminal IS the
+    // subscriber by definition, so the decision is `allow` with `["*"]`.
+    const d = decide(null, "infrastructure");
+    expect(d.decision).toBe("allow");
+    expect(d.required).toBe("infrastructure");
+    expect(d.originatorCapabilities).toEqual(["*"]);
   });
 });
 
-describe("evaluateCapability — relay case (requestor_contact_id)", () => {
-  // Slice 4 commit 2: the dispatcher resolves originator from
-  // args.requestor_contact_id when present (and validates chat
-  // membership outside the helper). evaluateCapability itself just
-  // takes whichever contactId the caller chose.
+describe("capability decision — relay case (requestor_contact_id)", () => {
+  // The dispatcher resolves the originator from args.requestor_contact_id when
+  // present (validating chat membership in the gate). Whichever contactId the
+  // gate chose is what gets resolved + decided here.
 
   test("subscriber's caps used when no requestor declared (default path)", () => {
     access.writeContact(access.DEFAULT_AGENT_ID, {
@@ -141,7 +146,7 @@ describe("evaluateCapability — relay case (requestor_contact_id)", () => {
       role: "subscriber",
       capabilities: ["*"],
     });
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 100, "private_data_write").decision).toBe("allow");
+    expect(decide(100, "private_data_write").decision).toBe("allow");
   });
 
   test("family-member's caps used when declared as requestor", () => {
@@ -161,9 +166,9 @@ describe("evaluateCapability — relay case (requestor_contact_id)", () => {
     });
     // Subscriber's chat agent declares requestor = family-member.
     // Gate runs against family-member's bundle.
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 200, "chat").decision).toBe("allow");
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 200, "private_data_write").decision).toBe("would_deny");
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 200, "real_world_action").decision).toBe("would_deny");
+    expect(decide(200, "chat").decision).toBe("allow");
+    expect(decide(200, "private_data_write").decision).toBe("would_deny");
+    expect(decide(200, "real_world_action").decision).toBe("would_deny");
   });
 
   test("untrusted-agent declared as requestor stays in chat-tier", () => {
@@ -174,9 +179,9 @@ describe("evaluateCapability — relay case (requestor_contact_id)", () => {
       role: "untrusted-agent",
       capabilities: ["chat"],
     });
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 300, "chat").decision).toBe("allow");
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 300, "private_data_read").decision).toBe("would_deny");
-    expect(access.evaluateCapability(access.DEFAULT_AGENT_ID, 300, "infrastructure").decision).toBe("would_deny");
+    expect(decide(300, "chat").decision).toBe("allow");
+    expect(decide(300, "private_data_read").decision).toBe("would_deny");
+    expect(decide(300, "infrastructure").decision).toBe("would_deny");
   });
 });
 
