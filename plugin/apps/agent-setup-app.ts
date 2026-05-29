@@ -1949,6 +1949,13 @@ export const agentSetupApp: WebXDCApp = {
         }
         const draft = parsed.data
         const skipPerms = (payload as { skipPermissions?: boolean }).skipPermissions === true
+        // #97: "+ Create new agent" from the Manage screen sets skipChat:true
+        // — we save the agent into the library only and skip the chat-creation
+        // steps (createGroup / addContactToChat / bindAgent / decorateAgentChat).
+        // Mirrors terminal CC's `/agents` flow: an agent definition is a pure
+        // library artifact, not tied to a chat. The legacy form-based create
+        // path (no skipChat) still creates a chat as before.
+        const skipChat = (payload as { skipChat?: boolean }).skipChat === true
         const rawArchetype = (payload as { archetype?: unknown }).archetype
         const archetype = (typeof rawArchetype === 'string' && (agents.ARCHETYPES as readonly string[]).includes(rawArchetype))
           ? rawArchetype as agents.Archetype : null
@@ -1965,9 +1972,13 @@ export const agentSetupApp: WebXDCApp = {
           ?? agents.DEFAULT_AGENT_ID
         const agentId = agents.synthesizeAgentName(displayName)
         try {
-          const newChatId = await ctx.client.createGroup(displayName)
-          await ctx.client.addContactToChat(newChatId, ownerContactId)
-          access.addChat(newChatId, ownerContactId)
+          // Chat creation only on the legacy path; skipChat short-circuits.
+          let newChatId: number | null = null
+          if (!skipChat) {
+            newChatId = await ctx.client.createGroup(displayName)
+            await ctx.client.addContactToChat(newChatId, ownerContactId)
+            access.addChat(newChatId, ownerContactId)
+          }
           const newAgent: agents.AgentDef = {
             ...draft,
             name: agentId,
@@ -1987,16 +1998,27 @@ export const agentSetupApp: WebXDCApp = {
           // are visually differentiable. Edits can override via the setup card.
           agents.setIconMirror(newAgent, Math.random() < 0.5)
           agents.saveAgent(newAgent)
-          bindings.bindAgent(newChatId, agentId, { inheritClaudeMd })
-          const savedAgent = agents.getAgent(agentId)
-          if (savedAgent) await decorateAgentChat(ctx, newChatId, savedAgent)
-          ctx.logf('agent-setup: created agent %s for chat %d (owner %d)', agentId, newChatId, ownerContactId)
+          if (!skipChat && newChatId !== null) {
+            bindings.bindAgent(newChatId, agentId, { inheritClaudeMd })
+            const savedAgent = agents.getAgent(agentId)
+            if (savedAgent) await decorateAgentChat(ctx, newChatId, savedAgent)
+            ctx.logf('agent-setup: created agent %s for chat %d (owner %d)', agentId, newChatId, ownerContactId)
+          } else {
+            ctx.logf('agent-setup: created agent %s (library only, no chat) (owner %d)', agentId, ownerContactId)
+          }
 
           const update = JSON.stringify({
-            payload: { type: 'created', chatId: newChatId, name: draft.name },
+            payload: { type: 'created', chatId: newChatId, name: draft.name, skipChat },
             summary: 'Agent created',
           })
           await ctx.client.sendWebXDCUpdate(session.msgId, update)
+          // For skipChat, explicitly re-fire init so the Manage screen's
+          // existingAgents list refreshes with the new entry. The legacy
+          // chat-creating path doesn't need this because the user navigates
+          // to the new chat (where state restarts fresh).
+          if (skipChat) {
+            await sendInit(ctx, agentSetupApp, session.sourceChatId)
+          }
           // Session stays alive — user may keep using the settings card.
         } catch (err) {
           ctx.logf('agent-setup: create failed: %v', err)
