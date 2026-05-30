@@ -2026,6 +2026,30 @@ export const agentSetupApp: WebXDCApp = {
           try { agents.deleteAgent(agentId) } catch {}
         }
       }
+
+      // Contact management dispatcher branches — restored 2026-05-30 after
+      // commit 9035b34 (2026-05-03 "retire legacy new-chat and Paired devices
+      // views") inadvertently stripped them alongside the legacy view cleanup.
+      // Both client senders still exist (openContacts → list_contacts,
+      // role-picker Save → assign_role) and both handlers are unit-tested,
+      // but the wire from this dispatch loop was severed for ~27 days,
+      // silently producing an empty Contacts UI on every agent's overflow
+      // menu. See structural regression guards in test/agent-setup-app.test.ts.
+      if (payload.type === 'list_contacts') {
+        await handleListContacts(ctx, session.msgId)
+        continue
+      }
+
+      if (payload.type === 'assign_role') {
+        const contactId = typeof (payload as { contactId?: unknown }).contactId === 'number'
+          ? (payload as { contactId: number }).contactId : null
+        const role = typeof (payload as { role?: unknown }).role === 'string'
+          ? (payload as { role: string }).role : null
+        const senderAddr = typeof (payload as { senderAddr?: unknown }).senderAddr === 'string'
+          ? (payload as { senderAddr: string }).senderAddr : null
+        await handleAssignRole(ctx, session.msgId, contactId, role, senderAddr)
+        continue
+      }
     }
 
     // Persist the high-water serial so a dispatcher restart doesn't
