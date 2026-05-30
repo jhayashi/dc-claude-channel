@@ -1860,7 +1860,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 2.13;
+var APP_VERSION = 2.14;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:  { solid: '#B4862A', checker: '#D9B25B' },
@@ -3024,9 +3024,15 @@ function gotoBuildCustom() {
 // Mirrors terminal CC's `/agents` create flow — no chat side-effect.
 function gotoCreateFromManage() {
   createFormOrigin = 'manage';
-  // Clear any existing draft so the form starts blank — populateForm()
-  // reads `draft` and gotoCreate calls it.
-  draft = null;
+  // Seed an empty-object draft (NOT null) so populateForm runs its full
+  // wiring path — wireSeg (model picker), wirePreviewInputs, wireTrust-
+  // CardFor, archetype reset. populateForm short-circuits on falsy draft
+  // (`if (!draft) return`), so null leaves the form half-initialized with
+  // dead controls; {} lets every field fall through to its `|| default`
+  // and every wiring call runs. gotoCreate was previously only called
+  // after the dispatcher seeded a draft via init/edit, so this is the
+  // first blank-form entry point and we have to provide one ourselves.
+  draft = {};
   gotoCreate();
 }
 
