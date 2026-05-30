@@ -4,6 +4,20 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.7] — 2026-05-30
+
+Discoverability improvements for agent management plus a Windows reliability fix.
+
+### Added
+
+- **`+ Create new agent` action on the Manage agents screen (#97).** Create a new agent directly from your library without going through the "Start a new chat" flow — mirrors terminal Claude Code's `/agents` flow. Submit returns you to the Manage screen with the new agent visible in the list; no DC chat side-effect. Wires the existing simple form (name / model / tools / system prompt) and a new `skipChat:true` mode on the dispatcher's `create` handler that skips the chat-creation steps.
+- **`Switch this chat's agent` promoted to home position 2 (#97).** Previously buried inside "Start a new chat", this chat-editing action now appears at the top level when the chat is bound to an agent (slot collapses when unbound). Matches the user's mental model: act on the current chat first, then the chat list in general, then the agent library.
+
+### Changed
+
+- **`Build a custom agent` → `Build with agent assist` in the new-chat menu (#97).** Same handler — copy update only. Makes the dichotomy with `+ Create new agent` explicit: agent-assist is the coached flow that creates a fresh chat for the coach to work in; `+ Create new agent` is the direct library-create path with no chat side-effect.
+- **Windows process-tree kill on subagent shutdown (#95, #93).** `/stop` and edit-as-interrupt now cascade to `claude`'s grandchildren on Windows via `taskkill /T /F /PID`, matching the POSIX `pgrep -P` tree-walk behavior. Previously Windows users got direct-child kill only and `claude`'s Bash-tool grandchildren orphaned. Fix is wrapped in a per-platform `planKillTree` planner with unit tests on the argv (Linux/macOS CI cannot execute the Windows branch); a PowerShell smoke script (`plugin/scripts/smoke-process-group-kill.ps1`) is included for pre-release live verification on a Windows host. POSIX behavior unchanged.
+
 ## [1.4.6] — 2026-05-26
 
 Adds in-place agent switching for a chat, plus two internal consolidations.
@@ -737,6 +751,7 @@ First public release of the Delta Chat channel for Claude Code.
 
 [1.3.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.0...v1.3.1
+[1.4.7]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.6...v1.4.7
 [1.4.6]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.5...v1.4.6
 [1.3.0]: https://github.com/jhayashi/dc-claude-channel/compare/v1.2.2...v1.3.0
 [1.2.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.2.1...v1.2.2
