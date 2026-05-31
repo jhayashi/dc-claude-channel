@@ -6,6 +6,9 @@
  *   $DC_EVENT_DIR/turns-<YYYY-MM-DD>.log — every subagent turn
  *   $DC_EVENT_DIR/permissions-<YYYY-MM-DD>.log — every permission decision
  *   $DC_EVENT_DIR/webxdc-<YYYY-MM-DD>.log       — every inbound WebXDC update
+ *   $DC_EVENT_DIR/subagent-stderr-<YYYY-MM-DD>.log — raw subagent stderr +
+ *     exit code (crash forensics — without this the cache only sees "died
+ *     during send" with no signal/exitcode/trace to explain why)
  * (default dir: $DC_STATE_DIR/events/ or ~/.claude/channels/deltachat/events/).
  *
  * Filename uses the UTC date at write time; rotation happens implicitly
@@ -333,4 +336,41 @@ export interface AutoPairDenialEvent {
 
 export function logAutoPairDenial(ev: AutoPairDenialEvent): void {
   appendLine('permissions', ev.ts, ev)
+}
+
+/**
+ * One emission of raw bytes from a subagent's claude stderr, plus an
+ * `exit` marker when the process exits.
+ *
+ * Background. Pre-2026-05-31 the dispatcher fed subagent stderr through
+ * a debug-namespace logger that only printed when DEBUG was set; in
+ * production those bytes vanished. When a subagent's claude binary
+ * crashed mid-turn the cache logged "subagent died during send" but no
+ * exit code or panic message — root-cause investigation was guesswork.
+ * This stream captures the trace to disk so the next crash leaves
+ * forensic evidence.
+ *
+ * Lines may be partial — the stderr stream isn't line-buffered at the
+ * source. We don't split here either; downstream `jq` can join by
+ * subagentId if needed.
+ */
+export interface SubagentStderrEvent {
+  ts: string
+  /** Chat the subagent is bound to. */
+  chatId: number
+  /** Per-spawn subagent id (the `sub-<chatId>-<rand>` pattern). */
+  subagentId: string
+  /** Either a `stderr` chunk or an `exit` marker. */
+  kind: 'stderr' | 'exit'
+  /** stderr text for kind=stderr; empty for kind=exit. */
+  text?: string
+  /** Process exit code for kind=exit; null when the process was killed by signal. */
+  exitCode?: number | null
+}
+
+export function logSubagentStderr(
+  ev: SubagentStderrEvent,
+  onWriteError?: (err: unknown) => void,
+): void {
+  appendLine('subagent-stderr', ev.ts, ev, onWriteError)
 }

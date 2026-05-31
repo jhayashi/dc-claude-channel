@@ -69,6 +69,21 @@ export interface SubagentSpawnOptions {
   /** Session display name (synced with DC chat name). Passed as `--name`. */
   sessionName?: string
   logf?: (fmt: string, ...args: unknown[]) => void
+  /**
+   * Called for every chunk on the child's stderr. Used by server.ts to tee
+   * the bytes to a file-backed log (subagent-stderr-<date>.log) so the
+   * trace survives across dispatcher restarts and is available for crash
+   * forensics. Independent of `logf`, which only goes to the dispatcher's
+   * debug stream and is dropped when DEBUG is unset.
+   */
+  onStderr?: (text: string) => void
+  /**
+   * Called once when the child process exits. `code` is the POSIX exit
+   * code, or null when the process was terminated by signal. Symmetrical
+   * to onStderr — used to write the exit marker into the same log so the
+   * trace ends with a recoverable exit reason.
+   */
+  onExit?: (code: number | null) => void
 }
 
 /**
@@ -252,6 +267,8 @@ export class SubagentProcess {
   private busy = false
   private closed = false
   private logf: (fmt: string, ...args: unknown[]) => void
+  private onStderr?: (text: string) => void
+  private onExit?: (code: number | null) => void
   lastUsed: number = Date.now()
 
   constructor(opts: SubagentSpawnOptions) {
@@ -259,6 +276,8 @@ export class SubagentProcess {
     this.subagentId = opts.subagentId
     this.sessionId = opts.sessionId
     this.logf = opts.logf ?? (() => {})
+    this.onStderr = opts.onStderr
+    this.onExit = opts.onExit
 
     const { args } = buildSubagentArgs(opts)
     this.logf(
@@ -292,11 +311,17 @@ export class SubagentProcess {
 
     this.child.stdout.on('data', (chunk: Buffer) => this.onStdout(chunk))
     this.child.stderr.on('data', (chunk: Buffer) => {
-      this.logf('subagent %s stderr: %s', this.subagentId, chunk.toString('utf-8').trim())
+      const text = chunk.toString('utf-8')
+      this.logf('subagent %s stderr: %s', this.subagentId, text.trim())
+      // Tee to the optional file sink (server.ts wires this to
+      // logSubagentStderr). Swallow sink errors — observability must never
+      // affect the live process.
+      try { this.onStderr?.(text) } catch {}
     })
     this.child.on('exit', (code) => {
       this.closed = true
       this.logf('subagent %s exited code=%s', this.subagentId, String(code))
+      try { this.onExit?.(code) } catch {}
       this.abortPendingReaders(new Error(`subagent ${this.subagentId} exited (code=${code})`))
     })
   }

@@ -246,6 +246,65 @@ describe('SubagentCache turn telemetry', () => {
     await cache.closeAll()
   })
 
+  // Regression: the dispatcher used to send "⚠️ subagent crashed" TWICE for
+  // a single crash. The catch block in runNow correctly notifies, but leaves
+  // the dead entry in this.entries; the next dispatch then hits ensure()'s
+  // "detected dead subagent" branch which re-fires onCrash. Confused users
+  // saw two warnings and assumed two subagents had died (see chat 14 msgs
+  // 8368/8370 on 2026-05-30). Fix: dedupe via entry.crashNotified flag.
+  it('fires onCrash exactly once across crash + follow-up dispatch', async () => {
+    const events: TurnTelemetry[] = []
+    const subs: ControllableFakeSubagent[] = []
+    const crashes: number[] = []
+    const cache = new SubagentCache({
+      maxActive: 4,
+      idleTimeoutMs: 60000,
+      spawnFn: async (chatId) => { const s = new ControllableFakeSubagent(chatId); subs.push(s); return s },
+      onCrash: (chatId) => crashes.push(chatId),
+      onTurnEvent: (ev) => events.push(ev),
+    })
+    // Turn 1 crashes mid-flight; runNow's catch fires onCrash.
+    const t1 = cache.dispatch(9, 'first')
+    await new Promise((r) => setTimeout(r, 10))
+    subs[0].die()
+    await expect(t1).rejects.toThrow(/process died/)
+    expect(crashes).toEqual([9])
+    // Turn 2 arrives. Pre-fix, the dead entry was still in the map so
+    // ensure() re-fired onCrash before spawning a fresh subagent. Post-fix,
+    // the second fire is suppressed.
+    const t2 = cache.dispatch(9, 'second')
+    await new Promise((r) => setTimeout(r, 10))
+    subs[1].complete('ok')
+    await t2
+    expect(crashes).toEqual([9])
+    expect(events).toHaveLength(2)
+    expect(events[0].exitReason).toBe('crash')
+    expect(events[1].exitReason).toBe('completed')
+    await cache.closeAll()
+  })
+
+  // Coverage for the still-live ensure() path: when a cached subagent dies
+  // BETWEEN turns (the runNow catch never runs), the next dispatch's
+  // ensure() is the only place that can notify, so the crashNotified guard
+  // must NOT suppress it. Different from the test above where the death
+  // happened mid-turn.
+  it('fires onCrash from ensure() when a cached subagent died while idle', async () => {
+    const spawns: FakeSubagent[] = []
+    const crashes: number[] = []
+    const cache = new SubagentCache({
+      maxActive: 4,
+      idleTimeoutMs: 60000,
+      spawnFn: async (chatId) => { const s = new FakeSubagent(chatId); spawns.push(s); return s },
+      onCrash: (chatId) => crashes.push(chatId),
+    })
+    await cache.dispatch(1, 'a')      // turn completes, subagent now idle
+    spawns[0].alive = false           // dies between turns (no in-flight send)
+    await cache.dispatch(1, 'b')      // ensure() detects dead → fires onCrash
+    expect(crashes).toEqual([1])
+    expect(spawns).toHaveLength(2)    // respawned
+    await cache.closeAll()
+  })
+
   it('classifies user_abort when evictChat is called mid-turn', async () => {
     const events: TurnTelemetry[] = []
     const subs: ControllableFakeSubagent[] = []

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pruneEventLogs } from '../dispatcher/event-log-rotate.js'
 
-const STREAMS = ['tools', 'turns', 'permissions', 'webxdc', 'agent-lifecycle']
+const STREAMS = ['tools', 'turns', 'permissions', 'webxdc', 'agent-lifecycle', 'subagent-stderr']
 
 /** Reference "now" for all age math in this suite. */
 const NOW = new Date('2026-05-15T12:00:00.000Z')
@@ -57,7 +57,7 @@ describe('pruneEventLogs', () => {
     expect(existsSync(join(dir, `tools-${daysAgo(31)}.log`))).toBe(false)
   })
 
-  test('stale files across all 5 streams are all deleted', async () => {
+  test('stale files across all 6 streams are all deleted', async () => {
     for (const s of STREAMS) writeFileSync(join(dir, `${s}-${daysAgo(45)}.log`), 'x')
     const r = await pruneEventLogs(dir, 30, NOW)
     expect(r.deleted.sort()).toEqual(STREAMS.map(s => `${s}-${daysAgo(45)}.log`).sort())

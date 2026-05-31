@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { logToolCall, logTurn, logPermission, logWebXDC, buildArgPreview, getEventDir, setEventDir, type ToolCallEvent, type TurnEvent, type PermissionEvent, type WebXDCEvent } from '../events.js'
+import { logToolCall, logTurn, logPermission, logWebXDC, logSubagentStderr, buildArgPreview, getEventDir, setEventDir, type ToolCallEvent, type TurnEvent, type PermissionEvent, type WebXDCEvent, type SubagentStderrEvent } from '../events.js'
 
 function baseEvent(overrides: Partial<ToolCallEvent> = {}): ToolCallEvent {
   return {
@@ -110,6 +110,68 @@ describe('events.logToolCall', () => {
     expect(parsed.requiredCapability).toBeUndefined()
     expect(parsed.originatorCapabilities).toBeUndefined()
     expect(parsed.capabilityDecision).toBeUndefined()
+  })
+})
+
+describe('events.logSubagentStderr', () => {
+  let dir: string
+  let prevDir: string
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'events-test-'))
+    prevDir = getEventDir()
+    setEventDir(dir)
+  })
+
+  afterEach(() => {
+    setEventDir(prevDir)
+    try { rmSync(dir, { recursive: true, force: true }) } catch {}
+  })
+
+  it('writes stderr chunks to subagent-stderr-<date>.log', () => {
+    logSubagentStderr({
+      ts: '2026-05-31T00:00:02.456Z',
+      chatId: 14,
+      subagentId: 'sub-14-abc123',
+      kind: 'stderr',
+      text: 'panic: runtime error\nstack trace ...',
+    })
+    const files = readdirSync(dir)
+    expect(files).toEqual(['subagent-stderr-2026-05-31.log'])
+    const parsed = JSON.parse(readFileSync(join(dir, files[0]), 'utf-8').trim())
+    expect(parsed).toMatchObject({
+      chatId: 14,
+      subagentId: 'sub-14-abc123',
+      kind: 'stderr',
+      text: 'panic: runtime error\nstack trace ...',
+    })
+  })
+
+  it('writes an exit marker with the exit code', () => {
+    logSubagentStderr({
+      ts: '2026-05-31T00:00:02.500Z',
+      chatId: 14,
+      subagentId: 'sub-14-abc123',
+      kind: 'exit',
+      exitCode: 137,
+    })
+    const files = readdirSync(dir)
+    const parsed = JSON.parse(readFileSync(join(dir, files[0]), 'utf-8').trim())
+    expect(parsed.kind).toBe('exit')
+    expect(parsed.exitCode).toBe(137)
+  })
+
+  it('preserves null exit code for signal-kill (no exit code)', () => {
+    logSubagentStderr({
+      ts: '2026-05-31T00:00:02.500Z',
+      chatId: 14,
+      subagentId: 'sub-14-abc123',
+      kind: 'exit',
+      exitCode: null,
+    })
+    const files = readdirSync(dir)
+    const parsed = JSON.parse(readFileSync(join(dir, files[0]), 'utf-8').trim())
+    expect(parsed.exitCode).toBe(null)
   })
 })
 

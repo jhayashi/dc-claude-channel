@@ -52,7 +52,7 @@ import { createMessageRouter } from './dispatcher/message-router.js'
 import { ReactionRouter } from './dispatcher/reaction-router.js'
 import { tryAutoApprove } from './dispatcher/skip-permissions.js'
 import { createActivityReactor, THINKING_EMOJIS, type ActivityReactor } from './dispatcher/activity-reactions.js'
-import { logToolCall, logTurn, logPermission, logWebXDC, logAutoPairDenial, buildArgPreview, getEventDir } from './events.js'
+import { logToolCall, logTurn, logPermission, logWebXDC, logAutoPairDenial, logSubagentStderr, buildArgPreview, getEventDir } from './events.js'
 import { formatHistoryLine, evaluateAttachmentDownload } from './dispatcher/trust-filter.js'
 import { parseSince, queryEvents, renderEventsMarkdown, ALL_STREAMS, type EventStream } from './events-query.js'
 import { pruneEventLogs } from './dispatcher/event-log-rotate.js'
@@ -406,6 +406,24 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     return null
   }
   let resumeFailed = false
+  // Tee subagent stderr + exit to the file-backed log so crash forensics
+  // (panic, stack trace, exit code) survive across dispatcher restarts.
+  // Without this the cache only sees "subagent died during send" with no
+  // signal/exitcode/trace to root-cause from.
+  const onStderr = (text: string) => logSubagentStderr({
+    ts: new Date().toISOString(),
+    chatId,
+    subagentId,
+    kind: 'stderr',
+    text,
+  }, (err) => logf('logSubagentStderr: write failed: %v', err))
+  const onExit = (code: number | null) => logSubagentStderr({
+    ts: new Date().toISOString(),
+    chatId,
+    subagentId,
+    kind: 'exit',
+    exitCode: code,
+  }, (err) => logf('logSubagentStderr: write failed: %v', err))
   let sub = new SubagentProcess({
     chatId,
     subagentId,
@@ -422,6 +440,8 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
     userName,
     claudeVersion: CLAUDE_VERSION,
     logf,
+    onStderr,
+    onExit,
   })
   // Resume-fallback probe: if --resume was used and the child dies within
   // 1.5s of spawn (likely an unrecognized session id in claude's session
@@ -453,6 +473,8 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
         userName,
         claudeVersion: CLAUDE_VERSION,
         logf,
+        onStderr,
+        onExit,
       })
     }
   }

@@ -104,6 +104,14 @@ interface CacheEntry {
   currentTurnToolCalls: number
   /** Set by evict() when the cache tears the sub down; read by runNow's finally to classify the exit. */
   evictReason: 'lru_evict' | 'user_abort' | null
+  /**
+   * True once onCrash has fired for this entry — guards both the catch in
+   * runNow (which may be re-entered when finally drains the queue against
+   * the now-dead sub) and the next dispatch's ensure() (which would
+   * otherwise fire onCrash a second time on the same dead entry). Without
+   * this flag the user sees "⚠️ subagent crashed" twice per crash.
+   */
+  crashNotified: boolean
 }
 
 const DEFAULT_QUEUE_DEPTH = 10
@@ -189,6 +197,7 @@ export class SubagentCache {
       currentTurnId: null,
       currentTurnToolCalls: 0,
       evictReason: null,
+      crashNotified: false,
     }
     this.entries.set(chatId, entry)
     this.touch(chatId)
@@ -204,10 +213,13 @@ export class SubagentCache {
       return existing
     }
     if (existing && !existing.sub.alive) {
-      // Crashed. Remove, notify, and respawn.
+      // Crashed. Remove, notify (unless runNow's catch already did), respawn.
       this.logf('cache: detected dead subagent chat=%d, respawning', chatId)
+      const alreadyNotified = existing.crashNotified
       await this.evict(chatId)
-      try { this.opts.onCrash?.(chatId) } catch {}
+      if (!alreadyNotified) {
+        try { this.opts.onCrash?.(chatId) } catch {}
+      }
     }
     return await this.spawn(chatId)
   }
@@ -280,9 +292,10 @@ export class SubagentCache {
       } else {
         exitReason = 'crash'
       }
-      if (!entry.sub.alive && !entry.evictReason) {
+      if (!entry.sub.alive && !entry.evictReason && !entry.crashNotified) {
         this.logf('cache: subagent died during send chat=%d', chatId)
         try { this.opts.onCrash?.(chatId) } catch {}
+        entry.crashNotified = true
       }
       throw err
     } finally {
