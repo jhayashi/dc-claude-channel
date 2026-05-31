@@ -1006,7 +1006,19 @@ export async function graduateRefineSession(ctx: AppContext, chatId: number): Pr
   }
 }
 
-export async function handleListContacts(ctx: AppContext, msgId: number): Promise<void> {
+export async function handleListContacts(ctx: AppContext, msgId: number, sourceChatId: number): Promise<void> {
+  // v1.4.9: the managed agent context for the Contacts UI is the agent
+  // bound to the chat the agent-setup app was opened from. For an
+  // unbound source chat (rare — opening Manage from a fresh DC chat),
+  // getBindingAgentId falls back to claude-code so we show *something*
+  // sensible rather than an empty UI.
+  //
+  // Phase 4 (still pending) will narrow the picker UNIVERSE to chats
+  // bound to this agent only. For now, keep the universe = all bot
+  // chats (current behavior) so role enrichment can already use per-
+  // agent records.
+  const managedAgentId = bindings.getBindingAgentId(sourceChatId)
+
   // Universe = current members across every chat the bot is in.
   // dc-core's getChatContacts filters add_timestamp >= remove_timestamp, so
   // ex-members (e.g. someone removed from a chat) are automatically
@@ -1028,7 +1040,7 @@ export async function handleListContacts(ctx: AppContext, msgId: number): Promis
 
   const enriched = await Promise.all(Array.from(seen).map(async (contactId) => {
     let record: access.Contact | null = null
-    try { record = access.loadContact(access.DEFAULT_AGENT_ID, contactId) } catch { /* corrupt → treat as unpaired */ }
+    try { record = access.loadContact(managedAgentId, contactId) } catch { /* corrupt → treat as unpaired */ }
     const info = await ctx.client.getContact(contactId)
     return {
       contactId,
@@ -1056,22 +1068,30 @@ export async function handleListContacts(ctx: AppContext, msgId: number): Promis
 export async function handleAssignRole(
   ctx: AppContext,
   msgId: number,
+  sourceChatId: number,
   contactId: number | null,
   role: string | null,
   senderAddr: string | null,
 ): Promise<void> {
   if (!contactId || !role) return
+  // v1.4.9: write the role assignment to the *managed agent's* sidecar
+  // (the agent bound to the chat the picker was launched from), not to
+  // the canonical claude-code namespace. This makes per-agent role
+  // divergence real: contact 11 can be subscriber for dc-developer and
+  // family-member for librarian.
+  const managedAgentId = bindings.getBindingAgentId(sourceChatId)
+
   // No early-return on unpaired contacts: per Option B the picker is the
   // path to first-time role assignment, so a missing record is expected
   // and setContactRole creates one with firstPairedAt = now.
   let previous: access.Contact | null = null
-  try { previous = access.loadContact(access.DEFAULT_AGENT_ID, contactId) } catch { /* corrupt → treat as no prior */ }
+  try { previous = access.loadContact(managedAgentId, contactId) } catch { /* corrupt → treat as no prior */ }
 
   const assignerContactId = senderAddr
     ? await ctx.client.lookupContactByAddr(senderAddr)
     : null
 
-  const updated = access.setContactRole(access.DEFAULT_AGENT_ID, contactId, role)
+  const updated = access.setContactRole(managedAgentId, contactId, role)
   logRoleAssignment({
     ts: new Date().toISOString(),
     assigneeContactId: contactId,
@@ -2075,7 +2095,7 @@ export const agentSetupApp: WebXDCApp = {
       // silently producing an empty Contacts UI on every agent's overflow
       // menu. See structural regression guards in test/agent-setup-app.test.ts.
       if (payload.type === 'list_contacts') {
-        await handleListContacts(ctx, session.msgId)
+        await handleListContacts(ctx, session.msgId, session.sourceChatId)
         continue
       }
 
@@ -2086,7 +2106,7 @@ export const agentSetupApp: WebXDCApp = {
           ? (payload as { role: string }).role : null
         const senderAddr = typeof (payload as { senderAddr?: unknown }).senderAddr === 'string'
           ? (payload as { senderAddr: string }).senderAddr : null
-        await handleAssignRole(ctx, session.msgId, contactId, role, senderAddr)
+        await handleAssignRole(ctx, session.msgId, session.sourceChatId, contactId, role, senderAddr)
         continue
       }
     }

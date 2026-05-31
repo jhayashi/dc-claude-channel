@@ -718,18 +718,24 @@ const socketServer = new SocketServer({
       // {outcome, scrubbedArgs} so emit + emitGateDeny see one consistent
       // gate state (Elena HURT 1, Oliver P2 #2: pre-fix the inline emit
       // recomputed independently and the two streams could disagree).
+      // v1.4.9: agent context = the chat-bound agent of the chat this
+      // tool call is happening in. Capability bundles are still globally
+      // role-mapped (no per-agent capability override yet — that's v1.6+),
+      // but the *record lookup* must be per-agent so a contact's role on
+      // dc-developer doesn't leak into librarian's gate.
+      const gateAgentId = bindings.getBindingAgentId(req.chatId)
       const gateResult = await applyCapabilityGate(
         req.chatId,
         frame.tool,
         argsObj,
         requiredCapabilityFor(frame.tool),
         {
-          agentId: access.DEFAULT_AGENT_ID,
+          agentId: gateAgentId,
           defaultOriginator: defaultOriginatorFor,
           capsFor: (cid, originator) => {
             if (originator === null) return null
             const cached = currentDriverCaps(cid, originator)
-            return cached !== undefined ? cached : access.getCapabilitiesFor(access.DEFAULT_AGENT_ID, originator)
+            return cached !== undefined ? cached : access.getCapabilitiesFor(gateAgentId, originator)
           },
           getChatContacts: (id) => client.getChatContacts(id),
           logf,
@@ -916,7 +922,16 @@ const tailHandlers: Record<string, Dispatch> = {
           return { content: [{ type: 'text' as const, text: `invalid contact_id: ${contactIdStr}` }], isError: true }
         }
         const chatIds = access.chatsForOwner(contactId)
-        const principalExists = access.loadContact(access.DEFAULT_AGENT_ID, contactId) !== null
+        // v1.4.9: a contact's "principal exists" check spans every agent
+        // that might hold a record. Per-agent semantics means dc-developer
+        // could have a record even if claude-code doesn't. Bare
+        // claude-code lookup misses non-canonical records.
+        const principalExists = (() => {
+          for (const aid of bindings.listAllAgentIds()) {
+            if (access.loadContact(aid, contactId) !== null) return true
+          }
+          return false
+        })()
         if (chatIds.length === 0 && !principalExists) {
           return { content: [{ type: 'text' as const, text: `No paired chats or principal record for contact ${contactId}.` }], isError: true }
         }
@@ -947,7 +962,14 @@ const tailHandlers: Record<string, Dispatch> = {
         // Wipe the principal record so backfill on next startup doesn't
         // resurrect the contact, and so isContactPermissioned returns false.
         // (#66 Option A — full per-contact unpair wipes both layers.)
-        access.removeContact(access.DEFAULT_AGENT_ID, contactId)
+        // v1.4.9: unpair = "remove from every agent." Per-agent sidecars
+        // may hold divergent roles; an unpair has to clean them all,
+        // otherwise dispatch via a non-canonical agent's record would
+        // resurrect the contact silently. removeContact is no-op on ENOENT
+        // (per its contract) so iterating all agents is safe.
+        for (const aid of bindings.listAllAgentIds()) {
+          access.removeContact(aid, contactId)
+        }
         logf('dc channel: terminal-unpaired contact %d (%s, %d chat(s))', contactId, mode, chatIds.length)
         const verb = mode === 'delete' ? 'deleted' : 'frozen (read-only)'
         return { content: [{ type: 'text' as const, text: `Unpaired ${display} (contact ${contactId}): ${chatIds.length} chat(s) ${verb}.` }] }
@@ -1815,8 +1837,28 @@ async function main(): Promise<void> {
     logf('dc channel: seed-from-legacy-dir failed: %v', err)
   }
   try {
-    const written = access.backfillFromAllowlist(access.DEFAULT_AGENT_ID)
-    if (written > 0) logf('dc channel: backfilled %d principal record(s) at startup', written)
+    // v1.4.9: backfill runs per-agent so each bound agent's sidecar gets
+    // records for chats it owns. claude-code stays the canonical pairing
+    // target (always included via listAllAgentIds), and non-claude-code
+    // agents pick up records for legacy installs whose allowlist predates
+    // any per-agent contact write. The canonical-seed migration that
+    // ran earlier in startup handles the records that already exist in
+    // claude-code; this handles allowlist entries with no record yet.
+    let totalWritten = 0
+    const perAgent: Record<string, number> = {}
+    for (const aid of bindings.listAllAgentIds()) {
+      const written = access.backfillFromAllowlist(aid)
+      if (written > 0) {
+        totalWritten += written
+        perAgent[aid] = written
+      }
+    }
+    if (totalWritten > 0) {
+      logf('dc channel: backfilled %d principal record(s) at startup (%s)',
+        totalWritten,
+        Object.entries(perAgent).map(([a, n]) => `${a}=${n}`).join(', '),
+      )
+    }
   } catch (err) {
     logf('dc channel: principal backfill failed: %v', err)
   }
@@ -2418,7 +2460,11 @@ async function main(): Promise<void> {
       // — rather than failing the whole turn here, outside the dispatch try.
       let caps: readonly string[] | undefined
       try {
-        caps = access.getCapabilitiesFor(access.DEFAULT_AGENT_ID, msg.fromId)
+        // v1.4.9: per-agent record lookup. The sender's caps for THIS
+        // chat's bound agent (not the canonical default) — under per-
+        // agent semantics, an unpermissioned contact in librarian's
+        // chats stays unpermissioned even if dc-developer trusts them.
+        caps = access.getCapabilitiesFor(bindings.getBindingAgentId(chatId), msg.fromId)
       } catch (err) {
         logf('currentDriver: caps resolve failed chat=%d contact=%d: %v', chatId, msg.fromId, err)
       }
@@ -2457,16 +2503,23 @@ async function main(): Promise<void> {
   const handleUnpairedMessage = async (msg: Message): Promise<void> => {
     // Once a principal is established, only known principals can initiate new pairings.
     // (#66 Option A — auth gate is contact identity, not chat allowlist.)
-    if (access.hasAnyPermissionedContact(access.DEFAULT_AGENT_ID) && msg.fromId && !access.isContactPermissioned(access.DEFAULT_AGENT_ID, msg.fromId)) {
+    //
+    // v1.4.9: this is the pairing path — the chat is *not yet* bound to
+    // any agent, so getBindingAgentId(msg.chatId) returns the default
+    // (claude-code), which is correct: a new pair always starts at the
+    // canonical claude-code sidecar. The same chat may later get re-
+    // bound to a different agent; that flow runs the canonical-seed.
+    const pairAgentId = bindings.getBindingAgentId(msg.chatId)
+    if (access.hasAnyPermissionedContact(pairAgentId) && msg.fromId && !access.isContactPermissioned(pairAgentId, msg.fromId)) {
       logf('dc channel: ignoring pairing request from unknown contact %d in chat %d', msg.fromId, msg.chatId)
       return
     }
     // Auto-pair: sender is already an approved contact (from a prior pair
     // ceremony in some chat, or via principal record).
-    if (msg.fromId && access.isContactPermissioned(access.DEFAULT_AGENT_ID, msg.fromId)) {
+    if (msg.fromId && access.isContactPermissioned(pairAgentId, msg.fromId)) {
       // Phase 4: only subscriber/trusted-agent roles can auto-pair into new chats.
       // lower-trust roles (family-member, guest, untrusted-agent) are silently dropped.
-      const contact = access.loadContact(access.DEFAULT_AGENT_ID, msg.fromId)
+      const contact = access.loadContact(pairAgentId, msg.fromId)
       const role = contact?.role ?? 'subscriber' // null = legacy; treat as subscriber
       if (role !== 'subscriber' && role !== 'trusted-agent') {
         logf('dc channel: auto-pair denied for contact %d (role=%s) in chat %d', msg.fromId, role, msg.chatId)
@@ -2591,7 +2644,7 @@ async function main(): Promise<void> {
       // messages must NOT drive a turn (would burn LLM tokens for a
       // response the gate would also deny). Same applies to chats with
       // unpermissioned third parties.
-      if (access.getCapabilitiesFor(access.DEFAULT_AGENT_ID, msg.fromId).length > 0) return true
+      if (access.getCapabilitiesFor(bindings.getBindingAgentId(msg.chatId), msg.fromId).length > 0) return true
       // Unpermissioned-or-no-permissions contact: silently ignore. The
       // router logs so the operator can see drops for debugging. Their
       // content remains visible via dc_chat_history (tagged
@@ -2641,13 +2694,11 @@ async function main(): Promise<void> {
     handleUnpaired: handleUnpairedMessage,
     isEditorAuthorized: (chatId, fromId) => {
       // #45: re-check editor's capability at edit time. Original sender's
-      // role may have been demoted between original-send and edit. Same
-      // shape as isAuthorized's caps check; chatId not strictly needed
-      // (record-existence + non-empty caps suffice) but preserved for
-      // future per-chat policy.
-      void chatId
+      // role may have been demoted between original-send and edit.
+      // v1.4.9: chatId now matters — the editor's caps are evaluated
+      // against the chat's bound agent, not the canonical default.
       if (!fromId) return true
-      return access.getCapabilitiesFor(access.DEFAULT_AGENT_ID, fromId).length > 0
+      return access.getCapabilitiesFor(bindings.getBindingAgentId(chatId), fromId).length > 0
     },
     handleEdit: async (event) => {
       const t0 = Date.now()
@@ -2710,7 +2761,13 @@ async function main(): Promise<void> {
       // initiate new pairings even within the armed window. This prevents
       // a stray stale-QR scan from a stranger from hijacking the flow.
       // (#66 Option A — checks principals + chat-allowlist.)
-      if (access.hasAnyPermissionedContact(access.DEFAULT_AGENT_ID) && !access.isContactPermissioned(access.DEFAULT_AGENT_ID, contactId)) {
+      // v1.4.9: this is a securejoin completion in chatId (the freshly-
+      // created chat). The agent context is the chat's bound agent, which
+      // for a brand-new chat is null → falls back to claude-code via
+      // getBindingAgentId. That's correct: securejoin armed-window pairs
+      // land in claude-code's namespace, same as terminal pairs.
+      const sjAgentId = bindings.getBindingAgentId(chatId)
+      if (access.hasAnyPermissionedContact(sjAgentId) && !access.isContactPermissioned(sjAgentId, contactId)) {
         logf('dc channel: securejoin armed but contact=%d is not an approved principal; ignoring', contactId)
         return
       }

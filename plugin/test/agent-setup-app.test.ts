@@ -482,7 +482,7 @@ describe('contact management handlers', () => {
       [11, [1, 50, 80]], // chat 11: self + Alice + unpaired 80
     ]))
 
-    await handleListContacts(ctx, 99)
+    await handleListContacts(ctx, 99, 0)
 
     const update = capturedUpdate(sendWebXDCUpdate) as { type: string; contacts: { contactId: number; role: string | null }[] }
     expect(update.type).toBe('contacts_loaded')
@@ -498,7 +498,7 @@ describe('contact management handlers', () => {
       [10, [1, 2, 5, 9, 50]], // self + info + device + reserved + a real contact
     ]))
 
-    await handleListContacts(ctx, 99)
+    await handleListContacts(ctx, 99, 0)
 
     const update = capturedUpdate(sendWebXDCUpdate) as { contacts: { contactId: number }[] }
     expect(update.contacts.map(c => c.contactId)).toEqual([50])
@@ -511,7 +511,7 @@ describe('contact management handlers', () => {
       new Map([[99, { isBot: true }]]),
     )
 
-    await handleListContacts(ctx, 99)
+    await handleListContacts(ctx, 99, 0)
 
     const update = capturedUpdate(sendWebXDCUpdate) as { contacts: { contactId: number; isBot: boolean }[] }
     const ids = update.contacts.map(c => c.contactId).sort((a, b) => a - b)
@@ -528,7 +528,7 @@ describe('contact management handlers', () => {
       'bot@example.com',
     )
 
-    await handleListContacts(ctx, 99)
+    await handleListContacts(ctx, 99, 0)
 
     const update = capturedUpdate(sendWebXDCUpdate) as { contacts: { contactId: number }[] }
     expect(update.contacts.map(c => c.contactId)).toEqual([50])
@@ -537,7 +537,7 @@ describe('contact management handlers', () => {
   test('handleListContacts with no chats sends empty array', async () => {
     const { ctx, sendWebXDCUpdate } = makeCtx()
 
-    await handleListContacts(ctx, 99)
+    await handleListContacts(ctx, 99, 0)
 
     const update = capturedUpdate(sendWebXDCUpdate) as { contacts: unknown[] }
     expect(update.contacts).toEqual([])
@@ -563,7 +563,7 @@ describe('contact management handlers', () => {
       'utf-8',
     )
     expect(src).toMatch(/payload\.type === 'list_contacts'/)
-    expect(src).toMatch(/handleListContacts\(ctx,\s*session\.msgId\)/)
+    expect(src).toMatch(/handleListContacts\(ctx,\s*session\.msgId,\s*session\.sourceChatId\)/)
   })
 
   // Same regression as the list_contacts test above — commit 9035b34 also
@@ -645,7 +645,7 @@ describe('contact management handlers', () => {
     access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
     const { ctx } = makeCtx()
 
-    await handleAssignRole(ctx, 99, 5, 'family-member', null)
+    await handleAssignRole(ctx, 99, 0, 5, 'family-member', null)
 
     expect(access.loadContact(access.DEFAULT_AGENT_ID, 5)?.role).toBe('family-member')
   })
@@ -654,7 +654,7 @@ describe('contact management handlers', () => {
     access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
     const { ctx, sendWebXDCUpdate } = makeCtx()
 
-    await handleAssignRole(ctx, 99, 5, 'trusted-agent', null)
+    await handleAssignRole(ctx, 99, 0, 5, 'trusted-agent', null)
 
     expect(sendWebXDCUpdate).toHaveBeenCalledTimes(1)
     const update = capturedUpdate(sendWebXDCUpdate) as { type: string; contact: { contactId: number; role: string } }
@@ -667,7 +667,7 @@ describe('contact management handlers', () => {
     access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
     const { ctx, lookupContactByAddr } = makeCtx(42)
 
-    await handleAssignRole(ctx, 99, 5, 'family-member', 'alice@nine.testrun.org')
+    await handleAssignRole(ctx, 99, 0, 5, 'family-member', 'alice@nine.testrun.org')
 
     expect(lookupContactByAddr).toHaveBeenCalledWith('alice@nine.testrun.org')
     const entry = readPermissionsLog() as { assignerContactId: number; reason: string }
@@ -679,7 +679,7 @@ describe('contact management handlers', () => {
     access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
     const { ctx } = makeCtx(null)
 
-    await handleAssignRole(ctx, 99, 5, 'family-member', 'unknown@example.com')
+    await handleAssignRole(ctx, 99, 0, 5, 'family-member', 'unknown@example.com')
 
     const entry = readPermissionsLog() as { assignerContactId: null }
     expect(entry.assignerContactId).toBeNull()
@@ -689,7 +689,7 @@ describe('contact management handlers', () => {
     access.setContactRole(access.DEFAULT_AGENT_ID, 5, 'subscriber', 'Alice')
     const { ctx } = makeCtx()
 
-    await handleAssignRole(ctx, 99, 5, 'family-member', null)
+    await handleAssignRole(ctx, 99, 0, 5, 'family-member', null)
 
     const entry = readPermissionsLog() as { assignedRole: string; previousRole: string }
     expect(entry.assignedRole).toBe('family-member')
@@ -699,7 +699,7 @@ describe('contact management handlers', () => {
   test('handleAssignRole with unpaired contact creates record (Option B)', async () => {
     const { ctx, sendWebXDCUpdate } = makeCtx()
 
-    await handleAssignRole(ctx, 99, 999, 'family-member', null)
+    await handleAssignRole(ctx, 99, 0, 999, 'family-member', null)
 
     // Record now exists for the previously-unpaired contact
     expect(access.loadContact(access.DEFAULT_AGENT_ID, 999)?.role).toBe('family-member')
@@ -715,7 +715,7 @@ describe('contact management handlers', () => {
     access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
     const { ctx, sendWebXDCUpdate } = makeCtx()
 
-    await handleAssignRole(ctx, 99, 5, null as unknown as string, null)
+    await handleAssignRole(ctx, 99, 0, 5, null as unknown as string, null)
 
     expect(sendWebXDCUpdate).not.toHaveBeenCalled()
   })

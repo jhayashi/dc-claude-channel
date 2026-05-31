@@ -244,7 +244,7 @@ export const DC_TOOLS: readonly DcToolDef[] = [
       },
       required: ['contact_id'],
     },
-    handler: async (args, ctx) => {
+    handler: async (args, ctx, callerChatId) => {
       const contactIdRaw = (args.contact_id as string | undefined)?.trim()
       const contactId = contactIdRaw ? Number(contactIdRaw) : NaN
       if (!Number.isFinite(contactId) || contactId < 1) {
@@ -252,8 +252,17 @@ export const DC_TOOLS: readonly DcToolDef[] = [
       }
       const chatIdRaw = (args.chat_id as string | undefined)?.trim()
       const chatIdQ = chatIdRaw ? Number(chatIdRaw) : null
-      const permissioned = ctx.access.isContactPermissioned(ctx.access.DEFAULT_AGENT_ID, contactId)
-      const principal = ctx.access.loadContact(ctx.access.DEFAULT_AGENT_ID, contactId)
+      // v1.4.9: per-agent record lookup. Agent context priority:
+      // (a) the queried chat's bound agent (if chat_id passed), else
+      // (b) the caller subagent's bound chat's agent (so a subagent
+      //     querying without an explicit chat_id gets its own scope).
+      // Falls back to claude-code only when neither is resolvable —
+      // matches pre-v1.4.9 behavior for the no-context case.
+      const agentId = chatIdQ != null
+        ? ctx.bindings.getBindingAgentId(chatIdQ)
+        : (callerChatId != null ? ctx.bindings.getBindingAgentId(callerChatId) : ctx.agents.DEFAULT_AGENT_ID)
+      const permissioned = ctx.access.isContactPermissioned(agentId, contactId)
+      const principal = ctx.access.loadContact(agentId, contactId)
       const ownedChats = ctx.access.chatsForOwner(contactId)
       const info = await ctx.client.getContact(contactId).catch(() => null)
       const isPairingContactOfQueriedChat = chatIdQ != null
@@ -336,7 +345,13 @@ export const DC_TOOLS: readonly DcToolDef[] = [
       // agent's context. (#66 / v1.2.2.)
       const { formatHistoryLine } = await import('./trust-filter.js')
       let unpermissionedRevealed = 0
-      const trustDeps = { isContactTrustedForContent: (id: number) => ctx.access.isContactTrustedForContent(ctx.access.DEFAULT_AGENT_ID, id) }
+      // v1.4.9 Phase 0.2 invariant: the trust filter agent context is the
+      // CHAT's bound agent (where the message originated), NOT the
+      // asking subagent's. A dc-developer subagent reading olliespa's
+      // chat reads through olliespa's trust records — that's the only
+      // way trust stays coherent across cross-chat reads.
+      const historyAgentId = ctx.bindings.getBindingAgentId(chatId)
+      const trustDeps = { isContactTrustedForContent: (id: number) => ctx.access.isContactTrustedForContent(historyAgentId, id) }
       const lines = messages.map(m => {
         const r = formatHistoryLine(m, trustDeps, { includeUnpermissioned })
         if (r.revealedUnpermissioned) unpermissionedRevealed++
@@ -390,9 +405,13 @@ export const DC_TOOLS: readonly DcToolDef[] = [
       // containing prompt-injection text) shouldn't reach the agent
       // by default. Owner-relayed download intent → opt-in. (#66 / v1.2.2.)
       const { evaluateAttachmentDownload } = await import('./trust-filter.js')
+      // v1.4.9 Phase 0.2: same chat-bound-agent rule as dc_chat_history —
+      // the attachment's trust is evaluated against the *originating
+      // chat's* bound agent, not the asking subagent's.
+      const attachAgentId = ctx.bindings.getBindingAgentId(msg.chatId)
       const decision = evaluateAttachmentDownload(
         msg.fromId,
-        { isContactTrustedForContent: (id: number) => ctx.access.isContactTrustedForContent(ctx.access.DEFAULT_AGENT_ID, id) },
+        { isContactTrustedForContent: (id: number) => ctx.access.isContactTrustedForContent(attachAgentId, id) },
         includeUnpermissionedDl,
       )
       if (!decision.proceed) {
