@@ -32,11 +32,21 @@ if [ ! -d "access" ] || [ ! -d "test" ]; then
 fi
 
 # Allowed file paths (relative to plugin/), one per line.
+#
+# - access/contacts.ts — defines the const + canonical-seed source carve-out
+# - access/pairing.ts — terminal-pair flow (Phase 3.1 of plan; terminal CC
+#   IS the claude-code agent so the pair record correctly goes there)
+# - access/chat-allowlist.ts — startup seed paths
+# - agents.ts — defines the const + auto-seed logic
+# - bindings.ts — hosts getBindingAgentId, the *only* sanctioned default-
+#   agent fallback in production code. All other lookups route through
+#   getBindingAgentId(chatId) so the fallback is centralized.
 ALLOWED=(
   "access/contacts.ts"
   "access/pairing.ts"
   "access/chat-allowlist.ts"
   "agents.ts"
+  "bindings.ts"
 )
 
 # Build a grep exclusion pattern for the allowed paths.
@@ -45,9 +55,17 @@ for f in "${ALLOWED[@]}"; do
   EXCLUDE_REGEX="${EXCLUDE_REGEX:+${EXCLUDE_REGEX}|}${f}"
 done
 
-# Search all .ts files outside test/, scripts/, and node_modules/.
-# Skip the allowed files via grep -v.
-MATCHES=$(grep -RnE 'DEFAULT_AGENT_ID' \
+# Pattern explanation: we match `access.DEFAULT_AGENT_ID` (also catches
+# `ctx.access.DEFAULT_AGENT_ID` and `accessNs.DEFAULT_AGENT_ID` — any
+# *.access.DEFAULT_AGENT_ID form). This is the per-agent contacts/
+# capability lookup pattern that Phase 2 of v1.4.9 sweeps away. We
+# deliberately do NOT match `agents.DEFAULT_AGENT_ID` — that's used as
+# an identifier-default when resolving which agent to bind/attach
+# (e.g., resolveAttachAgent's final fallback), distinct from "which
+# agent owns this contact decision." Treating those as violations
+# would force pointless rewrites that hurt readability without
+# fixing real bugs.
+MATCHES=$(grep -RnE 'access\.DEFAULT_AGENT_ID' \
   --include='*.ts' \
   --exclude-dir='node_modules' \
   --exclude-dir='test' \

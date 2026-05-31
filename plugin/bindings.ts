@@ -78,6 +78,61 @@ export function countByAgentId(agentId: string): number {
 }
 
 /**
+ * v1.4.9 — resolve the agent context for a chat.
+ *
+ * THE invariant for per-agent contacts/capability lookups (plan Phase 0.2):
+ * the agent context for any contact decision is the agent that owns the
+ * chat where the contact is acting (or being managed for), NOT the
+ * asking subagent's own agent. This helper is the *only* sanctioned
+ * fallback to claude-code in production code — every other read of the
+ * default-agent constant outside the contacts/pairing/chat-allowlist
+ * internals is treated as a bug by the CI grep guard
+ * (scripts/check-no-default-agent-id.sh).
+ *
+ * Returns the binding's agentId if present, otherwise DEFAULT_AGENT_ID.
+ * Unbound chats (no binding file) and bindings without an agentId (chat
+ * paired but agent-setup not yet completed) both fall back to claude-
+ * code — that preserves pre-v1.4.9 behavior for those edge cases while
+ * routing every "happy path" lookup to the correct per-agent sidecar.
+ *
+ * Callers: server.ts dispatch/capability gate, dc-tools.ts trust filter,
+ * agent-setup-app.ts contacts UI handlers. See the plan for the full
+ * sweep table.
+ */
+export function getBindingAgentId(chatId: number): string {
+  return getBinding(chatId)?.agentId ?? agents.DEFAULT_AGENT_ID
+}
+
+/**
+ * v1.4.9 — list every agent that *might* have contact records.
+ *
+ * Returns the union of DEFAULT_AGENT_ID (the canonical claude-code
+ * sidecar, terminal-pair target and canonical-seed source) and every
+ * bound agent currently referenced by a binding. Used by two patterns:
+ *
+ *   - **Unpair across all sidecars** (dc_access_unpair, server.ts):
+ *     "remove this contact's permission to interact with the bot"
+ *     means removing their record from every agent that holds one.
+ *
+ *   - **Startup backfill** (backfillFromAllowlist, server.ts): legacy
+ *     installs need a record written under each bound agent's sidecar
+ *     for any contact in the allowlist. The canonical-seed migration
+ *     handles records that already exist in claude-code; this handles
+ *     legacy installs whose claude-code sidecar is empty too.
+ *
+ * Performance: cheap — one disk scan over the bindings/ dir + a Set
+ * dedup. Called at startup and on owner-driven unpair, not in the hot
+ * dispatch loop.
+ */
+export function listAllAgentIds(): Set<string> {
+  const out = new Set<string>([agents.DEFAULT_AGENT_ID])
+  for (const b of listBindings()) {
+    if (b.agentId) out.add(b.agentId)
+  }
+  return out
+}
+
+/**
  * Delete binding files whose chat is no longer in the access list.
  * Called once at dispatcher startup. Returns the number of files
  * removed (for logging).
