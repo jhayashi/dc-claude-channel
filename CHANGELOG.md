@@ -4,6 +4,20 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.8] — 2026-05-30
+
+Three follow-up fixes to v1.4.7 — two user-reported (toolless agents, missing contacts list), one crash-forensics improvement to root-cause future subagent deaths.
+
+### Fixed
+
+- **New agents now default to the full builtin toolkit (`agent-setup-app.ts`).** Two regression paths converged on toolless agents: the wall+coach graduation flow had been hard-coded to `tools: 'mcp__dc'` since commit 1d904b1 (2026-05-17 schema sweep), and the `+ Create new agent` form's server handler collapsed the picker's "all boxes checked" null into `[]` via `?? []`. Both paths now expand to `ALL_BUILTIN_TOOLS` (Bash, Read, Edit, Write, Grep, Glob, WebFetch, etc.); `mcp__dc` is still injected downstream by `saveAgent`'s `ensureMcpDc`. Extracted a `buildCreateAgentToolsCsv` helper that pins the picker's `null=all / []=none / array=subset` protocol with seven new unit tests, plus an e2e regression guard for the graduation path.
+- **Manage agents → tap an agent → Contacts: list_contacts + assign_role wiring restored (`agent-setup-app.ts`).** Both dispatcher branches were dropped in commit 9035b34's refactor, so the Contacts section silently rendered empty for chats with paired members. Restoring the branches makes the contact list and role assignment work again.
+- **Single "⚠️ subagent crashed" toast per crash (`dispatcher/subagent-cache.ts`).** `runNow`'s catch fired `onCrash`, but left the dead entry in the cache map; the next dispatch's `ensure()` re-fired `onCrash` before respawning. Users saw two warnings and assumed two subagents had died. Added a per-entry `crashNotified` dedupe flag — `onCrash` now fires exactly once per crash, with a regression test.
+
+### Added
+
+- **Subagent stderr + exit code persisted to `events/subagent-stderr-<date>.log` (`events.ts`, `dispatcher/subagent-process.ts`, `server.ts`).** Pre-fix, the claude subagent's stderr went through the dispatcher's debug-namespace logger that printed nothing in prod — when a subagent crashed mid-turn the cache logged "subagent died during send" with no exit code, signal, or trace, leaving root-cause investigations to guesswork. New `onStderr` and `onExit` callbacks on `SubagentProcess` are wired by `server.ts` to `logSubagentStderr`; both raw stderr chunks and the final exit code (null on signal-kill) are written to a sixth event-log stream. `event-log-rotate.ts` knows to age it out alongside the other five streams.
+
 ## [1.4.7] — 2026-05-30
 
 Discoverability improvements for agent management plus a Windows reliability fix.
@@ -751,6 +765,7 @@ First public release of the Delta Chat channel for Claude Code.
 
 [1.3.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.0...v1.3.1
+[1.4.8]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.7...v1.4.8
 [1.4.7]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.6...v1.4.7
 [1.4.6]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.5...v1.4.6
 [1.3.0]: https://github.com/jhayashi/dc-claude-channel/compare/v1.2.2...v1.3.0
