@@ -286,6 +286,35 @@ describe("migrateContactsCanonicalSeed", () => {
     expect(result.perAgent.get("agent-b")).toBe(1);
   });
 
+  // Regression for Oliver review P2 (2026-05-31, chat 14 msg 8580): the
+  // agentExists callback was called outside any try/catch, so a transient
+  // filesystem error on agents/<name>.md (EACCES, EBADF, etc.) would
+  // bubble out of the loop and silently skip every subsequent binding —
+  // caught only by the outer server.ts try, with no per-binding evidence.
+  // Mirror the existing getChatMembers-throws test: per-binding error
+  // isolation, other agents keep seeding.
+  test("continues seeding other bindings when agentExists throws for one", () => {
+    seedAgentMd("agent-a");
+    seedAgentMd("agent-b");
+    seedClaudeCodeContact(11);
+
+    const result = access.migrateContactsCanonicalSeed(
+      [makeBinding(20, "agent-a"), makeBinding(21, "agent-b")],
+      () => [11],
+      (agentId) => {
+        if (agentId === "agent-a") throw new Error("fs glitch on .md stat");
+        return true;
+      },
+    );
+
+    expect(result.perAgent.get("agent-a") ?? 0).toBe(0);
+    expect(result.perAgent.get("agent-b")).toBe(1);
+    // agent-a is NOT recorded as a skipped orphan — orphaned_binding is
+    // reserved for the deterministic "agentExists returned false" path.
+    // A transient throw is a different failure mode (logged to stderr).
+    expect(result.skipped).toEqual([]);
+  });
+
   test("invalidates the contact-policy cache after seeding (so isContactPermissioned sees fresh state)", () => {
     seedAgentMd("dc-developer");
     seedClaudeCodeContact(11);

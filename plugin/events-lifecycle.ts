@@ -13,7 +13,7 @@ export type LifecycleEvent =
    * Absence on a given startup = no seeding needed (post-migration
    * steady state) or no bindings for that agent.
    */
-  | { kind: 'contacts_seeded'; agentId: string; recordCount: number }
+  | { kind: 'contacts-seeded'; agentId: string; recordCount: number }
   /**
    * v1.4.9 — emitted once per binding whose agentId references a
    * .md file that no longer exists (D6 orphaned binding). The binding
@@ -21,7 +21,7 @@ export type LifecycleEvent =
    * Surfaced so an operator can clean up orphaned bindings or
    * re-create the missing agent definition.
    */
-  | { kind: 'contacts_seeded_skipped'; chatId: number; agentId: string; reason: 'orphaned_binding' }
+  | { kind: 'contacts-seeded-skipped'; chatId: number; agentId: string; reason: 'orphaned_binding' }
 
 let DIR = process.env.DC_EVENT_DIR
   ? join(process.env.DC_EVENT_DIR)

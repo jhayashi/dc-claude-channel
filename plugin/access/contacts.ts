@@ -523,7 +523,26 @@ export function migrateContactsCanonicalSeed(
   for (const b of bindings) {
     if (!b.agentId) continue;
     if (b.agentId === DEFAULT_AGENT_ID) continue;
-    if (!agentExists(b.agentId)) {
+
+    // agentExists wraps `agents.getAgent(agentId) !== null` which reads
+    // the agent's .md from disk. Transient filesystem errors (EACCES on
+    // the agents/ dir, EBADF on a flaky mount, etc.) throw — without
+    // this guard one bad stat() halts the loop and silently skips every
+    // remaining binding (caught only by server.ts's outer try with no
+    // per-binding evidence). Per-binding isolation matches getChatMembers
+    // below. Note: orphaned_binding skip is reserved for the
+    // deterministic "agentExists returned false" path, NOT for throws.
+    let exists = false;
+    try {
+      exists = agentExists(b.agentId);
+    } catch (err) {
+      console.error(
+        `contacts.migrateContactsCanonicalSeed: agentExists(${b.agentId}) threw:`,
+        err,
+      );
+      continue;
+    }
+    if (!exists) {
       result.skipped.push({ chatId: b.chatId, agentId: b.agentId, reason: 'orphaned_binding' });
       continue;
     }

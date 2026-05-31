@@ -1868,7 +1868,7 @@ async function main(): Promise<void> {
     )
     for (const [agentId, recordCount] of seedResult.perAgent) {
       logf('dc channel: canonical-seeded %d contact(s) into agent=%s', recordCount, agentId)
-      logLifecycleEvent({ kind: 'contacts_seeded', agentId, recordCount })
+      logLifecycleEvent({ kind: 'contacts-seeded', agentId, recordCount })
     }
     for (const skip of seedResult.skipped) {
       logf(
@@ -1876,7 +1876,7 @@ async function main(): Promise<void> {
         skip.chatId, skip.agentId,
       )
       logLifecycleEvent({
-        kind: 'contacts_seeded_skipped',
+        kind: 'contacts-seeded-skipped',
         chatId: skip.chatId,
         agentId: skip.agentId,
         reason: skip.reason,
