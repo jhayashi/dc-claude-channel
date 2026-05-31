@@ -404,21 +404,43 @@ describe('contact management handlers', () => {
   let tmpAccess: string
   let tmpAgents: string
   let tmpEvents: string
+  let tmpBindings: string
 
   beforeEach(() => {
     tmpAccess = mkdtempSync(join(tmpdir(), 'dc-cm-access-'))
     tmpAgents = mkdtempSync(join(tmpdir(), 'dc-cm-agents-'))
     tmpEvents = mkdtempSync(join(tmpdir(), 'dc-cm-events-'))
+    tmpBindings = mkdtempSync(join(tmpdir(), 'dc-cm-bindings-'))
     access.setApprovedDir(tmpAccess)
     access.setContactsAgentsDir(tmpAgents)
     setEventDir(tmpEvents)
+    bindings.setBindingsDir(tmpBindings)
   })
 
   afterEach(() => {
     try { rmSync(tmpAccess, { recursive: true, force: true }) } catch {}
     try { rmSync(tmpAgents, { recursive: true, force: true }) } catch {}
     try { rmSync(tmpEvents, { recursive: true, force: true }) } catch {}
+    try { rmSync(tmpBindings, { recursive: true, force: true }) } catch {}
   })
+
+  /**
+   * v1.4.9 Phase 4: handleListContacts now narrows the picker universe
+   * to chats bound to the managed agent (not all bot chats). Tests that
+   * use sourceChatId=0 (unbound → managedAgentId=claude-code) need to
+   * bind the fixture chats to claude-code so the picker sees their
+   * members. This helper does that. Pass it the chat IDs that should
+   * be in the picker universe.
+   */
+  function bindToDefault(chatIds: number[]): void {
+    for (const chatId of chatIds) {
+      bindings.saveBinding({
+        chatId,
+        agentId: agents.DEFAULT_AGENT_ID,
+        createdAt: new Date().toISOString(),
+      })
+    }
+  }
 
   function makeCtx(
     lookupResult: number | null = null,
@@ -477,6 +499,7 @@ describe('contact management handlers', () => {
 
   test('handleListContacts returns active members across all bot chats (paired + unpaired)', async () => {
     access.recordContactPair(access.DEFAULT_AGENT_ID, 50, 'Alice')
+    bindToDefault([10, 11]) // Phase 4: picker universe = chats bound to managed agent
     const { ctx, sendWebXDCUpdate } = makeCtx(null, new Map([
       [10, [1, 50, 70]], // chat 10: self + paired Alice + unpaired 70
       [11, [1, 50, 80]], // chat 11: self + Alice + unpaired 80
@@ -494,6 +517,7 @@ describe('contact management handlers', () => {
   })
 
   test('handleListContacts skips DC reserved system contacts (id ≤ 9)', async () => {
+    bindToDefault([10])
     const { ctx, sendWebXDCUpdate } = makeCtx(null, new Map([
       [10, [1, 2, 5, 9, 50]], // self + info + device + reserved + a real contact
     ]))
@@ -505,6 +529,7 @@ describe('contact management handlers', () => {
   })
 
   test('handleListContacts INCLUDES bots so they can be permissioned', async () => {
+    bindToDefault([10])
     const { ctx, sendWebXDCUpdate } = makeCtx(
       null,
       new Map([[10, [1, 50, 99]]]),
@@ -521,6 +546,7 @@ describe('contact management handlers', () => {
   })
 
   test('handleListContacts excludes self-as-contact entries by address match', async () => {
+    bindToDefault([10])
     const { ctx, sendWebXDCUpdate } = makeCtx(
       null,
       new Map([[10, [1, 50, 88]]]),
@@ -541,6 +567,98 @@ describe('contact management handlers', () => {
 
     const update = capturedUpdate(sendWebXDCUpdate) as { contacts: unknown[] }
     expect(update.contacts).toEqual([])
+  })
+
+  // ── Phase 4 (D3 — Knob 1 b): picker universe narrowing ─────────────────────
+  //
+  // Pre-v1.4.9, handleListContacts' universe was every chat the bot is in
+  // (`client.getChats()`). Phase 4 narrows it to chats *bound to the managed
+  // agent* so a contact you only know via librarian doesn't pollute
+  // dc-developer's role picker. These tests pin the narrowing.
+
+  test('Phase 4: handleListContacts narrows universe to chats bound to managed agent', async () => {
+    // Two chats with different bindings — only one should appear in the picker.
+    bindings.saveBinding({
+      chatId: 14, agentId: 'dc-developer', createdAt: new Date().toISOString(),
+    })
+    bindings.saveBinding({
+      chatId: 32, agentId: 'olliespa', createdAt: new Date().toISOString(),
+    })
+    const { ctx, sendWebXDCUpdate } = makeCtx(null, new Map([
+      [14, [1, 50]],   // dc-developer chat: Alice
+      [32, [1, 60]],   // olliespa chat: Bob
+    ]))
+
+    // Open settings from chat 14 → managed agent = dc-developer →
+    // picker should show chat 14's members only (Alice, not Bob).
+    await handleListContacts(ctx, 99, 14)
+
+    const update = capturedUpdate(sendWebXDCUpdate) as { contacts: { contactId: number }[] }
+    const ids = update.contacts.map(c => c.contactId).sort((a, b) => a - b)
+    expect(ids).toEqual([50])
+    expect(ids).not.toContain(60)
+  })
+
+  test('Phase 4: same chats, different sourceChatId → different picker universes', async () => {
+    bindings.saveBinding({
+      chatId: 14, agentId: 'dc-developer', createdAt: new Date().toISOString(),
+    })
+    bindings.saveBinding({
+      chatId: 32, agentId: 'olliespa', createdAt: new Date().toISOString(),
+    })
+    const { ctx: ctxA, sendWebXDCUpdate: sendA } = makeCtx(null, new Map([
+      [14, [1, 50]],
+      [32, [1, 60]],
+    ]))
+    const { ctx: ctxB, sendWebXDCUpdate: sendB } = makeCtx(null, new Map([
+      [14, [1, 50]],
+      [32, [1, 60]],
+    ]))
+
+    await handleListContacts(ctxA, 99, 14) // dc-developer view
+    await handleListContacts(ctxB, 99, 32) // olliespa view
+
+    const idsA = (JSON.parse(sendA.mock.calls[0][1] as string) as { payload: { contacts: { contactId: number }[] } })
+      .payload.contacts.map(c => c.contactId)
+    const idsB = (JSON.parse(sendB.mock.calls[0][1] as string) as { payload: { contacts: { contactId: number }[] } })
+      .payload.contacts.map(c => c.contactId)
+    expect(idsA).toEqual([50])
+    expect(idsB).toEqual([60])
+  })
+
+  test('Phase 4: empty picker when managed agent has no bindings', async () => {
+    bindings.saveBinding({
+      chatId: 32, agentId: 'olliespa', createdAt: new Date().toISOString(),
+    })
+    const { ctx, sendWebXDCUpdate } = makeCtx(null, new Map([
+      [32, [1, 60]],
+    ]))
+
+    // Source chat 14 has no binding → falls back to claude-code.
+    // claude-code has no bindings either → empty picker.
+    await handleListContacts(ctx, 99, 14)
+
+    const update = capturedUpdate(sendWebXDCUpdate) as { contacts: unknown[] }
+    expect(update.contacts).toEqual([])
+  })
+
+  test('Phase 4: multiple chats bound to same agent are all in the picker (dedup)', async () => {
+    bindings.saveBinding({
+      chatId: 14, agentId: 'dc-developer', createdAt: new Date().toISOString(),
+    })
+    bindings.saveBinding({
+      chatId: 15, agentId: 'dc-developer', createdAt: new Date().toISOString(),
+    })
+    const { ctx, sendWebXDCUpdate } = makeCtx(null, new Map([
+      [14, [1, 50]],
+      [15, [1, 50, 51]], // 50 dedupes; 51 is new
+    ]))
+
+    await handleListContacts(ctx, 99, 14)
+
+    const update = capturedUpdate(sendWebXDCUpdate) as { contacts: { contactId: number }[] }
+    const ids = update.contacts.map(c => c.contactId).sort((a, b) => a - b)
+    expect(ids).toEqual([50, 51])
   })
 
   // Regression guard for the silent-strip bug found 2026-05-30 in chat 27:

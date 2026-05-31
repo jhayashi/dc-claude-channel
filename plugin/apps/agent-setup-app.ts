@@ -1012,20 +1012,23 @@ export async function handleListContacts(ctx: AppContext, msgId: number, sourceC
   // unbound source chat (rare — opening Manage from a fresh DC chat),
   // getBindingAgentId falls back to claude-code so we show *something*
   // sensible rather than an empty UI.
-  //
-  // Phase 4 (still pending) will narrow the picker UNIVERSE to chats
-  // bound to this agent only. For now, keep the universe = all bot
-  // chats (current behavior) so role enrichment can already use per-
-  // agent records.
   const managedAgentId = bindings.getBindingAgentId(sourceChatId)
 
-  // Universe = current members across every chat the bot is in.
+  // Phase 4 (D3 — Knob 1 b): the picker universe is the members of
+  // chats *bound to the managed agent*, not the bot's full address
+  // book. Avoids cross-agent visibility leaks (e.g., a contact you
+  // only know via librarian doesn't pollute dc-developer's role
+  // picker). Pre-v1.4.9 the universe was `client.getChats()` (all
+  // bot chats); the narrowing is the user-visible Phase 4 change.
+  //
   // dc-core's getChatContacts filters add_timestamp >= remove_timestamp, so
   // ex-members (e.g. someone removed from a chat) are automatically
   // excluded. Using getContactIds instead would return phantom contacts
   // dc-core knows about via Autocrypt-Gossip but isn't currently chatting
   // with — Joe explicitly does NOT want those in the picker.
-  const chatIds = await ctx.client.getChats()
+  const chatIds = bindings.listBindings()
+    .filter(b => b.agentId === managedAgentId)
+    .map(b => b.chatId)
   const seen = new Set<number>()
   for (const chatId of chatIds) {
     let members: number[] = []
