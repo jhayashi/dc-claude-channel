@@ -926,12 +926,11 @@ const tailHandlers: Record<string, Dispatch> = {
         // that might hold a record. Per-agent semantics means dc-developer
         // could have a record even if claude-code doesn't. Bare
         // claude-code lookup misses non-canonical records.
-        const principalExists = (() => {
-          for (const aid of bindings.listAllAgentIds()) {
-            if (access.loadContact(aid, contactId) !== null) return true
-          }
-          return false
-        })()
+        //
+        // /code-review fix (2026-05-31): use access.hasContactRecordForAnyAgent
+        // instead of an inline IIFE so a corrupt sidecar record can't
+        // throw uncaught out of the loop and break the unpair command.
+        const principalExists = access.hasContactRecordForAnyAgent(contactId, bindings.listAllAgentIds())
         if (chatIds.length === 0 && !principalExists) {
           return { content: [{ type: 'text' as const, text: `No paired chats or principal record for contact ${contactId}.` }], isError: true }
         }
@@ -1844,9 +1843,18 @@ async function main(): Promise<void> {
     // any per-agent contact write. The canonical-seed migration that
     // ran earlier in startup handles the records that already exist in
     // claude-code; this handles allowlist entries with no record yet.
+    //
+    // /code-review fix (2026-05-31): filter out orphan-binding agents
+    // (binding's agentId references a .md that no longer exists) — the
+    // canonical-seed migration symmetrically skips those, and backfilling
+    // them would create <orphan>.dc/contacts/<cid>.json litter that no
+    // agent can ever read.
     let totalWritten = 0
     const perAgent: Record<string, number> = {}
-    for (const aid of bindings.listAllAgentIds()) {
+    const bindAgentIds = bindings.listAllAgentIds({
+      agentExists: (aid) => agents.getAgent(aid) !== null,
+    })
+    for (const aid of bindAgentIds) {
       const written = access.backfillFromAllowlist(aid)
       if (written > 0) {
         totalWritten += written

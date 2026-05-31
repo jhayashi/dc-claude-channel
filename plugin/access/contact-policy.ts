@@ -23,7 +23,7 @@
 
 import { chatsForOwner, hasAnyOwner, isKnownOwner, listPaired } from "./chat-allowlist.js";
 import { bundleFor } from "./capability-bundles.js";
-import { DEFAULT_AGENT_ID, _setContactsMutateCallback, listContacts, loadContact, writeContact, type Contact } from "./contacts.js";
+import { _setContactsMutateCallback, listContacts, loadContact, writeContact, type Contact } from "./contacts.js";
 
 // ── Permissioned-contacts cache (v1.3 review fix — Elena HURT 2) ────────────
 //
@@ -176,7 +176,40 @@ export function getCapabilitiesFor(agentId: string, contactId: number): string[]
  *
  * Returns the number of records newly written.
  */
-export function backfillFromAllowlist(agentId: string = DEFAULT_AGENT_ID): number {
+/**
+ * v1.4.9 — "does any of these agents hold a record for this contact?"
+ *
+ * Replaces the inline IIFE in server.ts's dc_access_unpair where a
+ * single corrupt record in any agent's sidecar would throw out of the
+ * loop uncaught (loadContact "may throw on corrupt / unreadable
+ * record", slice-3-5 review) and break the user's unpair command.
+ *
+ * Per-agent try/catch isolates the failure: a corrupt record in one
+ * sidecar is logged to stderr and skipped, the iteration continues
+ * across the rest. Matches the resilience contract of the canonical-
+ * seed migration's per-binding handling.
+ *
+ * Returns true on the first valid record found (short-circuits).
+ */
+export function hasContactRecordForAnyAgent(
+  contactId: number,
+  agentIds: Iterable<string>,
+): boolean {
+  for (const aid of agentIds) {
+    try {
+      if (loadContact(aid, contactId) !== null) return true;
+    } catch (err) {
+      console.error(
+        `contacts.hasContactRecordForAnyAgent: skipping ${aid}/${contactId} (corrupt record):`,
+        err,
+      );
+      continue;
+    }
+  }
+  return false;
+}
+
+export function backfillFromAllowlist(agentId: string): number {
   let written = 0;
   for (const dev of listPaired()) {
     let existing = null;

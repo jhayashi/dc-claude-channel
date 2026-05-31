@@ -112,22 +112,35 @@ export function getBindingAgentId(chatId: number): string {
  *
  *   - **Unpair across all sidecars** (dc_access_unpair, server.ts):
  *     "remove this contact's permission to interact with the bot"
- *     means removing their record from every agent that holds one.
+ *     means removing their record from every agent that holds one —
+ *     including orphan sidecars where the agent .md is gone. Pass no
+ *     filter so orphan sidecars get swept too.
  *
  *   - **Startup backfill** (backfillFromAllowlist, server.ts): legacy
- *     installs need a record written under each bound agent's sidecar
- *     for any contact in the allowlist. The canonical-seed migration
- *     handles records that already exist in claude-code; this handles
- *     legacy installs whose claude-code sidecar is empty too.
+ *     installs need a record written under each bound agent's sidecar.
+ *     Pass `agentExists` so the backfill skips orphan-binding agentIds
+ *     (whose .md was deleted without sweeping the binding) — otherwise
+ *     the backfill creates litter files in <orphan>.dc/contacts/ that
+ *     no agent can ever read. Mirrors the canonical-seed migration's
+ *     orphaned_binding skip-and-log.
+ *
+ * DEFAULT_AGENT_ID is always included regardless of the filter —
+ * claude-code is the canonical pairing-target invariant even if
+ * claude-code.md itself were somehow missing (degenerate case).
  *
  * Performance: cheap — one disk scan over the bindings/ dir + a Set
  * dedup. Called at startup and on owner-driven unpair, not in the hot
  * dispatch loop.
  */
-export function listAllAgentIds(): Set<string> {
+export function listAllAgentIds(opts?: {
+  /** Optional predicate that filters bound agentIds. Returning false on a bound agentId omits it from the result. The default (claude-code) is always included regardless. */
+  agentExists?: (agentId: string) => boolean
+}): Set<string> {
   const out = new Set<string>([agents.DEFAULT_AGENT_ID])
   for (const b of listBindings()) {
-    if (b.agentId) out.add(b.agentId)
+    if (!b.agentId) continue
+    if (opts?.agentExists && !opts.agentExists(b.agentId)) continue
+    out.add(b.agentId)
   }
   return out
 }
