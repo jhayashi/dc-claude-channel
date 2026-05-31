@@ -223,6 +223,27 @@ describe('agent-creation E2E (wall → coach → graduation)', () => {
     ])
     expect((agent as Record<string, unknown>)['x-dc-coach-answers']).toBeDefined()
 
+    // Tools — wall+coach has no per-tool picker, so a graduated agent must
+    // default to the full built-in toolkit. Regression guard for commit
+    // 1d904b1 (2026-05-17 "sweep to v1.4 schema") which changed the tools
+    // field from `[]` (downstream-defaulted) to literal `'mcp__dc'`,
+    // leaving every wall+coach agent toolless except for the dc proxy.
+    // Joe noticed this on 2026-05-30 (yoga, librarian agents had only
+    // mcp__dc__* tools, no Bash/Read/Edit/etc.).
+    //
+    // We don't assert mcp__dc presence here: ensureMcpDc expands the bare
+    // prefix via getDcToolNames(), which returns empty in the test harness
+    // because the runtime DC tool registry isn't populated. mcp__dc
+    // expansion has its own unit coverage; the user-visible bug being
+    // guarded here is the absence of Bash/Read/Edit/etc.
+    expect(agent!.tools).toContain('Bash')
+    expect(agent!.tools).toContain('Read')
+    expect(agent!.tools).toContain('Edit')
+    expect(agent!.tools).toContain('Write')
+    expect(agent!.tools).toContain('Grep')
+    expect(agent!.tools).toContain('Glob')
+    expect(agent!.tools).toContain('WebFetch')
+
     // ---- assertion 2: lifecycle event captured -------------------------
 
     const today = new Date().toISOString().slice(0, 10)

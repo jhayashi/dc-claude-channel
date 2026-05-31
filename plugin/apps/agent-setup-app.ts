@@ -158,6 +158,39 @@ export interface TeleportOutChat {
   workingDir: string | null
 }
 
+/**
+ * Build the tools CSV from the agent-setup form's submission. Encodes the
+ * client protocol of `collectCreateToolPickerState`:
+ *
+ *   - `null` / `undefined` → ALL boxes in that category were checked, i.e.
+ *     the user accepted the picker's default offering. Server-side that
+ *     expands back to the full universe the picker showed (built-ins =
+ *     `ALL_BUILTIN_TOOLS`). Conservative on MCP servers: the picker shows
+ *     curated + connected servers, and silently auto-attaching all of
+ *     them (Slack/Gmail/etc.) to every new agent is too invasive; the
+ *     user has to explicitly check them to opt in, so `null` MCP servers
+ *     yields no MCP servers in the CSV. `mcp__dc` is added downstream by
+ *     `saveAgent`'s `ensureMcpDc`, so it's not included here.
+ *   - explicit empty array (`[]`) → user un-checked every box → literally
+ *     no entries in that category.
+ *   - explicit non-empty array → only those entries.
+ *
+ * This corrects the pre-2026-05-31 bug where the create handler did
+ * `?? []` and treated client-sent `null` ("all checked") as empty, so
+ * new agents from the + Create new agent form ended up with no built-in
+ * tools (Joe noticed 2026-05-30).
+ */
+export function buildCreateAgentToolsCsv(
+  allowedBuiltinTools: string[] | null | undefined,
+  allowedMcpServers: string[] | null | undefined,
+): string {
+  const builtins = (allowedBuiltinTools === null || allowedBuiltinTools === undefined)
+    ? ALL_BUILTIN_TOOLS
+    : allowedBuiltinTools
+  const mcp = (allowedMcpServers ?? []).map(s => `mcp__${s}`)
+  return [...builtins, ...mcp].join(', ')
+}
+
 export function buildTeleportOutList(ctx: TeleportOutListCtx): TeleportOutChat[] {
   const rows: TeleportOutChat[] = []
   for (const b of bindings.listBindings()) {
@@ -806,7 +839,12 @@ export async function graduateAgent(ctx: AppContext, chatId: number): Promise<vo
       model: agents.DEFAULT_MODEL,
       description: '',
       body: systemPrompt,
-      tools: 'mcp__dc',
+      // Wall+coach has no per-tool picker — default to the full built-in
+      // toolkit so users get a usable agent out of the box. mcp__dc is
+      // injected by saveAgent's ensureMcpDc. Pre-fix this was the literal
+      // string 'mcp__dc' (regressed in commit 1d904b1, 2026-05-17), leaving
+      // wall+coach agents toolless except for the dc proxy.
+      tools: ALL_BUILTIN_TOOLS.join(', '),
       memory: 'user' as const,
       'x-dc-leaves': session.leafIds,
       'x-dc-personality-preset': 'mentor',
@@ -1983,10 +2021,11 @@ export const agentSetupApp: WebXDCApp = {
             ...draft,
             name: agentId,
             'x-dc-display-name': displayName,
-            tools: [
-              ...(allowedBuiltinTools ?? []),
-              ...((allowedMcpServers ?? []).map(s => `mcp__${s}`)),
-            ].join(', '),
+            // buildCreateAgentToolsCsv encodes the client picker's null=all,
+            // [] =none semantics so a user who taps Create with the default
+            // (all-checked) picker gets the full built-in toolkit, not an
+            // empty CSV. Pre-fix, `?? []` made null → none → no built-ins.
+            tools: buildCreateAgentToolsCsv(allowedBuiltinTools, allowedMcpServers),
           } as agents.AgentDef
           agents.setSkipPermissions(newAgent, skipPerms)
           if (archetype) agents.setArchetype(newAgent, archetype)

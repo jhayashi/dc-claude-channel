@@ -11,6 +11,7 @@ import {
   resolveAttachAgent,
   handleListContacts,
   handleAssignRole,
+  buildCreateAgentToolsCsv,
 } from '../apps/agent-setup-app.js'
 import type { CoachAnswers } from '../coach.js'
 import * as agents from '../agents.js'
@@ -578,6 +579,63 @@ describe('contact management handlers', () => {
     )
     expect(src).toMatch(/payload\.type === 'assign_role'/)
     expect(src).toMatch(/handleAssignRole\(ctx,\s*session\.msgId/)
+  })
+
+  // ── buildCreateAgentToolsCsv ─────────────────────────────────────────────
+  //
+  // The form's collectCreateToolPickerState returns `null` for a category
+  // when ALL boxes are checked (user accepted the picker's defaults). The
+  // server's tools-CSV builder must expand that null back to the full set
+  // the picker showed. The bug Joe hit on 2026-05-30: the legacy `?? []`
+  // collapse treated null as empty, so new agents created via the + Create
+  // new agent form (test agent) had only mcp__dc__* tools and no built-ins
+  // like Bash/Read/Edit. These tests pin the protocol.
+
+  test('buildCreateAgentToolsCsv: null builtins → all ALL_BUILTIN_TOOLS (user accepted picker defaults)', () => {
+    const csv = buildCreateAgentToolsCsv(null, null)
+    // Sample a few core ones — exhaustive list is in ALL_BUILTIN_TOOLS
+    expect(csv).toContain('Bash')
+    expect(csv).toContain('Read')
+    expect(csv).toContain('Edit')
+    expect(csv).toContain('Write')
+    expect(csv).toContain('Grep')
+    expect(csv).toContain('Glob')
+    expect(csv).toContain('WebFetch')
+  })
+
+  test('buildCreateAgentToolsCsv: undefined builtins → all ALL_BUILTIN_TOOLS (payload omitted the field)', () => {
+    const csv = buildCreateAgentToolsCsv(undefined, undefined)
+    expect(csv).toContain('Bash')
+    expect(csv).toContain('Read')
+  })
+
+  test('buildCreateAgentToolsCsv: explicit empty array → literally no builtins (user unchecked all boxes)', () => {
+    const csv = buildCreateAgentToolsCsv([], null)
+    expect(csv).not.toContain('Bash')
+    expect(csv).not.toContain('Read')
+    // mcp__dc gets injected by saveAgent, not by this function, so the csv
+    // for empty-builtins / null-mcp is just an empty string.
+    expect(csv).toBe('')
+  })
+
+  test('buildCreateAgentToolsCsv: explicit subset → just those builtins', () => {
+    const csv = buildCreateAgentToolsCsv(['Bash', 'Read'], null)
+    expect(csv).toBe('Bash, Read')
+  })
+
+  test('buildCreateAgentToolsCsv: MCP servers prefix with mcp__ and join with builtins', () => {
+    const csv = buildCreateAgentToolsCsv(['Bash'], ['slack', 'gmail'])
+    expect(csv).toBe('Bash, mcp__slack, mcp__gmail')
+  })
+
+  test('buildCreateAgentToolsCsv: null MCP servers → no MCP servers in CSV (conservative — only saveAgent injects mcp__dc)', () => {
+    // Intentionally conservative: auto-adding all available MCP servers
+    // (Slack, Gmail, etc.) to every new agent is invasive. User must
+    // explicitly check MCP server boxes to attach them. mcp__dc is added
+    // unconditionally downstream by saveAgent's ensureMcpDc, so it doesn't
+    // appear here.
+    const csv = buildCreateAgentToolsCsv(['Bash'], null)
+    expect(csv).toBe('Bash')
   })
 
 
