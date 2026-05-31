@@ -460,6 +460,128 @@ export function migrateContactsToSidecar(): number {
   return moved;
 }
 
+/**
+ * v1.4.9 — canonical-seed contacts from claude-code's sidecar into each
+ * bound agent's sidecar, scoped to that agent's chat memberships.
+ *
+ * Background. Pre-v1.4.9 every production caller of the contacts API
+ * hardcoded `DEFAULT_AGENT_ID = 'claude-code'` (see the 20+ call-site
+ * audit in `docs/superpowers/plans/2026-05-31-contacts-per-agent.md`).
+ * Every Contact record ever written lives at `claude-code.dc/contacts/`
+ * regardless of which agent owned the chat where the contact appeared.
+ * v1.4.9 flips the read+write paths in Phases 2-3 to honor per-agent
+ * sidecars; without this migration, the flip would orphan the existing
+ * records and lock permissioned contacts out of non-claude-code chats
+ * until they were manually re-permissioned.
+ *
+ * For each binding `(chatId, agentId)`:
+ *   - Skip if `agentId === DEFAULT_AGENT_ID` (claude-code is canonical).
+ *   - Skip if `agentId` is unset (chat paired but not yet bound).
+ *   - Skip if `agentExists(agentId)` is false — orphaned binding (D6).
+ *     The skip is reported in `result.skipped` for the caller to log.
+ *   - For each member of `chatId` (via `getChatMembers(chatId)`):
+ *     - Skip ids ≤ 9 (CONTACT_SELF + DC reserved range).
+ *     - Skip if `<agentId>.dc/contacts/<cid>.json` already exists
+ *       (idempotent, preserves per-agent divergence).
+ *     - Skip if `claude-code.dc/contacts/<cid>.json` does not exist
+ *       (true stranger — leave unpopulated for explicit role assignment
+ *       later via the picker).
+ *     - Otherwise copy the source file to the target, preserving
+ *       role/capabilities/firstPairedAt/displayName.
+ *
+ * Inversion of control: `getChatMembers` and `agentExists` are
+ * callbacks rather than direct imports so this function stays
+ * synchronous and unit-testable without a live dc-client or agents
+ * registry. server.ts wires them at startup.
+ *
+ * Errors in one binding don't abort the whole pass — per-binding
+ * try/catch on `getChatMembers`, per-file try/catch on the copy.
+ *
+ * Cache invalidation: if any record was seeded, fire `_onMutate()`
+ * so the contact-policy `permissionedContactIds` cache drops and
+ * the next `isContactPermissioned(<otherAgent>, cid)` reads the
+ * new record instead of returning the cached negative.
+ */
+export interface CanonicalSeedResult {
+  /** agentId → number of records newly seeded into <agentId>.dc/contacts/. */
+  perAgent: Map<string, number>;
+  /** Bindings skipped because the agent's .md no longer exists (D6). */
+  skipped: Array<{ chatId: number; agentId: string; reason: 'orphaned_binding' }>;
+}
+
+export function migrateContactsCanonicalSeed(
+  bindings: Array<{ chatId: number; agentId?: string }>,
+  getChatMembers: (chatId: number) => number[],
+  agentExists: (agentId: string) => boolean,
+): CanonicalSeedResult {
+  const result: CanonicalSeedResult = {
+    perAgent: new Map(),
+    skipped: [],
+  };
+  let totalCopies = 0;
+
+  for (const b of bindings) {
+    if (!b.agentId) continue;
+    if (b.agentId === DEFAULT_AGENT_ID) continue;
+    if (!agentExists(b.agentId)) {
+      result.skipped.push({ chatId: b.chatId, agentId: b.agentId, reason: 'orphaned_binding' });
+      continue;
+    }
+
+    let members: number[];
+    try {
+      members = getChatMembers(b.chatId);
+    } catch (err) {
+      console.error(
+        `contacts.migrateContactsCanonicalSeed: cannot get members for chat ${b.chatId}:`,
+        err,
+      );
+      continue;
+    }
+
+    let countForThisChat = 0;
+    for (const cid of members) {
+      // DC reserved range (0–9) + CONTACT_SELF (1). Never permissionable.
+      if (cid <= 9) continue;
+
+      const targetPath = contactPath(b.agentId, cid);
+      if (existsSync(targetPath)) continue;
+
+      const sourcePath = contactPath(DEFAULT_AGENT_ID, cid);
+      if (!existsSync(sourcePath)) continue;
+
+      try {
+        mkdirSync(dirname(targetPath), { recursive: true });
+        copyFileSync(sourcePath, targetPath);
+        // Match atomicWriteJson's mode so the seeded files have the same
+        // 0o600 permissions as freshly-written contacts.
+        try { chmodSync(targetPath, 0o600); } catch { /* best-effort */ }
+        countForThisChat++;
+        totalCopies++;
+      } catch (err) {
+        console.error(
+          `contacts.migrateContactsCanonicalSeed: copy ${sourcePath} → ${targetPath} failed:`,
+          err,
+        );
+      }
+    }
+
+    if (countForThisChat > 0) {
+      result.perAgent.set(b.agentId, (result.perAgent.get(b.agentId) ?? 0) + countForThisChat);
+    }
+  }
+
+  // Cache invalidation: any new record means a previously-cached
+  // negative answer for `isContactPermissioned(<agentId>, cid)` is now
+  // stale. _onMutate drops contact-policy's permissionedContactIds map
+  // so the next read reflects disk.
+  if (totalCopies > 0) {
+    _onMutate();
+  }
+
+  return result;
+}
+
 // Derived queries (`chatsFor`, `isContactPermissioned`,
 // `hasAnyPermissionedContact`, `getCapabilitiesFor`,
 // `backfillFromAllowlist`) live in `./contact-policy.ts` — moved

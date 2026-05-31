@@ -6,6 +6,22 @@ export type LifecycleEvent =
   | { kind: 'graduation'; chatId: number; agentId: string; sessionId: string; leafIds: string[]; fromCoach: true }
   | { kind: 'refine-complete'; chatId: number; agentId: string; sessionId: string }
   | { kind: 'graduation-failed'; chatId: number; sessionId: string; leafIds: string[]; reason: string }
+  /**
+   * v1.4.9 — emitted once per agent that had records seeded from
+   * claude-code's canonical sidecar at startup. recordCount is the
+   * number of <agentId>.dc/contacts/<cid>.json files newly written.
+   * Absence on a given startup = no seeding needed (post-migration
+   * steady state) or no bindings for that agent.
+   */
+  | { kind: 'contacts_seeded'; agentId: string; recordCount: number }
+  /**
+   * v1.4.9 — emitted once per binding whose agentId references a
+   * .md file that no longer exists (D6 orphaned binding). The binding
+   * is skipped — its chat's members are not seeded into any sidecar.
+   * Surfaced so an operator can clean up orphaned bindings or
+   * re-create the missing agent definition.
+   */
+  | { kind: 'contacts_seeded_skipped'; chatId: number; agentId: string; reason: 'orphaned_binding' }
 
 let DIR = process.env.DC_EVENT_DIR
   ? join(process.env.DC_EVENT_DIR)

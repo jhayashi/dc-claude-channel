@@ -53,6 +53,7 @@ import { ReactionRouter } from './dispatcher/reaction-router.js'
 import { tryAutoApprove } from './dispatcher/skip-permissions.js'
 import { createActivityReactor, THINKING_EMOJIS, type ActivityReactor } from './dispatcher/activity-reactions.js'
 import { logToolCall, logTurn, logPermission, logWebXDC, logAutoPairDenial, logSubagentStderr, buildArgPreview, getEventDir } from './events.js'
+import { logLifecycleEvent } from './events-lifecycle.js'
 import { formatHistoryLine, evaluateAttachmentDownload } from './dispatcher/trust-filter.js'
 import { parseSince, queryEvents, renderEventsMarkdown, ALL_STREAMS, type EventStream } from './events-query.js'
 import { pruneEventLogs } from './dispatcher/event-log-rotate.js'
@@ -1831,6 +1832,58 @@ async function main(): Promise<void> {
     access.retireApprovedDir()
   } catch (err) {
     logf('dc channel: retire-approved-dir failed: %v', err)
+  }
+
+  // v1.4.9 — canonical-seed each non-claude-code bound agent's sidecar
+  // from claude-code's records. Without this, the read+write call-site
+  // flip in v1.4.9 phases 2-3 would lock permissioned contacts out of
+  // every non-claude-code chat (every record lives at
+  // claude-code.dc/contacts/ today). Idempotent — re-runs are no-ops.
+  //
+  // Pre-fetch the member lists asynchronously so the migration itself
+  // stays sync + unit-testable (no live dc-client dependency). Per-chat
+  // try/catch on getChatContacts so one bad chat doesn't block the rest.
+  // Plan: docs/superpowers/plans/2026-05-31-contacts-per-agent.md (Phase 1).
+  try {
+    const allBindings = bindings.listBindings()
+    const memberMap = new Map<number, number[]>()
+    for (const b of allBindings) {
+      if (!b.agentId) continue
+      // No default-agent short-circuit here on purpose — the migration's
+      // own internal check is the canonical place, and routing the skip
+      // through there keeps the CI grep guard's allowed-list tight (this
+      // file is intentionally not in the allowed carve-out list once
+      // Phase 2 lands). Cost: one extra getChatContacts RPC per claude-
+      // code-bound chat at startup. Negligible.
+      try {
+        memberMap.set(b.chatId, await client.getChatContacts(b.chatId))
+      } catch (err) {
+        logf('canonical-seed: getChatContacts(%d) failed (skipping): %v', b.chatId, err)
+      }
+    }
+    const seedResult = access.migrateContactsCanonicalSeed(
+      allBindings,
+      (chatId) => memberMap.get(chatId) ?? [],
+      (agentId) => agents.getAgent(agentId) !== null,
+    )
+    for (const [agentId, recordCount] of seedResult.perAgent) {
+      logf('dc channel: canonical-seeded %d contact(s) into agent=%s', recordCount, agentId)
+      logLifecycleEvent({ kind: 'contacts_seeded', agentId, recordCount })
+    }
+    for (const skip of seedResult.skipped) {
+      logf(
+        'dc channel: canonical-seed skipped orphaned binding chat=%d agent=%s (no .md)',
+        skip.chatId, skip.agentId,
+      )
+      logLifecycleEvent({
+        kind: 'contacts_seeded_skipped',
+        chatId: skip.chatId,
+        agentId: skip.agentId,
+        reason: skip.reason,
+      })
+    }
+  } catch (err) {
+    logf('dc channel: canonical-seed failed: %v', err)
   }
 
   // One-time orphan-binding sweep: deletes binding files whose chat is
