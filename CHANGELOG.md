@@ -4,6 +4,35 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.9] — 2026-05-31
+
+Promotes the per-agent contacts API from documented-but-unwired to actually per-agent across every production call site. The `agentId` parameter on the contacts/capability API has been dead weight since v1.3 — every record was parked under `claude-code.dc/contacts/` regardless of which agent owned the chat. v1.4.9 fixes this end-to-end with a one-time canonical-seed migration at startup, a 19-site read+write call-site sweep, picker scope narrowing, and a CI grep guard that prevents regression.
+
+### Changed
+
+- **Contacts records are now per-agent.** Each agent's sidecar (`~/.claude/agents/<name>.dc/contacts/<cid>.json`) is independently consulted for record-existence checks (dispatch gate), role lookups (capability gate), trust-filter decisions (`dc_chat_history` redaction, attachment download gate), and stranger-lockout / securejoin armed-window checks. A contact can legitimately have different roles across agents — Alice can be `subscriber` for `dc-developer` and `family-member` for `librarian`. Plan: `docs/superpowers/plans/2026-05-31-contacts-per-agent.md`.
+- **Trust filter agent context = chat-bound agent of the chat the message originated in, NOT the asking subagent's agent.** Phase 0.2 invariant: when a `dc-developer` subagent calls `dc_chat_history(chat_id=32)` and chat 32 is bound to `olliespa`, the trust filter applies olliespa's records. This keeps trust evaluation coherent across cross-chat reads.
+- **Contacts picker UI universe narrowed to chats bound to the managed agent (D3 / Knob 1 b).** Previously the picker showed every contact across every bot chat. Now opening the Contacts UI from a `dc-developer`-bound chat shows only members of `dc-developer`-bound chats. Avoids cross-agent visibility leaks. To manage agent X's contacts, open the settings card from an X-bound chat.
+- **Startup backfill iterates per-agent.** `backfillFromAllowlist` is now invoked once per bound agent (filtered to exclude orphan-binding agents whose `.md` is missing). Per-agent counts logged.
+- **`dc_access_unpair` removes from every agent's sidecar.** A contact's records under any bound agent are all wiped on unpair, preventing dispatch via a non-canonical agent's stale record from resurrecting them.
+- **`backfillFromAllowlist` no longer has a default `agentId` parameter.** Callers must specify which agent's sidecar to backfill. Removes a regression footgun where copy-pasted call sites would silently funnel back to claude-code.
+
+### Added
+
+- **Canonical-seed migration runs once at dispatcher startup.** For each bound chat, copies `claude-code.dc/contacts/<cid>.json` into the bound agent's sidecar (preserving role/capabilities/firstPairedAt). Idempotent — re-runs are no-ops. Skips claude-code bindings (already canonical), unset agentIds (chat paired but agent-setup not yet completed), and orphaned bindings (agent .md missing). Per-agent counts and per-skip reasons logged to `agent-lifecycle-<date>.log` as new `contacts-seeded` and `contacts-seeded-skipped` event kinds.
+- **`bindings.getBindingAgentId(chatId): string`** — THE single sanctioned default-agent fallback in production code. Resolves the agent context for a chat (binding's agentId or claude-code fallback). All 19+ call sites that used to hardcode `access.DEFAULT_AGENT_ID` now route through this helper.
+- **`bindings.listAllAgentIds(opts?)`** — union of claude-code and every bound agent. Used by `dc_access_unpair` ("remove from every sidecar") and the startup backfill ("backfill each bound agent"). Optional `agentExists` filter for the backfill case so orphan-binding agents don't accumulate litter files. Per-binding try/catch on the filter so a transient stat() throw doesn't abort the iteration.
+- **`access.hasContactRecordForAnyAgent(contactId, agentIds)`** — corruption-safe iteration that wraps each `loadContact` in try/catch. Replaces an inline IIFE in `dc_access_unpair` where one corrupt sidecar record would have broken the unpair command entirely.
+- **`scripts/dump-contacts.ts`** — table or `--json` output of every per-agent contact record. For pre/post-migration diffs and operator debugging. Honors `DC_TEST_CONTACTS_DIR`.
+- **`scripts/check-no-default-agent-id.sh`** — CI grep guard that fails the build if `access.DEFAULT_AGENT_ID` appears in production code outside the allow-list (`access/contacts.ts`, `access/pairing.ts`, `access/chat-allowlist.ts`, `agents.ts`, `bindings.ts`). Prevents regressions where a new call site silently funnels back through the default agent.
+- **75 new tests** across `test/contacts-canonical-seed.test.ts` (14), `test/contacts-multi-agent.test.ts` (9), `test/agent-setup-app.test.ts` (4 Phase 4 + signature updates).
+
+### Migration notes
+
+No user action required. First boot under v1.4.9 walks bindings, copies claude-code records into per-agent sidecars for each bound chat's members, and logs per-agent counts. Idempotent. Reversible by `rm -rf ~/.claude/agents/{non-claude-code}.dc/contacts/`.
+
+User-visible behavior change: the Contacts UI's picker scope is narrower. If you previously managed contacts via a single global view, you now manage them per-agent — open the settings card from the chat bound to the agent whose contacts you want to manage. Cross-agent contact sharing happens at chat-join time (via canonical-seed) but role edits are local to one agent thereafter.
+
 ## [1.4.8] — 2026-05-30
 
 Three follow-up fixes to v1.4.7 — two user-reported (toolless agents, missing contacts list), one crash-forensics improvement to root-cause future subagent deaths.
@@ -765,6 +794,7 @@ First public release of the Delta Chat channel for Claude Code.
 
 [1.3.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.0...v1.3.1
+[1.4.9]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.8...v1.4.9
 [1.4.8]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.7...v1.4.8
 [1.4.7]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.6...v1.4.7
 [1.4.6]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.5...v1.4.6

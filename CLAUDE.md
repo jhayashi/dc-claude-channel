@@ -36,9 +36,13 @@ Chat-scoping is **not a privacy/security boundary** between paired chats; it's a
 
 For skip-permissions mode, scheduled jobs (`dc_schedule*`), shared memory semantics, the four event-log streams (`tools-*.log`, `turns-*.log`, `permissions-*.log`, `webxdc-*.log`) + the `dc_show_events` tool, and config env vars, see [`docs/ARCHITECTURE.md#subagent-model-v09`](docs/ARCHITECTURE.md).
 
-## Contacts (v1.3+; was "Principals" in v1.1.5–v1.2.2)
+## Contacts (per-agent in v1.4.9+; was "Principals" in v1.1.5–v1.2.2)
 
-Per-contact trust annotations — one record per DC contact in the bot's address book, regardless of whether the underlying entity is a human or a third-party bot. The `role` field carries the trust-tier distinction. On-disk at `~/.claude/agents/<name>.dc/contacts/<contactId>.json` (v1.4 sidecar layout; legacy v1.3 path was `~/.claude/channels/deltachat/agents/<id>/contacts/<contactId>.json`, retired to `agents.legacy/` on first v1.4 boot, with a backstop that walks any orphaned v1.3 dirs). Schema:
+Per-contact trust annotations — one record per (agent, DC contact) in the bot's address book, regardless of whether the underlying entity is a human or a third-party bot. The `role` field carries the trust-tier distinction. **Records are per-agent as of v1.4.9** — a contact can have different roles across agents (Alice can be `subscriber` for `dc-developer` and `family-member` for `librarian`). Pre-v1.4.9 every record was parked under `claude-code.dc/contacts/` regardless of which agent owned the chat; the canonical-seed migration (`migrateContactsCanonicalSeed`, runs once at startup) backfills per-agent sidecars from claude-code's records for each bound chat's members.
+
+**The Phase 0.2 invariant**: the agent context for any contact decision is the agent that owns the chat where the contact is acting (or being managed for), NOT the asking subagent's. A `dc-developer` subagent reading `dc_chat_history(chat_id=32)` where chat 32 is bound to `olliespa` resolves the trust filter through `olliespa`'s records. All 19+ production call sites route through `bindings.getBindingAgentId(chatId)` — the only sanctioned default-agent fallback in production code, enforced by `scripts/check-no-default-agent-id.sh` (CI grep guard).
+
+On-disk at `~/.claude/agents/<name>.dc/contacts/<contactId>.json` (v1.4 sidecar layout; legacy v1.3 path was `~/.claude/channels/deltachat/agents/<id>/contacts/<contactId>.json`, retired to `agents.legacy/` on first v1.4 boot, with a backstop that walks any orphaned v1.3 dirs). Schema:
 
 ```json
 {
@@ -69,7 +73,9 @@ Per-contact trust annotations — one record per DC contact in the bot's address
 
 **v1.3 (#66 Option B):** `approved/<chatId>` files retire — the chat allowlist is now an in-memory cache derived from contact records ∩ chat membership. Populated at startup via `populateAllowlistFromMembership`; refreshed on `ChatModified` events. Multi-user dispatch (#70): any permissioned member of a chat can drive a turn, not only the chat's pairing contact. Legacy `approved/` directory renamed to `approved.legacy/` at first v1.3 boot (slated for v1.4 removal).
 
-API in `plugin/access/contacts.ts`: `loadContact` / `writeContact` / `listContacts` / `removeContact` / `recordContactPair` / `setContactRole` / `migrateContactsToAgentScoped`. Higher-level policy in `plugin/access/contact-policy.ts`: `isContactPermissioned` / `hasAnyPermissionedContact` / `isContactTrustedForContent` / `getCapabilitiesFor` / `chatsFor` / `backfillFromAllowlist`. Capability evaluation in `plugin/access/capabilities.ts` + `gate.ts`. Storage dir overridable for tests via `DC_TEST_CONTACTS_DIR` env var or `setContactsAgentsDir(dir)`. The `bunfig.toml` `preload = ["./test/_preload.ts"]` sets a tmp dir by default during `bun test` so tests that forget to set isolation don't silently corrupt prod data.
+API in `plugin/access/contacts.ts`: `loadContact` / `writeContact` / `listContacts` / `removeContact` / `recordContactPair` / `setContactRole` / `migrateContactsToAgentScoped` / `migrateContactsCanonicalSeed` (v1.4.9). Higher-level policy in `plugin/access/contact-policy.ts`: `isContactPermissioned` / `hasAnyPermissionedContact` / `hasContactRecordForAnyAgent` (v1.4.9) / `isContactTrustedForContent` / `getCapabilitiesFor` / `chatsFor` / `backfillFromAllowlist` (now requires `agentId`). Agent-context resolution in `plugin/bindings.ts`: `getBindingAgentId(chatId)` / `listAllAgentIds(opts?)`. Capability evaluation in `plugin/access/capabilities.ts` + `gate.ts`. Storage dir overridable for tests via `DC_TEST_CONTACTS_DIR` env var or `setContactsAgentsDir(dir)`. The `bunfig.toml` `preload = ["./test/_preload.ts"]` sets a tmp dir by default during `bun test` so tests that forget to set isolation don't silently corrupt prod data.
+
+**Contacts UI picker scope (v1.4.9, D3 / Knob 1 b)**: `handleListContacts` walks `bindings.listBindings().filter(b => b.agentId === managedAgentId)` — only chats bound to the managed agent appear in the picker universe. Pre-v1.4.9 the picker showed every contact across every bot chat. To manage agent X's contacts, open the settings card from an X-bound chat.
 
 Per `docs/specs/2026-04-20-identity-and-teams-design.md` and the v1.3 slice 1–7 plans in `docs/superpowers/plans/2026-05-01-v130-*`.
 
