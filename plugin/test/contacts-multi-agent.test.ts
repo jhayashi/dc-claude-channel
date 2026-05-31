@@ -165,7 +165,11 @@ describe("listAllAgentIds with agentExists filter", () => {
     expect(ids.has("claude-code")).toBe(true); // default always included
   });
 
-  test("filter applies to default agent too if it returns false (degenerate but consistent)", async () => {
+  // Test name corrected during Oliver re-review (2026-05-31): the prior
+  // name read "filter applies to default agent too" which is the inverse
+  // of what the test verifies. The body's intent is right; the name was
+  // misleading.
+  test("filter does NOT apply to the default agent — claude-code is always included regardless of agentExists", async () => {
     seedAgentMd("agent-a");
     seedBinding(10, "agent-a");
     const bindings = await import("../bindings.js");
@@ -179,5 +183,32 @@ describe("listAllAgentIds with agentExists filter", () => {
     });
     expect(ids.has("claude-code")).toBe(true);
     expect(ids.has("agent-a")).toBe(false);
+  });
+
+  // Oliver re-review P2 (2026-05-31): the agentExists callback inside
+  // listAllAgentIds was called without a try/catch. Same pattern as
+  // Phase 1's migrateContactsCanonicalSeed agentExists throw — a
+  // transient stat() error in production wires (agents.getAgent →
+  // filesystem read) would escape the loop uncaught, abort the entire
+  // startup backfill walk, and leave operators with "principal backfill
+  // failed" but no per-agent evidence. Per-binding isolation matches
+  // the Phase 1 fix.
+  test("listAllAgentIds: continues iterating when agentExists throws for one binding", async () => {
+    seedAgentMd("agent-a");
+    seedAgentMd("agent-b");
+    seedBinding(20, "agent-a");
+    seedBinding(21, "agent-b");
+    const bindings = await import("../bindings.js");
+
+    const ids = bindings.listAllAgentIds({
+      agentExists: (id) => {
+        if (id === "agent-a") throw new Error("fs glitch on .md stat");
+        return true;
+      },
+    });
+
+    expect(ids.has("agent-a")).toBe(false); // skipped due to throw
+    expect(ids.has("agent-b")).toBe(true);   // kept iterating
+    expect(ids.has("claude-code")).toBe(true); // default always included
   });
 });

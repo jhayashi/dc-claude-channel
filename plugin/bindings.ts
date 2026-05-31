@@ -139,7 +139,26 @@ export function listAllAgentIds(opts?: {
   const out = new Set<string>([agents.DEFAULT_AGENT_ID])
   for (const b of listBindings()) {
     if (!b.agentId) continue
-    if (opts?.agentExists && !opts.agentExists(b.agentId)) continue
+    if (opts?.agentExists) {
+      // v1.4.9 Oliver P2 (2026-05-31): agentExists is wired in production
+      // to `(aid) => agents.getAgent(aid) !== null`, which reads
+      // ~/.claude/agents/<aid>.md from disk. Transient filesystem errors
+      // (EACCES, EBADF) would throw out of the callback and abort the
+      // entire iteration uncaught — caught only by callers' outer try,
+      // with no per-binding evidence. Same per-binding-isolation pattern
+      // as the Phase 1 fix in migrateContactsCanonicalSeed.
+      let exists = false
+      try {
+        exists = opts.agentExists(b.agentId)
+      } catch (err) {
+        console.error(
+          `bindings.listAllAgentIds: agentExists(${b.agentId}) threw, skipping:`,
+          err,
+        )
+        continue
+      }
+      if (!exists) continue
+    }
     out.add(b.agentId)
   }
   return out
