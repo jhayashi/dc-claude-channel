@@ -235,7 +235,7 @@ export const DC_TOOLS: readonly DcToolDef[] = [
   {
     name: 'dc_check_contact',
     requiresCapability: 'chat',
-    description: 'Look up a contact and check whether they are permissioned to interact with the bot. Use when reasoning about whether to trust content originating from a specific contact (e.g. when a chat history message tagged [UNPERMISSIONED] surfaces and you need to decide what to do). Permissioned contacts have completed the bot\'s pair ceremony or have an existing trust record; unpermissioned contacts are chat members the bot can see but doesn\'t trust as principals.',
+    description: 'Look up a contact and check whether they are permissioned to interact with the bot. Use when reasoning about whether to trust content originating from a specific contact (e.g. when a chat history message tagged [UNPERMISSIONED] surfaces and you need to decide what to do). Permissioned contacts have completed the bot\'s pair ceremony or have an existing contact record; unpermissioned contacts are chat members the bot can see but does not have a contact record for.',
     inputSchema: {
       type: 'object',
       properties: {

@@ -932,7 +932,7 @@ const tailHandlers: Record<string, Dispatch> = {
         // throw uncaught out of the loop and break the unpair command.
         const principalExists = access.hasContactRecordForAnyAgent(contactId, bindings.listAllAgentIds())
         if (chatIds.length === 0 && !principalExists) {
-          return { content: [{ type: 'text' as const, text: `No paired chats or principal record for contact ${contactId}.` }], isError: true }
+          return { content: [{ type: 'text' as const, text: `No paired chats or contact record for contact ${contactId}.` }], isError: true }
         }
         // chatIds.length === 0 && principalExists is the Option A edge
         // case — orphan principal with no chats. Fall through, the loop
