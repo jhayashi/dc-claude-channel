@@ -124,11 +124,85 @@ function buildL2Summary(leaves: Leaf[]): L2Summary[] {
   return [...map.values()]
 }
 
-interface Session {
+export interface Session {
   msgId: number
   sourceChatId: number
   lastSerial?: number
   needsSerialSeed?: boolean
+  /**
+   * Snapshot of agent-setup.html's APP_VERSION at the time the card was
+   * sent to this chat. Used by sendInit to decide whether the existing
+   * card is current. Pre-2026-05-31 sessions don't have this field
+   * (undefined), which shouldResendCard treats as stale so the user
+   * lands on the fresh HTML immediately instead of going through the
+   * version_mismatch round-trip.
+   */
+  appVersion?: number
+}
+
+/**
+ * Decide whether `dc_open_agent_settings` (and the dispatcher-side
+ * sendInit closure) should send a *new* xdc card to the chat, or just
+ * push a status update to the existing one.
+ *
+ * Pre-fix sendInit always reused the existing session if one existed,
+ * which forced the user through the version_mismatch flow after a
+ * release: their old card detected the higher server version, fired
+ * version_mismatch, the dispatcher re-spawned a fresh card, and the
+ * user saw "outdated, upgrading…" UI flash on the old card.
+ *
+ * The fix: track appVersion per session and only reuse when the
+ * recorded version matches the current on-disk HTML version.
+ *
+ * Reuse rules:
+ *   - No existing session              → send new (true)
+ *   - existing.appVersion === current  → reuse (false)
+ *   - existing.appVersion is undefined → send new (true) — legacy
+ *   - any other mismatch (number/string/NaN) → send new (true)
+ */
+export function shouldResendCard(
+  existing: Session | undefined,
+  currentVersion: number,
+): boolean {
+  if (!existing) return true
+  if (typeof existing.appVersion !== 'number') return true
+  return existing.appVersion !== currentVersion
+}
+
+/**
+ * Pure parser for the sessions-on-disk JSON. Extracted from
+ * loadSessions so the load path is unit-testable without a real
+ * filesystem. Returns an empty array on malformed/missing/non-array
+ * input — never throws.
+ *
+ * Validates each entry shape:
+ *   - msgId, sourceChatId: required, must be numbers
+ *   - appVersion: optional, only kept if it's a number (string/NaN
+ *     are dropped to undefined so === comparisons stay safe)
+ *   - lastSerial: optional, only kept if it's a number
+ */
+export function parseSessions(raw: string): Session[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(parsed)) return []
+  const out: Session[] = []
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== 'object') continue
+    const e = entry as Record<string, unknown>
+    if (typeof e.msgId !== 'number' || typeof e.sourceChatId !== 'number') continue
+    const session: Session = {
+      msgId: e.msgId,
+      sourceChatId: e.sourceChatId,
+    }
+    if (typeof e.lastSerial === 'number') session.lastSerial = e.lastSerial
+    if (typeof e.appVersion === 'number') session.appVersion = e.appVersion
+    out.push(session)
+  }
+  return out
 }
 
 /**
@@ -249,24 +323,7 @@ function persistSessions(): void {
 function loadSessions(): Session[] {
   if (!existsSync(SESSIONS_FILE)) return []
   try {
-    const raw = readFileSync(SESSIONS_FILE, 'utf-8')
-    const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return []
-    const out: Session[] = []
-    for (const entry of parsed) {
-      if (
-        entry && typeof entry === 'object' &&
-        typeof (entry as Session).msgId === 'number' &&
-        typeof (entry as Session).sourceChatId === 'number'
-      ) {
-        out.push({
-          msgId: (entry as Session).msgId,
-          sourceChatId: (entry as Session).sourceChatId,
-          lastSerial: typeof (entry as any).lastSerial === 'number' ? (entry as any).lastSerial : undefined,
-        })
-      }
-    }
-    return out
+    return parseSessions(readFileSync(SESSIONS_FILE, 'utf-8'))
   } catch {
     return []
   }
@@ -403,12 +460,13 @@ async function sendInit(
 ): Promise<Session> {
   await sweepDeadChats(ctx)
   const existing = sessions.get(sourceChatId)
+  const currentVersion = agentSetup.getAgentSetupVersion()
   const draft = blankDraft()
   const leaves = loadAllLeaves()
   const sym = symmetricCombines()
   const payload = {
     type: 'init' as const,
-    version: agentSetup.getAgentSetupVersion(),
+    version: currentVersion,
     draft: {
       ...draft,
       skipPermissions: agents.getSkipPermissions(draft as agents.AgentDef),
@@ -440,7 +498,12 @@ async function sendInit(
     href: 'index.html',
   })
 
-  if (existing) {
+  // 2026-05-31 (Joe chat 14 msg 8916+): reuse the existing card only when its
+  // recorded appVersion matches the current on-disk HTML version. Otherwise
+  // we'd be pushing an update to a STALE card that would then fire
+  // version_mismatch and force the user through the "outdated, upgrading…"
+  // flow. shouldResendCard codifies the decision (see helper for the table).
+  if (existing && !shouldResendCard(existing, currentVersion)) {
     await ctx.client.sendWebXDCUpdate(existing.msgId, update)
     return existing
   }
@@ -452,11 +515,22 @@ async function sendInit(
     unlinkSync(xdcPath)
   } catch {}
   await ctx.client.sendWebXDCUpdate(msgId, update)
-  const session: Session = { msgId, sourceChatId }
+  // Drop the old session BEFORE setting the new one — the old msgId is now
+  // stale (we just sent a replacement) and must be unregistered so future
+  // taps on it route to the version_mismatch fallback path, not the active
+  // session.
+  if (existing) {
+    ctx.unregisterWebXDCMsg(existing.msgId)
+  }
+  const session: Session = { msgId, sourceChatId, appVersion: currentVersion }
   sessions.set(sourceChatId, session)
   persistSessions()
   ctx.registerWebXDCMsg(msgId, app, sourceChatId)
-  ctx.logf('agent-setup: sent app (msg %d) to chat %d', msgId, sourceChatId)
+  ctx.logf(
+    'agent-setup: sent app (msg %d, version %s) to chat %d%s',
+    msgId, currentVersion, sourceChatId,
+    existing ? ` (replacing stale msg ${existing.msgId})` : '',
+  )
   return session
 }
 

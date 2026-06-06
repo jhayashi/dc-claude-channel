@@ -12,6 +12,9 @@ import {
   handleListContacts,
   handleAssignRole,
   buildCreateAgentToolsCsv,
+  shouldResendCard,
+  parseSessions,
+  type Session,
 } from '../apps/agent-setup-app.js'
 import type { CoachAnswers } from '../coach.js'
 import * as agents from '../agents.js'
@@ -836,5 +839,113 @@ describe('contact management handlers', () => {
     await handleAssignRole(ctx, 99, 0, 5, null as unknown as string, null)
 
     expect(sendWebXDCUpdate).not.toHaveBeenCalled()
+  })
+})
+
+// ─── version-aware session reuse (chat 14 msg 8950, 2026-05-31) ────────────
+//
+// Joe reported (chat 14 msg 8916/8938) that an old agent-setup card cached
+// client-side from a prior send would render, broadcast a version_mismatch,
+// and surface an "outdated, upgrading…" message before the new card replaced
+// it. Tracing showed sendInit reuses the existing session map entry (just
+// pushes an update to the old msgId) when one exists — regardless of whether
+// the on-disk HTML version has moved past the version that card was sent at.
+//
+// Fix: track appVersion per Session. On sendInit, only reuse the existing
+// session when its recorded version matches the current on-disk HTML version.
+// Otherwise treat it as stale and send a fresh card (skipping the
+// version_mismatch round-trip the old card would have triggered).
+describe('shouldResendCard (version-aware session reuse)', () => {
+  test('no existing session → send new card', () => {
+    expect(shouldResendCard(undefined, 2.15)).toBe(true)
+  })
+
+  test('existing session with matching version → reuse (push update)', () => {
+    const existing: Session = { msgId: 10, sourceChatId: 14, appVersion: 2.15 }
+    expect(shouldResendCard(existing, 2.15)).toBe(false)
+  })
+
+  test('existing session with stale version → send new card', () => {
+    const existing: Session = { msgId: 10, sourceChatId: 14, appVersion: 2.14 }
+    expect(shouldResendCard(existing, 2.15)).toBe(true)
+  })
+
+  test('legacy session without appVersion field → send new card (treat as stale)', () => {
+    // Backwards compat: any session persisted before this change has no
+    // appVersion. Force a fresh card so the user lands on the current HTML
+    // immediately instead of going through the version_mismatch flow.
+    const legacy: Session = { msgId: 10, sourceChatId: 14 }
+    expect(shouldResendCard(legacy, 2.15)).toBe(true)
+  })
+
+  test('appVersion stored as the *float* the HTML reports (no string coercion)', () => {
+    // APP_VERSION is parsed as a float by xdc-builder. The session must
+    // store the same shape so === comparison works without surprises.
+    const existing: Session = { msgId: 10, sourceChatId: 14, appVersion: 2.14 }
+    expect(shouldResendCard(existing, '2.14' as unknown as number)).toBe(true) // type mismatch → resend
+    expect(shouldResendCard(existing, 2.14)).toBe(false) // exact match → reuse
+  })
+})
+
+describe('parseSessions (backwards-compat with legacy sessions file)', () => {
+  test('round-trips appVersion when present', () => {
+    const raw = JSON.stringify([
+      { msgId: 100, sourceChatId: 14, appVersion: 2.15 },
+    ])
+    const out = parseSessions(raw)
+    expect(out).toHaveLength(1)
+    expect(out[0].appVersion).toBe(2.15)
+    expect(out[0].msgId).toBe(100)
+    expect(out[0].sourceChatId).toBe(14)
+  })
+
+  test('loads legacy entries without appVersion as undefined (no error)', () => {
+    const raw = JSON.stringify([
+      { msgId: 100, sourceChatId: 14 }, // pre-version-tracking entry
+    ])
+    const out = parseSessions(raw)
+    expect(out).toHaveLength(1)
+    expect(out[0].appVersion).toBeUndefined()
+  })
+
+  test('preserves lastSerial across the round-trip', () => {
+    const raw = JSON.stringify([
+      { msgId: 100, sourceChatId: 14, appVersion: 2.15, lastSerial: 42 },
+    ])
+    const out = parseSessions(raw)
+    expect(out[0].lastSerial).toBe(42)
+  })
+
+  test('drops malformed entries silently', () => {
+    const raw = JSON.stringify([
+      { msgId: 'not a number', sourceChatId: 14 },
+      { msgId: 100, sourceChatId: 14, appVersion: 2.15 }, // valid
+      'random string',
+      null,
+    ])
+    const out = parseSessions(raw)
+    expect(out).toHaveLength(1)
+    expect(out[0].msgId).toBe(100)
+  })
+
+  test('non-array JSON returns empty array', () => {
+    expect(parseSessions('{}')).toEqual([])
+    expect(parseSessions('null')).toEqual([])
+    expect(parseSessions('"string"')).toEqual([])
+  })
+
+  test('invalid JSON returns empty array', () => {
+    expect(parseSessions('not json{')).toEqual([])
+  })
+
+  test('drops entries where appVersion is non-numeric', () => {
+    // A corrupt persist or a hand-edit could set appVersion to a string.
+    // Load that as undefined rather than poisoning the comparison.
+    const raw = JSON.stringify([
+      { msgId: 100, sourceChatId: 14, appVersion: 'two-point-fifteen' },
+    ])
+    const out = parseSessions(raw)
+    expect(out).toHaveLength(1)
+    expect(out[0].appVersion).toBeUndefined()
   })
 })
