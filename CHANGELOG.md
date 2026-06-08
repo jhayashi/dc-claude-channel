@@ -4,6 +4,15 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.10] — 2026-06-07
+
+Two small follow-ups to v1.4.9 — one user-visible language fix and one agent-setup UX cleanup.
+
+### Fixed
+
+- **Old agent-setup cards no longer flash "outdated, upgrading…" before being replaced.** `sendInit` now tracks `appVersion` per session and only reuses an existing card when its recorded version matches the current on-disk HTML version. Pre-fix, calling `dc_open_agent_settings` after a release would push an update to the stale card, which then detected `serverVersion > APP_VERSION`, fired `version_mismatch`, and forced the user through a fallback round-trip that finally sent a fresh xdc. Post-fix the fresh card is sent upfront and the stale msgId is unregistered. Backwards-compat: legacy sessions persisted before this change have no `appVersion` field; the first `dc_open_agent_settings` call per chat after upgrade sends one fresh card. Two pure helpers (`shouldResendCard`, `parseSessions`) exported for unit testing.
+- **Retired residual "principal" vocabulary in user/LLM-facing strings.** The `dc_check_contact` tool description's tail clause read "…chat members the bot can see but doesn't trust as principals", which the LLM was picking up and echoing as "trusted principal" in responses to users. The `dc_access_unpair` error text used "principal record" instead of "contact record". Both updated to the v1.3+ contact-first vocabulary. Internal code comments + variable names still use "principal"; deferred to a v1.5.0 sweep-pass.
+
 ## [1.4.9] — 2026-05-31
 
 Promotes the per-agent contacts API from documented-but-unwired to actually per-agent across every production call site. The `agentId` parameter on the contacts/capability API has been dead weight since v1.3 — every record was parked under `claude-code.dc/contacts/` regardless of which agent owned the chat. v1.4.9 fixes this end-to-end with a one-time canonical-seed migration at startup, a 19-site read+write call-site sweep, picker scope narrowing, and a CI grep guard that prevents regression.
@@ -794,6 +803,7 @@ First public release of the Delta Chat channel for Claude Code.
 
 [1.3.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.0...v1.3.1
+[1.4.10]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.9...v1.4.10
 [1.4.9]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.8...v1.4.9
 [1.4.8]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.7...v1.4.8
 [1.4.7]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.6...v1.4.7
