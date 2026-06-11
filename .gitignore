@@ -1,4 +1,5 @@
 .worktrees/
+.superpowers/
 plugin/node_modules/
 plugin/dist/
 plugin/webxdc/mini-crossword.html
