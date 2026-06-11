@@ -804,6 +804,28 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .seg .dot.haiku  { background: var(--amber); }
 .seg .dot.sonnet { background: var(--green); }
 .seg .dot.opus   { background: var(--orange); }
+/* v1.4.11: matches UNKNOWN_MODEL_COLOR (Zinc-700) in agent-icons/palettes.ts. */
+.seg .dot.other  { background: #3F3F46; }
+.custom-model-row {
+  margin-top: 8px;
+  display: none;
+}
+.custom-model-row.visible { display: block; }
+.custom-model-row input.text {
+  width: 100%;
+}
+.custom-model-row .help {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.custom-model-row code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+}
 .preview-bar {
   display: flex;
   align-items: center;
@@ -1512,6 +1534,11 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         <button type="button" data-tier="haiku"  aria-pressed="false"><span class="dot haiku"></span>Haiku</button>
         <button type="button" data-tier="sonnet" aria-pressed="true"><span class="dot sonnet"></span>Sonnet</button>
         <button type="button" data-tier="opus"   aria-pressed="false"><span class="dot opus"></span>Opus</button>
+        <button type="button" data-tier="__other__" aria-pressed="false"><span class="dot other"></span>Other…</button>
+      </div>
+      <div class="custom-model-row" id="create-custom-model-row">
+        <input type="text" id="create-custom-model-id" class="text" placeholder="claude-fable-1-0" autocomplete="off" spellcheck="false">
+        <div class="help">Custom Anthropic model ID. Verify it's accepted by <code>claude --model</code> before saving.</div>
       </div>
       <label class="field-label" for="system" style="margin-top:12px;">System prompt <span style="color: var(--ink-faint); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 11px; margin-left: 4px;">optional</span></label>
       <textarea id="system" class="text" maxlength="100000" style="min-height:96px;font-family:inherit;" placeholder="Describe the agent's role, tone, and any constraints. Leave blank to use the default assistant prompt."></textarea>
@@ -1584,6 +1611,11 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         <button type="button" data-tier="haiku"  aria-pressed="false"><span class="dot haiku"></span>Haiku</button>
         <button type="button" data-tier="sonnet" aria-pressed="true"><span class="dot sonnet"></span>Sonnet</button>
         <button type="button" data-tier="opus"   aria-pressed="false"><span class="dot opus"></span>Opus</button>
+        <button type="button" data-tier="__other__" aria-pressed="false"><span class="dot other"></span>Other…</button>
+      </div>
+      <div class="custom-model-row" id="edit-custom-model-row">
+        <input type="text" id="edit-custom-model-id" class="text" placeholder="claude-fable-1-0" autocomplete="off" spellcheck="false">
+        <div class="help">Custom Anthropic model ID. Verify it's accepted by <code>claude --model</code> before saving.</div>
       </div>
       <label class="field-label" for="edit-system" style="margin-top:12px;">System prompt</label>
       <textarea id="edit-system" class="text" maxlength="100000" style="min-height:120px;font-family:inherit;"></textarea>
@@ -1860,12 +1892,17 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 2.14;
+var APP_VERSION = 2.15;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
-  haiku:  { solid: '#B4862A', checker: '#D9B25B' },
-  sonnet: { solid: '#3DA85A', checker: '#65C081' },
-  opus:   { solid: '#D97757', checker: '#F2A778' },
+  haiku:   { solid: '#B4862A', checker: '#D9B25B' },
+  sonnet:  { solid: '#3DA85A', checker: '#65C081' },
+  opus:    { solid: '#D97757', checker: '#F2A778' },
+  // v1.4.11 — mirrors UNKNOWN_MODEL_COLOR in agent-icons/palettes.ts so
+  // the live preview shows the Zinc-grey badge a user-typed custom model
+  // ID will render with server-side. Used for tier='__other__' and for
+  // any other unregistered tier.
+  unknown: { solid: '#3F3F46', checker: '#52525B' },
 };
 
 // Build the inner shape XML for a pattern variant on a 256x256 canvas,
@@ -1949,6 +1986,10 @@ var ARCHETYPE_DEFAULT_GLYPH = {
 };
 
 var TIER_LABEL = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus' };
+// v1.4.11 — what the live preview shows in the "model" label when the
+// user is composing with the "Other…" segment. Stays generic to avoid
+// suggesting the typed ID is validated.
+var CUSTOM_MODEL_LABEL = 'Custom';
 
 function setBadgeSvg(el, svgString) {
   var doc = new DOMParser().parseFromString(svgString, 'image/svg+xml');
@@ -1995,7 +2036,11 @@ function refreshLivePreview(scope) {
     glyph = ARCHETYPE_DEFAULT_GLYPH[createArchetype] || 'user-round';
     pattern = 'checker';
   }
-  setBadgeSvg(badge, renderPreviewSvg(tier, trust, glyph, pattern));
+  // v1.4.11: when the user is on "Other\u2026", preview with the Zinc-grey
+  // unknown palette and a generic "Custom" label \u2014 never silently fall
+  // back to Sonnet (which would mislead about the saved model).
+  var previewTier = (tier === '__other__') ? 'unknown' : tier;
+  setBadgeSvg(badge, renderPreviewSvg(previewTier, trust, glyph, pattern));
   if (scope === 'create' && !rawName) {
     nameEl.textContent = 'Unnamed agent';
     nameEl.style.color = 'var(--ink-mute)';
@@ -2005,7 +2050,10 @@ function refreshLivePreview(scope) {
     nameEl.style.color = '';
     nameEl.style.fontWeight = '';
   }
-  infoEl.textContent = (TIER_LABEL[tier] || 'Sonnet') + (trust ? ' \u2022 Trusted' : '');
+  var tierLabelText = (tier === '__other__')
+    ? CUSTOM_MODEL_LABEL
+    : (TIER_LABEL[tier] || 'Sonnet');
+  infoEl.textContent = tierLabelText + (trust ? ' \u2022 Trusted' : '');
 }
 
 var draft = null;
@@ -2055,14 +2103,50 @@ function populateModelDropdowns(availableModels, defaultModel) {
   if (defaultModel) DEFAULT_MODEL_ID = defaultModel;
 }
 
-// Infer a tier for an arbitrary model id. Falls back to substring match
-// so unknown ids still map sensibly.
+// Infer a tier for an arbitrary model id. v1.4.11: mirrors
+// plugin/models.ts:TIER_FROM_ID_RE — manifest-first lookup, then regex
+// extract on the claude-<tier>-<N>-<N> prefix, then a substring
+// heuristic for legacy/alias inputs ("sonnet" alone, etc.), else
+// 'unknown'. The picker uses the result to decide which segmented-
+// control button to highlight on load.
 function tierForModel(id) {
   if (!id) return 'sonnet';
   if (MODEL_TIERS[id]) return MODEL_TIERS[id];
-  if (id.indexOf('opus')  >= 0) return 'opus';
-  if (id.indexOf('haiku') >= 0) return 'haiku';
-  return 'sonnet';
+  var m = /^claude-([a-z]+)-/i.exec(id);
+  if (m) return m[1].toLowerCase();
+  if (id.indexOf('opus')   >= 0) return 'opus';
+  if (id.indexOf('haiku')  >= 0) return 'haiku';
+  if (id.indexOf('sonnet') >= 0) return 'sonnet';
+  return 'unknown';
+}
+
+// v1.4.11: is this an id the dropdown knows about (so we can preselect
+// its tier in the segmented control), or a custom id (so we preselect
+// "Other…" and populate the text input)?
+function isKnownModelId(id) {
+  return !!(id && MODEL_TIERS[id]);
+}
+
+// Wire show/hide of a custom-model-id row to the matching segmented
+// control. Called once per form during init.
+function wireCustomModelId(segId, rowId) {
+  var segEl = document.getElementById(segId);
+  var rowEl = document.getElementById(rowId);
+  if (!segEl || !rowEl) return;
+  var buttons = segEl.querySelectorAll('button[data-tier]');
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].addEventListener('click', function (e) {
+      var t = e.currentTarget.getAttribute('data-tier');
+      if (t === '__other__') rowEl.classList.add('visible');
+      else rowEl.classList.remove('visible');
+    });
+  }
+  // Initial state — sync to whatever data-value is on segEl right now.
+  if (segEl.getAttribute('data-value') === '__other__') {
+    rowEl.classList.add('visible');
+  } else {
+    rowEl.classList.remove('visible');
+  }
 }
 
 // Resolve the segmented control's tier choice to a concrete model id.
@@ -3906,7 +3990,19 @@ function populateForm() {
   document.getElementById('name').value = draft.name || '';
   var createSeg = document.getElementById('create-model-seg');
   wireSeg(createSeg, function () { refreshLivePreview('create'); });
-  segSetValue(createSeg, tierForModel(draft.model || DEFAULT_MODEL_ID));
+  // v1.4.11: if the draft's model is in the manifest, preselect its tier;
+  // otherwise treat it as a custom ID and select __other__ + populate the
+  // text input. New drafts have model=undefined → tierForModel returns
+  // 'sonnet' → segment lands on Sonnet (existing behavior).
+  var createModelId = draft.model || DEFAULT_MODEL_ID;
+  if (isKnownModelId(createModelId) || !draft.model) {
+    segSetValue(createSeg, tierForModel(createModelId));
+    document.getElementById('create-custom-model-id').value = '';
+  } else {
+    segSetValue(createSeg, '__other__');
+    document.getElementById('create-custom-model-id').value = createModelId;
+  }
+  wireCustomModelId('create-model-seg', 'create-custom-model-row');
   document.getElementById('system').value = draft.system || '';
   var createTrust = document.getElementById('skip-permissions');
   createTrust.checked = !!draft.skipPermissions;
@@ -3934,7 +4030,18 @@ function populateEditForm() {
   document.getElementById('edit-name').value = draft.name || '';
   var editSeg = document.getElementById('edit-model-seg');
   wireSeg(editSeg, function () { refreshLivePreview('edit'); });
-  segSetValue(editSeg, tierForModel(draft.model || DEFAULT_MODEL_ID));
+  // v1.4.11: if the existing agent's model is in the manifest, preselect
+  // its tier; otherwise treat it as a custom ID and select __other__ +
+  // populate the text input so the user sees what's currently saved.
+  var editModelId = draft.model || DEFAULT_MODEL_ID;
+  if (isKnownModelId(editModelId)) {
+    segSetValue(editSeg, tierForModel(editModelId));
+    document.getElementById('edit-custom-model-id').value = '';
+  } else {
+    segSetValue(editSeg, '__other__');
+    document.getElementById('edit-custom-model-id').value = editModelId;
+  }
+  wireCustomModelId('edit-model-seg', 'edit-custom-model-row');
   document.getElementById('edit-system').value = draft.system || '';
   var trust = document.getElementById('edit-skip-permissions');
   trust.checked = !!draft.skipPermissions;
@@ -4001,9 +4108,25 @@ function saveEdit() {
   pendingAction = 'edit';
   document.getElementById('save-btn').disabled = true;
   var editTier = segGetValue(document.getElementById('edit-model-seg'));
+  // v1.4.11: "Other…" sentinel reads the custom-model-id text input
+  // and passes the value verbatim to the server. Empty → block save
+  // with a focus on the input.
+  var editModelId;
+  if (editTier === '__other__') {
+    editModelId = (document.getElementById('edit-custom-model-id').value || '').trim();
+    if (!editModelId) {
+      creating = false;
+      pendingAction = null;
+      document.getElementById('save-btn').disabled = false;
+      document.getElementById('edit-custom-model-id').focus();
+      return;
+    }
+  } else {
+    editModelId = resolveModelFromTier(editTier, draft && draft.model);
+  }
   var cfg = {
     name: document.getElementById('edit-name').value.trim() || draft.name,
-    model: resolveModelFromTier(editTier, draft && draft.model),
+    model: editModelId,
     system: document.getElementById('edit-system').value,
     tools: [],
   };
@@ -4051,9 +4174,25 @@ function create() {
   pendingAction = 'create';
   document.getElementById('create-btn').disabled = true;
   var createTier = segGetValue(document.getElementById('create-model-seg'));
+  // v1.4.11: "Other…" sentinel reads the custom-model-id text input
+  // and passes the value verbatim. Empty → block create with focus
+  // on the input.
+  var createModelId;
+  if (createTier === '__other__') {
+    createModelId = (document.getElementById('create-custom-model-id').value || '').trim();
+    if (!createModelId) {
+      creating = false;
+      pendingAction = null;
+      document.getElementById('create-btn').disabled = false;
+      document.getElementById('create-custom-model-id').focus();
+      return;
+    }
+  } else {
+    createModelId = resolveModelFromTier(createTier, draft && draft.model);
+  }
   var cfg = {
     name: nameVal,
-    model: resolveModelFromTier(createTier, draft && draft.model),
+    model: createModelId,
     system: document.getElementById('system').value,
     tools: [],
   };
