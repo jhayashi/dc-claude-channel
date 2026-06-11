@@ -4,6 +4,24 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.11] — 2026-06-11
+
+Lets you type any Claude model ID into the agent-setup picker (e.g. `claude-fable-1-0`) without waiting for a plugin release. Tier is now opaque `string` internally; unregistered tiers render with a neutral Zinc-grey badge color so the picker accepts new Anthropic releases the moment they ship.
+
+### Added
+
+- **"Other (custom model ID)…" option in the agent-setup picker.** Both the new-agent and edit-agent model segmented controls gain a fourth segment that reveals a free-text input. Whatever you type is passed verbatim to `claude --model` — CC validates it at subagent spawn time. Editing an existing agent whose `model` field isn't in the curated manifest auto-preselects "Other…" and populates the input with the saved ID. APP_VERSION 2.14 → 2.15.
+- **`UNKNOWN_MODEL_COLOR`** (`#3F3F46` solid / `#52525B` checker, Zinc-700/600). Fallback for tiers not registered in `MODEL_COLORS`. Adding a `MODEL_COLORS` entry for a new tier is now *optional* — the picker accepts any model ID and badges still render with a neutral color when the tier is unrecognized.
+
+### Changed
+
+- **Tier is opaque `string` internally.** Dropped the `ModelTier` and `ModelFamily` TypeScript unions (kept as type aliases for backwards compat through v1.4.x; slated for removal in v1.5.0). `tierForModel(id)` keeps manifest-first lookup, then falls back to a regex extract on the `claude-<tier>-` prefix; IDs that don't match return `'unknown'`. `models.json` is now a *curated convenience list*, not a gatekeeper.
+- **NL "switch to X" tier alphabet derived from `MODELS` manifest at runtime.** Adding a tier to `plugin/models.json` automatically enables NL "switch to <tier>" without a code change. Custom IDs typed via the picker do NOT get NL switching by design — that's the curated vs power-user split. "switch to fable" returns null and falls through to the subagent until a Fable entry lands in the manifest.
+
+### Migration notes
+
+No user action required. Existing agents with built-in models work unchanged. To use a new Anthropic model the moment Anthropic ships it (Fable, future Opus 5, …), open the agent-setup card, pick "Other…" on the model row, type the ID, save. If the ID isn't accepted by `claude --model`, the subagent crash surfaces a clear error on the next turn (captured by the v1.4.8 stderr-capture work). Existing v1.4.10 sessions auto-upgrade to the new picker on the next `dc_open_agent_settings` call without a version_mismatch round-trip (per the v1.4.10 per-session version tracking).
+
 ## [1.4.10] — 2026-06-07
 
 Two small follow-ups to v1.4.9 — one user-visible language fix and one agent-setup UX cleanup.
@@ -803,6 +821,7 @@ First public release of the Delta Chat channel for Claude Code.
 
 [1.3.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.0...v1.3.1
+[1.4.11]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.10...v1.4.11
 [1.4.10]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.9...v1.4.10
 [1.4.9]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.8...v1.4.9
 [1.4.8]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.7...v1.4.8

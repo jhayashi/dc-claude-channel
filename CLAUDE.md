@@ -26,6 +26,8 @@ A v1.3 → v1.4 migration runs once at dispatcher startup: every `<id>/definitio
 
 For the import/export flow, the v1.2 wall+coach creation flow, per-agent tool-access restrictions, and migration details, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and the spec at `docs/superpowers/specs/2026-05-16-cc-agent-compatibility-design.md`.
 
+**Custom model IDs (v1.4.11+):** the `model` frontmatter field accepts any string `claude --model` will accept — not just IDs in the curated `plugin/models.json`. The agent-setup card's model picker has an "Other (custom model ID)…" segment that reveals a free-text input; whatever the user types is passed verbatim to the subagent at spawn. `tierForModel(id)` falls back to a regex extract on the `claude-<tier>-` prefix when the manifest doesn't know an ID; unrecognized tiers render with the `UNKNOWN_MODEL_COLOR` Zinc-grey fallback. NL "switch to X" only resolves tiers that appear in the manifest — custom IDs are picker-only by design. Spec: `docs/superpowers/specs/2026-06-10-custom-model-ids-design.md`.
+
 ## Subagent model
 
 Every paired chat that recently sent a message has a persistent `claude -p` subagent process handling it, kept alive in an LRU cache (default 8 active, 15 min idle timeout). DC tool calls from a subagent flow through a tools-proxy MCP over a Unix socket. Tool calls are gated by the owner's global paired-chats allowlist — a subagent can read or post into any chat the owner has paired.
