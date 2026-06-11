@@ -1,16 +1,24 @@
 /**
  * Static configuration for the runtime agent badge renderer. Maps model
- * families to color tokens and archetypes to curated Lucide glyph palettes.
+ * tiers to color tokens and archetypes to curated Lucide glyph palettes.
  *
  * Adding a glyph: drop the SVG into glyphs/, then add its name to the
  * appropriate ARCHETYPE_PALETTES array.
  *
- * Adding a model family: add an entry to MODEL_COLORS and update
- * ModelFamily union. The existing tierForModel() in plugin/models.ts
- * may also need an update if the new family should be auto-detected.
+ * Adding a tier color: add an entry to MODEL_COLORS keyed by the tier
+ * string. v1.4.11 dropped the ModelFamily union — tier is now opaque
+ * string (see plugin/models.ts:tierForModel). Unknown tiers (anything
+ * not registered below) fall back to UNKNOWN_MODEL_COLOR at the
+ * renderer caller, so adding a color is *optional* — the picker accepts
+ * any model ID without it.
  */
 
-export type ModelFamily = 'haiku' | 'sonnet' | 'opus'
+/**
+ * Kept for backwards-compat with v1.4.x consumers that imported the
+ * type alias. v1.4.11 makes it equivalent to `string` so non-canonical
+ * tiers (fable, future Anthropic releases) typecheck. Remove in v1.5.0.
+ */
+export type ModelFamily = string
 
 export interface ModelPalette {
   /** Solid background hex color. */
@@ -19,10 +27,21 @@ export interface ModelPalette {
   checker: string
 }
 
-export const MODEL_COLORS: Record<ModelFamily, ModelPalette> = {
+export const MODEL_COLORS: Record<string, ModelPalette> = {
   haiku: { solid: '#B4862A', checker: '#D9B25B' },
   sonnet: { solid: '#3DA85A', checker: '#65C081' },
   opus: { solid: '#D97757', checker: '#F2A778' },
+}
+
+/**
+ * v1.4.11 fallback for tiers not registered in MODEL_COLORS — e.g.,
+ * a user-typed `claude-fable-1-0` in the picker. Zinc-700 solid /
+ * Zinc-600 checker: a neutral dark grey that reads as "not categorized"
+ * without competing with the registered-tier palette.
+ */
+export const UNKNOWN_MODEL_COLOR: ModelPalette = {
+  solid: '#3F3F46',
+  checker: '#52525B',
 }
 
 export const ARCHETYPE_PALETTES = {

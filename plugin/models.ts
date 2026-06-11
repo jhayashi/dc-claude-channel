@@ -12,7 +12,13 @@
 
 import { readFileSync } from 'node:fs'
 
-export type ModelTier = 'opus' | 'sonnet' | 'haiku'
+// v1.4.11 — tier is opaque `string`, not a closed union. plugin/models.json
+// is a curated convenience list, not a gatekeeper. User-typed IDs in the
+// agent-setup picker get their tier inferred via TIER_FROM_ID_RE below.
+// Kept as a type alias (not deleted) so existing imports continue to
+// compile through v1.4.x; remove in v1.5.0 once all consumers reference
+// `string` directly.
+export type ModelTier = string
 
 /**
  * Reasoning effort levels accepted by `claude --effort <level>` (CLI 2.1+).
@@ -66,9 +72,25 @@ export function inheritClaudeMdForModel(id: string): boolean {
   return getModel(id)?.inheritClaudeMd ?? true
 }
 
-/** Tier bucket for icon/prompt lookups. Unknowns default to sonnet. */
-export function tierForModel(id: string): ModelTier {
-  return getModel(id)?.tier ?? 'sonnet'
+/**
+ * v1.4.11 — claude-<tier>-<N>-<N> ID prefix. When the manifest doesn't
+ * know an ID, we extract the tier from the ID itself. Non-Anthropic IDs
+ * (gpt-4, llama-…) don't match, so they return 'unknown' — which the
+ * badge renderer resolves to UNKNOWN_MODEL_COLOR (Zinc-grey).
+ */
+const TIER_FROM_ID_RE = /^claude-([a-z]+)-/i
+
+/**
+ * Tier bucket for icon/prompt lookups. Manifest-first lookup wins;
+ * unknown IDs fall back to a regex extract on the claude-<tier>- prefix.
+ * IDs that don't match the regex return 'unknown' — the renderer falls
+ * through to UNKNOWN_MODEL_COLOR.
+ */
+export function tierForModel(id: string): string {
+  const known = getModel(id)
+  if (known) return known.tier
+  const m = TIER_FROM_ID_RE.exec(id)
+  return m ? m[1].toLowerCase() : 'unknown'
 }
 
 /**

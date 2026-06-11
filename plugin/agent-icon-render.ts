@@ -30,6 +30,7 @@ import { homedir } from 'node:os'
 import type { Archetype } from './agents.js'
 import {
   MODEL_COLORS,
+  UNKNOWN_MODEL_COLOR,
   ARCHETYPE_DEFAULT_GLYPH,
   type ModelFamily,
   type PatternId,
@@ -39,6 +40,11 @@ export type { ModelFamily, PatternId } from './agent-icons/palettes.js'
 
 export interface BadgeInputs {
   archetype: Archetype
+  /**
+   * Tier/family token (e.g. 'opus', 'sonnet', 'haiku', 'fable', …). v1.4.11
+   * widened from the closed ModelFamily union to opaque `string` —
+   * unregistered tiers render with UNKNOWN_MODEL_COLOR (Zinc-grey).
+   */
   modelFamily: ModelFamily
   trust: boolean
   glyph: string
@@ -185,7 +191,9 @@ export async function renderAgentBadge(inputs: BadgeInputs): Promise<string> {
 
   const fallback = ARCHETYPE_DEFAULT_GLYPH[inputs.archetype]
   const inner = readGlyphInner(inputs.glyph, fallback)
-  const palette = MODEL_COLORS[inputs.modelFamily]
+  // v1.4.11: unregistered tier → UNKNOWN_MODEL_COLOR Zinc-grey. The
+  // picker accepts any model ID without requiring a MODEL_COLORS entry.
+  const palette = MODEL_COLORS[inputs.modelFamily] ?? UNKNOWN_MODEL_COLOR
   const svg = buildBadgeSvg(inner, palette.solid, palette.checker, inputs.pattern, inputs.trust)
   const png = new Resvg(svg).render().asPng()
   writeFileSync(out, png)
