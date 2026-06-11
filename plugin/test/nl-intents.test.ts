@@ -1,4 +1,6 @@
 import { describe, test, expect } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { classifyIntent, shouldClassify } from '../nl-intents.js'
 
 describe('NL intent classifier — positive cases', () => {
@@ -122,5 +124,34 @@ describe('shouldClassify gate', () => {
   test('returns true when chat has no coach session', () => {
     const fakeSessions = new Map<number, unknown>()
     expect(shouldClassify(43, fakeSessions)).toBe(true)
+  })
+})
+
+// v1.4.11 — NL switch tier alphabet derived from MODELS at runtime so
+// adding a tier to plugin/models.json automatically enables NL switching.
+// Custom IDs typed via the agent-setup picker do NOT get NL switching
+// (curated vs power-user split).
+describe('NL intent classifier — v1.4.11 manifest-derived tier alphabet', () => {
+  test('does not classify "switch to fable" (fable not in manifest)', () => {
+    expect(classifyIntent('switch to fable')).toBeNull()
+    expect(classifyIntent('use fable')).toBeNull()
+    expect(classifyIntent('I want fable')).toBeNull()
+  })
+
+  test('still classifies switch to known manifest tiers', () => {
+    expect(classifyIntent('switch to opus')).toEqual({ kind: 'model-switch', tier: 'opus' })
+    expect(classifyIntent('use sonnet')).toEqual({ kind: 'model-switch', tier: 'sonnet' })
+    expect(classifyIntent('I want haiku')).toEqual({ kind: 'model-switch', tier: 'haiku' })
+  })
+
+  // Structural regression guard: the regex tier alphabet must be sourced
+  // from MODELS at runtime, not hardcoded. If a future edit reintroduces
+  // (haiku|sonnet|opus) as a string literal in nl-intents.ts, this test
+  // fails so the author has to consciously revert the v1.4.11 mechanism.
+  test('source references MODELS.map for tier alphabet (regression guard)', () => {
+    const src = readFileSync(join(import.meta.dir, '..', 'nl-intents.ts'), 'utf-8')
+    expect(src).toMatch(/MODELS\.map/)
+    // The literal "(haiku|sonnet|opus)" must not appear in source after Phase B.
+    expect(src).not.toMatch(/\(haiku\|sonnet\|opus\)/)
   })
 })

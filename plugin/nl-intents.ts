@@ -10,11 +10,21 @@
  * land in the coach state machine, not the classifier.
  */
 
+import { MODELS } from './models.js'
+
 export type Intent =
-  | { kind: 'model-switch'; tier: 'haiku' | 'sonnet' | 'opus' }
+  | { kind: 'model-switch'; tier: string }
   | { kind: 'trust-toggle'; value: boolean }
   | { kind: 'refine' }
   | null
+
+// v1.4.11 — tier alphabet derived from MODELS at module load, not
+// hardcoded. Adding a tier to plugin/models.json automatically enables
+// NL "switch to <tier>" without a code change. Custom IDs typed via
+// the agent-setup picker do NOT get NL switching by design — NL stays
+// the "curated" path; the picker is the unrestricted power-user path
+// (D6 in the spec).
+const TIER_ALPHABET = [...new Set(MODELS.map(m => m.tier))].join('|')
 
 // Match commands like "switch to opus", "switch model to opus" — the
 // user is directing the agent. Required: an action verb followed by a
@@ -22,15 +32,24 @@ export type Intent =
 // Keeps "I switched majors in college" and "switch hands when you tire"
 // out (the verb pattern uses `\s+` after, so past-tense "switched" can't
 // match the bare "switch" alternative).
-const MODEL_RE = /\b(?:switch|change|swap|set|move|downgrade|upgrade)\s+(?:to|over\s+to|(?:the\s+)?(?:model|tier)\s+to)\s+(?:claude\s+)?(haiku|sonnet|opus)\b/i
+const MODEL_RE = new RegExp(
+  `\\b(?:switch|change|swap|set|move|downgrade|upgrade)\\s+(?:to|over\\s+to|(?:the\\s+)?(?:model|tier)\\s+to)\\s+(?:claude\\s+)?(${TIER_ALPHABET})\\b`,
+  'i',
+)
 // Imperative "use <tier>" / "run <tier>" — anchored to start so
 // "we use claude haiku for fast tasks" stays out. Prefix list covers
 // the common imperative leaders ("let's", "I want to", "we should", etc).
-const MODEL_USE_RE = /^(?:please\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+|let'?s\s+|i\s+(?:want\s+to\s+|would\s+like\s+to\s+|'d\s+like\s+to\s+|just\s+want\s+to\s+)|we\s+(?:should\s+|could\s+|need\s+to\s+)|go\s+ahead\s+and\s+)?(?:use|run|go\s+with)\s+(?:claude\s+)?(haiku|sonnet|opus)\b/i
+const MODEL_USE_RE = new RegExp(
+  `^(?:please\\s+|can\\s+you\\s+|could\\s+you\\s+|would\\s+you\\s+|let'?s\\s+|i\\s+(?:want\\s+to\\s+|would\\s+like\\s+to\\s+|'d\\s+like\\s+to\\s+|just\\s+want\\s+to\\s+)|we\\s+(?:should\\s+|could\\s+|need\\s+to\\s+)|go\\s+ahead\\s+and\\s+)?(?:use|run|go\\s+with)\\s+(?:claude\\s+)?(${TIER_ALPHABET})\\b`,
+  'i',
+)
 // "I want haiku" / "give me opus" / "make it sonnet" — preference style
 // (no use/run verb). Anchored so "I read a haiku about mountains" stays
 // out (sentence starts with "I read", not a preference verb).
-const MODEL_PREFER_RE = /^(?:please\s+)?(?:i\s+(?:want|need|prefer|would\s+like|'d\s+like|just\s+want)|give\s+me|make\s+(?:it|this)|let'?s\s+(?:do|go\s+with))\s+(?:claude\s+)?(haiku|sonnet|opus)\b/i
+const MODEL_PREFER_RE = new RegExp(
+  `^(?:please\\s+)?(?:i\\s+(?:want|need|prefer|would\\s+like|'d\\s+like|just\\s+want)|give\\s+me|make\\s+(?:it|this)|let'?s\\s+(?:do|go\\s+with))\\s+(?:claude\\s+)?(${TIER_ALPHABET})\\b`,
+  'i',
+)
 
 // Trust on/off — explicit imperatives. The phrase must stand alone (whole
 // utterance, optionally with punctuation), so "build trust" / "trust fund"
@@ -78,15 +97,15 @@ export function classifyIntent(text: string): Intent {
   // Model switch — only if the action verb + tier appear AND not inside quotes.
   let m = MODEL_RE.exec(t)
   if (m && !isInQuotes(t, m.index, m.index + m[0].length)) {
-    return { kind: 'model-switch', tier: m[1].toLowerCase() as 'haiku' | 'sonnet' | 'opus' }
+    return { kind: 'model-switch', tier: m[1].toLowerCase() }
   }
   m = MODEL_USE_RE.exec(t)
   if (m && !isInQuotes(t, m.index, m.index + m[0].length)) {
-    return { kind: 'model-switch', tier: m[1].toLowerCase() as 'haiku' | 'sonnet' | 'opus' }
+    return { kind: 'model-switch', tier: m[1].toLowerCase() }
   }
   m = MODEL_PREFER_RE.exec(t)
   if (m && !isInQuotes(t, m.index, m.index + m[0].length)) {
-    return { kind: 'model-switch', tier: m[1].toLowerCase() as 'haiku' | 'sonnet' | 'opus' }
+    return { kind: 'model-switch', tier: m[1].toLowerCase() }
   }
 
   // Refine
