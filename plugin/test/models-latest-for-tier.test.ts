@@ -2,9 +2,13 @@ import { test, expect } from 'bun:test'
 import { latestModelForTier, tierForModel } from '../models'
 
 test('latestModelForTier returns the newest id for each tier', () => {
-  expect(latestModelForTier('opus')).toBe('claude-opus-4-7')
+  // v1.4.12 — Opus 4.8 listed first in models.json (newest-first per tier
+  // convention) → latestModelForTier('opus') returns 4.8. Fable 5 is its
+  // own tier so latestModelForTier('fable') returns claude-fable-5.
+  expect(latestModelForTier('opus')).toBe('claude-opus-4-8')
   expect(latestModelForTier('sonnet')).toBe('claude-sonnet-4-6')
   expect(latestModelForTier('haiku')).toBe('claude-haiku-4-5')
+  expect(latestModelForTier('fable')).toBe('claude-fable-5')
 })
 
 // v1.4.11 — tierForModel must accept any user-typed model id and infer
@@ -13,14 +17,18 @@ test('latestModelForTier returns the newest id for each tier', () => {
 // 'unknown' so the badge renderer falls through to UNKNOWN_MODEL_COLOR.
 
 test('tierForModel: manifest-first lookup wins over regex', () => {
+  expect(tierForModel('claude-opus-4-8')).toBe('opus')
   expect(tierForModel('claude-opus-4-7')).toBe('opus')
   expect(tierForModel('claude-sonnet-4-6')).toBe('sonnet')
   expect(tierForModel('claude-haiku-4-5')).toBe('haiku')
+  expect(tierForModel('claude-fable-5')).toBe('fable')
 })
 
-test('tierForModel: extracts tier from claude-<tier>-<N>-<N> IDs not in manifest', () => {
-  expect(tierForModel('claude-fable-1-0')).toBe('fable')
+test('tierForModel: extracts tier from claude-<tier>-<N> IDs not in manifest', () => {
   expect(tierForModel('claude-zephyr-3-2')).toBe('zephyr')
+  // claude-mythos-5 is invitation-only (Project Glasswing) — not in our
+  // curated manifest, but the regex extracts its tier correctly.
+  expect(tierForModel('claude-mythos-5')).toBe('mythos')
 })
 
 test('tierForModel: case-insensitive regex extract, returns lowercase', () => {

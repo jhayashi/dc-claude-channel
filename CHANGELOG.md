@@ -4,6 +4,23 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.12] — 2026-06-11
+
+Officially registers Opus 4.8 and Fable 5 in the curated manifest. Both gain proper labels, NL "switch to X" support, and curated badge colors (Fable in deep purple). Eats v1.4.11's own dog-food: the only code changes were one `models.json` edit, one palette entry, one HTML segment button, and APP_VERSION 2.15 → 2.16. No type-system changes were needed (Phase A of v1.4.11 made tier opaque `string`).
+
+### Added
+
+- **`claude-opus-4-8` ("Opus 4.8")** — Anthropic's most capable Opus-tier model (Jan 2026 knowledge cutoff, 1M context, $5/$25 per MTok). Listed first in the `opus` tier so `latestModelForTier('opus')` and "switch to opus" now resolve to 4.8. Existing Opus 4.7 / 4.6 stay listed as historical options. Per Anthropic's docs, `effort` defaults to `high` on Opus 4.8 across all surfaces including Claude Code; set explicitly to override.
+- **`claude-fable-5` ("Fable 5")** — Anthropic's most capable widely-released model as of 2026-06-09 (1M context, 128k output, adaptive thinking always on, $10/$50 per MTok). New `fable` tier with first-class picker support: a "Fable" segment in both the create-agent and edit-agent forms, deep-purple badge (Violet-700 / Violet-400, mirroring the established dark-solid + lighter-same-hue pattern), and automatic NL switching ("switch to fable", "use fable", etc.) — all enabled by v1.4.11's manifest-derived tier alphabet. The agent-setup `APP_VERSION` bumps 2.15 → 2.16.
+
+### Fixed
+
+- **`preview-palette-parity` test correctly covers the v1.4.11 `unknown` fallback.** v1.4.11 added `unknown` to PREVIEW_PALETTE in `agent-setup.html` to support the live preview when "Other…" is selected, but the parity test still compared raw `MODEL_COLORS` keys and silently went stale. Updated to expect MODEL_COLORS entries *plus* an `unknown` entry mirroring `UNKNOWN_MODEL_COLOR`. Now correctly catches drift in either direction.
+
+### Migration notes
+
+No user action. After dispatcher restart, new agents created via the picker can choose Fable as a curated segment. Existing agents on `claude-opus-4-7` keep using 4.7 — their `model:` field is unchanged. To migrate to Opus 4.8: edit the agent (Manage agents → tap agent → Model row), tap Opus, save. Existing v1.4.11 sessions auto-upgrade to the v2.16 card on the next `dc_open_agent_settings` call (per v1.4.10's per-session version tracking).
+
 ## [1.4.11] — 2026-06-11
 
 Lets you type any Claude model ID into the agent-setup picker (e.g. `claude-fable-1-0`) without waiting for a plugin release. Tier is now opaque `string` internally; unregistered tiers render with a neutral Zinc-grey badge color so the picker accepts new Anthropic releases the moment they ship.
@@ -821,6 +838,7 @@ First public release of the Delta Chat channel for Claude Code.
 
 [1.3.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.0...v1.3.1
+[1.4.12]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.11...v1.4.12
 [1.4.11]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.10...v1.4.11
 [1.4.10]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.9...v1.4.10
 [1.4.9]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.8...v1.4.9

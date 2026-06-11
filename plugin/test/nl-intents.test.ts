@@ -132,16 +132,30 @@ describe('shouldClassify gate', () => {
 // Custom IDs typed via the agent-setup picker do NOT get NL switching
 // (curated vs power-user split).
 describe('NL intent classifier — v1.4.11 manifest-derived tier alphabet', () => {
-  test('does not classify "switch to fable" (fable not in manifest)', () => {
-    expect(classifyIntent('switch to fable')).toBeNull()
-    expect(classifyIntent('use fable')).toBeNull()
-    expect(classifyIntent('I want fable')).toBeNull()
+  // v1.4.12 update — Fable is now in the manifest (claude-fable-5,
+  // Anthropic's most-capable widely-released model as of 2026-06-09).
+  // NL "switch to fable" must classify the same way "switch to opus"
+  // does. This is the proof that v1.4.11's manifest-derived tier
+  // alphabet works end-to-end: a one-line models.json edit auto-
+  // enables NL switching for a new tier with no code change to
+  // nl-intents.ts.
+  test('classifies switch to fable now that fable is in the manifest', () => {
+    expect(classifyIntent('switch to fable')).toEqual({ kind: 'model-switch', tier: 'fable' })
+    expect(classifyIntent('use fable')).toEqual({ kind: 'model-switch', tier: 'fable' })
+    expect(classifyIntent('I want fable')).toEqual({ kind: 'model-switch', tier: 'fable' })
   })
 
   test('still classifies switch to known manifest tiers', () => {
     expect(classifyIntent('switch to opus')).toEqual({ kind: 'model-switch', tier: 'opus' })
     expect(classifyIntent('use sonnet')).toEqual({ kind: 'model-switch', tier: 'sonnet' })
     expect(classifyIntent('I want haiku')).toEqual({ kind: 'model-switch', tier: 'haiku' })
+  })
+
+  test('does not classify switch to truly unknown tiers (not in manifest)', () => {
+    // Mythos is invitation-only via Project Glasswing; not in our curated
+    // list. NL stays the curated path — custom IDs go through the picker.
+    expect(classifyIntent('switch to mythos')).toBeNull()
+    expect(classifyIntent('switch to zephyr')).toBeNull()
   })
 
   // Structural regression guard: the regex tier alphabet must be sourced

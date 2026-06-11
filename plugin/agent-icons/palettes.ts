@@ -31,6 +31,11 @@ export const MODEL_COLORS: Record<string, ModelPalette> = {
   haiku: { solid: '#B4862A', checker: '#D9B25B' },
   sonnet: { solid: '#3DA85A', checker: '#65C081' },
   opus: { solid: '#D97757', checker: '#F2A778' },
+  // v1.4.12 — Fable becomes an officially supported tier (Claude Fable 5,
+  // anthropic.com 2026-06-09). Deep purple per Joe's call: Violet-700
+  // solid / Violet-400 checker — dark-solid + lighter-same-hue, matching
+  // the established palette pattern.
+  fable: { solid: '#6D28D9', checker: '#A78BFA' },
 }
 
 /**

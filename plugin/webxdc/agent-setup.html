@@ -804,6 +804,8 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .seg .dot.haiku  { background: var(--amber); }
 .seg .dot.sonnet { background: var(--green); }
 .seg .dot.opus   { background: var(--orange); }
+/* v1.4.12: matches MODEL_COLORS.fable (Violet-700) in agent-icons/palettes.ts. */
+.seg .dot.fable  { background: #6D28D9; }
 /* v1.4.11: matches UNKNOWN_MODEL_COLOR (Zinc-700) in agent-icons/palettes.ts. */
 .seg .dot.other  { background: #3F3F46; }
 .custom-model-row {
@@ -1534,6 +1536,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         <button type="button" data-tier="haiku"  aria-pressed="false"><span class="dot haiku"></span>Haiku</button>
         <button type="button" data-tier="sonnet" aria-pressed="true"><span class="dot sonnet"></span>Sonnet</button>
         <button type="button" data-tier="opus"   aria-pressed="false"><span class="dot opus"></span>Opus</button>
+        <button type="button" data-tier="fable"  aria-pressed="false"><span class="dot fable"></span>Fable</button>
         <button type="button" data-tier="__other__" aria-pressed="false"><span class="dot other"></span>Other…</button>
       </div>
       <div class="custom-model-row" id="create-custom-model-row">
@@ -1611,6 +1614,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         <button type="button" data-tier="haiku"  aria-pressed="false"><span class="dot haiku"></span>Haiku</button>
         <button type="button" data-tier="sonnet" aria-pressed="true"><span class="dot sonnet"></span>Sonnet</button>
         <button type="button" data-tier="opus"   aria-pressed="false"><span class="dot opus"></span>Opus</button>
+        <button type="button" data-tier="fable"  aria-pressed="false"><span class="dot fable"></span>Fable</button>
         <button type="button" data-tier="__other__" aria-pressed="false"><span class="dot other"></span>Other…</button>
       </div>
       <div class="custom-model-row" id="edit-custom-model-row">
@@ -1892,12 +1896,17 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 2.15;
+var APP_VERSION = 2.16;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:   { solid: '#B4862A', checker: '#D9B25B' },
   sonnet:  { solid: '#3DA85A', checker: '#65C081' },
   opus:    { solid: '#D97757', checker: '#F2A778' },
+  // v1.4.12 — Fable becomes an officially supported tier
+  // (claude-fable-5, Anthropic 2026-06-09). Deep purple — mirrors
+  // MODEL_COLORS.fable in agent-icons/palettes.ts. Pinned by the
+  // preview-palette-parity test.
+  fable:   { solid: '#6D28D9', checker: '#A78BFA' },
   // v1.4.11 — mirrors UNKNOWN_MODEL_COLOR in agent-icons/palettes.ts so
   // the live preview shows the Zinc-grey badge a user-typed custom model
   // ID will render with server-side. Used for tier='__other__' and for
@@ -1985,7 +1994,7 @@ var ARCHETYPE_DEFAULT_GLYPH = {
   project: 'folder-kanban',
 };
 
-var TIER_LABEL = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus' };
+var TIER_LABEL = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus', fable: 'Fable' };
 // v1.4.11 — what the live preview shows in the "model" label when the
 // user is composing with the "Other…" segment. Stays generic to avoid
 // suggesting the typed ID is validated.
