@@ -258,7 +258,7 @@ test('dc_chat_history: returns formatted message lines', async () => {
         { fromId: 5, text: 'Hello', timestamp: new Date(1000000), id: 1, senderName: 'Alice' },
       ],
     } as unknown as ToolCtx['client'],
-    bindings: { getBinding: () => null } as unknown as ToolCtx['bindings'],
+    bindings: { getBinding: () => null, getBindingAgentId: () => 'default' } as unknown as ToolCtx['bindings'],
   })
   const r = await def.handler!({ chat_id: '10', count: 5 }, ctx)
   expect(r.isError).toBeUndefined()
@@ -286,7 +286,7 @@ test('dc_download_attachment: returns file path for permitted sender', async () 
     client: {
       downloadMessage: async (_id: number) => ({ file: '/tmp/attachment.jpg', fromId: 5, chatId: 10 }),
     } as unknown as ToolCtx['client'],
-    bindings: { getBinding: () => null } as unknown as ToolCtx['bindings'],
+    bindings: { getBinding: () => null, getBindingAgentId: () => 'default' } as unknown as ToolCtx['bindings'],
   })
   const r = await def.handler!({ message_id: '77' }, ctx)
   expect(r.isError).toBeUndefined()
@@ -303,6 +303,7 @@ test('dc_download_attachment: blocks unpermissioned sender by default', async ()
     client: {
       downloadMessage: async (_id: number) => ({ file: '/tmp/evil.pdf', fromId: 999, chatId: 10 }),
     } as unknown as ToolCtx['client'],
+    bindings: { getBinding: () => null, getBindingAgentId: () => 'default' } as unknown as ToolCtx['bindings'],
   })
   const r = await def.handler!({ message_id: '88' }, ctx)
   expect(r.isError).toBe(true)

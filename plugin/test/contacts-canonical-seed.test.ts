@@ -54,6 +54,10 @@ describe("migrateContactsCanonicalSeed", () => {
     tmpRoot = mkdtempSync(join(tmpdir(), "dc-canonical-seed-"));
     agentsDir = join(tmpRoot, "agents");
     mkdirSync(agentsDir, { recursive: true });
+    // Clear chat-allowlist globals that leak across test files — another
+    // file's addChat(_, 11) otherwise keeps isKnownOwner(11) true, so the
+    // cache-invalidation precondition below sees a stale `permissioned`.
+    access.resetAllowlistForTests();
     access.setContactsAgentsDir(agentsDir);
   });
 

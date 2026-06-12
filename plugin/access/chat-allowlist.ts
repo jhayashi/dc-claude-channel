@@ -117,6 +117,19 @@ export function removeChat(chatId: number): void {
   pairedAtMsCache.delete(chatId);
 }
 
+/**
+ * Clear all in-memory allowlist state. Test-only — these maps are
+ * module-global and leak across test files in the same bun process (e.g.
+ * an `addChat(_, 11)` in one file leaves `isKnownOwner(11)` true for
+ * every later file). Mirrors `resetArmedState` / `resetPendingPairings`
+ * in pairing.ts. No production caller.
+ */
+export function resetAllowlistForTests(): void {
+  chatsWithPermissionedMember.clear();
+  chatPrimaryContact.clear();
+  pairedAtMsCache.clear();
+}
+
 // ── Owner-derived helpers ────────────────────────────────────────────────────
 
 /**
