@@ -4,6 +4,22 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.13] — 2026-06-12
+
+Two dispatcher reliability fixes that emerged from load-testing with `bun test` saturating all 16 cores.
+
+### Fixed
+
+- **Dispatcher singleton probe no longer treats a connect timeout as "no dispatcher".** `isDispatcherListening` previously resolved `false` on timeout, which caused a duplicate `server.ts` (spawned by a subagent auto-loading `.mcp.json`) to mis-classify a busy-but-live dispatcher as dead — then unlink its socket via `SocketServer`'s pre-bind `unlink`. This broke every in-flight permission relay (`permission-hook.sh` rc=11) and could crash active subagent turns. The fix: timeout now resolves `true` (assume alive). Timeout on a Unix socket means something holds the path but couldn't accept in time — a loaded machine, not a dead process. Genuinely dead sockets return `ECONNREFUSED` immediately. Timeout window also raised 1s → 2s. Added a `connectFn` parameter so the new behavior is covered by a regression test.
+
+- **Orphan subagent sweep moved behind the singleton gate.** `cleanupOrphanSubagents` previously ran at module scope (before `main()`), so duplicate instances — the very duplicates the singleton gate should stop — would sweep `ppid=1` subagents before being told to exit. Moved into `main()`, after `isDispatcherListening` confirms this instance is the real dispatcher. Duplicates now exit without touching the process table.
+
+- **NL "switch to fable" now resolves correctly.** `LATEST_MODELS` was a hardcoded map with only `haiku`/`sonnet`/`opus` keys; `LATEST_MODELS['fable']` returned `undefined`, causing `setAgentModel` to write `model: undefined` into the agent frontmatter and fail YAML validation with a confusing `["model","model"]` error. The map is now derived from `models.json` at module load, so any tier registered in the manifest is automatically available to NL switching without a code change. An explicit unknown-tier guard throws a clear error instead of silently corrupting the agent file.
+
+### Migration notes
+
+No user action required. Restart the dispatcher (`bun server.ts` via terminal CC restart) to pick up all three fixes.
+
 ## [1.4.12] — 2026-06-11
 
 Officially registers Opus 4.8 and Fable 5 in the curated manifest. Both gain proper labels, NL "switch to X" support, and curated badge colors (Fable in deep purple). Eats v1.4.11's own dog-food: the only code changes were one `models.json` edit, one palette entry, one HTML segment button, and APP_VERSION 2.15 → 2.16. No type-system changes were needed (Phase A of v1.4.11 made tier opaque `string`).
