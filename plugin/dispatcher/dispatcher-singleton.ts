@@ -11,11 +11,25 @@ import { existsSync } from 'node:fs'
  * server.ts that blocks forever on the DC account-DB lock the live dispatcher
  * holds (every cold subagent spawn then hangs until the 1-hour turn timeout).
  *
- * Returns true only if a live listener accepts a connection. A stale socket
- * file with no listener (connect → ECONNREFUSED / ENOENT) returns false, so the
+ * Returns true if a live listener accepts a connection. A stale socket file
+ * with no listener (connect → ECONNREFUSED / ENOENT) returns false, so the
  * real dispatcher can reclaim it.
+ *
+ * A connect TIMEOUT also returns true. Timeout means "something holds the
+ * socket but didn't accept in time" — almost always a live dispatcher on a
+ * loaded machine (e.g. a subagent running `bun test` saturating every core),
+ * not a dead one. The failure modes are asymmetric: a duplicate that wrongly
+ * exits costs one cold-spawn retry; a duplicate that wrongly proceeds unlinks
+ * the LIVE dispatcher's socket out from under it (SocketServer unlinks before
+ * bind), breaking every permission relay mid-turn and killing in-flight turns.
+ * Genuinely-dead dispatchers are caught by the fast paths: no socket file →
+ * false immediately, stale file → ECONNREFUSED → false.
  */
-export function isDispatcherListening(socketPath: string, timeoutMs = 1000): Promise<boolean> {
+export function isDispatcherListening(
+  socketPath: string,
+  timeoutMs = 2000,
+  connectFn: typeof connect = connect,
+): Promise<boolean> {
   // No socket file → no dispatcher. Short-circuit so we never attempt a connect
   // that would raise ENOENT (the common host-startup case).
   if (!existsSync(socketPath)) return Promise.resolve(false)
@@ -28,12 +42,12 @@ export function isDispatcherListening(socketPath: string, timeoutMs = 1000): Pro
       try { sock?.destroy() } catch {}
       resolve(v)
     }
-    const t = setTimeout(() => done(false), timeoutMs)
+    const t = setTimeout(() => done(true), timeoutMs)
     t.unref?.()
     // connect() can throw synchronously (e.g. bun, missing socket path) or emit
     // 'error' async — both mean "no live dispatcher here".
     try {
-      sock = connect(socketPath)
+      sock = connectFn(socketPath)
       sock.once('connect', () => done(true))
       sock.once('error', () => done(false))
     } catch {

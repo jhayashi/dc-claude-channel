@@ -385,11 +385,9 @@ export function updateAgentModel(name: string, model: AllowedModel): boolean {
  * Used by the NL intent classifier path (e.g., "switch to opus" maps
  * `opus` → the current latest opus model id).
  */
-export const LATEST_MODELS: Record<models.ModelTier, string> = {
-  haiku: models.latestModelForTier('haiku'),
-  sonnet: models.latestModelForTier('sonnet'),
-  opus: models.latestModelForTier('opus'),
-}
+export const LATEST_MODELS: Record<models.ModelTier, string> = Object.fromEntries(
+  [...new Set(models.MODELS.map((m) => m.tier))].map((t) => [t, models.latestModelForTier(t)]),
+)
 
 /**
  * Update an agent's model to the latest in the named tier. Throws if
@@ -402,7 +400,9 @@ export const LATEST_MODELS: Record<models.ModelTier, string> = {
 export function setAgentModel(agentId: string, tier: models.ModelTier): void {
   const def = getAgent(agentId)
   if (!def) throw new Error(`setAgentModel: no agent ${agentId}`)
-  def.model = LATEST_MODELS[tier]
+  const modelId = LATEST_MODELS[tier]
+  if (!modelId) throw new Error(`setAgentModel: unknown tier ${tier}`)
+  def.model = modelId
   saveAgent(def)
 }
 

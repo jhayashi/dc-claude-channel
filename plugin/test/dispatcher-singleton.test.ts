@@ -1,6 +1,6 @@
 import { describe, test, expect, afterEach } from 'bun:test'
-import { createServer, type Server } from 'node:net'
-import { mkdtempSync } from 'node:fs'
+import { createServer, type connect, type Server } from 'node:net'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isDispatcherListening } from '../dispatcher/dispatcher-singleton'
@@ -29,5 +29,16 @@ describe('isDispatcherListening', () => {
     server = createServer()
     await new Promise<void>((res) => server!.listen(p, () => res()))
     expect(await isDispatcherListening(p, 500)).toBe(true)
+  })
+
+  // A connect that neither accepts nor errors before the timeout means the
+  // socket is held by a dispatcher too busy to accept (loaded machine), not a
+  // dead one. Assuming dead here lets a duplicate unlink the live socket and
+  // break every permission relay mid-turn — so timeout must resolve true.
+  test('true when connect hangs until timeout (busy dispatcher = assume alive)', async () => {
+    const p = join(mkdtempSync(join(tmpdir(), 'dc-singleton-')), 'd.sock')
+    writeFileSync(p, '') // existsSync gate needs a file at the path
+    const hangingConnect = (() => ({ once() {}, destroy() {} })) as unknown as typeof connect
+    expect(await isDispatcherListening(p, 100, hangingConnect)).toBe(true)
   })
 })

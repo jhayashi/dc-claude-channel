@@ -497,12 +497,6 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
   return sub
 }
 
-// Sweep stale subagents from a previous dispatcher run before we start.
-{
-  const killed = cleanupOrphanSubagents({ selfPid: process.pid, logf })
-  if (killed > 0) logf('orphan-cleanup: killed %d stale subagent(s)', killed)
-}
-
 const subagentCache = new SubagentCache({
   maxActive: MAX_ACTIVE,
   idleTimeoutMs: IDLE_MIN * 60_000,
@@ -1659,6 +1653,15 @@ async function main(): Promise<void> {
   if (await isDispatcherListening(DISPATCHER_SOCKET)) {
     logf('dc channel: a dispatcher is already listening at %s; exiting duplicate instance', DISPATCHER_SOCKET)
     process.exit(0)
+  }
+
+  // Sweep stale subagents from a previous dispatcher run. Deliberately AFTER
+  // the singleton gate: duplicate instances (subagent .mcp.json auto-loads)
+  // must never touch the process table — only the dispatcher that will
+  // actually own the socket gets to kill orphans.
+  {
+    const killed = cleanupOrphanSubagents({ selfPid: process.pid, logf })
+    if (killed > 0) logf('orphan-cleanup: killed %d stale subagent(s)', killed)
   }
 
   // v1.4 version gate: refuse to start on a Claude Code release older
