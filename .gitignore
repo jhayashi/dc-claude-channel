@@ -5,7 +5,7 @@ plugin/dist/
 plugin/webxdc/mini-crossword.html
 plugin/test/integration/.fixtures*/
 dev/
-.claude/settings.local.json
+.claude/
 docs/**
 docs/spec/
 docs/spec/**

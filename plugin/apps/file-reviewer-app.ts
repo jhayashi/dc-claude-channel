@@ -41,7 +41,7 @@ const BUNDLED_THRESHOLD_BYTES = 90_000
 const PAYLOAD_OVERHEAD = 500
 
 // Map file extensions to Prism language ids. Keep in sync with the
-// grammars bundled by plugin/scripts/build-viewer-html.ts.
+// Prism grammars inlined in webxdc/file-reviewer.html.
 const EXT_TO_LANG: Record<string, string> = {
   js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
   ts: 'typescript', tsx: 'typescript',

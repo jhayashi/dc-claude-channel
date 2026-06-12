@@ -33,15 +33,11 @@ function checkSenderAddr(filePath: string): void {
 }
 
 describe("WebXDC senderAddr requirement", () => {
-  const htmlFiles = readdirSync(WEBXDC_DIR).filter(f => f.endsWith(".html") && !f.endsWith(".template.html"));
+  const htmlFiles = readdirSync(WEBXDC_DIR).filter(f => f.endsWith(".html"));
 
   for (const file of htmlFiles) {
     test(`${file} has senderAddr for every sendUpdate`, () => {
       checkSenderAddr(join(WEBXDC_DIR, file));
     });
   }
-
-  test("file-reviewer.template.html has senderAddr for every sendUpdate", () => {
-    checkSenderAddr(join(WEBXDC_DIR, "file-reviewer.template.html"));
-  });
 });
