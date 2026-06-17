@@ -41,6 +41,20 @@ export function normalizeSystemMessageType(raw: string | null | undefined): stri
   return raw
 }
 
+/**
+ * Best-effort message time as a Date. Outgoing/self messages have
+ * receivedTimestamp 0 (it's only set on inbound), so fall back to
+ * sortTimestamp then timestamp. Uses `||` not `??` deliberately — 0 is the
+ * value we're skipping past, not a value to keep. Seconds → ms.
+ */
+export function messageTimestamp(snap: {
+  receivedTimestamp?: number | null;
+  sortTimestamp?: number | null;
+  timestamp?: number | null;
+}): Date {
+  return new Date((snap.receivedTimestamp || snap.sortTimestamp || snap.timestamp || 0) * 1000)
+}
+
 export interface Message {
   id: number;
   chatId: number;
@@ -387,7 +401,7 @@ export class DCClient {
           chatId: snap.chatId,
           senderName: snap.sender.displayName,
           text: snap.text,
-          timestamp: new Date(snap.receivedTimestamp * 1000),
+          timestamp: messageTimestamp(snap),
           file: snap.file ?? undefined,
           fileMime: snap.fileMime ?? undefined,
           fileBytes: snap.fileBytes ? Number(snap.fileBytes) : undefined,
@@ -824,7 +838,7 @@ export class DCClient {
         chatId: snap.chatId,
         senderName: snap.sender.displayName,
         text: snap.text,
-        timestamp: new Date(snap.receivedTimestamp * 1000),
+        timestamp: messageTimestamp(snap),
         file: snap.file ?? undefined,
         fileMime: snap.fileMime ?? undefined,
         fileBytes: snap.fileBytes ? Number(snap.fileBytes) : undefined,
@@ -854,7 +868,7 @@ export class DCClient {
         chatId: snap.chatId,
         senderName: snap.sender?.displayName ?? 'Unknown',
         text: snap.text ?? '',
-        timestamp: new Date((snap.receivedTimestamp ?? snap.timestamp ?? 0) * 1000),
+        timestamp: messageTimestamp(snap),
         file: snap.file ?? undefined,
         fileMime: snap.fileMime ?? undefined,
         fileBytes: snap.fileBytes ? Number(snap.fileBytes) : undefined,
@@ -875,7 +889,7 @@ export class DCClient {
       chatId: snap.chatId,
       senderName: snap.sender?.displayName ?? 'Unknown',
       text: snap.text ?? '',
-      timestamp: new Date((snap.receivedTimestamp ?? snap.timestamp ?? 0) * 1000),
+      timestamp: messageTimestamp(snap),
       file: snap.file ?? undefined,
       fileMime: snap.fileMime ?? undefined,
       fileBytes: snap.fileBytes ? Number(snap.fileBytes) : undefined,

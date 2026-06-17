@@ -48,6 +48,15 @@ describe('DCClient search wrappers', () => {
     expect(typeof m.timestamp.toISOString()).toBe('string') // formatHistoryLine relies on this
   })
 
+  test('getHistoryMessages falls back to sortTimestamp when receivedTimestamp is 0 (sent/self messages)', async () => {
+    const client = new DCClient()
+    // Outgoing/self messages have receivedTimestamp 0; the real send time lives in sortTimestamp.
+    const sent = { ...rawSnap(1), receivedTimestamp: 0, sortTimestamp: 1500, timestamp: 1500 }
+    withFakeRpc(client, { getMessage: async () => sent })
+    const [m] = await client.getHistoryMessages([1])
+    expect(m.timestamp.getTime()).toBe(1_500_000) // sortTimestamp*1000, NOT epoch 0
+  })
+
   test('getHistoryMessages skips ids that fail to hydrate', async () => {
     const client = new DCClient()
     withFakeRpc(client, {
