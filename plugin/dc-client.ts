@@ -798,6 +798,45 @@ export class DCClient {
     return qrText;
   }
 
+  /**
+   * Full-text search over the message DB. `chatId` set → that chat
+   * (unlimited); `null` → global (dc-core caps at 1000). Returns message ids.
+   */
+  async searchMessageIds(query: string, chatId: number | null): Promise<number[]> {
+    const { rpc, accountId } = this.ensureAccount();
+    return rpc.searchMessages(accountId, query, chatId);
+  }
+
+  /**
+   * Hydrate message ids into the dc-client `Message` shape `formatHistoryLine`
+   * expects. Adapts the raw rpc snapshot (receivedTimestamp seconds →
+   * timestamp Date, sender.displayName → senderName) exactly like the
+   * IncomingMsg handler. Ids that fail to hydrate are skipped, not fatal.
+   */
+  async getHistoryMessages(ids: number[]): Promise<Message[]> {
+    const { rpc, accountId } = this.ensureAccount();
+    const out: Message[] = [];
+    for (const id of ids) {
+      let snap;
+      try { snap = await rpc.getMessage(accountId, id); } catch { continue; }
+      out.push({
+        id: snap.id,
+        chatId: snap.chatId,
+        senderName: snap.sender.displayName,
+        text: snap.text,
+        timestamp: new Date(snap.receivedTimestamp * 1000),
+        file: snap.file ?? undefined,
+        fileMime: snap.fileMime ?? undefined,
+        fileBytes: snap.fileBytes ? Number(snap.fileBytes) : undefined,
+        fileName: snap.fileName ?? undefined,
+        viewType: snap.viewType ?? undefined,
+        fromId: snap.fromId,
+        systemMessageType: normalizeSystemMessageType(snap.systemMessageType),
+      });
+    }
+    return out;
+  }
+
   async getChatHistory(chatId: number, count: number = 20): Promise<Message[]> {
     const { rpc, accountId } = this.ensureAccount();
     const msgIds = await rpc.getMessageIds(accountId, chatId, false, false);
