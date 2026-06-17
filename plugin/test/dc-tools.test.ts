@@ -369,3 +369,44 @@ test('dc_access_arm_pairing: deletes previous armed group before re-arming', asy
   expect(r.content[0].text).toContain('Pairing armed')
   expect(deletedChats).toContain(30)
 })
+
+// ── dc_search_messages ────────────────────────────────────────────────────
+
+function searchCtx(over: Partial<ToolCtx> = {}): ToolCtx {
+  return makeToolCtx({
+    access: { isAllowed: (id: number) => id === 10, isContactTrustedForContent: () => true } as unknown as ToolCtx['access'],
+    bindings: { getBindingAgentId: () => 'default', getBinding: () => null } as unknown as ToolCtx['bindings'],
+    client: {
+      searchMessageIds: async () => [1],
+      getHistoryMessages: async () => [{ id: 1, chatId: 10, fromId: 5, senderName: 'Alice', text: 'the thing you forgot', timestamp: new Date(1_000_000) }],
+    } as unknown as ToolCtx['client'],
+    ...over,
+  })
+}
+
+test('dc_search_messages: returns matching snippets for a permitted chat', async () => {
+  const def = DC_TOOLS.find(t => t.name === 'dc_search_messages')!
+  const r = await def.handler!({ chat_id: '10', query: 'forgot' }, searchCtx())
+  expect(r.isError).toBeUndefined()
+  expect(r.content[0].text).toContain('forgot')
+})
+
+test('dc_search_messages: defaults to the current chat when chat_id omitted', async () => {
+  const def = DC_TOOLS.find(t => t.name === 'dc_search_messages')!
+  const r = await def.handler!({ query: 'forgot' }, searchCtx(), 10) // callerChatId = 10
+  expect(r.isError).toBeUndefined()
+  expect(r.content[0].text).toContain('forgot')
+})
+
+test('dc_search_messages: rejects empty query', async () => {
+  const def = DC_TOOLS.find(t => t.name === 'dc_search_messages')!
+  const r = await def.handler!({ chat_id: '10', query: '  ' }, searchCtx())
+  expect(r.isError).toBe(true)
+})
+
+test('dc_search_messages: rejects inaccessible chat', async () => {
+  const def = DC_TOOLS.find(t => t.name === 'dc_search_messages')!
+  const ctx = searchCtx({ access: { isAllowed: () => false } as unknown as ToolCtx['access'] })
+  const r = await def.handler!({ chat_id: '99', query: 'x' }, ctx)
+  expect(r.isError).toBe(true)
+})
