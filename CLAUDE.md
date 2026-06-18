@@ -38,6 +38,21 @@ Chat-scoping is **not a privacy/security boundary** between paired chats; it's a
 
 For skip-permissions mode, scheduled jobs (`dc_schedule*`), shared memory semantics, the four event-log streams (`tools-*.log`, `turns-*.log`, `permissions-*.log`, `webxdc-*.log`) + the `dc_show_events` tool, and config env vars, see [`docs/ARCHITECTURE.md#subagent-model-v09`](docs/ARCHITECTURE.md).
 
+## Chat-search memory augmentation
+
+**Phase 1 — `dc_search_messages` pull tool:** Full-text search of a chat's history, trust-filtered, defaults to current chat. Parameters: `chat_id` (optional, infers from binding), `query` (required), `limit` (default 8, max 50), `include_unpermissioned` (opt-in flag, default false). The subagent calls it directly on demand — no skill, no NL classifier. Results are formatted as history lines via `formatHistoryLine` and audit-logged.
+
+**Phase 2 — Per-turn auto-injection:** Memory snippets are injected during message dispatch, triggered by post-compaction (primary signal) or high context occupancy (secondary). Injection is wired in the inbound dispatch path — **not** `--append-system-prompt` (which is spawn-only and doesn't fire for warm cached subagents after mid-session compaction). Phase 2 requires a `bun server.ts` restart.
+
+**Agent opt-in via `x-dc-memory-boost`:** Frontmatter field (on/off, default off). Set at agent creation via `classifyMemoryBoost` — unset defaults to off, so pre-existing agents are unaffected.
+
+**Configuration (env vars):**
+- `DC_MEMORY_BOOST_DISABLE=1` — rollout kill-switch (disables Phase 2 injection globally)
+- `DC_MEMORY_BOOST_WINDOW` — context window size for compaction trigger (default 200000 tokens)
+- `DC_MEMORY_BOOST_LIMIT` — max snippets per injection (default 8)
+
+**Rollout note:** Phase 1 (tool) needs no restart and is live on the next message. Phase 2 (per-turn dispatcher wiring) requires a `bun server.ts` restart.
+
 ## Contacts (per-agent in v1.4.9+; was "Principals" in v1.1.5–v1.2.2)
 
 Per-contact trust annotations — one record per (agent, DC contact) in the bot's address book, regardless of whether the underlying entity is a human or a third-party bot. The `role` field carries the trust-tier distinction. **Records are per-agent as of v1.4.9** — a contact can have different roles across agents (Alice can be `subscriber` for `dc-developer` and `family-member` for `librarian`). Pre-v1.4.9 every record was parked under `claude-code.dc/contacts/` regardless of which agent owned the chat; the canonical-seed migration (`migrateContactsCanonicalSeed`, runs once at startup) backfills per-agent sidecars from claude-code's records for each bound chat's members.
