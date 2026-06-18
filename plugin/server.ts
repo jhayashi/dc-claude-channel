@@ -1656,8 +1656,11 @@ async function buildMemoryPrefix(chatId: number, queryText: string): Promise<str
     const { shouldBoost, formatMemoryBlock } = await import('./dispatcher/memory-injection.js')
     const { searchChatMemory } = await import('./dispatcher/memory-search.js')
 
+    if (queryText.trim() === '') return ''
+
     const transcript = resume.readSessionTranscript(binding.workingDir, binding.sessionId)
-    const windowTokens = Number(process.env.DC_MEMORY_BOOST_WINDOW ?? 200000)
+    const rawWindow = Number(process.env.DC_MEMORY_BOOST_WINDOW)
+    const windowTokens = Number.isFinite(rawWindow) ? rawWindow : 200000
     const stats = analyzeTranscriptTail(transcript, { windowTokens })
     if (!shouldBoost({ enabled: true, stats })) return ''
 

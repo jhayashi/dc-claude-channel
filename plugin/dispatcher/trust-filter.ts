@@ -42,6 +42,8 @@ export interface FormatHistoryLineResult {
   line: string
   /** True iff this line revealed an unpermissioned sender's body (drives audit-log count). */
   revealedUnpermissioned: boolean
+  /** True iff the sender was permissioned (or the bot's own message). False for redacted/revealed unpermissioned lines. */
+  permissioned: boolean
 }
 
 /**
@@ -85,7 +87,7 @@ export function formatHistoryLine(
   if (msg.file && (permissioned || includeUnpermissioned)) line += ` [file: ${msg.file}]`
   if (msg.fileName && (permissioned || includeUnpermissioned)) line += ` [name: ${msg.fileName}]`
   if (msg.viewType && msg.viewType !== 'Text') line += ` [type: ${msg.viewType}]`
-  return { line, revealedUnpermissioned }
+  return { line, revealedUnpermissioned, permissioned }
 }
 
 /**

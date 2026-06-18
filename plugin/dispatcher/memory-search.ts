@@ -20,7 +20,7 @@ export interface MemorySearchOptions {
   scopeChatId?: number | null
 }
 
-export interface MemorySnippet { msgId: number; chatId: number; line: string }
+export interface MemorySnippet { msgId: number; chatId: number; line: string; permissioned: boolean }
 export interface MemorySearchResult {
   snippets: MemorySnippet[]
   revealedUnpermissioned: number
@@ -60,7 +60,7 @@ export async function searchChatMemory(
       { includeUnpermissioned: opts.includeUnpermissioned === true },
     )
     if (r.revealedUnpermissioned) revealedUnpermissioned++
-    snippets.push({ msgId: m.id, chatId: m.chatId, line: r.line })
+    snippets.push({ msgId: m.id, chatId: m.chatId, line: r.line, permissioned: r.permissioned })
   }
   return { snippets, revealedUnpermissioned, truncated }
 }

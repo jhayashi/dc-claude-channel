@@ -19,7 +19,10 @@ describe('shouldBoost', () => {
 describe('formatMemoryBlock', () => {
   test('labels the block, keeps fresh snippets, dedupes recent-window ids', () => {
     const block = formatMemoryBlock(
-      [{ msgId: 1, chatId: 10, line: '[permissioned] A: keep one' }, { msgId: 2, chatId: 10, line: '[permissioned] A: drop me' }],
+      [
+        { msgId: 1, chatId: 10, line: '[permissioned] A: keep one', permissioned: true },
+        { msgId: 2, chatId: 10, line: '[permissioned] A: drop me', permissioned: true },
+      ],
       new Set([2]),
     )
     expect(block).toContain('Earlier context recalled from this chat')
@@ -27,6 +30,25 @@ describe('formatMemoryBlock', () => {
     expect(block).not.toContain('drop me')
   })
   test('empty string when nothing survives dedupe', () => {
-    expect(formatMemoryBlock([{ msgId: 2, chatId: 10, line: 'x' }], new Set([2]))).toBe('')
+    expect(formatMemoryBlock([{ msgId: 2, chatId: 10, line: 'x', permissioned: true }], new Set([2]))).toBe('')
+  })
+  test('drops unpermissioned snippets from the injected block', () => {
+    const block = formatMemoryBlock(
+      [
+        { msgId: 1, chatId: 10, line: '[permissioned] A: good line', permissioned: true },
+        { msgId: 3, chatId: 10, line: '[UNPERMISSIONED] B (ts): [redacted — unpermissioned sender contact 5]', permissioned: false },
+      ],
+      new Set(),
+    )
+    expect(block).toContain('good line')
+    expect(block).not.toContain('[UNPERMISSIONED]')
+    expect(block).not.toContain('redacted')
+  })
+  test('empty string when only unpermissioned snippets remain after dedupe', () => {
+    const block = formatMemoryBlock(
+      [{ msgId: 5, chatId: 10, line: '[UNPERMISSIONED] B: [redacted]', permissioned: false }],
+      new Set(),
+    )
+    expect(block).toBe('')
   })
 })

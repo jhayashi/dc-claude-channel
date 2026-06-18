@@ -25,6 +25,7 @@ describe('searchChatMemory', () => {
     const r = await searchChatMemory({ chatId: 10, query: 'body' }, deps())
     expect(r.snippets.length).toBe(2)
     expect(r.snippets[0].line).toContain('[permissioned]')
+    expect(r.snippets[0].permissioned).toBe(true)
     expect(r.revealedUnpermissioned).toBe(0)
   })
 
@@ -33,6 +34,7 @@ describe('searchChatMemory', () => {
     const r = await searchChatMemory({ chatId: 10, query: 'body' }, d)
     expect(r.snippets[0].line).toContain('[UNPERMISSIONED]')
     expect(r.snippets[0].line).toContain('[redacted')
+    expect(r.snippets[0].permissioned).toBe(false)
   })
 
   test('reveals + counts unpermissioned bodies when includeUnpermissioned', async () => {
