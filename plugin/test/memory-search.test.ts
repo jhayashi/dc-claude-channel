@@ -55,6 +55,19 @@ describe('searchChatMemory', () => {
     expect(seen).toEqual([10, 20])
   })
 
+  test('non-numeric limit falls back to default instead of silently returning empty', async () => {
+    const d = deps({
+      client: {
+        searchMessageIds: async () => [1, 2, 3],
+        getHistoryMessages: async (ids: number[]) => ids.map(id => msg({ id })),
+      } as unknown as MemorySearchDeps['client'],
+    })
+    // A NaN limit (e.g. Number('abc') arriving from the tool layer) must not collapse to slice(0, NaN) → [].
+    const r = await searchChatMemory({ chatId: 10, query: 'x', limit: NaN as unknown as number }, d)
+    expect(r.snippets.length).toBe(3)
+    expect(r.truncated).toBe(false)
+  })
+
   test('caps to limit and reports truncation', async () => {
     const d = deps({
       client: {

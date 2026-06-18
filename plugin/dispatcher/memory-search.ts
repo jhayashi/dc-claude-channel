@@ -41,7 +41,10 @@ export async function searchChatMemory(
   opts: MemorySearchOptions,
   deps: MemorySearchDeps,
 ): Promise<MemorySearchResult> {
-  const limit = Math.min(Math.max(opts.limit ?? DEFAULT_LIMIT, 1), 50)
+  // Use Number.isFinite, not ??, so a NaN limit (e.g. Number('abc') from the
+  // tool layer) falls back to the default instead of collapsing slice(0, NaN) → [].
+  const requested = Number(opts.limit)
+  const limit = Math.min(Math.max(Number.isFinite(requested) ? requested : DEFAULT_LIMIT, 1), 50)
   const scope = opts.scopeChatId === undefined ? opts.chatId : opts.scopeChatId
   const ids = await deps.client.searchMessageIds(opts.query, scope)
   const truncated = ids.length > limit

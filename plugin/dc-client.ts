@@ -825,26 +825,32 @@ export class DCClient {
    * Hydrate message ids into the dc-client `Message` shape `formatHistoryLine`
    * expects. Adapts the raw rpc snapshot (receivedTimestamp seconds →
    * timestamp Date, sender.displayName → senderName) exactly like the
-   * IncomingMsg handler. Ids that fail to hydrate are skipped, not fatal.
+   * IncomingMsg handler. Fetches in ONE batch `getMessages` call (mirroring
+   * getChatHistory) rather than N singular round-trips. Ids that fail to
+   * hydrate — absent or an error variant in the returned map — are skipped,
+   * not fatal. Order follows the input `ids`.
    */
   async getHistoryMessages(ids: number[]): Promise<Message[]> {
+    if (ids.length === 0) return [];
     const { rpc, accountId } = this.ensureAccount();
+    const snaps = await rpc.getMessages(accountId, ids);
     const out: Message[] = [];
     for (const id of ids) {
-      let snap;
-      try { snap = await rpc.getMessage(accountId, id); } catch { continue; }
+      const result = snaps[id];
+      if (!result || typeof result !== 'object' || !('id' in result)) continue;
+      const snap = result as any;
       out.push({
         id: snap.id,
         chatId: snap.chatId,
-        senderName: snap.sender.displayName,
-        text: snap.text,
+        senderName: snap.sender?.displayName ?? 'Unknown',
+        text: snap.text ?? '',
         timestamp: messageTimestamp(snap),
         file: snap.file ?? undefined,
         fileMime: snap.fileMime ?? undefined,
         fileBytes: snap.fileBytes ? Number(snap.fileBytes) : undefined,
         fileName: snap.fileName ?? undefined,
         viewType: snap.viewType ?? undefined,
-        fromId: snap.fromId,
+        fromId: typeof snap.fromId === 'number' ? snap.fromId : undefined,
         systemMessageType: normalizeSystemMessageType(snap.systemMessageType),
       });
     }
