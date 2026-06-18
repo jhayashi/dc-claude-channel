@@ -156,6 +156,7 @@ export const AgentDefSchema = z.object({
   'x-dc-pattern': z.string().optional(),
   'x-dc-icon-mirror': z.boolean().optional(),
   'x-dc-display-name': z.string().max(256).optional(),
+  'x-dc-memory-boost': z.enum(['on', 'off']).optional(),
   // Markdown body — the agent's system prompt.
   body: z.string().max(100_000).default(''),
 }).passthrough()  // Preserve forward-compat for CC fields we don't yet know about.
@@ -471,6 +472,51 @@ export function setArchetype(def: AgentDef, value: Archetype): void {
     return
   }
   def[ARCHETYPE_META_KEY] = value
+}
+
+/** Metadata key for Phase 2 chat-search memory injection. Baked at creation. */
+export const MEMORY_BOOST_META_KEY = 'x-dc-memory-boost'
+
+/**
+ * Whether Phase 2 auto-injection is enabled. Unset → false, so every
+ * pre-existing agent stays off until the creation classifier or the user
+ * writes the key.
+ */
+export function memoryBoostEnabled(def: AgentDef): boolean {
+  return def[MEMORY_BOOST_META_KEY] === 'on'
+}
+
+/**
+ * Write the memory-boost flag in place. Unlike setArchetype, we write 'off'
+ * EXPLICITLY rather than deleting on default — the creation classifier records
+ * a deliberate decision, and we want to distinguish "classified off" from
+ * "never classified" for future migrations. Does not persist — follow with saveAgent.
+ */
+export function setMemoryBoost(def: AgentDef, value: 'on' | 'off'): void {
+  def[MEMORY_BOOST_META_KEY] = value
+}
+
+// Whole-word coding signals (word-boundary matched to avoid substring false
+// positives like 'api' ∈ "therapist"). Short/ambiguous tokens deliberately
+// excluded. A keyword classifier: cheap, deterministic, unit-testable; the
+// spec allows swapping a small LLM classify step behind this signature later.
+const CODING_SIGNALS = [
+  'code', 'coding', 'engineer', 'developer', 'repo', 'repository', 'codebase',
+  'compile', 'debug', 'refactor', 'commit', 'deploy', 'bugfix',
+  'edit files', 'run tests', 'test suite', 'pull request',
+]
+
+/**
+ * Decide the Phase 2 default for a NEW agent from its system prompt. Coding
+ * agents → 'off' (keep context clean); else → 'on' (conversational agents
+ * benefit without configuration). Empty → 'off'. Called only at creation.
+ */
+export function classifyMemoryBoost(systemPrompt: string): 'on' | 'off' {
+  const text = systemPrompt.toLowerCase()
+  if (!text.trim()) return 'off'
+  const escaped = CODING_SIGNALS.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const rx = new RegExp(`\\b(${escaped.join('|')})\\b`)
+  return rx.test(text) ? 'off' : 'on'
 }
 
 /**

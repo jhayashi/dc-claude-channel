@@ -1028,6 +1028,7 @@ const tailHandlers: Record<string, Dispatch> = {
             ...draft,
             name: agentName,
             'x-dc-display-name': name,
+            'x-dc-memory-boost': agents.classifyMemoryBoost(prompt),
             body: prompt,
           })
           bindings.bindAgent(groupId, agentName, { inheritClaudeMd })

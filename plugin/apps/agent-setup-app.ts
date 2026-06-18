@@ -930,6 +930,7 @@ export async function graduateAgent(ctx: AppContext, chatId: number): Promise<vo
       'x-dc-pattern': session.pattern ?? 'checker',
       // Legacy compat — drives existing badge palette / archetype-aware logic.
       'x-dc-archetype': 'role' as const,
+      'x-dc-memory-boost': agents.classifyMemoryBoost(systemPrompt),
     } as unknown as agents.AgentDef
     // Roll a random orientation so same-model agents are visually
     // differentiable (mirrors the templated/create paths).
@@ -2123,6 +2124,7 @@ export const agentSetupApp: WebXDCApp = {
             // (all-checked) picker gets the full built-in toolkit, not an
             // empty CSV. Pre-fix, `?? []` made null → none → no built-ins.
             tools: buildCreateAgentToolsCsv(allowedBuiltinTools, allowedMcpServers),
+            'x-dc-memory-boost': agents.classifyMemoryBoost(draft.body ?? ''),
           } as agents.AgentDef
           agents.setSkipPermissions(newAgent, skipPerms)
           if (archetype) agents.setArchetype(newAgent, archetype)
