@@ -1639,6 +1639,40 @@ async function cleanupChatState(
   }
 }
 
+// ── Memory injection (Phase 2) ──────────────────────────────────────────
+
+// Phase 2: build the recalled-memory prefix for a turn. Best-effort — any
+// failure returns '' (never blocks the turn). Gated by the agent's
+// x-dc-memory-boost flag and the DC_MEMORY_BOOST_DISABLE rollout kill-switch.
+async function buildMemoryPrefix(chatId: number, queryText: string): Promise<string> {
+  try {
+    if (process.env.DC_MEMORY_BOOST_DISABLE === '1') return ''
+    const binding = bindings.getBinding(chatId)
+    if (!binding?.agentId || !binding.workingDir || !binding.sessionId) return ''
+    const agentDef = agents.getAgent(binding.agentId)
+    if (!agentDef || !agents.memoryBoostEnabled(agentDef)) return ''
+
+    const { analyzeTranscriptTail } = await import('./dispatcher/session-context-stats.js')
+    const { shouldBoost, formatMemoryBlock } = await import('./dispatcher/memory-injection.js')
+    const { searchChatMemory } = await import('./dispatcher/memory-search.js')
+
+    const transcript = resume.readSessionTranscript(binding.workingDir, binding.sessionId)
+    const windowTokens = Number(process.env.DC_MEMORY_BOOST_WINDOW ?? 200000)
+    const stats = analyzeTranscriptTail(transcript, { windowTokens })
+    if (!shouldBoost({ enabled: true, stats })) return ''
+
+    const r = await searchChatMemory(
+      { chatId, query: queryText, limit: Number(process.env.DC_MEMORY_BOOST_LIMIT ?? 8) },
+      { client, bindings, access },
+    )
+    const recent = new Set((await client.getChatHistory(chatId, 20)).map(m => m.id))
+    return formatMemoryBlock(r.snippets, recent)
+  } catch (err) {
+    logf('memory-boost: skipped chat=%d (%v)', chatId, err)
+    return ''
+  }
+}
+
 // ── Startup ─────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -2483,7 +2517,9 @@ async function main(): Promise<void> {
       _currentDriver.set(chatId, { contactId: msg.fromId, caps })
     }
     try {
-      const result = await subagentCache.dispatch(chatId, formatSubagentInput(enrichedMsg))
+      const turnInput = formatSubagentInput(enrichedMsg)
+      const memPrefix = await buildMemoryPrefix(chatId, enrichedMsg.text ?? turnInput)
+      const result = await subagentCache.dispatch(chatId, memPrefix ? `${memPrefix}\n\n${turnInput}` : turnInput)
       logf('subagent: chat=%d result.text=%s denials=%d', chatId, (result.text ?? '').slice(0, 500).replace(/\n/g, ' '), result.denials.length)
       if (result.text) {
         const sentMsgId = await client.send(chatId, result.text)
@@ -2723,7 +2759,8 @@ async function main(): Promise<void> {
       }
       const t1 = Date.now()
       try {
-        await subagentCache.dispatch(event.chatId, event.text)
+        const editMemPrefix = await buildMemoryPrefix(event.chatId, event.text)
+        await subagentCache.dispatch(event.chatId, editMemPrefix ? `${editMemPrefix}\n\n${event.text}` : event.text)
         logf('edit-as-interrupt: dispatch ok chat=%d turn-elapsed=%dms total=%dms',
              event.chatId, Date.now() - t1, Date.now() - t0)
       } catch (err) {
