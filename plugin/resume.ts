@@ -56,6 +56,18 @@ export function sessionFileExists(cwd: string, sessionId: string): boolean {
   return existsSync(join(PROJECTS_ROOT, projectHashForCwd(cwd), `${sessionId}.jsonl`))
 }
 
+/**
+ * Read claude's session .jsonl for (cwd, sessionId). Returns '' if the file
+ * is absent or unreadable — callers treat that as "no transcript / no trigger".
+ */
+export function readSessionTranscript(cwd: string, sessionId: string): string {
+  try {
+    return readFileSync(join(PROJECTS_ROOT, projectHashForCwd(cwd), `${sessionId}.jsonl`), 'utf8')
+  } catch {
+    return ''
+  }
+}
+
 export interface ResumeCommand {
   /** 'resume' = `claude --resume <uuid>`; 'fresh' = bare `claude` (no session to resume). */
   kind: 'resume' | 'fresh'
