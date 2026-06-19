@@ -5,8 +5,8 @@
     "": {
       "name": "claude-channel-deltachat",
       "dependencies": {
-        "@deltachat/jsonrpc-client": "*",
-        "@deltachat/stdio-rpc-server": "*",
+        "@deltachat/jsonrpc-client": "^2.53.0",
+        "@deltachat/stdio-rpc-server": "^2.53.0",
         "@modelcontextprotocol/sdk": "^1.0.0",
         "@napi-rs/whisper": "^0.0.4",
         "@resvg/resvg-js": "^2.6.2",
@@ -22,29 +22,29 @@
     },
   },
   "packages": {
-    "@deltachat/jsonrpc-client": ["@deltachat/jsonrpc-client@2.49.0", "", { "dependencies": { "@deltachat/tiny-emitter": "3.0.0", "isomorphic-ws": "^5.0.0", "yerpc": "^0.6.2" } }, "sha512-iZ93I6CvwQXKtjwPopigpwhOcEmaItrOcbF2i1WLVVrPiI8h1aZmHSnFl6cfwZyGpzW2Ku7mGWiZYExEdFfgLg=="],
+    "@deltachat/jsonrpc-client": ["@deltachat/jsonrpc-client@2.53.0", "", { "dependencies": { "@deltachat/tiny-emitter": "3.0.0", "isomorphic-ws": "^5.0.0", "yerpc": "^0.6.2" } }, "sha512-d1mdA2cm6GxpIaCWyYDJkK8406tK84RDIz1Kz2sKgrw5D7HcuwKCjo3C+OFKp42ev8YMSpsZVIfGhVc78Hsxwg=="],
 
-    "@deltachat/stdio-rpc-server": ["@deltachat/stdio-rpc-server@2.49.0", "", { "optionalDependencies": { "@deltachat/stdio-rpc-server-android-arm": "2.49.0", "@deltachat/stdio-rpc-server-android-arm64": "2.49.0", "@deltachat/stdio-rpc-server-darwin-arm64": "2.49.0", "@deltachat/stdio-rpc-server-darwin-x64": "2.49.0", "@deltachat/stdio-rpc-server-linux-arm": "2.49.0", "@deltachat/stdio-rpc-server-linux-arm64": "2.49.0", "@deltachat/stdio-rpc-server-linux-ia32": "2.49.0", "@deltachat/stdio-rpc-server-linux-x64": "2.49.0", "@deltachat/stdio-rpc-server-win32-ia32": "2.49.0", "@deltachat/stdio-rpc-server-win32-x64": "2.49.0" }, "peerDependencies": { "@deltachat/jsonrpc-client": "*" } }, "sha512-Qic8mfxyvS9XPsBnGAdaLfvI83M/v6j/sd37R5iEleHI2Q0/3LjXOEwn8OImOwlaAE/WADbaVguOSz3NLvF9Rw=="],
+    "@deltachat/stdio-rpc-server": ["@deltachat/stdio-rpc-server@2.53.0", "", { "optionalDependencies": { "@deltachat/stdio-rpc-server-android-arm": "2.53.0", "@deltachat/stdio-rpc-server-android-arm64": "2.53.0", "@deltachat/stdio-rpc-server-darwin-arm64": "2.53.0", "@deltachat/stdio-rpc-server-darwin-x64": "2.53.0", "@deltachat/stdio-rpc-server-linux-arm": "2.53.0", "@deltachat/stdio-rpc-server-linux-arm64": "2.53.0", "@deltachat/stdio-rpc-server-linux-ia32": "2.53.0", "@deltachat/stdio-rpc-server-linux-x64": "2.53.0", "@deltachat/stdio-rpc-server-win32-ia32": "2.53.0", "@deltachat/stdio-rpc-server-win32-x64": "2.53.0" }, "peerDependencies": { "@deltachat/jsonrpc-client": "*" } }, "sha512-kUOIDYaFwfNC7iqjDJoMb6jbb4L5AEFuS+bw+D6iegvo2I6aEYvRnn3Lvee3PpV1+UL7my+e9nRg+hleM6+dkw=="],
 
-    "@deltachat/stdio-rpc-server-android-arm": ["@deltachat/stdio-rpc-server-android-arm@2.49.0", "", { "os": "android", "cpu": "arm" }, "sha512-O6AMt0fcbVsyLr9o+exQUnehqBqviLBX+YK4M/wO0605mhbMgnFbCl+HDRpCK1QsC2wFKXRet0lYjoxMhZO4rA=="],
+    "@deltachat/stdio-rpc-server-android-arm": ["@deltachat/stdio-rpc-server-android-arm@2.53.0", "", { "os": "android", "cpu": "arm" }, "sha512-UqXXUsDnbvwgaJlhd0TlfX3aVzHELqn6JeY9YsYqQ+neu7nJBI8rT0oXYR6BDfvOTx5XP6FNt14EboOWs8EMug=="],
 
-    "@deltachat/stdio-rpc-server-android-arm64": ["@deltachat/stdio-rpc-server-android-arm64@2.49.0", "", { "os": "android", "cpu": "arm64" }, "sha512-rAFqEctejIUG+seT87W1jisxOU8heVOd/A2J/+cCQr0UdBCIoFuNehiQRIezLmWnYvyuVyj2UPHxvMShHrDQ6Q=="],
+    "@deltachat/stdio-rpc-server-android-arm64": ["@deltachat/stdio-rpc-server-android-arm64@2.53.0", "", { "os": "android", "cpu": "arm64" }, "sha512-AnbRFXjTWdwst0ReGfcoT6WXGKfVt97JZkumDb9NcKhYGFcAwZtU04JpXRa62obmRlUB+T+s80KQFxSg1tI1wQ=="],
 
-    "@deltachat/stdio-rpc-server-darwin-arm64": ["@deltachat/stdio-rpc-server-darwin-arm64@2.49.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-MxCJcIl8X/4KuuSwc6byLXbukNUB+WnLh+AeeCs2Fr1ph0XnUSUkXIDcHuCyVZfd6YrrLabB2Tmwl7K7I9yzBg=="],
+    "@deltachat/stdio-rpc-server-darwin-arm64": ["@deltachat/stdio-rpc-server-darwin-arm64@2.53.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-LyarYWm9+FgzKx7bt1tTO7FPNXMmy5OR6T2+tM/iL180upNA0BzaqgU+maK2rmxlqzAN2hzHjW9mVUblLkzMag=="],
 
-    "@deltachat/stdio-rpc-server-darwin-x64": ["@deltachat/stdio-rpc-server-darwin-x64@2.49.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-NE3T6EWiTa5ogZW/EmKV16Q7ooUE8CrvjIYu2aaYbFYNojnmd8ugGSuCZJxfFsdgpyBaJJXnKpPT0OBZrHOH1w=="],
+    "@deltachat/stdio-rpc-server-darwin-x64": ["@deltachat/stdio-rpc-server-darwin-x64@2.53.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-c1zWWMgi7C/zRKxSCn6q7LH3kf30idwc9FsTwnnq3QQrDyrlR3YfWOSPwHJbf98u+TymDrH76c+fMTpT8X8kgQ=="],
 
-    "@deltachat/stdio-rpc-server-linux-arm": ["@deltachat/stdio-rpc-server-linux-arm@2.49.0", "", { "os": "linux", "cpu": "arm" }, "sha512-5WGaMJjhwfn4/0xBPllii70adEVstKtMqI/VWs031H8312/Le2NZowL3K96TZjJfHzQkJ8AinhiRkRDUqMfT6g=="],
+    "@deltachat/stdio-rpc-server-linux-arm": ["@deltachat/stdio-rpc-server-linux-arm@2.53.0", "", { "os": "linux", "cpu": "arm" }, "sha512-mGeyoJjqR9xioHXc/+F39HAfTgvDW2a/j4laISxu0IoLYB67+0eTnqIiiR3yvuYV5ElSB9jSCWDJU4UAswiJDA=="],
 
-    "@deltachat/stdio-rpc-server-linux-arm64": ["@deltachat/stdio-rpc-server-linux-arm64@2.49.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-M/A51UM4HvWbDTSecVcOPq9a2PWjR2K377fiMasFRQetCrrPs9QD3b4dY9xtZpGv+PYP8MPUXG9ZpekniiRSMw=="],
+    "@deltachat/stdio-rpc-server-linux-arm64": ["@deltachat/stdio-rpc-server-linux-arm64@2.53.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-TqeRAmmt0NbKWIfSieqBB9OnHvpqNQm+FJn4q34y4TdS1+cjh6dWeX9ZJjG0QVRdgvxmToBHRIEPfV3n5org+g=="],
 
-    "@deltachat/stdio-rpc-server-linux-ia32": ["@deltachat/stdio-rpc-server-linux-ia32@2.49.0", "", { "os": "linux", "cpu": "ia32" }, "sha512-9IHgb90kPJEXBOrbZARf8f1F82QaQCd0BxqLDRtb2BAxjY8ow0LOn4JPt4HG+f/Fl88KzNUbnnJcp/e8m/Ld6g=="],
+    "@deltachat/stdio-rpc-server-linux-ia32": ["@deltachat/stdio-rpc-server-linux-ia32@2.53.0", "", { "os": "linux", "cpu": "ia32" }, "sha512-Pzkxy9d6+qxSHjKWTd4/AxfR/oGUZe7VWeNlBvon3fHQpLr/0qC6H6+yhvw0WhwwTmrH6+UyvcbIL75V11QTMQ=="],
 
-    "@deltachat/stdio-rpc-server-linux-x64": ["@deltachat/stdio-rpc-server-linux-x64@2.49.0", "", { "os": "linux", "cpu": "x64" }, "sha512-hXDNIABuaQ128cjeYk2a2p9tKZ+ypQe62fXprS94DmKNtYD2D2kFCvlhve8OZBZyx6X1RUNySBfCWiThYSJWlQ=="],
+    "@deltachat/stdio-rpc-server-linux-x64": ["@deltachat/stdio-rpc-server-linux-x64@2.53.0", "", { "os": "linux", "cpu": "x64" }, "sha512-PoRGvyIEKBfzW1yaE7QG2liC7GJdWCfnZyXvP9/l0FWl83hTDvvCzNEPeypMZkplQr57if1Rf0FVfBIn6HsRvg=="],
 
-    "@deltachat/stdio-rpc-server-win32-ia32": ["@deltachat/stdio-rpc-server-win32-ia32@2.49.0", "", { "os": "win32", "cpu": "ia32" }, "sha512-V6/+AGilKND+3/SHMcJeMJ5Dsgegva0vRqawSETWd7nx1lHnit0d4Nffy8G2QaihQljCvmMSrldTxS5GNeo5Uw=="],
+    "@deltachat/stdio-rpc-server-win32-ia32": ["@deltachat/stdio-rpc-server-win32-ia32@2.53.0", "", { "os": "win32", "cpu": "ia32" }, "sha512-IMM/M5aNu+H5r5N3e0LUhMIUggi+rmAHgtcnJDnuaMXLbPeB/sKGcEmEO4hccLm6oS6bJxOSmIa6Nlq1l3XaWQ=="],
 
-    "@deltachat/stdio-rpc-server-win32-x64": ["@deltachat/stdio-rpc-server-win32-x64@2.49.0", "", { "os": "win32", "cpu": "x64" }, "sha512-+zvbmpKuEbZWAXFmGsa4Brr14m/O5GEYR2H7LqnCiH8/buwhHFbDPpZLUAM0zKQpVURQUuk9tir5AEuwfLMBng=="],
+    "@deltachat/stdio-rpc-server-win32-x64": ["@deltachat/stdio-rpc-server-win32-x64@2.53.0", "", { "os": "win32", "cpu": "x64" }, "sha512-PtJbhoHRzrdxbW10H22xFtbdINek8Xwi6wY7rC7HwD1Eoq5201Yq2kLKJGvDj2SJ++jBh/ZJgz65kQZr+G6sEA=="],
 
     "@deltachat/tiny-emitter": ["@deltachat/tiny-emitter@3.0.0", "", {}, "sha512-iapvwGCEWFjXtObQ/vNzXS0+M9hrZrY2tMdV7SaX8kHXKVm3oIuJUVmUj5jhABTL7GstO6uKzV+36FUZVGOqCA=="],
 

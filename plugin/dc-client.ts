@@ -361,6 +361,11 @@ export class DCClient {
   async startIO(): Promise<void> {
     const { rpc, accountId } = this.ensureAccount();
     await rpc.startIo(accountId);
+    // Tell DC core network is available so it immediately flushes any messages
+    // queued in the smtp table from a previous session. Without this, DC waits
+    // for a network-change event before retrying, so queued messages sit unsent
+    // across dispatcher restarts until a new message is created.
+    await rpc.maybeNetwork();
   }
 
   // ── Event handlers ──────────────────────────────────────────────────
