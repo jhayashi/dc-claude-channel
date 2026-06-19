@@ -4,6 +4,18 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.14] — 2026-06-19
+
+Surfaces the chat-search memory feature in the agent-setup card. The recall backend (the `dc_search_messages` pull tool and per-turn post-compaction auto-injection) already shipped; this release adds the user-facing toggle so memory boost can be turned on or off per agent from the UI.
+
+### Added
+
+- **Memory boost toggle in the agent-setup card.** Both the create and edit forms gain a "Memory" section with a **Memory boost** switch (brain icon), below the "Skip permissions" trust card. The switch reads/writes the agent's `x-dc-memory-boost` frontmatter, so an agent's auto-injection setting is now adjustable in chat instead of only at creation. `resolveMemoryBoost(explicit, body)` decides the stored value: the card's explicit switch wins; an omitted field (e.g. an un-upgraded card doing a create) falls back to the `classifyMemoryBoost` creation classifier. The card defaults the switch to **off** (explicit opt-in) — distinct from the classifier paths (`dc_create_agent`, wall+coach graduation), which still auto-enable memory boost for conversational agents. Agent-setup `APP_VERSION` bumps 2.16 → 2.17.
+
+### Migration notes
+
+Restart the dispatcher (`bun server.ts` via terminal CC restart) to pick up the `agent-setup-app.ts` handler that reads the new `memoryBoost` payload — the card HTML auto-upgrades to v2.17 on its own, but toggle changes won't persist until the dispatcher restarts. No change to existing agents' stored `x-dc-memory-boost` values.
+
 ## [1.4.13] — 2026-06-12
 
 Two dispatcher reliability fixes that emerged from load-testing with `bun test` saturating all 16 cores.
@@ -854,6 +866,8 @@ First public release of the Delta Chat channel for Claude Code.
 
 [1.3.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.0...v1.3.1
+[1.4.14]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.13...v1.4.14
+[1.4.13]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.12...v1.4.13
 [1.4.12]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.11...v1.4.12
 [1.4.11]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.10...v1.4.11
 [1.4.10]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.9...v1.4.10

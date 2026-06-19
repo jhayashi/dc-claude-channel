@@ -44,7 +44,7 @@ For skip-permissions mode, scheduled jobs (`dc_schedule*`), shared memory semant
 
 **Phase 2 — Per-turn auto-injection:** Memory snippets are injected during message dispatch, triggered by post-compaction (primary signal) or high context occupancy (secondary). Injection is wired in the inbound dispatch path — **not** `--append-system-prompt` (which is spawn-only and doesn't fire for warm cached subagents after mid-session compaction). Phase 2 requires a `bun server.ts` restart.
 
-**Agent opt-in via `x-dc-memory-boost`:** Frontmatter field (on/off, default off). Set at agent creation via `classifyMemoryBoost` — unset defaults to off, so pre-existing agents are unaffected.
+**Agent opt-in via `x-dc-memory-boost`:** Frontmatter field (on/off, default off). Set at agent creation via `classifyMemoryBoost` — unset defaults to off, so pre-existing agents are unaffected. The agent-setup card (v2.17+) exposes a **Memory boost** toggle in both the create and edit forms; create/edit payloads carry a `memoryBoost` boolean that `resolveMemoryBoost(explicit, body)` resolves (explicit switch wins; omitted → `classifyMemoryBoost`). The card's switch intentionally defaults **off** (explicit opt-in) — it does NOT seed from the classifier, unlike `dc_create_agent` / wall+coach graduation. The edit handler only writes `x-dc-memory-boost` when the payload actually includes the field, so an un-upgraded card can't clobber the stored value.
 
 **Configuration (env vars):**
 - `DC_MEMORY_BOOST_DISABLE=1` — rollout kill-switch (disables Phase 2 injection globally)
