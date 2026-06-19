@@ -13,8 +13,8 @@
     "test:integration": "DC_INTEGRATION_TEST=1 bun test test/integration"
   },
   "dependencies": {
-    "@deltachat/jsonrpc-client": "*",
-    "@deltachat/stdio-rpc-server": "*",
+    "@deltachat/jsonrpc-client": "^2.53.0",
+    "@deltachat/stdio-rpc-server": "^2.53.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@napi-rs/whisper": "^0.0.4",
     "@resvg/resvg-js": "^2.6.2",

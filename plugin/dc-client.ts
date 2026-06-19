@@ -360,12 +360,34 @@ export class DCClient {
    */
   async startIO(): Promise<void> {
     const { rpc, accountId } = this.ensureAccount();
+    // Clear any stale wrong-password flag before starting IO. DC core sets
+    // notify_about_wrong_pw=1 on transient auth failures and then silently
+    // stops all SMTP sending until the flag is cleared — even when the
+    // credentials are actually correct. Clear it proactively; if the
+    // password really is wrong the smtp worker will re-set it promptly.
+    await rpc.setConfig(accountId, 'notify_about_wrong_pw', null);
     await rpc.startIo(accountId);
-    // Tell DC core network is available so it immediately flushes any messages
-    // queued in the smtp table from a previous session. Without this, DC waits
-    // for a network-change event before retrying, so queued messages sit unsent
-    // across dispatcher restarts until a new message is created.
+    // Signal network availability so DC core's smtp worker wakes up for any
+    // messages queued from a previous session. A second call fires after a
+    // short delay to catch workers that finish initializing after the first.
     await rpc.maybeNetwork();
+    setTimeout(() => rpc.maybeNetwork().catch(() => {}), 3000);
+  }
+
+  /**
+   * DC core's own connectivity breakdown (IMAP folders + "Outgoing messages"
+   * SMTP state), tags stripped to a single log-friendly line. Used at startup
+   * to diagnose why queued smtp-table entries aren't being sent.
+   */
+  async getConnectivityReport(): Promise<string> {
+    const { rpc, accountId } = this.ensureAccount();
+    const html = await rpc.getConnectivityHtml(accountId);
+    return html
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   // ── Event handlers ──────────────────────────────────────────────────
@@ -640,6 +662,10 @@ export class DCClient {
       quotedMessageId: null,
       quotedText: null,
     });
+    // DC core's send_msg should signal the SMTP worker internally, but in
+    // practice the worker can stay idle after the initial maybeNetwork() at
+    // startup. Kick it explicitly so queued messages aren't stranded.
+    rpc.maybeNetwork().catch(() => {});
     return msgId;
   }
 
@@ -668,6 +694,7 @@ export class DCClient {
       quotedMessageId: null,
       quotedText: null,
     });
+    rpc.maybeNetwork().catch(() => {});
     return msgId;
   }
 
@@ -685,6 +712,7 @@ export class DCClient {
       quotedMessageId: null,
       quotedText: null,
     });
+    rpc.maybeNetwork().catch(() => {});
     return msgId;
   }
 

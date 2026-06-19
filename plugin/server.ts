@@ -3049,6 +3049,14 @@ async function main(): Promise<void> {
   if (dcAddress) {
     await client.startIO()
     logf('dc channel: IO started')
+    // One-shot connectivity diagnostic: log DC core's own IMAP/SMTP breakdown
+    // (incl. "Outgoing messages" state) once the workers have had a moment to
+    // connect. Helps diagnose stuck smtp-table entries.
+    setTimeout(() => {
+      client.getConnectivityReport()
+        .then((r) => logf('dc connectivity: %s', r))
+        .catch((e) => logf('dc connectivity: report failed: %s', e))
+    }, 8000)
   }
 
   // Start all app lifecycle hooks.
