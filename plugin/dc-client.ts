@@ -8,7 +8,7 @@
  * Delta Chat's built-in TinyEmitter event system.
  */
 
-import { mkdirSync } from "node:fs";
+import { mkdirSync, appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { waitForReady } from "./bootstrap.js";
@@ -366,6 +366,26 @@ export class DCClient {
     // credentials are actually correct. Clear it proactively; if the
     // password really is wrong the smtp worker will re-set it promptly.
     await rpc.setConfig(accountId, 'notify_about_wrong_pw', null);
+    // Diagnostic (default on while we chase stuck-smtp-queue cases): tee DC
+    // core's Info/Warning/Error events that mention smtp/sending/connection
+    // to a dedicated log so we can see what the smtp worker is actually
+    // doing. Filtered + best-effort so it can't slow or crash startup. Set
+    // DC_SMTP_DEBUG=0 to disable. Registered before startIo so nothing is
+    // missed.
+    if (process.env.DC_SMTP_DEBUG !== '0' && this.contextEvents) {
+      const smtpLog = join(DC_DATA_DIR, '..', 'smtp-debug.log');
+      const tee = (kind: string) => (ev: { msg?: string }) => {
+        const m = ev?.msg ?? '';
+        if (/smtp|sending|connect|relay|deliver|queue|maybe_network|auth/i.test(m)) {
+          try {
+            appendFileSync(smtpLog, `[${new Date().toISOString()}] ${kind}: ${m}\n`);
+          } catch { /* best-effort */ }
+        }
+      };
+      this.contextEvents.on('Info', tee('INFO'));
+      this.contextEvents.on('Warning', tee('WARN'));
+      this.contextEvents.on('Error', tee('ERROR'));
+    }
     await rpc.startIo(accountId);
     // Signal network availability so DC core's smtp worker wakes up for any
     // messages queued from a previous session. A second call fires after a
