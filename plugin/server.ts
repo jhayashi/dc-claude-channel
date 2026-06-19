@@ -1281,17 +1281,23 @@ const tailHandlers: Record<string, Dispatch> = {
           logf('dc_resume_in_terminal: failed to send command to chat %d: %v', chatId, err)
         }
 
-        // Schedule post-turn cleanup: goodbye, fully unpair, leave chat.
+        // Schedule post-turn cleanup: goodbye + unbind (chatAction:'none').
         // Each step is independently try/caught — a failure in one
         // (e.g. goodbye send losing a race against the session lock)
         // must not block the rest, especially the binding delete, or
         // the session stays filtered from the resume list and the
         // chat stays paired forever.
         //
-        // Delete the binding outright (don't just clear sessionId):
-        // the chat is about to be left, so the binding has no owner.
-        // Keeping it around inflates countByAgentId and blocks
+        // Delete the binding outright (don't just clear sessionId): the
+        // chat is being disconnected from the agent, so the binding has no
+        // owner. Keeping it around inflates countByAgentId and blocks
         // auto-delete of otherwise-unused agents.
+        //
+        // chatAction:'none' (NOT 'leave'): the binding is still removed so
+        // the chat is fully disconnected, but the bot does not leave the
+        // group. A hard leave emits a "You left the group" system message
+        // that, on a chatmail account, orphans read-receipts/status-updates
+        // for the chat and head-of-line-blocks the SMTP queue for ALL chats.
         const goodbye = result.kind === 'resume'
           ? 'Session resumed in your terminal. You can delete this chat — it\'s no longer connected.'
           : 'Fresh terminal session ready. You can delete this chat — it\'s no longer connected.'
@@ -1302,7 +1308,7 @@ const tailHandlers: Record<string, Dispatch> = {
             logf('dc_resume_in_terminal: goodbye send failed chat=%d: %v', chatId, err)
           }
           try {
-            await cleanupChatState(chatId, { chatAction: 'leave', reason: 'resume-out' })
+            await cleanupChatState(chatId, { chatAction: 'none', reason: 'resume-out' })
           } catch (err) {
             logf('dc_resume_in_terminal: cleanup failed chat=%d: %v', chatId, err)
           }

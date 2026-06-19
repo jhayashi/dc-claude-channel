@@ -1615,10 +1615,11 @@ export const agentSetupApp: WebXDCApp = {
             await emit('jobs', 'done', `deleted ${deleted} jobs`)
           }
 
-          await emit('state', 'start')
-          await ctx.cleanupChatState(chatId, { chatAction: 'leave', reason: 'teleport-out-gui' })
-          await emit('state', 'done')
-
+          // Deliver the resume command into the chat BEFORE any chat-side
+          // teardown, while the bot is still a full member. Previously this
+          // ran after cleanupChatState left the group, so the send hit a
+          // "not a member of the chat" error and the command was silently
+          // lost (the user saw teleport-out "fail").
           await emit('command', 'start')
           try {
             await ctx.client.send(chatId, '```\n' + cmdResult.command + '\n```')
@@ -1626,6 +1627,17 @@ export const agentSetupApp: WebXDCApp = {
             ctx.logf('agent-setup: teleport-out command send failed: %v', err)
           }
           await emit('command', 'done')
+
+          // chatAction:'none' — cleanupChatState still removes the binding
+          // (the session has moved to the terminal), but the bot does NOT
+          // leave the group, so the DC chat stays usable and re-bindable. A
+          // hard 'leave' would emit a "You left the group" system message
+          // that, on a chatmail account, orphans the chat's read-receipts/
+          // status-updates and head-of-line-blocks the SMTP queue for ALL
+          // chats. 'leave' is reserved for unpair/delete.
+          await emit('state', 'start')
+          await ctx.cleanupChatState(chatId, { chatAction: 'none', reason: 'teleport-out-gui' })
+          await emit('state', 'done')
 
           await ctx.client.sendWebXDCUpdate(session.msgId, JSON.stringify({
             payload: {
