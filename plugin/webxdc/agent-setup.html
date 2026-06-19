@@ -885,6 +885,8 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .trust-card .caveat { font: 400 12px/1.4 inherit; color: var(--ink-mute); margin-top: 4px; }
 .trust-card .shield { width: 14px; height: 14px; color: var(--ink-mute); flex-shrink: 0; }
 .trust-card.on .shield { color: var(--green); }
+.trust-card .brain { width: 14px; height: 14px; color: var(--ink-mute); flex-shrink: 0; }
+.trust-card.on .brain { color: var(--green); }
 
 /* Grouped tool picker */
 .tool-group {
@@ -1556,6 +1558,17 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
           <span class="caveat">Skips per-tool permission prompts. Every decision is recorded in the permission event log.</span>
         </span>
       </label>
+      <label class="field-label" style="margin-top:12px;">Memory</label>
+      <label class="trust-card" id="create-memory-card">
+        <input class="switch" type="checkbox" id="memory-boost">
+        <span class="body">
+          <span class="heading">
+            <svg class="brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 0 0-6 0c0 .3 0 .6.1.9A3 3 0 0 0 5 8.6a3 3 0 0 0 1 5.6V16a3 3 0 0 0 5 2 3 3 0 0 0 5-2v-1.8a3 3 0 0 0 1-5.6 3 3 0 0 0-1.1-2.7c.1-.3.1-.6.1-.9a3 3 0 0 0-3-3Z"/></svg>
+            Memory boost
+          </span>
+          <span class="caveat">Re-surfaces relevant past chat history when the conversation is compacted or context fills up.</span>
+        </span>
+      </label>
       <label class="field-label" style="margin-top:12px;">Tools</label>
       <details class="tool-group" id="create-tool-group-builtin">
         <summary>
@@ -1632,6 +1645,17 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
             Trusted agent
           </span>
           <span class="caveat">Skips per-tool permission prompts. Every decision is recorded in the permission event log.</span>
+        </span>
+      </label>
+      <label class="field-label" style="margin-top:12px;">Memory</label>
+      <label class="trust-card" id="edit-memory-card">
+        <input class="switch" type="checkbox" id="edit-memory-boost">
+        <span class="body">
+          <span class="heading">
+            <svg class="brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 0 0-6 0c0 .3 0 .6.1.9A3 3 0 0 0 5 8.6a3 3 0 0 0 1 5.6V16a3 3 0 0 0 5 2 3 3 0 0 0 5-2v-1.8a3 3 0 0 0 1-5.6 3 3 0 0 0-1.1-2.7c.1-.3.1-.6.1-.9a3 3 0 0 0-3-3Z"/></svg>
+            Memory boost
+          </span>
+          <span class="caveat">Re-surfaces relevant past chat history when the conversation is compacted or context fills up.</span>
         </span>
       </label>
       <label class="field-label" style="margin-top:12px;">Tools</label>
@@ -1896,7 +1920,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 2.16;
+var APP_VERSION = 2.17;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:   { solid: '#B4862A', checker: '#D9B25B' },
@@ -4016,9 +4040,13 @@ function populateForm() {
   var createTrust = document.getElementById('skip-permissions');
   createTrust.checked = !!draft.skipPermissions;
   syncTrustCardFor('create');
+  var createBoost = document.getElementById('memory-boost');
+  createBoost.checked = !!draft.memoryBoost;
+  syncMemoryCardFor('create');
   createArchetype = draft.archetype || 'role';
   wirePreviewInputs('create');
   wireTrustCardFor('create');
+  wireMemoryCardFor('create');
   refreshLivePreview('create');
 }
 
@@ -4055,6 +4083,9 @@ function populateEditForm() {
   var trust = document.getElementById('edit-skip-permissions');
   trust.checked = !!draft.skipPermissions;
   syncTrustCard();
+  var editBoost = document.getElementById('edit-memory-boost');
+  editBoost.checked = !!draft.memoryBoost;
+  syncMemoryCardFor('edit');
   // archetype/icon/iconMirror are preserved from draft (not editable here).
   editArchetype = draft.archetype || 'role';
   // Close the overflow menu if a prior edit left it open (replay-safe).
@@ -4062,6 +4093,7 @@ function populateEditForm() {
   if (ovf) ovf.open = false;
   wirePreviewInputs('edit');
   wireTrustCard();
+  wireMemoryCardFor('edit');
   refreshLivePreview('edit');
 }
 
@@ -4088,6 +4120,25 @@ function wireTrustCardFor(scope) {
 // Back-compat aliases for existing call sites (edit scope).
 function syncTrustCard() { syncTrustCardFor('edit'); }
 function wireTrustCard() { wireTrustCardFor('edit'); }
+
+function syncMemoryCardFor(scope) {
+  var cardId  = scope === 'edit' ? 'edit-memory-card' : 'create-memory-card';
+  var boostId = scope === 'edit' ? 'edit-memory-boost' : 'memory-boost';
+  var card = document.getElementById(cardId);
+  var boost = document.getElementById(boostId);
+  if (!card || !boost) return;
+  card.classList.toggle('on', boost.checked);
+}
+
+function wireMemoryCardFor(scope) {
+  var boostId = scope === 'edit' ? 'edit-memory-boost' : 'memory-boost';
+  var boost = document.getElementById(boostId);
+  if (!boost || boost.dataset.wired === 'true') return;
+  boost.dataset.wired = 'true';
+  boost.addEventListener('change', function () {
+    syncMemoryCardFor(scope);
+  });
+}
 
 function editOverflowExport() {
   var ovf = document.getElementById('edit-overflow');
@@ -4140,6 +4191,7 @@ function saveEdit() {
     tools: [],
   };
   var skipPermissions = document.getElementById('edit-skip-permissions').checked;
+  var memoryBoost = document.getElementById('edit-memory-boost').checked;
   // Archetype / explicit icon / mirror are no longer editable here; pass
   // through the draft values so the server doesn't wipe them on save.
   var iconMirror = !!(draft && draft.iconMirror);
@@ -4152,6 +4204,7 @@ function saveEdit() {
       agentId: editingAgentId,
       config: cfg,
       skipPermissions: skipPermissions,
+      memoryBoost: memoryBoost,
       iconMirror: iconMirror,
       archetype: archetype,
       icon: explicitIcon,
@@ -4206,12 +4259,14 @@ function create() {
     tools: [],
   };
   var skipPermissions = document.getElementById('skip-permissions').checked;
+  var memoryBoost = document.getElementById('memory-boost').checked;
   var toolState = collectCreateToolPickerState();
   window.webxdc.sendUpdate({
     payload: {
       type: 'create',
       config: cfg,
       skipPermissions: skipPermissions,
+      memoryBoost: memoryBoost,
       archetype: createArchetype || 'role',
       icon: '',
       allowedBuiltinTools: toolState.allowedBuiltinTools,

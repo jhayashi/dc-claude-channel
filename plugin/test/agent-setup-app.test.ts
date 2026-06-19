@@ -14,6 +14,7 @@ import {
   buildCreateAgentToolsCsv,
   shouldResendCard,
   parseSessions,
+  resolveMemoryBoost,
   type Session,
 } from '../apps/agent-setup-app.js'
 import type { CoachAnswers } from '../coach.js'
@@ -947,5 +948,17 @@ describe('parseSessions (backwards-compat with legacy sessions file)', () => {
     const out = parseSessions(raw)
     expect(out).toHaveLength(1)
     expect(out[0].appVersion).toBeUndefined()
+  })
+})
+
+describe('resolveMemoryBoost', () => {
+  test('explicit true → on, explicit false → off (switch is authoritative)', () => {
+    expect(resolveMemoryBoost(true, 'anything')).toBe('on')
+    expect(resolveMemoryBoost(false, 'a warm companion who chats with you')).toBe('off')
+  })
+  test('undefined → falls back to classifyMemoryBoost(body)', () => {
+    // conversational body → on; coding body → off (classifier behavior)
+    expect(resolveMemoryBoost(undefined, 'A warm companion who remembers your day.')).toBe('on')
+    expect(resolveMemoryBoost(undefined, 'Senior engineer: edit files, run tests, fix the repo.')).toBe('off')
   })
 })

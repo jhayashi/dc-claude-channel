@@ -86,6 +86,7 @@ function legacyDraftFromAgent(agent: agents.AgentDef): Record<string, unknown> {
     system: agent.body,
     tools: [],
     skipPermissions: agents.getSkipPermissions(agent),
+    memoryBoost: agents.memoryBoostEnabled(agent),
     iconMirror: agents.getIconMirror(agent),
     archetype: agents.getArchetype(agent),
     icon: agents.iconForAgent(agent),
@@ -263,6 +264,17 @@ export function buildCreateAgentToolsCsv(
     : allowedBuiltinTools
   const mcp = (allowedMcpServers ?? []).map(s => `mcp__${s}`)
   return [...builtins, ...mcp].join(', ')
+}
+
+/**
+ * Decide the x-dc-memory-boost value for a newly-created agent. The card's
+ * explicit switch value wins when supplied; otherwise fall back to the
+ * creation classifier (the zero-config default for non-card callers like the
+ * dc_create_agent tool). Returns the on/off string stored in frontmatter.
+ */
+export function resolveMemoryBoost(explicit: boolean | undefined, body: string): 'on' | 'off' {
+  if (typeof explicit === 'boolean') return explicit ? 'on' : 'off'
+  return agents.classifyMemoryBoost(body)
 }
 
 export function buildTeleportOutList(ctx: TeleportOutListCtx): TeleportOutChat[] {
@@ -470,6 +482,7 @@ async function sendInit(
     draft: {
       ...draft,
       skipPermissions: agents.getSkipPermissions(draft as agents.AgentDef),
+      memoryBoost: agents.memoryBoostEnabled(draft as agents.AgentDef),
       iconMirror: agents.getIconMirror(draft as agents.AgentDef),
     },
     existingAgents: await listExistingForPicker(sourceChatId),
@@ -930,6 +943,8 @@ export async function graduateAgent(ctx: AppContext, chatId: number): Promise<vo
       'x-dc-pattern': session.pattern ?? 'checker',
       // Legacy compat — drives existing badge palette / archetype-aware logic.
       'x-dc-archetype': 'role' as const,
+      // Wall+coach has no memory-boost toggle in its flow, so there's no card
+      // payload here — classify straight from the synthesized system prompt.
       'x-dc-memory-boost': agents.classifyMemoryBoost(systemPrompt),
     } as unknown as agents.AgentDef
     // Roll a random orientation so same-model agents are visually
@@ -1869,6 +1884,14 @@ export const agentSetupApp: WebXDCApp = {
             name: agentId,
           } as agents.AgentDef
           agents.setSkipPermissions(updated, skipPerms)
+          // Only write when the card actually sent the field, so an
+          // un-upgraded older card instance that omits memoryBoost can't
+          // silently clobber the stored value (the `...agent` spread
+          // preserves it otherwise).
+          const memoryBoostRaw = (payload as { memoryBoost?: boolean }).memoryBoost
+          if (typeof memoryBoostRaw === 'boolean') {
+            agents.setMemoryBoost(updated, memoryBoostRaw ? 'on' : 'off')
+          }
           agents.setIconMirror(updated, iconMirror)
           if (archetype) agents.setArchetype(updated, archetype)
           const rawIcon = (payload as { icon?: unknown }).icon
@@ -2136,7 +2159,7 @@ export const agentSetupApp: WebXDCApp = {
             // (all-checked) picker gets the full built-in toolkit, not an
             // empty CSV. Pre-fix, `?? []` made null → none → no built-ins.
             tools: buildCreateAgentToolsCsv(allowedBuiltinTools, allowedMcpServers),
-            'x-dc-memory-boost': agents.classifyMemoryBoost(draft.body ?? ''),
+            'x-dc-memory-boost': resolveMemoryBoost((payload as { memoryBoost?: boolean }).memoryBoost, draft.body ?? ''),
           } as agents.AgentDef
           agents.setSkipPermissions(newAgent, skipPerms)
           if (archetype) agents.setArchetype(newAgent, archetype)
