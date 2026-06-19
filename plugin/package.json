@@ -8,6 +8,7 @@
     "build:xdcs": "bun scripts/build-all-xdcs.ts",
     "build:badges": "bun scripts/build-all-badges.ts",
     "build:prebuilt": "bun scripts/build-all-xdcs.ts && bun scripts/build-all-badges.ts",
+    "test:safe": "bash scripts/run-tests.sh --wait",
     "test:webxdc": "cd test/webxdc && bunx playwright test",
     "test:integration": "DC_INTEGRATION_TEST=1 bun test test/integration"
   },
