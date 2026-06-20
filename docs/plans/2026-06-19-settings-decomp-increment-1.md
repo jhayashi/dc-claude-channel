@@ -399,10 +399,12 @@ test('refuses teleport_out_commit when not authorized → emits auth error, no s
   expect(calls.evict).toBe(0)
 })
 
-test('authorized → proceeds past auth (attempts evict)', async () => {
-  const { ctx, calls, auth } = fakes(true)
+test('authorized → passes the gate (no auth error emitted)', async () => {
+  const { ctx, sent, auth } = fakes(true)
   await handleTeleportOutCommit(ctx, 99, { requestId: 1, chatId: 42 }, auth)
-  expect(calls.evict).toBeGreaterThanOrEqual(0) // proceeds; full path covered by integration
+  // The real assertion: when authorized, the handler does NOT short-circuit
+  // with an auth error — it proceeds into the teleport flow.
+  expect(sent.some(p => p.type === 'teleport_out_error' && p.step === 'auth')).toBe(false)
 })
 ```
 
