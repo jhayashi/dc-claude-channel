@@ -27,6 +27,7 @@ const INIT_PAYLOAD_TYPE: Record<string, string> = {
   "agent-setup": "init",
   "permission-prompt": "request",
   "file-reviewer": "file", // file-reviewer has no type gate; anything works
+  "teleport": "init",
 };
 
 function xdcInitType(xdcBasename: string): string {

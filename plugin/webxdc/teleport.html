@@ -1,0 +1,1291 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="webxdc.js"></script>
+<style>
+:root {
+  --bg:        #0B0F17;
+  --surface:   #131826;
+  --surface-2: #1A2030;
+  --surface-3: #232A3C;
+  --line:      #2C3447;
+  --line-soft: #1F2536;
+  --ink:       #E8ECF5;
+  --ink-mute:  #99A2B8;
+  --ink-faint: #6C748A;
+  --paper:     #FAF9F5;
+  --orange:    #D97757;
+  --green:     #3DA85A;
+  --amber:     #C99A35;
+  --blue:      #6DA3D9;
+  --danger:    #E5694C;
+  --radius:    14px;
+  --radius-sm: 10px;
+  --radius-pill: 999px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, sans-serif;
+  letter-spacing: 0.005em;
+  background: var(--bg);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+/* Card wrapper fills the viewport */
+#shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+  width: 100%;
+}
+
+/* Views — only one .visible at a time */
+#view-to-cli, #view-here {
+  display: none;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+}
+#view-to-cli.visible, #view-here.visible {
+  display: flex;
+}
+#view-to-cli > .body, #view-here > .body {
+  flex: 1 1 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Title bar */
+.title-bar {
+  position: relative;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  flex-shrink: 0;
+}
+.title-bar .title { font: 600 18px/1.2 inherit; color: var(--ink); }
+.title-bar .sub { font: 400 12px/1.4 inherit; color: var(--ink-faint); margin-top: 3px; }
+
+/* Nav toggle — switches between the two views */
+.view-toggle {
+  display: flex;
+  gap: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin: 10px 16px 0;
+  flex-shrink: 0;
+}
+.view-toggle button {
+  flex: 1;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: var(--ink-mute);
+  font: 500 13px/1 inherit;
+  cursor: pointer;
+  border-right: 1px solid var(--line);
+}
+.view-toggle button:last-child { border-right: none; }
+.view-toggle button.active {
+  background: var(--surface-3);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Shared .body padding */
+.body { padding: 18px 20px; }
+
+/* Footer bar */
+.footer-bar {
+  position: sticky;
+  bottom: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  padding: 10px 20px calc(10px + env(safe-area-inset-bottom));
+  display: flex;
+  gap: 10px;
+  margin: 0 -20px -18px;
+}
+.footer-bar .btn { flex: 1; }
+#view-here .footer-bar .btn-primary { flex: 2; }
+
+/* Buttons */
+.btn {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.btn-primary {
+  background: var(--orange);
+  color: var(--paper);
+  border: 1px solid var(--orange);
+}
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-primary:disabled { opacity: 0.45; }
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.btn-ghost:hover { background: var(--surface-2); }
+
+/* Modal overlay */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.visible { display: flex; }
+.modal-box {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 16px;
+  padding: 28px 24px;
+  max-width: 320px;
+  width: 90%;
+  text-align: center;
+}
+.modal-icon { font-size: 40px; margin-bottom: 10px; }
+.modal-heading { font-size: 16px; font-weight: 600; color: #3fb950; margin-bottom: 6px; }
+.modal-sub { font-size: 12px; color: #8b949e; margin-bottom: 16px; line-height: 1.4; }
+.modal-hint { font-size: 11px; color: #6e7681; margin-bottom: 16px; }
+.modal-dismiss {
+  background: #30363d;
+  border: 1px solid #444c56;
+  border-radius: 8px;
+  color: #e6edf3;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 10px 20px;
+  cursor: pointer;
+  min-width: 120px;
+}
+.modal-dismiss:hover { background: #3d444d; }
+.modal-dismiss:active { transform: scale(0.97); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.spinner {
+  width: 28px; height: 28px;
+  border: 3px solid var(--line);
+  border-top-color: var(--amber);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 14px;
+}
+
+/* ── Resume (here) view styles ─────────────────────────────────────────── */
+.resume-row {
+  display: block;
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+.resume-row:hover { background: var(--surface-3); }
+.resume-row.selected { border-color: var(--orange); background: rgba(217,119,87,0.08); }
+.resume-header { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.resume-name {
+  font: 600 13px/1.2 inherit;
+  color: var(--ink);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.resume-name.unnamed {
+  font-weight: 400;
+  color: var(--ink-mute);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+.resume-ts { font: 500 11px/1.2 inherit; color: var(--ink-faint); white-space: nowrap; }
+.resume-meta { font: 400 11px/1.3 inherit; color: var(--ink-faint); margin-top: 3px; }
+.resume-group-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font: 600 12px/1.2 inherit;
+  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 18px 0 8px;
+  padding: 0 2px 6px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.resume-group-header:first-of-type { margin-top: 4px; }
+.resume-group-header .resume-group-path {
+  font: 400 11px/1.2 inherit;
+  color: var(--ink-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ── Teleport-out (to_cli) view styles ────────────────────────────────── */
+.to-screen { display: none; }
+.to-screen.active { display: block; }
+
+.to-row {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--ink);
+  text-align: left;
+}
+.to-row:hover { background: var(--surface-3); }
+.to-row.selected { border-color: var(--orange); background: rgba(217,119,87,0.08); }
+.to-row[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
+.to-row .avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; background: var(--surface-3); display: grid; place-items: center; color: var(--ink-mute); font-weight: 600; font-size: 11px; }
+.to-row .row-body { flex: 1; min-width: 0; }
+.to-row .row-name { font: 600 13px/1.2 inherit; color: var(--ink); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.to-row .row-meta { font: 400 11px/1.3 inherit; color: var(--ink-faint); margin-top: 2px; }
+.to-row .arrow { color: var(--ink-faint); font-size: 16px; }
+
+.to-badge { display: inline-block; padding: 0 6px; border-radius: var(--radius-pill); font: 500 10px/1.4 inherit; }
+.to-badge-jobs    { background: rgba(201,154,53,0.14); color: var(--amber); }
+.to-badge-trusted { background: rgba(61,168,90,0.14); color: var(--green); }
+.to-badge-live    { background: rgba(229,105,76,0.14); color: var(--danger); }
+.to-badge-current { background: rgba(217,119,87,0.18); color: var(--orange); }
+
+.to-opt {
+  display: block;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.to-opt.selected { border-color: var(--orange); background: rgba(217,119,87,0.06); }
+.to-opt-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.to-radio {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.to-opt.selected .to-radio { border-color: var(--orange); }
+.to-opt.selected .to-radio::after { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--orange); }
+.to-opt-title { font: 600 13px/1.2 inherit; color: var(--ink); }
+.to-opt-desc { font: 400 12px/1.45 inherit; color: var(--ink-faint); margin-left: 26px; }
+.to-select {
+  margin-top: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  width: 100%;
+}
+.to-summary {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 4px 12px;
+}
+.to-summary .sum-row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px;
+}
+.to-summary .sum-row:last-child { border-bottom: none; }
+.to-summary .sum-key { color: var(--ink-faint); }
+.to-summary .sum-val { text-align: right; font-weight: 500; color: var(--ink); }
+.to-summary .sum-val.mono { font-family: 'SF Mono', Menlo, monospace; font-size: 11px; word-break: break-all; }
+
+.to-note {
+  font-size: 12px; color: var(--ink-mute); line-height: 1.5;
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-left: 3px solid var(--surface-3);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.to-note-warn { border-left-color: var(--amber); }
+
+.to-progress { list-style: none; padding: 0; margin: 0; }
+.to-progress li {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+  color: var(--ink);
+}
+.to-progress li:last-child { border-bottom: none; }
+.to-progress .ti {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font: 700 12px/1 inherit;
+  flex-shrink: 0;
+}
+.to-progress .ti.done { background: var(--green); color: var(--paper); }
+.to-progress .ti.active {
+  background: transparent;
+  border: 2px solid var(--orange);
+  color: var(--orange);
+  animation: to-spin 1s linear infinite;
+}
+.to-progress .ti.pending { background: var(--surface-3); color: var(--ink-faint); }
+.to-progress .label.pending { color: var(--ink-faint); }
+.to-progress .detail { font: 400 11px/1.3 inherit; color: var(--ink-faint); margin-top: 2px; }
+.to-progress code { font-family: 'SF Mono', Menlo, monospace; font-size: 11px; color: var(--ink-mute); }
+@keyframes to-spin { to { transform: rotate(360deg); } }
+
+.to-cmd {
+  position: relative;
+  background: #0a0d15;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  padding-right: 70px;
+  margin: 12px 0 8px;
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #a5d6e6;
+  word-break: break-all;
+}
+.to-cmd code { white-space: normal; }
+.to-copy-btn {
+  position: absolute;
+  top: 8px; right: 8px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* Sub-screen title bars inside to-cli view */
+.sub-title-bar {
+  padding: 10px 0 10px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 14px;
+}
+.sub-title-bar .crumb {
+  font: 500 11px/1 inherit;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+}
+.sub-title-bar .crumb svg { width: 12px; height: 12px; }
+.sub-title-bar .sub-title { font: 600 15px/1.2 inherit; color: var(--ink); }
+</style>
+</head>
+<body>
+
+<div id="shell">
+  <!-- view-to-cli: Send this DC chat to your terminal -->
+  <div id="view-to-cli">
+    <div class="title-bar">
+      <div class="title">Teleport</div>
+      <div class="sub">Move a session between DC and your terminal</div>
+    </div>
+    <div class="view-toggle">
+      <button id="toggle-to-cli" class="active" type="button" onclick="switchView('to_cli')">Send to terminal</button>
+      <button id="toggle-here" type="button" onclick="switchView('here')">Import from terminal</button>
+    </div>
+    <div class="body">
+
+      <!-- Sub-screen: pick a chat -->
+      <div id="to-pick" class="to-screen active">
+        <p style="font-size:13px;color:var(--ink-mute);margin: 4px 0 14px;line-height:1.5;">
+          Continue one of your DC conversations inside your local Claude Code terminal. This DC chat will wind down once the terminal session is ready.
+        </p>
+        <div id="to-empty" style="display:none;font-size:13px;color:var(--ink-mute);">
+          No paired chats available.
+        </div>
+        <div id="to-error" style="display:none;font-size:13px;color:var(--danger);" role="alert"></div>
+        <div id="to-list" role="listbox" aria-label="Paired chats"></div>
+      </div>
+
+      <!-- Sub-screen: scheduled jobs -->
+      <div id="to-jobs" class="to-screen">
+        <div class="sub-title-bar">
+          <button class="crumb" type="button" onclick="toShowScreen('pick')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Back
+          </button>
+          <div class="sub-title">Scheduled jobs</div>
+        </div>
+        <p id="to-jobs-sub" style="font-size:13px;color:var(--ink-mute);margin: 0 0 14px;line-height:1.5;"></p>
+        <div class="to-opt" id="to-opt-delete">
+          <div class="to-opt-head"><span class="to-radio"></span><span class="to-opt-title">Delete the jobs</span></div>
+          <div class="to-opt-desc">Remove them along with the DC chat. You can recreate them later from terminal or another chat.</div>
+        </div>
+        <div class="to-opt" id="to-opt-move">
+          <div class="to-opt-head"><span class="to-radio"></span><span class="to-opt-title">Move them to another DC chat</span></div>
+          <div class="to-opt-desc">The target chat's agent will run them on schedule.</div>
+          <select id="to-move-target" class="to-select" disabled>
+            <option value="">&mdash; Pick a destination chat &mdash;</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Sub-screen: confirm -->
+      <div id="to-confirm" class="to-screen">
+        <div class="sub-title-bar">
+          <button class="crumb" type="button" id="to-confirm-back-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Back
+          </button>
+          <div class="sub-title">Review and confirm</div>
+        </div>
+        <p style="font-size:13px;color:var(--ink-mute);margin: 0 0 14px;line-height:1.5;">
+          Here's what will happen when you tap "Send to terminal."
+        </p>
+        <div id="to-summary" class="to-summary"></div>
+        <div class="to-note to-note-warn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-2px;margin-right:4px;"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Don't send messages to this DC chat while the terminal session is active &mdash; single-writer lock.
+        </div>
+      </div>
+
+      <!-- Sub-screen: progress -->
+      <div id="to-progress-screen" class="to-screen">
+        <div class="sub-title-bar">
+          <div class="sub-title">Transferring to terminal&hellip;</div>
+        </div>
+        <p style="font-size:13px;color:var(--ink-mute);margin: 0 0 14px;line-height:1.5;">
+          This takes a few seconds. Don't close the app.
+        </p>
+        <ul id="to-progress" class="to-progress"></ul>
+      </div>
+
+      <!-- Sub-screen: done -->
+      <div id="to-done" class="to-screen">
+        <div class="sub-title-bar">
+          <div class="sub-title" style="color: var(--green);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;vertical-align:-1px;margin-right:4px;"><polyline points="20 6 9 17 4 12"/></svg>
+            Ready for terminal
+          </div>
+        </div>
+        <p style="font-size:13px;color:var(--ink-mute);margin: 0 0 14px;line-height:1.5;">
+          Paste this command into your local Claude Code terminal.
+        </p>
+        <div id="to-cmd" class="to-cmd">
+          <button type="button" id="to-copy" class="to-copy-btn" onclick="toCopyCommand()">Copy</button>
+          <code id="to-cmd-text"></code>
+        </div>
+        <div class="to-note">
+          The same command is also posted as a normal message in the DC chat, so it stays visible after you close this dialog.
+        </div>
+        <div id="to-done-summary" class="to-summary" style="margin-top:14px;"></div>
+      </div>
+
+    </div>
+    <!-- Footer is rendered by toShowScreen() as needed -->
+    <div id="to-footer" class="footer-bar" style="display:none;">
+      <button type="button" id="to-back" class="btn btn-ghost">Back</button>
+      <button type="button" id="to-next" class="btn btn-primary">Next</button>
+    </div>
+  </div>
+
+  <!-- view-here: Resume a terminal session in a chat -->
+  <div id="view-here">
+    <div class="title-bar">
+      <div class="title">Teleport</div>
+      <div class="sub">Move a session between DC and your terminal</div>
+    </div>
+    <div class="view-toggle">
+      <button id="toggle-to-cli2" type="button" onclick="switchView('to_cli')">Send to terminal</button>
+      <button id="toggle-here2" class="active" type="button" onclick="switchView('here')">Import from terminal</button>
+    </div>
+    <div class="body">
+      <p style="font-size: 13px; color: var(--ink-mute); margin: 4px 0 12px; line-height: 1.5;">
+        Continue a recent Claude session as a chat.
+      </p>
+      <div id="resume-empty" style="display:none;font-size:13px;color:var(--ink-mute);">No sessions found in the last 5 days.</div>
+      <div id="resume-error" style="display:none;font-size:13px;color:var(--danger);" role="alert"></div>
+      <div id="resume-list" style="display:none" role="listbox" aria-label="Recent sessions"></div>
+      <div class="footer-bar">
+        <button type="button" id="resume-cancel" class="btn btn-ghost">Cancel</button>
+        <button type="button" id="resume-attach" class="btn btn-primary" disabled>Attach to new chat</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Loading modal (shared) -->
+<div id="loading-modal" class="modal-overlay">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="spinner"></div>
+    <div class="modal-heading" id="loading-modal-heading" style="color:#e6edf3;">Loading</div>
+    <div class="modal-sub" id="loading-modal-sub">Please wait&hellip;</div>
+  </div>
+</div>
+
+<!-- Success modal -->
+<div id="modal" class="modal-overlay" onclick="dismissModal(event)">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-icon" id="modal-icon">&#x2705;</div>
+    <div class="modal-heading" id="modal-heading"></div>
+    <div class="modal-sub" id="modal-sub"></div>
+    <div class="modal-hint">Swipe or tap back to close the app</div>
+    <button class="modal-dismiss" id="modal-dismiss" onclick="dismissModal()"></button>
+  </div>
+</div>
+
+<script>
+var APP_VERSION = 1.00;
+var versionMismatchSent = false;
+
+// ── State ──────────────────────────────────────────────────────────────────
+var currentView = null; // 'to_cli' | 'here'
+
+// to_cli state
+var toState = {
+  screen: 'pick',
+  chats: [],
+  selectedChat: null,
+  jobDisposition: 'delete',
+  moveTarget: null,
+  requestId: 0,
+  progress: {},
+  progressDetails: {},
+  command: null,
+};
+
+var TO_PROGRESS_STEPS = [
+  { id: 'evict',   label: 'Pausing chat subagent' },
+  { id: 'jobs',    label: 'Handling scheduled jobs' },
+  { id: 'state',   label: 'Cleaning up chat state' },
+  { id: 'command', label: 'Generating terminal command' },
+];
+
+// resume (here) state
+var resumeRequestId = 0;
+var selectedResumeSessionId = null;
+var attachRequestId = 0;
+var attachTimeout = null;
+
+// ── View switching ─────────────────────────────────────────────────────────
+function switchView(view) {
+  currentView = view;
+  var toCliEl = document.getElementById('view-to-cli');
+  var hereEl = document.getElementById('view-here');
+  if (view === 'to_cli') {
+    toCliEl.classList.add('visible');
+    hereEl.classList.remove('visible');
+    resetToCliState();
+    sendTeleportListRequest();
+  } else {
+    hereEl.classList.add('visible');
+    toCliEl.classList.remove('visible');
+    resetResumePane();
+    requestResumeList();
+  }
+}
+
+// ── Loading modal ──────────────────────────────────────────────────────────
+function showLoadingModal(heading, sub) {
+  var h = document.getElementById('loading-modal-heading');
+  var s = document.getElementById('loading-modal-sub');
+  if (h) h.textContent = heading || 'Loading';
+  if (s) s.textContent = sub || 'Please wait…';
+  document.getElementById('loading-modal').classList.add('visible');
+}
+function hideLoadingModal() {
+  document.getElementById('loading-modal').classList.remove('visible');
+}
+
+// ── Success modal ──────────────────────────────────────────────────────────
+function showModal(heading, sub) {
+  document.getElementById('modal-heading').textContent = heading;
+  document.getElementById('modal-sub').textContent = sub;
+  document.getElementById('modal').classList.add('visible');
+}
+function dismissModal(event) {
+  if (event && event.target !== document.getElementById('modal')) return;
+  document.getElementById('modal').classList.remove('visible');
+}
+
+// ── to_cli (teleport-out) logic ────────────────────────────────────────────
+function resetToCliState() {
+  toState = {
+    screen: 'pick', chats: [], selectedChat: null, jobDisposition: 'delete',
+    moveTarget: null, requestId: ++resumeRequestId, progress: {}, progressDetails: {}, command: null,
+  };
+  toShowScreen('pick');
+  var errBox = document.getElementById('to-error');
+  if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+  var list = document.getElementById('to-list');
+  if (list) list.replaceChildren();
+}
+
+function sendTeleportListRequest() {
+  showLoadingModal('Loading chats', 'Scanning your paired DC chats…');
+  window.webxdc.sendUpdate({
+    payload: {
+      type: 'teleport_out_list_request',
+      requestId: toState.requestId,
+      senderAddr: window.webxdc.selfAddr,
+    },
+    summary: 'teleport-out list',
+  }, '');
+}
+
+function toShowScreen(screen) {
+  toState.screen = screen;
+  var screens = document.querySelectorAll('.to-screen');
+  for (var i = 0; i < screens.length; i++) {
+    screens[i].classList.remove('active');
+  }
+  var screenIds = {
+    pick: 'to-pick',
+    jobs: 'to-jobs',
+    confirm: 'to-confirm',
+    progress: 'to-progress-screen',
+    done: 'to-done',
+  };
+  var el = document.getElementById(screenIds[screen]);
+  if (el) el.classList.add('active');
+
+  var footer = document.getElementById('to-footer');
+  var back = document.getElementById('to-back');
+  var next = document.getElementById('to-next');
+  footer.style.display = 'flex';
+  back.style.display = '';
+  next.style.display = '';
+  back.disabled = false;
+
+  if (screen === 'pick') {
+    back.textContent = 'Cancel'; back.onclick = null; // no action — stay on pick
+    next.textContent = 'Next';   next.onclick = toAdvanceFromPick;
+    next.disabled = !toState.selectedChat;
+    footer.style.display = 'none'; // hide until a chat is selected; next handles it
+    // Actually show the footer but keep Next disabled
+    footer.style.display = 'flex';
+  } else if (screen === 'jobs') {
+    back.textContent = 'Back'; back.onclick = function() { toShowScreen('pick'); };
+    next.textContent = 'Next'; next.onclick = toAdvanceFromJobs;
+    next.disabled = toState.jobDisposition === 'move' && !toState.moveTarget;
+  } else if (screen === 'confirm') {
+    var confirmBackBtn = document.getElementById('to-confirm-back-btn');
+    if (confirmBackBtn) confirmBackBtn.onclick = function() {
+      toShowScreen(toState.selectedChat && toState.selectedChat.jobCount > 0 ? 'jobs' : 'pick');
+    };
+    back.textContent = 'Back';
+    back.onclick = function() {
+      toShowScreen(toState.selectedChat && toState.selectedChat.jobCount > 0 ? 'jobs' : 'pick');
+    };
+    next.textContent = 'Send to terminal';
+    next.onclick = toCommit;
+    next.disabled = false;
+  } else if (screen === 'progress') {
+    back.disabled = true; next.disabled = true;
+    back.textContent = 'Processing…'; back.onclick = null;
+    next.style.display = 'none';
+  } else if (screen === 'done') {
+    back.style.display = 'none';
+    next.textContent = 'Done'; next.onclick = function() {
+      resetToCliState();
+      sendTeleportListRequest();
+    };
+    next.disabled = false;
+  }
+}
+
+function toRenderPickList(chats) {
+  hideLoadingModal();
+  // Sort: isCurrent rows first (pin current chat at top).
+  var sorted = (chats || []).slice().sort(function(a, b) {
+    if (a.isCurrent && !b.isCurrent) return -1;
+    if (!a.isCurrent && b.isCurrent) return 1;
+    return 0;
+  });
+  toState.chats = sorted;
+  var list = document.getElementById('to-list');
+  var empty = document.getElementById('to-empty');
+  list.replaceChildren();
+  if (!toState.chats.length) { empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+
+  for (var i = 0; i < toState.chats.length; i++) {
+    (function(chat) {
+      var row = document.createElement('div');
+      row.className = 'to-row';
+      if (chat.isLive) row.setAttribute('aria-disabled', 'true');
+
+      var avatar = document.createElement('div');
+      avatar.className = 'avatar';
+      avatar.textContent = (chat.chatName || '?').charAt(0).toUpperCase();
+
+      var body = document.createElement('div');
+      body.className = 'row-body';
+
+      var nameDiv = document.createElement('div');
+      nameDiv.className = 'row-name';
+      nameDiv.appendChild(document.createTextNode(chat.chatName || ('Chat ' + chat.chatId)));
+      if (chat.isCurrent) nameDiv.appendChild(toBadge('this chat', 'to-badge-current'));
+      if (chat.isTrusted) nameDiv.appendChild(toBadge('trusted', 'to-badge-trusted'));
+      if (chat.jobCount > 0) nameDiv.appendChild(toBadge(chat.jobCount + ' job' + (chat.jobCount === 1 ? '' : 's'), 'to-badge-jobs'));
+      if (chat.isLive) nameDiv.appendChild(toBadge('live in terminal', 'to-badge-live'));
+
+      var meta = document.createElement('div');
+      meta.className = 'row-meta';
+      meta.textContent = (chat.agentName || chat.agentId || 'no agent') + (chat.isLive ? ' · already open in a terminal' : '');
+
+      body.appendChild(nameDiv);
+      body.appendChild(meta);
+
+      var arrow = document.createElement('div');
+      arrow.className = 'arrow';
+      arrow.textContent = '›';
+
+      row.appendChild(avatar);
+      row.appendChild(body);
+      row.appendChild(arrow);
+
+      if (!chat.isLive) {
+        row.onclick = function() {
+          var rows = document.querySelectorAll('#to-list .to-row');
+          for (var k = 0; k < rows.length; k++) rows[k].classList.remove('selected');
+          row.classList.add('selected');
+          toState.selectedChat = chat;
+          document.getElementById('to-next').disabled = false;
+        };
+      }
+      list.appendChild(row);
+    })(toState.chats[i]);
+  }
+}
+
+function toBadge(text, cls) {
+  var span = document.createElement('span');
+  span.className = 'to-badge ' + cls;
+  span.style.marginLeft = '4px';
+  span.textContent = text;
+  return span;
+}
+
+function toAdvanceFromPick() {
+  if (!toState.selectedChat) return;
+  if (toState.selectedChat.jobCount > 0) {
+    toRenderJobs();
+    toShowScreen('jobs');
+  } else {
+    toRenderConfirm();
+    toShowScreen('confirm');
+  }
+}
+
+function toRenderJobs() {
+  var c = toState.selectedChat;
+  var sub = document.getElementById('to-jobs-sub');
+  sub.replaceChildren(document.createTextNode(
+    c.chatName + ' has ' + c.jobCount + ' scheduled job' +
+    (c.jobCount === 1 ? '' : 's') +
+    '. Terminal sessions don’t run schedules — choose what to do with them.'
+  ));
+
+  var optDel = document.getElementById('to-opt-delete');
+  var optMov = document.getElementById('to-opt-move');
+  optDel.classList.toggle('selected', toState.jobDisposition === 'delete');
+  optMov.classList.toggle('selected', toState.jobDisposition === 'move');
+  optDel.onclick = function() {
+    toState.jobDisposition = 'delete';
+    toRenderJobs();
+    document.getElementById('to-next').disabled = false;
+  };
+  optMov.onclick = function() {
+    toState.jobDisposition = 'move';
+    toRenderJobs();
+    document.getElementById('to-next').disabled = !toState.moveTarget;
+  };
+
+  var sel = document.getElementById('to-move-target');
+  sel.replaceChildren();
+  var placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = '— Pick a destination chat —';
+  sel.appendChild(placeholder);
+  for (var i = 0; i < toState.chats.length; i++) {
+    var other = toState.chats[i];
+    if (other.chatId === c.chatId) continue;
+    var o = document.createElement('option');
+    o.value = String(other.chatId);
+    o.textContent = other.chatName + ' (' + (other.agentName || 'no agent') + ')';
+    if (toState.moveTarget === other.chatId) o.selected = true;
+    sel.appendChild(o);
+  }
+  sel.disabled = toState.jobDisposition !== 'move';
+  sel.onchange = function() {
+    toState.moveTarget = sel.value ? parseInt(sel.value, 10) : null;
+    document.getElementById('to-next').disabled = !toState.moveTarget;
+  };
+}
+
+function toAdvanceFromJobs() {
+  if (toState.jobDisposition === 'move' && !toState.moveTarget) return;
+  toRenderConfirm();
+  toShowScreen('confirm');
+}
+
+function toRenderConfirm() {
+  var c = toState.selectedChat;
+  var jobsLine;
+  if (c.jobCount === 0) jobsLine = '0';
+  else if (toState.jobDisposition === 'move') {
+    var target = null;
+    for (var i = 0; i < toState.chats.length; i++) if (toState.chats[i].chatId === toState.moveTarget) target = toState.chats[i];
+    jobsLine = c.jobCount + ' → moved to ' + (target ? target.chatName : ('chat ' + toState.moveTarget));
+  } else {
+    jobsLine = c.jobCount + ' → deleted';
+  }
+
+  var summary = document.getElementById('to-summary');
+  summary.replaceChildren();
+  var addRow = function(key, val, mono) {
+    var row = document.createElement('div'); row.className = 'sum-row';
+    var k = document.createElement('span'); k.className = 'sum-key'; k.textContent = key;
+    var v = document.createElement('span'); v.className = 'sum-val' + (mono ? ' mono' : ''); v.textContent = val;
+    row.appendChild(k); row.appendChild(v); summary.appendChild(row);
+  };
+  addRow('Chat', c.chatName || ('Chat ' + c.chatId), false);
+  addRow('Agent definition', 'Kept (reusable)', false);
+  addRow('Session UUID', (c.sessionId || '—').slice(0, 20) + (c.sessionId && c.sessionId.length > 20 ? '…' : ''), true);
+  addRow('Working dir', c.workingDir || '—', true);
+  addRow('Scheduled jobs', jobsLine, false);
+  addRow('DC chat', 'Left', false);
+}
+
+function toCommit() {
+  toShowScreen('progress');
+  toState.progress = {};
+  toState.progressDetails = {};
+  for (var i = 0; i < TO_PROGRESS_STEPS.length; i++) toState.progress[TO_PROGRESS_STEPS[i].id] = 'pending';
+  toRenderProgress();
+  var payload = {
+    type: 'teleport_out_commit',
+    requestId: toState.requestId,
+    chatId: toState.selectedChat.chatId,
+    jobDisposition: toState.jobDisposition === 'move'
+      ? { kind: 'move', toChatId: toState.moveTarget }
+      : { kind: 'delete' },
+    senderAddr: window.webxdc.selfAddr,
+  };
+  window.webxdc.sendUpdate({ payload: payload, summary: 'teleport-out commit' }, '');
+}
+
+function toRenderProgress() {
+  var ul = document.getElementById('to-progress');
+  ul.replaceChildren();
+  for (var i = 0; i < TO_PROGRESS_STEPS.length; i++) {
+    var s = TO_PROGRESS_STEPS[i];
+    var status = toState.progress[s.id] || 'pending';
+    var li = document.createElement('li');
+
+    var icon = document.createElement('span');
+    icon.className = 'ti ' + status;
+    icon.textContent = status === 'done' ? '✓' : (status === 'active' ? '' : '·');
+
+    var wrap = document.createElement('div');
+    var label = document.createElement('div');
+    label.className = 'label' + (status === 'pending' ? ' pending' : '');
+    label.textContent = s.label;
+    wrap.appendChild(label);
+
+    var detail = toState.progressDetails[s.id];
+    if (detail) {
+      var det = document.createElement('div');
+      det.className = 'detail';
+      det.textContent = detail;
+      wrap.appendChild(det);
+    }
+
+    li.appendChild(icon);
+    li.appendChild(wrap);
+    ul.appendChild(li);
+  }
+}
+
+function toHandleProgress(payload) {
+  if (payload.requestId !== toState.requestId) return;
+  if (!payload.step) return;
+  toState.progress[payload.step] = payload.status === 'done' ? 'done' : 'active';
+  if (payload.detail) toState.progressDetails[payload.step] = payload.detail;
+  toRenderProgress();
+}
+
+function toHandleDone(payload) {
+  if (payload.requestId !== toState.requestId) return;
+  toState.command = payload.command;
+  document.getElementById('to-cmd-text').textContent = payload.command;
+  var c = toState.selectedChat;
+  var jobsLine;
+  if (!c || c.jobCount === 0) jobsLine = '0 jobs';
+  else if (toState.jobDisposition === 'move') jobsLine = c.jobCount + ' jobs moved';
+  else jobsLine = c.jobCount + ' jobs deleted';
+
+  var summary = document.getElementById('to-done-summary');
+  summary.replaceChildren();
+  var addRow = function(key, val) {
+    var row = document.createElement('div'); row.className = 'sum-row';
+    var k = document.createElement('span'); k.className = 'sum-key'; k.textContent = key;
+    var v = document.createElement('span'); v.className = 'sum-val'; v.textContent = val;
+    row.appendChild(k); row.appendChild(v); summary.appendChild(row);
+  };
+  addRow('DC chat', 'Left ✓');
+  addRow('Jobs', jobsLine);
+  addRow('Agent definition', 'Preserved' + (c && c.agentName ? ' (' + c.agentName + ')' : ''));
+  toShowScreen('done');
+}
+
+function toHandleError(payload) {
+  if (payload.requestId !== toState.requestId) return;
+  var errBox = document.getElementById('to-error');
+  errBox.style.display = 'block';
+  errBox.textContent = 'Step "' + payload.step + '" failed: ' + payload.message;
+  toShowScreen('pick');
+}
+
+function toCopyCommand() {
+  var text = (toState.command || '').toString();
+  if (!text) return;
+  var btn = document.getElementById('to-copy');
+  var prev = btn ? btn.textContent : 'Copy';
+
+  function flash(label) {
+    if (!btn) return;
+    btn.textContent = label;
+    setTimeout(function() { btn.textContent = prev; }, 1200);
+  }
+
+  function fallback() {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+    document.body.removeChild(ta);
+    flash(ok ? 'Copied ✓' : 'Copy failed');
+  }
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(
+      function() { flash('Copied ✓'); },
+      function() { fallback(); }
+    );
+  } else {
+    fallback();
+  }
+}
+
+// ── Resume (here) logic ────────────────────────────────────────────────────
+function resetResumePane() {
+  selectedResumeSessionId = null;
+  var errEl = document.getElementById('resume-error');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  var attachBtn = document.getElementById('resume-attach');
+  if (attachBtn) attachBtn.disabled = true;
+  var list = document.getElementById('resume-list');
+  if (list) { list.style.display = 'none'; list.replaceChildren ? list.replaceChildren() : (list.innerHTML = ''); }
+  var empty = document.getElementById('resume-empty');
+  if (empty) empty.style.display = 'none';
+}
+
+function requestResumeList() {
+  resumeRequestId++;
+  var myReq = resumeRequestId;
+  var empty = document.getElementById('resume-empty');
+  var err = document.getElementById('resume-error');
+  var list = document.getElementById('resume-list');
+  if (empty) empty.style.display = 'none';
+  if (err) err.style.display = 'none';
+  if (list) list.style.display = 'none';
+  selectedResumeSessionId = null;
+  var attachBtn = document.getElementById('resume-attach');
+  if (attachBtn) attachBtn.disabled = true;
+  showLoadingModal('Loading sessions', 'Scanning the last 5 days of claude sessions…');
+  window.webxdc.sendUpdate({
+    payload: { type: 'resume_list_request', requestId: myReq, senderAddr: window.webxdc.selfAddr },
+    summary: 'Loading sessions'
+  }, 'resume list request ' + myReq);
+}
+
+function renderResumeList(candidates) {
+  hideLoadingModal();
+  var empty = document.getElementById('resume-empty');
+  var list = document.getElementById('resume-list');
+  if (!candidates || candidates.length === 0) {
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (!list) return;
+  while (list.firstChild) list.removeChild(list.firstChild);
+  list.style.display = 'block';
+
+  // Group by cwd; preserve the server's mtime-desc order within each group.
+  var groups = {};
+  var groupOrder = [];
+  candidates.forEach(function(c) {
+    var key = c.cwd || '(unknown)';
+    if (!groups[key]) {
+      groups[key] = { cwd: key, items: [], latestMtime: c.mtimeMs };
+      groupOrder.push(key);
+    }
+    groups[key].items.push(c);
+    if (c.mtimeMs > groups[key].latestMtime) groups[key].latestMtime = c.mtimeMs;
+  });
+  groupOrder.sort(function(a, b) { return groups[b].latestMtime - groups[a].latestMtime; });
+
+  function selectRow(row, sessionId) {
+    selectedResumeSessionId = sessionId;
+    var all = list.querySelectorAll('.resume-row');
+    for (var i = 0; i < all.length; i++) {
+      all[i].classList.remove('selected');
+      all[i].setAttribute('aria-pressed', 'false');
+    }
+    row.classList.add('selected');
+    row.setAttribute('aria-pressed', 'true');
+    var attachBtn = document.getElementById('resume-attach');
+    if (attachBtn) attachBtn.disabled = false;
+  }
+
+  groupOrder.forEach(function(key) {
+    var g = groups[key];
+    var hdr = document.createElement('div');
+    hdr.className = 'resume-group-header';
+    var base = document.createElement('span');
+    base.textContent = dirBasename(g.cwd);
+    hdr.appendChild(base);
+    var path = dirParentPath(g.cwd);
+    if (path) {
+      var pathSpan = document.createElement('span');
+      pathSpan.className = 'resume-group-path';
+      pathSpan.textContent = path;
+      hdr.appendChild(pathSpan);
+    }
+    list.appendChild(hdr);
+
+    g.items.forEach(function(c) {
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'resume-row';
+      row.setAttribute('role', 'option');
+      row.setAttribute('aria-pressed', 'false');
+      row.dataset.sessionId = c.sessionId;
+
+      var header = document.createElement('div');
+      header.className = 'resume-header';
+
+      var name = document.createElement('div');
+      name.className = 'resume-name';
+      var shortId = (c.sessionId || '').slice(0, 8);
+      if (c.sessionName) {
+        name.textContent = c.sessionName + ' (' + shortId + ')';
+      } else {
+        name.classList.add('unnamed');
+        name.textContent = c.sessionId || '';
+      }
+
+      var ts = document.createElement('div');
+      ts.className = 'resume-ts';
+      ts.textContent = relativeTime(c.mtimeMs);
+
+      header.appendChild(name);
+      header.appendChild(ts);
+      row.appendChild(header);
+
+      if (typeof c.messageCount === 'number') {
+        var meta = document.createElement('div');
+        meta.className = 'resume-meta';
+        meta.textContent = '~' + c.messageCount + ' lines';
+        row.appendChild(meta);
+      }
+
+      row.addEventListener('click', function() { selectRow(row, c.sessionId); });
+      list.appendChild(row);
+    });
+  });
+}
+
+function dirBasename(cwd) {
+  if (!cwd) return '(unknown)';
+  var parts = cwd.split('/').filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : cwd;
+}
+
+function dirParentPath(cwd) {
+  if (!cwd) return '';
+  var parts = cwd.split('/').filter(Boolean);
+  if (parts.length <= 1) return '';
+  var ancestors = parts.slice(0, -1);
+  if (ancestors.length <= 2) return '/' + ancestors.join('/');
+  return '…/' + ancestors.slice(-2).join('/');
+}
+
+function relativeTime(ms) {
+  var delta = Date.now() - ms;
+  var mins = Math.round(delta / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  var hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  return Math.round(hrs / 24) + 'd ago';
+}
+
+// ── WebXDC update listener ─────────────────────────────────────────────────
+window.webxdc.setUpdateListener(function(update) {
+  var d = update.payload;
+  if (!d) return;
+
+  // Auto-upgrade protocol — mandatory for all server-coupled cards.
+  if (d.type === 'init') {
+    if (d.version && d.version > APP_VERSION && !versionMismatchSent) {
+      versionMismatchSent = true;
+      window.webxdc.sendUpdate({
+        payload: { type: 'version_mismatch', appVersion: APP_VERSION, serverVersion: d.version, senderAddr: window.webxdc.selfAddr },
+        summary: 'Update requested'
+      }, 'Version mismatch');
+      return;
+    }
+    // Seed the entry view from the init payload.
+    var view = d.view === 'here' ? 'here' : 'to_cli';
+    switchView(view);
+    return;
+  }
+
+  // to_cli responses
+  if (d.type === 'teleport_out_list') {
+    toRenderPickList(d.chats || d.rows || []);
+    return;
+  }
+  if (d.type === 'teleport_out_progress') {
+    toHandleProgress(d);
+    return;
+  }
+  if (d.type === 'teleport_out_done') {
+    toHandleDone(d);
+    return;
+  }
+  if (d.type === 'teleport_out_error') {
+    toHandleError(d);
+    return;
+  }
+
+  // here (resume) responses
+  if (d.type === 'resume_list') {
+    if (d.requestId !== resumeRequestId) return;
+    if (currentView !== 'here') return;
+    renderResumeList(d.candidates || []);
+    return;
+  }
+  if (d.type === 'resume_attach_ok') {
+    if (d.requestId !== attachRequestId) return;
+    if (attachTimeout) { clearTimeout(attachTimeout); attachTimeout = null; }
+    hideLoadingModal();
+    var attachBtnOk = document.getElementById('resume-attach');
+    if (attachBtnOk) attachBtnOk.disabled = false;
+    var chatName = d.chatName ? '"' + d.chatName + '"' : 'A new chat';
+    showModal('Session resumed', chatName + ' is ready in your chat list. Open it and send a message to continue.');
+    return;
+  }
+  if (d.type === 'resume_attach_err') {
+    if (d.requestId !== attachRequestId) return;
+    if (attachTimeout) { clearTimeout(attachTimeout); attachTimeout = null; }
+    hideLoadingModal();
+    var errEl = document.getElementById('resume-error');
+    if (errEl) { errEl.style.display = 'block'; errEl.textContent = d.message || 'Attach failed.'; }
+    var attachBtn2 = document.getElementById('resume-attach');
+    if (attachBtn2) attachBtn2.disabled = false;
+    return;
+  }
+}, 0);
+
+// ── DOM ready ──────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  // Resume-cancel: switch back to pick view in to_cli (or just stay neutral)
+  var cancelBtn = document.getElementById('resume-cancel');
+  if (cancelBtn) cancelBtn.addEventListener('click', function() {
+    switchView('to_cli');
+  });
+
+  // Resume-attach
+  var attachBtn = document.getElementById('resume-attach');
+  if (attachBtn) attachBtn.addEventListener('click', function() {
+    if (!selectedResumeSessionId) return;
+    attachBtn.disabled = true;
+    attachRequestId++;
+    var myReq = attachRequestId;
+    showLoadingModal('Attaching session', 'Creating your new chat and hooking up the terminal session…');
+    if (attachTimeout) clearTimeout(attachTimeout);
+    attachTimeout = setTimeout(function() {
+      attachTimeout = null;
+      if (myReq === attachRequestId) {
+        hideLoadingModal();
+        attachBtn.disabled = false;
+        showModal('No response', 'The server did not respond. This card may be outdated — ask Claude to send you the teleport card again.');
+      }
+    }, 15000);
+    window.webxdc.sendUpdate({
+      payload: {
+        type: 'resume_attach',
+        sessionId: selectedResumeSessionId,
+        requestId: myReq,
+        senderAddr: window.webxdc.selfAddr,
+      },
+      summary: 'Attaching session'
+    }, 'resume attach ' + selectedResumeSessionId);
+  });
+});
+</script>
+</body>
+</html>
