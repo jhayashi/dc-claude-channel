@@ -18,3 +18,7 @@ docs/upstream-issues/**
 !docs/d4c-concept-mapping.md
 /scripts/
 *.log
+
+# Implementation plans are versioned for continuity (specs stay local scratch)
+!docs/plans/
+!docs/plans/**
