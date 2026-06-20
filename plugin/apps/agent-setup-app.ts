@@ -26,6 +26,9 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
+export { buildTeleportOutList } from '../teleport-core.js'
+export type { TeleportOutListCtx, TeleportOutChat } from '../teleport-core.js'
+import { buildTeleportOutList } from '../teleport-core.js'
 
 function availableToolsPayload(ctx: AppContext) {
   return {
@@ -207,33 +210,6 @@ export function parseSessions(raw: string): Session[] {
 }
 
 /**
- * Row list for the "Send chat to terminal" picker. One row per paired
- * binding in the access list. Metadata sourced at call time — the
- * handler re-runs every time the pane is opened.
- *
- * `ctx` takes function deps rather than the full AppContext so the
- * helper is trivially unit-testable without a live DC connection.
- */
-export interface TeleportOutListCtx {
-  jobCountForChat(chatId: number): number
-  sessionLive(sessionPath: string): boolean
-  chatNameForId(chatId: number): string | null
-}
-
-export interface TeleportOutChat {
-  chatId: number
-  chatName: string
-  agentId: string | null
-  agentName: string | null
-  lastActiveMs: number | null
-  jobCount: number
-  isTrusted: boolean
-  isLive: boolean
-  sessionId: string | null
-  workingDir: string | null
-}
-
-/**
  * Build the tools CSV from the agent-setup form's submission. Encodes the
  * client protocol of `collectCreateToolPickerState`:
  *
@@ -275,36 +251,6 @@ export function buildCreateAgentToolsCsv(
 export function resolveMemoryBoost(explicit: boolean | undefined, body: string): 'on' | 'off' {
   if (typeof explicit === 'boolean') return explicit ? 'on' : 'off'
   return agents.classifyMemoryBoost(body)
-}
-
-export function buildTeleportOutList(ctx: TeleportOutListCtx): TeleportOutChat[] {
-  const rows: TeleportOutChat[] = []
-  for (const b of bindings.listBindings()) {
-    if (!access.isAllowed(b.chatId)) continue
-    const agent = b.agentId ? agents.getAgent(b.agentId) : null
-    const chatName = ctx.chatNameForId(b.chatId) ?? `Chat ${b.chatId}`
-    const jobCount = ctx.jobCountForChat(b.chatId)
-    let isLive = false
-    if (b.sessionId && b.workingDir) {
-      const hash = resume.projectHashForCwd(b.workingDir)
-      const path = join(homedir(), '.claude', 'projects', hash, `${b.sessionId}.jsonl`)
-      isLive = ctx.sessionLive(path)
-    }
-    rows.push({
-      chatId: b.chatId,
-      chatName,
-      agentId: b.agentId ?? null,
-      agentName: agent ? ((agent['x-dc-display-name'] as string | undefined) ?? agent.name) : null,
-      lastActiveMs: null,
-      jobCount,
-      isTrusted: !!agent && agents.getSkipPermissions(agent) === true,
-      isLive,
-      sessionId: b.sessionId ?? null,
-      workingDir: b.workingDir ?? null,
-    })
-  }
-  rows.sort((a, b) => (b.lastActiveMs ?? 0) - (a.lastActiveMs ?? 0) || a.chatId - b.chatId)
-  return rows
 }
 
 // Per-chat msgId pointer: "has this chat seen the setup card yet, and if so,
