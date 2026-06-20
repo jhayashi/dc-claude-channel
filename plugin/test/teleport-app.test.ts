@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { handleTeleportOutCommit } from '../apps/teleport-app.js'
+import { handleTeleportOutCommit, handleResumeAttach } from '../apps/teleport-app.js'
 
 function fakes(authOk: boolean) {
   const sent: any[] = []
@@ -27,4 +27,22 @@ test('authorized → passes the gate (no auth error emitted)', async () => {
   // The real assertion: when authorized, the handler does NOT short-circuit
   // with an auth error — it proceeds into the teleport flow.
   expect(sent.some(p => p.type === 'teleport_out_error' && p.step === 'auth')).toBe(false)
+})
+
+test('refuses resume_attach when not authorized → emits resume_attach_err, no side effects', async () => {
+  const created: number[] = []
+  const sent: any[] = []
+  const ctx: any = {
+    client: {
+      sendWebXDCUpdate: async (_m: number, u: string) => { sent.push(JSON.parse(u).payload) },
+      createGroup: async (name: string) => { created.push(1); return 999 },
+      addContactToChat: async () => {},
+      getChatContacts: async () => [2],
+    },
+    logf: () => {},
+  }
+  const auth = async () => ({ ok: false, reason: 'needs-confirmation' }) as const
+  await handleResumeAttach(ctx, 99 /*msgId*/, 42 /*sourceChatId*/, { requestId: 7, sessionId: 'abc123' }, auth)
+  expect(sent.some(p => p.type === 'resume_attach_err')).toBe(true)
+  expect(created.length).toBe(0)
 })

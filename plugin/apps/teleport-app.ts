@@ -337,13 +337,14 @@ export const teleportApp: WebXDCApp = {
         description:
           'Open the Teleport card in a chat. Lets the user teleport a DC chat session back to a terminal (teleport-out), or attach a terminal Claude Code session into a new DC chat (resume-attach). ' +
           'Sends a self-contained WebXDC app card into the chat. ' +
-          'Parameters: chat_id (optional — defaults to the caller\'s chat), view (optional — "teleport-out" or "resume-attach" to open directly on that screen).',
+          'chat_id is REQUIRED — pass the caller\'s bound chat ID (the chat you are operating in). ' +
+          'Parameters: chat_id (required — the chat to open the teleport card in, should be the caller\'s bound chat), view (optional — "teleport-out" or "resume-attach" to open directly on that screen).',
         inputSchema: {
           type: 'object',
           properties: {
             chat_id: {
               type: 'string',
-              description: 'DC chat ID to send the teleport card into. Defaults to the calling chat.',
+              description: 'DC chat ID to send the teleport card into. Should be the caller\'s bound chat.',
             },
             view: {
               type: 'string',
@@ -351,6 +352,7 @@ export const teleportApp: WebXDCApp = {
               description: 'Initial view to open in the card. Omit to open on the home screen.',
             },
           },
+          required: ['chat_id'],
         },
         requiresCapability: 'real_world_action',
       },
@@ -363,11 +365,11 @@ export const teleportApp: WebXDCApp = {
     const rawChatId = args.chat_id
     const targetChatId = typeof rawChatId === 'string' && rawChatId.length > 0
       ? Number(rawChatId)
-      : (ctx.allowedChats()[0] ?? null)
+      : NaN
 
-    if (!targetChatId || !Number.isFinite(targetChatId)) {
+    if (!Number.isFinite(targetChatId)) {
       return {
-        content: [{ type: 'text', text: 'dc_open_teleport_card: no chat_id provided and no default chat available.' }],
+        content: [{ type: 'text', text: 'dc_open_teleport_card: chat_id is required (the chat to open the teleport card in).' }],
         isError: true,
       }
     }
