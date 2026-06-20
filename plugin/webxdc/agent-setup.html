@@ -356,12 +356,12 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
    column. Only one is .visible at a time. The .body inside each view
    is the scrollable region; optional .footer-bar sticks at the bottom. */
 #step0, #wall-screen, #new-chat-mode, #reuse-picker, #manage,
-#step2, #step3, #outdated, #loading, #resume-import {
+#step2, #step3, #outdated, #loading {
   display: none;
 }
 #step0.visible, #wall-screen.visible, #new-chat-mode.visible,
 #reuse-picker.visible, #manage.visible, #step2.visible, #step3.visible,
-#outdated.visible, #loading.visible, #resume-import.visible {
+#outdated.visible, #loading.visible {
   display: flex;
   flex-direction: column;
   flex: 1 1 0;
@@ -373,7 +373,6 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
    keep their own rules. */
 #step0 > .body, #wall-screen > .body, #new-chat-mode > .body,
 #reuse-picker > .body, #manage > .body, #step2 > .body, #step3 > .body,
-#resume-import > .body, #teleport-out > .body,
 #contacts > .body, #role-picker > .body {
   flex: 1 1 0;
   overflow-y: auto;
@@ -491,56 +490,6 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .modal-dismiss:active { transform: scale(0.97); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.resume-row {
-  display: block;
-  width: 100%;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  margin-bottom: 6px;
-  color: var(--ink);
-  text-align: left;
-  cursor: pointer;
-  font-family: inherit;
-}
-.resume-row:hover { background: var(--surface-3); }
-.resume-row.selected { border-color: var(--orange); background: rgba(217,119,87,0.08); }
-.resume-header { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-.resume-name {
-  font: 600 13px/1.2 inherit;
-  color: var(--ink);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.resume-name.unnamed {
-  font-weight: 400;
-  color: var(--ink-mute);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-}
-.resume-ts { font: 500 11px/1.2 inherit; color: var(--ink-faint); white-space: nowrap; }
-.resume-meta { font: 400 11px/1.3 inherit; color: var(--ink-faint); margin-top: 3px; }
-.resume-group-header {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font: 600 12px/1.2 inherit;
-  color: var(--ink);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin: 18px 0 8px;
-  padding: 0 2px 6px;
-  border-bottom: 1px solid var(--line-soft);
-}
-.resume-group-header:first-of-type { margin-top: 4px; }
-.resume-group-header .resume-group-path {
-  font: 400 11px/1.2 inherit;
-  color: var(--ink-faint);
-  text-transform: none;
-  letter-spacing: 0;
-}
 .tool-section {
   border: 1px solid #30363d;
   border-radius: 10px;
@@ -614,158 +563,15 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   font-style: italic;
 }
 
-#teleport-out, #contacts, #role-picker {
+#contacts, #role-picker {
   display: none;
 }
-#teleport-out.visible, #contacts.visible, #role-picker.visible {
+#contacts.visible, #role-picker.visible {
   display: flex;
   flex-direction: column;
   flex: 1 1 0;
   min-height: 0;
   width: 100%;
-}
-
-.to-row {
-  display: flex; align-items: center; gap: 10px;
-  width: 100%;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  margin-bottom: 6px;
-  cursor: pointer;
-  font-family: inherit;
-  color: var(--ink);
-  text-align: left;
-}
-.to-row:hover { background: var(--surface-3); }
-.to-row.selected { border-color: var(--orange); background: rgba(217,119,87,0.08); }
-.to-row[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
-.to-row .avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; background: var(--surface-3); display: grid; place-items: center; color: var(--ink-mute); font-weight: 600; font-size: 11px; }
-.to-row .row-body { flex: 1; min-width: 0; }
-.to-row .row-name { font: 600 13px/1.2 inherit; color: var(--ink); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.to-row .row-meta { font: 400 11px/1.3 inherit; color: var(--ink-faint); margin-top: 2px; }
-.to-row .arrow { color: var(--ink-faint); font-size: 16px; }
-
-.to-badge { display: inline-block; padding: 0 6px; border-radius: var(--radius-pill); font: 500 10px/1.4 inherit; }
-.to-badge-jobs    { background: rgba(201,154,53,0.14); color: var(--amber); }
-.to-badge-trusted { background: rgba(61,168,90,0.14); color: var(--green); }
-.to-badge-live    { background: rgba(229,105,76,0.14); color: var(--danger); }
-
-.to-opt {
-  display: block;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 12px;
-  margin-bottom: 8px;
-  cursor: pointer;
-}
-.to-opt.selected { border-color: var(--orange); background: rgba(217,119,87,0.06); }
-.to-opt-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
-.to-radio {
-  width: 16px; height: 16px;
-  border-radius: 50%;
-  border: 1.5px solid var(--line);
-  flex-shrink: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.to-opt.selected .to-radio { border-color: var(--orange); }
-.to-opt.selected .to-radio::after { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--orange); }
-.to-opt-title { font: 600 13px/1.2 inherit; color: var(--ink); }
-.to-opt-desc { font: 400 12px/1.45 inherit; color: var(--ink-faint); margin-left: 26px; }
-.to-select {
-  margin-top: 10px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  color: var(--ink);
-  font: inherit;
-  font-size: 13px;
-  width: 100%;
-}
-.to-summary {
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 4px 12px;
-}
-.to-summary .sum-row {
-  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line-soft);
-  font-size: 12px;
-}
-.to-summary .sum-row:last-child { border-bottom: none; }
-.to-summary .sum-key { color: var(--ink-faint); }
-.to-summary .sum-val { text-align: right; font-weight: 500; color: var(--ink); }
-.to-summary .sum-val.mono { font-family: 'SF Mono', Menlo, monospace; font-size: 11px; word-break: break-all; }
-
-.to-note {
-  font-size: 12px; color: var(--ink-mute); line-height: 1.5;
-  margin-top: 10px;
-  padding: 10px 12px;
-  background: var(--surface-2);
-  border-left: 3px solid var(--surface-3);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-}
-.to-note-warn { border-left-color: var(--amber); }
-
-.to-progress { list-style: none; padding: 0; margin: 0; }
-.to-progress li {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line-soft);
-  font-size: 13px;
-  color: var(--ink);
-}
-.to-progress li:last-child { border-bottom: none; }
-.to-progress .ti {
-  width: 22px; height: 22px;
-  border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center;
-  font: 700 12px/1 inherit;
-  flex-shrink: 0;
-}
-.to-progress .ti.done { background: var(--green); color: var(--paper); }
-.to-progress .ti.active {
-  background: transparent;
-  border: 2px solid var(--orange);
-  color: var(--orange);
-  animation: to-spin 1s linear infinite;
-}
-.to-progress .ti.pending { background: var(--surface-3); color: var(--ink-faint); }
-.to-progress .label.pending { color: var(--ink-faint); }
-.to-progress code { font-family: 'SF Mono', Menlo, monospace; font-size: 11px; color: var(--ink-mute); }
-@keyframes to-spin { to { transform: rotate(360deg); } }
-
-.to-cmd {
-  position: relative;
-  background: #0a0d15;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 14px;
-  padding-right: 70px;
-  margin: 12px 0 8px;
-  font-family: 'SF Mono', Menlo, monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #a5d6e6;
-  word-break: break-all;
-}
-.to-cmd code { white-space: normal; }
-.to-copy-btn {
-  position: absolute;
-  top: 8px; right: 8px;
-  background: var(--surface-3);
-  border: 1px solid var(--line);
-  color: var(--ink);
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 11px;
-  cursor: pointer;
-  font-family: inherit;
 }
 .seg {
   display: grid;
@@ -990,8 +796,6 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   margin: 0 -20px -18px;
 }
 .footer-bar .btn { flex: 1; }
-#resume-import .footer-bar .btn-primary { flex: 2; }
-
 /* Edit-screen overflow menu */
 .overflow { position: absolute; right: 12px; top: 10px; }
 .overflow summary {
@@ -1371,28 +1175,6 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
             <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
           </button>
         </div>
-        <div class="home-group">
-          <button class="home-action" onclick="gotoResume()">
-            <span class="home-action-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
-            </span>
-            <span class="home-action-body">
-              <span class="home-action-label">Resume terminal session</span>
-              <span class="home-action-desc">Continue a recent Claude session as a chat.</span>
-            </span>
-            <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
-          </button>
-          <button class="home-action" onclick="gotoTeleportOut()">
-            <span class="home-action-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-            </span>
-            <span class="home-action-body">
-              <span class="home-action-label">Send chat to terminal</span>
-              <span class="home-action-desc">Continue this chat in your local terminal.</span>
-            </span>
-            <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
-          </button>
-        </div>
       </div>
     </div>
   </div>
@@ -1694,129 +1476,6 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     <div class="outdated-sub">A newer agent settings card was sent to this chat. Swipe back and open the latest one.</div>
   </div>
 
-  <div id="resume-import">
-    <div class="title-bar">
-      <button class="crumb" type="button" onclick="show('step0')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        Home
-      </button>
-      <div class="title">Resume terminal session</div>
-    </div>
-    <div class="body">
-      <p style="font-size: 13px; color: var(--ink-mute); margin: 4px 0 12px; line-height: 1.5;">
-        Continue a recent Claude session as a chat.
-      </p>
-      <div id="resume-empty" style="display:none;font-size:13px;color:var(--ink-mute);">No sessions found in the last 5 days.</div>
-      <div id="resume-error" style="display:none;font-size:13px;color:var(--danger);" role="alert"></div>
-      <div id="resume-list" style="display:none" role="listbox" aria-label="Recent sessions"></div>
-      <div class="footer-bar">
-        <button type="button" id="resume-cancel" class="btn btn-ghost">Cancel</button>
-        <button type="button" id="resume-attach" class="btn btn-primary" disabled>Attach to new chat</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="teleport-out">
-    <div class="body">
-      <!-- Sub-screen 1: pick a chat -->
-      <div data-to-screen="pick" class="to-screen">
-        <div class="title-bar">
-          <button class="crumb" type="button" onclick="show('step0')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-            Home
-          </button>
-          <div class="title">Send chat to terminal</div>
-        </div>
-        <p style="font-size:13px;color:var(--ink-mute);margin: 4px 0 14px;line-height:1.5;">
-          Continue one of your DC conversations inside your local Claude Code terminal. This DC chat will wind down once the terminal session is ready.
-        </p>
-        <div id="to-empty" style="display:none;font-size:13px;color:var(--ink-mute);">
-          No paired chats available.
-        </div>
-        <div id="to-error" style="display:none;font-size:13px;color:var(--danger);" role="alert"></div>
-        <div id="to-list" role="listbox" aria-label="Paired chats"></div>
-      </div>
-
-      <!-- Sub-screen 2: scheduled jobs -->
-      <div data-to-screen="jobs" class="to-screen" style="display:none;">
-        <div class="title-bar">
-          <button class="crumb" type="button" onclick="toShow('pick')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-            Back
-          </button>
-          <div class="title">Scheduled jobs</div>
-        </div>
-        <p id="to-jobs-sub" style="font-size:13px;color:var(--ink-mute);margin: 4px 0 14px;line-height:1.5;"></p>
-        <div class="to-opt" id="to-opt-delete">
-          <div class="to-opt-head"><span class="to-radio"></span><span class="to-opt-title">Delete the jobs</span></div>
-          <div class="to-opt-desc">Remove them along with the DC chat. You can recreate them later from terminal or another chat.</div>
-        </div>
-        <div class="to-opt" id="to-opt-move">
-          <div class="to-opt-head"><span class="to-radio"></span><span class="to-opt-title">Move them to another DC chat</span></div>
-          <div class="to-opt-desc">The target chat's agent will run them on schedule.</div>
-          <select id="to-move-target" class="to-select" disabled>
-            <option value="">&mdash; Pick a destination chat &mdash;</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Sub-screen 3: confirm -->
-      <div data-to-screen="confirm" class="to-screen" style="display:none;">
-        <div class="title-bar">
-          <button class="crumb" type="button" onclick="toShow('jobs')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-            Back
-          </button>
-          <div class="title">Review and confirm</div>
-        </div>
-        <p style="font-size:13px;color:var(--ink-mute);margin: 4px 0 14px;line-height:1.5;">
-          Here's what will happen when you tap "Send to terminal."
-        </p>
-        <div id="to-summary" class="to-summary"></div>
-        <div class="to-note to-note-warn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-2px;margin-right:4px;"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          Don't send messages to this DC chat while the terminal session is active &mdash; single-writer lock.
-        </div>
-      </div>
-
-      <!-- Sub-screen 4: processing -->
-      <div data-to-screen="progress" class="to-screen" style="display:none;">
-        <div class="title-bar">
-          <div class="title">Transferring to terminal&hellip;</div>
-        </div>
-        <p style="font-size:13px;color:var(--ink-mute);margin: 4px 0 14px;line-height:1.5;">
-          This takes a few seconds. Don't close the app.
-        </p>
-        <ul id="to-progress" class="to-progress"></ul>
-      </div>
-
-      <!-- Sub-screen 5: done -->
-      <div data-to-screen="done" class="to-screen" style="display:none;">
-        <div class="title-bar">
-          <div class="title" style="color: var(--green);">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;vertical-align:-1px;margin-right:4px;"><polyline points="20 6 9 17 4 12"/></svg>
-            Ready for terminal
-          </div>
-        </div>
-        <p style="font-size:13px;color:var(--ink-mute);margin: 4px 0 14px;line-height:1.5;">
-          Paste this command into your local Claude Code terminal.
-        </p>
-        <div id="to-cmd" class="to-cmd">
-          <button type="button" id="to-copy" class="to-copy-btn" onclick="toCopyCommand()">Copy</button>
-          <code id="to-cmd-text"></code>
-        </div>
-        <div class="to-note">
-          The same command is also posted as a normal message in the DC chat, so it stays visible after you close this dialog.
-        </div>
-        <div id="to-done-summary" class="to-summary" style="margin-top:14px;"></div>
-      </div>
-      <div class="footer-bar">
-        <button type="button" id="to-back" class="btn btn-ghost">Back</button>
-        <button type="button" id="to-next" class="btn btn-primary">Next</button>
-      </div>
-    </div>
-  </div>
-
   <div id="contacts">
     <div class="title-bar">
       <button class="crumb" type="button" onclick="show('manage')">
@@ -1920,7 +1579,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 2.17;
+var APP_VERSION = 2.18;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:   { solid: '#B4862A', checker: '#D9B25B' },
@@ -2109,13 +1768,6 @@ var modalCountdown = 0;
 // every open, so it's only truthy for live responses.
 var pendingAction = null;
 
-var resumeRequestId = 0;
-var selectedResumeSessionId = null;
-// Separate counter for attach so a list-requery (which bumps
-// resumeRequestId) doesn't invalidate an in-flight attach response.
-var attachRequestId = 0;
-var attachTimeout = null;
-
 // Populated from the init/edit payload's availableModels list.
 // MODEL_TIERS: id -> tier. LATEST_PER_TIER: tier -> latest id (models.json
 // is ordered newest-first per tier, so the first occurrence per tier wins).
@@ -2215,7 +1867,7 @@ function wireSeg(segEl, onChange) {
 }
 
 function show(id) {
-  var ids = ['loading', 'step0', 'wall-screen', 'new-chat-mode', 'reuse-picker', 'manage', 'step2', 'step3', 'outdated', 'resume-import', 'teleport-out', 'contacts', 'role-picker'];
+  var ids = ['loading', 'step0', 'wall-screen', 'new-chat-mode', 'reuse-picker', 'manage', 'step2', 'step3', 'outdated', 'contacts', 'role-picker'];
   for (var i = 0; i < ids.length; i++) {
     var el = document.getElementById(ids[i]);
     if (ids[i] === id) el.classList.add('visible'); else el.classList.remove('visible');
@@ -2234,7 +1886,6 @@ function resetTransientState() {
   if (createTimeout) { clearTimeout(createTimeout); createTimeout = null; }
   if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
   if (deleteTimeout) { clearTimeout(deleteTimeout); deleteTimeout = null; }
-  if (attachTimeout) { clearTimeout(attachTimeout); attachTimeout = null; }
   var lm = document.getElementById('loading-modal');
   if (lm) lm.classList.remove('visible');
   var saveBtn = document.getElementById('save-btn');
@@ -3629,386 +3280,6 @@ function gotoManage() {
   show('manage');
 }
 
-function gotoResume() {
-  resetResumePane();
-  show('resume-import');
-  requestResumeList();
-}
-
-function resetResumePane() {
-  selectedResumeSessionId = null;
-  var errEl = document.getElementById('resume-error');
-  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
-  var attachBtn = document.getElementById('resume-attach');
-  if (attachBtn) attachBtn.disabled = true;
-}
-
-// ── Send chat to terminal ───────────────────────────────────────────────
-var toState = {
-  screen: 'pick',
-  chats: [],
-  selectedChat: null,
-  jobDisposition: 'delete',
-  moveTarget: null,
-  requestId: 0,
-  progress: {},
-  progressDetails: {},
-  command: null,
-};
-
-var TO_PROGRESS_STEPS = [
-  { id: 'evict',   label: 'Pausing chat subagent' },
-  { id: 'jobs',    label: 'Handling scheduled jobs' },
-  { id: 'state',   label: 'Cleaning up chat state' },
-  { id: 'command', label: 'Generating terminal command' },
-];
-
-function gotoTeleportOut() {
-  toState = {
-    screen: 'pick', chats: [], selectedChat: null, jobDisposition: 'delete',
-    moveTarget: null, requestId: ++resumeRequestId, progress: {}, progressDetails: {}, command: null,
-  };
-  toShow('pick');
-  show('teleport-out');
-  var errBox = document.getElementById('to-error');
-  if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
-  var list = document.getElementById('to-list');
-  list.replaceChildren();
-  showLoadingModal('Loading chats', 'Scanning your paired DC chats\u2026');
-  window.webxdc.sendUpdate({
-    payload: {
-      type: 'teleport_out_list_request',
-      requestId: toState.requestId,
-      senderAddr: window.webxdc.selfAddr,
-    },
-    summary: 'teleport-out list',
-  }, '');
-}
-
-function toShow(screen) {
-  toState.screen = screen;
-  var panes = document.querySelectorAll('#teleport-out .to-screen');
-  for (var i = 0; i < panes.length; i++) {
-    panes[i].style.display = panes[i].getAttribute('data-to-screen') === screen ? 'block' : 'none';
-  }
-  var back = document.getElementById('to-back');
-  var next = document.getElementById('to-next');
-  back.style.display = '';
-  next.style.display = '';
-  back.disabled = false;
-  if (screen === 'pick') {
-    back.textContent = 'Cancel'; back.onclick = function() { show('step0'); };
-    next.textContent = 'Next';   next.onclick = toAdvanceFromPick;
-    next.disabled = !toState.selectedChat;
-  } else if (screen === 'jobs') {
-    back.textContent = 'Back'; back.onclick = function() { toShow('pick'); };
-    next.textContent = 'Next'; next.onclick = toAdvanceFromJobs;
-    next.disabled = toState.jobDisposition === 'move' && !toState.moveTarget;
-  } else if (screen === 'confirm') {
-    back.textContent = 'Back';
-    back.onclick = function() {
-      toShow(toState.selectedChat && toState.selectedChat.jobCount > 0 ? 'jobs' : 'pick');
-    };
-    next.textContent = 'Send to terminal';
-    next.onclick = toCommit;
-    next.disabled = false;
-  } else if (screen === 'progress') {
-    back.disabled = true; next.disabled = true;
-    back.textContent = 'Processing…'; back.onclick = null;
-    next.style.display = 'none';
-  } else if (screen === 'done') {
-    back.style.display = 'none';
-    next.textContent = 'Done'; next.onclick = function() { show('step0'); };
-    next.disabled = false;
-  }
-}
-
-function toRenderPickList(chats) {
-  hideLoadingModal();
-  toState.chats = chats || [];
-  var list = document.getElementById('to-list');
-  var empty = document.getElementById('to-empty');
-  list.replaceChildren();
-  if (!toState.chats.length) { empty.style.display = 'block'; return; }
-  empty.style.display = 'none';
-
-  for (var i = 0; i < toState.chats.length; i++) {
-    (function(chat) {
-      var row = document.createElement('div');
-      row.className = 'to-row';
-      if (chat.isLive) row.setAttribute('aria-disabled', 'true');
-
-      var avatar = document.createElement('div');
-      avatar.className = 'avatar';
-      avatar.textContent = (chat.chatName || '?').charAt(0).toUpperCase();
-
-      var body = document.createElement('div');
-      body.className = 'row-body';
-
-      var nameDiv = document.createElement('div');
-      nameDiv.className = 'row-name';
-      nameDiv.appendChild(document.createTextNode(chat.chatName || ('Chat ' + chat.chatId)));
-      if (chat.isTrusted) nameDiv.appendChild(toBadge('trusted', 'to-badge-trusted'));
-      if (chat.jobCount > 0) nameDiv.appendChild(toBadge(chat.jobCount + ' job' + (chat.jobCount === 1 ? '' : 's'), 'to-badge-jobs'));
-      if (chat.isLive) nameDiv.appendChild(toBadge('live in terminal', 'to-badge-live'));
-
-      var meta = document.createElement('div');
-      meta.className = 'row-meta';
-      meta.textContent = (chat.agentName || chat.agentId || 'no agent') + (chat.isLive ? ' · already open in a terminal' : '');
-
-      body.appendChild(nameDiv);
-      body.appendChild(meta);
-
-      var arrow = document.createElement('div');
-      arrow.className = 'arrow';
-      arrow.textContent = '›';
-
-      row.appendChild(avatar);
-      row.appendChild(body);
-      row.appendChild(arrow);
-
-      if (!chat.isLive) {
-        row.onclick = function() {
-          var rows = document.querySelectorAll('#to-list .to-row');
-          for (var k = 0; k < rows.length; k++) rows[k].classList.remove('selected');
-          row.classList.add('selected');
-          toState.selectedChat = chat;
-          document.getElementById('to-next').disabled = false;
-        };
-      }
-      list.appendChild(row);
-    })(toState.chats[i]);
-  }
-}
-
-function toBadge(text, cls) {
-  var span = document.createElement('span');
-  span.className = 'to-badge ' + cls;
-  span.style.marginLeft = '4px';
-  span.textContent = text;
-  return span;
-}
-
-function toAdvanceFromPick() {
-  if (!toState.selectedChat) return;
-  if (toState.selectedChat.jobCount > 0) {
-    toRenderJobs();
-    toShow('jobs');
-  } else {
-    toRenderConfirm();
-    toShow('confirm');
-  }
-}
-
-function toRenderJobs() {
-  var c = toState.selectedChat;
-  var sub = document.getElementById('to-jobs-sub');
-  sub.replaceChildren(document.createTextNode(
-    c.chatName + ' has ' + c.jobCount + ' scheduled job' +
-    (c.jobCount === 1 ? '' : 's') +
-    '. Terminal sessions don\u2019t run schedules \u2014 choose what to do with them.'
-  ));
-
-  var optDel = document.getElementById('to-opt-delete');
-  var optMov = document.getElementById('to-opt-move');
-  optDel.classList.toggle('selected', toState.jobDisposition === 'delete');
-  optMov.classList.toggle('selected', toState.jobDisposition === 'move');
-  optDel.onclick = function() {
-    toState.jobDisposition = 'delete';
-    toRenderJobs();
-    document.getElementById('to-next').disabled = false;
-  };
-  optMov.onclick = function() {
-    toState.jobDisposition = 'move';
-    toRenderJobs();
-    document.getElementById('to-next').disabled = !toState.moveTarget;
-  };
-
-  var sel = document.getElementById('to-move-target');
-  sel.replaceChildren();
-  var placeholder = document.createElement('option');
-  placeholder.value = '';
-  placeholder.textContent = '— Pick a destination chat —';
-  sel.appendChild(placeholder);
-  for (var i = 0; i < toState.chats.length; i++) {
-    var other = toState.chats[i];
-    if (other.chatId === c.chatId) continue;
-    var o = document.createElement('option');
-    o.value = String(other.chatId);
-    o.textContent = other.chatName + ' (' + (other.agentName || 'no agent') + ')';
-    if (toState.moveTarget === other.chatId) o.selected = true;
-    sel.appendChild(o);
-  }
-  sel.disabled = toState.jobDisposition !== 'move';
-  sel.onchange = function() {
-    toState.moveTarget = sel.value ? parseInt(sel.value, 10) : null;
-    document.getElementById('to-next').disabled = !toState.moveTarget;
-  };
-}
-
-function toAdvanceFromJobs() {
-  if (toState.jobDisposition === 'move' && !toState.moveTarget) return;
-  toRenderConfirm();
-  toShow('confirm');
-}
-
-function toRenderConfirm() {
-  var c = toState.selectedChat;
-  var jobsLine;
-  if (c.jobCount === 0) jobsLine = '0';
-  else if (toState.jobDisposition === 'move') {
-    var target = null;
-    for (var i = 0; i < toState.chats.length; i++) if (toState.chats[i].chatId === toState.moveTarget) target = toState.chats[i];
-    jobsLine = c.jobCount + ' → moved to ' + (target ? target.chatName : ('chat ' + toState.moveTarget));
-  } else {
-    jobsLine = c.jobCount + ' → deleted';
-  }
-
-  var summary = document.getElementById('to-summary');
-  summary.replaceChildren();
-  var addRow = function(key, val, mono) {
-    var row = document.createElement('div'); row.className = 'sum-row';
-    var k = document.createElement('span'); k.className = 'sum-key'; k.textContent = key;
-    var v = document.createElement('span'); v.className = 'sum-val' + (mono ? ' mono' : ''); v.textContent = val;
-    row.appendChild(k); row.appendChild(v); summary.appendChild(row);
-  };
-  addRow('Chat', c.chatName || ('Chat ' + c.chatId), false);
-  addRow('Agent definition', 'Kept (reusable)', false);
-  addRow('Session UUID', (c.sessionId || '—').slice(0, 20) + (c.sessionId && c.sessionId.length > 20 ? '…' : ''), true);
-  addRow('Working dir', c.workingDir || '—', true);
-  addRow('Scheduled jobs', jobsLine, false);
-  addRow('DC chat', 'Left', false);
-}
-
-function toCommit() {
-  toShow('progress');
-  toState.progress = {};
-  toState.progressDetails = {};
-  for (var i = 0; i < TO_PROGRESS_STEPS.length; i++) toState.progress[TO_PROGRESS_STEPS[i].id] = 'pending';
-  toRenderProgress();
-  var payload = {
-    type: 'teleport_out_commit',
-    requestId: toState.requestId,
-    chatId: toState.selectedChat.chatId,
-    jobDisposition: toState.jobDisposition === 'move'
-      ? { kind: 'move', toChatId: toState.moveTarget }
-      : { kind: 'delete' },
-    senderAddr: window.webxdc.selfAddr,
-  };
-  window.webxdc.sendUpdate({ payload: payload, summary: 'teleport-out commit' }, '');
-}
-
-function toRenderProgress() {
-  var ul = document.getElementById('to-progress');
-  ul.replaceChildren();
-  for (var i = 0; i < TO_PROGRESS_STEPS.length; i++) {
-    var s = TO_PROGRESS_STEPS[i];
-    var status = toState.progress[s.id] || 'pending';
-    var li = document.createElement('li');
-
-    var icon = document.createElement('span');
-    icon.className = 'ti ' + status;
-    icon.textContent = status === 'done' ? '✓' : (status === 'active' ? '' : '·');
-
-    var wrap = document.createElement('div');
-    var label = document.createElement('div');
-    label.className = 'label' + (status === 'pending' ? ' pending' : '');
-    label.textContent = s.label;
-    wrap.appendChild(label);
-
-    var detail = toState.progressDetails[s.id];
-    if (detail) {
-      var det = document.createElement('div');
-      det.className = 'detail';
-      det.textContent = detail;
-      wrap.appendChild(det);
-    }
-
-    li.appendChild(icon);
-    li.appendChild(wrap);
-    ul.appendChild(li);
-  }
-}
-
-function toHandleProgress(payload) {
-  if (payload.requestId !== toState.requestId) return;
-  if (!payload.step) return;
-  toState.progress[payload.step] = payload.status === 'done' ? 'done' : 'active';
-  if (payload.detail) toState.progressDetails[payload.step] = payload.detail;
-  toRenderProgress();
-}
-
-function toHandleDone(payload) {
-  if (payload.requestId !== toState.requestId) return;
-  toState.command = payload.command;
-  document.getElementById('to-cmd-text').textContent = payload.command;
-  var c = toState.selectedChat;
-  var jobsLine;
-  if (!c || c.jobCount === 0) jobsLine = '0 jobs';
-  else if (toState.jobDisposition === 'move') jobsLine = c.jobCount + ' jobs moved';
-  else jobsLine = c.jobCount + ' jobs deleted';
-
-  var summary = document.getElementById('to-done-summary');
-  summary.replaceChildren();
-  var addRow = function(key, val) {
-    var row = document.createElement('div'); row.className = 'sum-row';
-    var k = document.createElement('span'); k.className = 'sum-key'; k.textContent = key;
-    var v = document.createElement('span'); v.className = 'sum-val'; v.textContent = val;
-    row.appendChild(k); row.appendChild(v); summary.appendChild(row);
-  };
-  addRow('DC chat', 'Left ✓');
-  addRow('Jobs', jobsLine);
-  addRow('Agent definition', 'Preserved' + (c && c.agentName ? ' (' + c.agentName + ')' : ''));
-  toShow('done');
-}
-
-function toHandleError(payload) {
-  if (payload.requestId !== toState.requestId) return;
-  var errBox = document.getElementById('to-error');
-  errBox.style.display = 'block';
-  errBox.textContent = 'Step "' + payload.step + '" failed: ' + payload.message;
-  toShow('pick');
-}
-
-function toCopyCommand() {
-  var text = (toState.command || '').toString();
-  if (!text) return;
-  var btn = document.getElementById('to-copy');
-  var prev = btn ? btn.textContent : 'Copy';
-
-  function flash(label) {
-    if (!btn) return;
-    btn.textContent = label;
-    setTimeout(function() { btn.textContent = prev; }, 1200);
-  }
-
-  function fallback() {
-    var ta = document.createElement('textarea');
-    ta.value = text;
-    ta.setAttribute('readonly', '');
-    ta.style.position = 'fixed';
-    ta.style.top = '0';
-    ta.style.left = '0';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    var ok = false;
-    try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
-    document.body.removeChild(ta);
-    flash(ok ? 'Copied ✓' : 'Copy failed');
-  }
-
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(
-      function() { flash('Copied ✓'); },
-      function() { fallback(); }
-    );
-  } else {
-    fallback();
-  }
-}
-
 function pickExisting(agentId) {
   if (creating) return;
   creating = true;
@@ -4337,168 +3608,6 @@ function refreshList() {
   renderHomeCount();
 }
 
-function isOnResumePane() {
-  var el = document.getElementById('resume-import');
-  return el && el.classList.contains('visible');
-}
-
-// The loading modal is shared across flows (list-load, attach). Callers
-// pass heading/sub so the copy matches what they triggered; defaults
-// cover the list-load case.
-function showLoadingModal(heading, sub) {
-  var h = document.getElementById('loading-modal-heading');
-  var s = document.getElementById('loading-modal-sub');
-  if (h) h.textContent = heading || 'Loading sessions';
-  if (s) s.textContent = sub || 'Scanning the last 5 days of claude sessions\u2026';
-  document.getElementById('loading-modal').classList.add('visible');
-}
-function hideLoadingModal() {
-  document.getElementById('loading-modal').classList.remove('visible');
-}
-
-function requestResumeList() {
-  resumeRequestId++;
-  var myReq = resumeRequestId;
-  var empty = document.getElementById('resume-empty');
-  var err = document.getElementById('resume-error');
-  var list = document.getElementById('resume-list');
-  if (empty) empty.style.display = 'none';
-  if (err) err.style.display = 'none';
-  if (list) list.style.display = 'none';
-  selectedResumeSessionId = null;
-  var attachBtn = document.getElementById('resume-attach');
-  if (attachBtn) attachBtn.disabled = true;
-  showLoadingModal();
-  window.webxdc.sendUpdate({
-    payload: { type: 'resume_list_request', requestId: myReq, senderAddr: window.webxdc.selfAddr },
-    summary: 'Loading sessions'
-  }, 'resume list request ' + myReq);
-}
-
-function renderResumeList(candidates) {
-  hideLoadingModal();
-  var empty = document.getElementById('resume-empty');
-  var list = document.getElementById('resume-list');
-  if (!candidates || candidates.length === 0) {
-    if (empty) empty.style.display = 'block';
-    return;
-  }
-  if (!list) return;
-  while (list.firstChild) list.removeChild(list.firstChild);
-  list.style.display = 'block';
-
-  // Group by cwd; preserve the server's mtime-desc order within each group.
-  // Then sort groups by their most recent session (i.e., the first entry).
-  var groups = {};
-  var groupOrder = [];
-  candidates.forEach(function(c) {
-    var key = c.cwd || '(unknown)';
-    if (!groups[key]) {
-      groups[key] = { cwd: key, items: [], latestMtime: c.mtimeMs };
-      groupOrder.push(key);
-    }
-    groups[key].items.push(c);
-    if (c.mtimeMs > groups[key].latestMtime) groups[key].latestMtime = c.mtimeMs;
-  });
-  groupOrder.sort(function(a, b) { return groups[b].latestMtime - groups[a].latestMtime; });
-
-  function selectRow(row, sessionId) {
-    selectedResumeSessionId = sessionId;
-    var all = list.querySelectorAll('.resume-row');
-    for (var i = 0; i < all.length; i++) {
-      all[i].classList.remove('selected');
-      all[i].setAttribute('aria-pressed', 'false');
-    }
-    row.classList.add('selected');
-    row.setAttribute('aria-pressed', 'true');
-    var attachBtn = document.getElementById('resume-attach');
-    if (attachBtn) attachBtn.disabled = false;
-  }
-
-  groupOrder.forEach(function(key) {
-    var g = groups[key];
-    var hdr = document.createElement('div');
-    hdr.className = 'resume-group-header';
-    var base = document.createElement('span');
-    base.textContent = dirBasename(g.cwd);
-    hdr.appendChild(base);
-    var path = dirParentPath(g.cwd);
-    if (path) {
-      var pathSpan = document.createElement('span');
-      pathSpan.className = 'resume-group-path';
-      pathSpan.textContent = path;
-      hdr.appendChild(pathSpan);
-    }
-    list.appendChild(hdr);
-
-    g.items.forEach(function(c) {
-      var row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'resume-row';
-      row.setAttribute('role', 'option');
-      row.setAttribute('aria-pressed', 'false');
-      row.dataset.sessionId = c.sessionId;
-
-      var header = document.createElement('div');
-      header.className = 'resume-header';
-
-      var name = document.createElement('div');
-      name.className = 'resume-name';
-      var shortId = (c.sessionId || '').slice(0, 8);
-      if (c.sessionName) {
-        name.textContent = c.sessionName + ' (' + shortId + ')';
-      } else {
-        name.classList.add('unnamed');
-        name.textContent = c.sessionId || '';
-      }
-
-      var ts = document.createElement('div');
-      ts.className = 'resume-ts';
-      ts.textContent = relativeTime(c.mtimeMs);
-
-      header.appendChild(name);
-      header.appendChild(ts);
-      row.appendChild(header);
-
-      if (typeof c.messageCount === 'number') {
-        var meta = document.createElement('div');
-        meta.className = 'resume-meta';
-        meta.textContent = '~' + c.messageCount + ' lines';
-        row.appendChild(meta);
-      }
-
-      row.addEventListener('click', function() { selectRow(row, c.sessionId); });
-      list.appendChild(row);
-    });
-  });
-}
-
-function dirBasename(cwd) {
-  if (!cwd) return '(unknown)';
-  var parts = cwd.split('/').filter(Boolean);
-  return parts.length ? parts[parts.length - 1] : cwd;
-}
-
-function dirParentPath(cwd) {
-  if (!cwd) return '';
-  var parts = cwd.split('/').filter(Boolean);
-  if (parts.length <= 1) return '';
-  // Show the last two ancestors for context, abbreviated with leading ellipsis.
-  var ancestors = parts.slice(0, -1);
-  if (ancestors.length <= 2) return '/' + ancestors.join('/');
-  return '\u2026/' + ancestors.slice(-2).join('/');
-}
-
-function relativeTime(ms) {
-  var delta = Date.now() - ms;
-  var mins = Math.round(delta / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return mins + 'm ago';
-  var hrs = Math.round(mins / 60);
-  if (hrs < 24) return hrs + 'h ago';
-  return Math.round(hrs / 24) + 'd ago';
-}
-
 // ── Contact management ────────────────────────────────────────────────────
 var contactList = [];
 var activeContact = null;
@@ -4791,53 +3900,6 @@ window.webxdc.setUpdateListener(function(update) {
     return;
   }
 
-  if (d.type === 'resume_list') {
-    if (d.requestId !== resumeRequestId) return;
-    if (!isOnResumePane()) return;
-    renderResumeList(d.candidates || []);
-  }
-
-  if (d.type === 'resume_attach_ok') {
-    // Replay-safe: attachRequestId resets to 0 on each open, so old
-    // replayed updates (with a real id) won't match. Don't gate on
-    // isOnResumePane — the success modal is an overlay and should fire
-    // whether or not the user is still looking at the resume list.
-    if (d.requestId !== attachRequestId) return;
-    if (attachTimeout) { clearTimeout(attachTimeout); attachTimeout = null; }
-    hideLoadingModal();
-    var attachBtnOk = document.getElementById('resume-attach');
-    if (attachBtnOk) attachBtnOk.disabled = false;
-    var chatName = d.chatName ? '"' + d.chatName + '"' : 'A new chat';
-    showModal('Session resumed', chatName + ' is ready in your chat list. Open it and send a message to continue.');
-  }
-
-  if (d.type === 'resume_attach_err') {
-    if (d.requestId !== attachRequestId) return;
-    if (attachTimeout) { clearTimeout(attachTimeout); attachTimeout = null; }
-    hideLoadingModal();
-    var errEl = document.getElementById('resume-error');
-    if (errEl) { errEl.style.display = 'block'; errEl.textContent = d.message || 'Attach failed.'; }
-    var attachBtn = document.getElementById('resume-attach');
-    if (attachBtn) attachBtn.disabled = false;
-  }
-
-  if (d.type === 'teleport_out_list') {
-    toRenderPickList(d.chats || []);
-    return;
-  }
-  if (d.type === 'teleport_out_progress') {
-    toHandleProgress(d);
-    return;
-  }
-  if (d.type === 'teleport_out_done') {
-    toHandleDone(d);
-    return;
-  }
-  if (d.type === 'teleport_out_error') {
-    toHandleError(d);
-    return;
-  }
-
   if (d.type === 'contacts_loaded') {
     renderContactList(d.contacts || []);
     return;
@@ -4848,42 +3910,6 @@ window.webxdc.setUpdateListener(function(update) {
     return;
   }
 }, 0);
-
-document.addEventListener('DOMContentLoaded', function() {
-  var _resumeCancelBtn = document.getElementById('resume-cancel');
-  if (_resumeCancelBtn) _resumeCancelBtn.addEventListener('click', function() {
-    show('step0');
-  });
-  var _resumeAttachBtn = document.getElementById('resume-attach');
-  if (_resumeAttachBtn) _resumeAttachBtn.addEventListener('click', function() {
-    if (!selectedResumeSessionId) return;
-    _resumeAttachBtn.disabled = true;
-    attachRequestId++;
-    var myReq = attachRequestId;
-    showLoadingModal('Attaching session', 'Creating your new chat and hooking up the terminal session\u2026');
-    if (attachTimeout) clearTimeout(attachTimeout);
-    attachTimeout = setTimeout(function() {
-      attachTimeout = null;
-      if (myReq === attachRequestId) {
-        hideLoadingModal();
-        _resumeAttachBtn.disabled = false;
-        showModal('No response', 'The server did not respond. This card may be outdated \u2014 ask Claude to send you the agent settings card again.');
-      }
-    }, 15000);
-    window.webxdc.sendUpdate({
-      payload: {
-        type: 'resume_attach',
-        sessionId: selectedResumeSessionId,
-        requestId: myReq,
-        senderAddr: window.webxdc.selfAddr,
-      },
-      summary: 'Attaching session'
-    }, 'resume attach ' + selectedResumeSessionId);
-  });
-  // #97: the old "Create one from New chat" empty-state link is gone;
-  // the Manage screen now exposes + Create new agent inline above the
-  // list. No DOMContentLoaded wiring needed for it (onclick is inline).
-});
 </script>
 </body>
 </html>
