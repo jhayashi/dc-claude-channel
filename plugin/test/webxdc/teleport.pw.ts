@@ -20,7 +20,7 @@ test("init view=to_cli requests the teleport-out list and renders rows", async (
   const h: HarnessHandle = await createHarness(xdc());
   await h.push({ type: 'init', view: 'to_cli', senderAddr: 'server' });
   // The card should emit a teleport_out_list_request; reply with one row.
-  await h.push({ type: 'teleport_out_list', rows: [{ chatId: 42, chatName: 'Health', agentName: 'Coach', isLive: true, jobCount: 0, isCurrent: true }], senderAddr: 'server' });
+  await h.push({ type: 'teleport_out_list', chats: [{ chatId: 42, chatName: 'Health', agentName: 'Coach', isLive: true, jobCount: 0, isCurrent: true }], senderAddr: 'server' });
   await h.page.waitForSelector('text=Health', { state: 'visible', timeout: 3000 });
   await h.close();
 });

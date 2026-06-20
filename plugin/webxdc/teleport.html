@@ -602,6 +602,9 @@ var TO_PROGRESS_STEPS = [
   { id: 'command', label: 'Generating terminal command' },
 ];
 
+// to_cli request counter (independent from resume)
+var toCliRequestId = 0;
+
 // resume (here) state
 var resumeRequestId = 0;
 var selectedResumeSessionId = null;
@@ -653,7 +656,7 @@ function dismissModal(event) {
 function resetToCliState() {
   toState = {
     screen: 'pick', chats: [], selectedChat: null, jobDisposition: 'delete',
-    moveTarget: null, requestId: ++resumeRequestId, progress: {}, progressDetails: {}, command: null,
+    moveTarget: null, requestId: ++toCliRequestId, progress: {}, progressDetails: {}, command: null,
   };
   toShowScreen('pick');
   var errBox = document.getElementById('to-error');
@@ -1205,7 +1208,7 @@ window.webxdc.setUpdateListener(function(update) {
 
   // to_cli responses
   if (d.type === 'teleport_out_list') {
-    toRenderPickList(d.chats || d.rows || []);
+    toRenderPickList(d.chats || []);
     return;
   }
   if (d.type === 'teleport_out_progress') {
