@@ -338,7 +338,7 @@ export const teleportApp: WebXDCApp = {
           'Open the Teleport card in a chat. Lets the user teleport a DC chat session back to a terminal (teleport-out), or attach a terminal Claude Code session into a new DC chat (resume-attach). ' +
           'Sends a self-contained WebXDC app card into the chat. ' +
           'chat_id is REQUIRED — pass the caller\'s bound chat ID (the chat you are operating in). ' +
-          'Parameters: chat_id (required — the chat to open the teleport card in, should be the caller\'s bound chat), view (optional — "teleport-out" or "resume-attach" to open directly on that screen).',
+          'Parameters: chat_id (required — the chat to open the teleport card in, should be the caller\'s bound chat), view (optional — \'here\' or \'to_cli\' to open directly on that screen).',
         inputSchema: {
           type: 'object',
           properties: {
@@ -348,8 +348,8 @@ export const teleportApp: WebXDCApp = {
             },
             view: {
               type: 'string',
-              enum: ['teleport-out', 'resume-attach'],
-              description: 'Initial view to open in the card. Omit to open on the home screen.',
+              enum: ['here', 'to_cli'],
+              description: '\'here\' opens the import view (bring a terminal session into this chat); \'to_cli\' opens the send-to-terminal view (default).',
             },
           },
           required: ['chat_id'],
@@ -374,7 +374,9 @@ export const teleportApp: WebXDCApp = {
       }
     }
 
-    const view = typeof args.view === 'string' ? args.view : undefined
+    // Normalize to the card's vocabulary: 'here' → import view; anything else → to_cli.
+    const normalizedView: 'here' | 'to_cli' =
+      typeof args.view === 'string' && args.view === 'here' ? 'here' : 'to_cli'
 
     try {
       const { xdcPath } = await buildTeleportXDC()
@@ -386,7 +388,7 @@ export const teleportApp: WebXDCApp = {
       await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
         payload: {
           type: 'init',
-          view: view ?? null,
+          view: normalizedView,
           version: getTeleportVersion(),
           senderAddr: 'server',
         },
@@ -398,7 +400,7 @@ export const teleportApp: WebXDCApp = {
       return {
         content: [{
           type: 'text',
-          text: `Teleport card sent to chat ${targetChatId} (msg ${msgId}).${view ? ` Opened on: ${view}.` : ''}`,
+          text: `Teleport card opened in chat ${targetChatId} (view=${normalizedView}).`,
         }],
       }
     } catch (err) {
