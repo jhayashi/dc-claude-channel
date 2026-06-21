@@ -8,17 +8,17 @@
  * Model (account-holder-only):
  *  - Solo group (owner + bot, no other human): the owner is the only human who
  *    could have driven the card → act directly. The common D4C case.
- *  - Multi-human group: the webXDC update's author can't be authenticated, so
- *    require that the chat's most recent message came from the owner
- *    (`_currentDriver` === owner) — i.e. an owner `fromId` confirmation. Else
- *    refuse with `needs-confirmation` and the caller asks the owner to confirm
- *    in chat.
+ *  - Multi-human group: a webXDC tap has NO authenticated author — `onWebXDCUpdate`
+ *    events are not chat messages and do NOT update `_currentDriver`. Any
+ *    `currentDriver` value reflects only the last *message* sender, which is
+ *    unauthenticated with respect to the tap. Therefore we ALWAYS refuse with
+ *    `needs-confirmation` in multi-human groups and require the owner to send
+ *    an authenticated chat-message command instead (ref GH #114).
  */
 
 export interface ControlAuthDeps {
   humanMemberCount: (chatId: number) => Promise<number>
   owner: (chatId: number) => number | null
-  currentDriver: (chatId: number) => number | null
 }
 
 export async function isControlCommandAuthorized(
@@ -31,7 +31,7 @@ export async function isControlCommandAuthorized(
   const humans = await deps.humanMemberCount(chatId)
   if (humans <= 1) return { ok: true } // solo group: owner is the only human
 
-  // Multi-human: require an authenticated owner confirmation via the last message.
-  if (deps.currentDriver(chatId) === owner) return { ok: true }
+  // Multi-human: webXDC taps are unauthenticated — always refuse and require
+  // the owner to confirm via an authenticated chat message.
   return { ok: false, reason: 'needs-confirmation' }
 }

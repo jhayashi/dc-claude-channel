@@ -1,5 +1,7 @@
 import { test, expect } from 'bun:test'
 import { handleTeleportOutCommit, handleResumeAttach } from '../apps/teleport-app.js'
+import { markCurrentChat } from '../teleport-core.js'
+import type { TeleportOutChat } from '../teleport-core.js'
 
 function fakes(authOk: boolean) {
   const sent: any[] = []
@@ -28,6 +30,44 @@ test('authorized → passes the gate (no auth error emitted)', async () => {
   // with an auth error — it proceeds into the teleport flow.
   expect(sent.some(p => p.type === 'teleport_out_error' && p.step === 'auth')).toBe(false)
 })
+
+// ── P2: isCurrent marking ───────────────────────────────────────────────────
+
+test('markCurrentChat: only the matching chatId row gets isCurrent=true', () => {
+  // Build a production-shaped row set WITHOUT pre-setting isCurrent —
+  // the point is to prove the server sets it, not that a fixture does.
+  const makeRow = (chatId: number): TeleportOutChat => ({
+    chatId,
+    chatName: `Chat ${chatId}`,
+    agentId: null,
+    agentName: null,
+    lastActiveMs: null,
+    jobCount: 0,
+    isTrusted: false,
+    isLive: false,
+    sessionId: null,
+    workingDir: null,
+    // isCurrent intentionally NOT set — we prove the helper sets it
+  })
+  const list = [makeRow(10), makeRow(20), makeRow(30)]
+
+  // Simulate the card being opened from chat 20.
+  markCurrentChat(list, 20)
+
+  expect(list.find(r => r.chatId === 10)?.isCurrent).toBe(false)
+  expect(list.find(r => r.chatId === 20)?.isCurrent).toBe(true)
+  expect(list.find(r => r.chatId === 30)?.isCurrent).toBe(false)
+})
+
+test('markCurrentChat: chatId not in list → all rows falsy', () => {
+  const list = [
+    { chatId: 1, chatName: 'A', agentId: null, agentName: null, lastActiveMs: null, jobCount: 0, isTrusted: false, isLive: false, sessionId: null, workingDir: null },
+  ] as TeleportOutChat[]
+  markCurrentChat(list, 99)
+  expect(list[0].isCurrent).toBe(false)
+})
+
+// ── Auth gate tests ─────────────────────────────────────────────────────────
 
 test('refuses resume_attach when not authorized → emits resume_attach_err, no side effects', async () => {
   const created: number[] = []

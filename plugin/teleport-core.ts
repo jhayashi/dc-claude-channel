@@ -34,6 +34,18 @@ export interface TeleportOutChat {
   isLive: boolean
   sessionId: string | null
   workingDir: string | null
+  isCurrent?: boolean
+}
+
+/**
+ * Stamp `isCurrent` on each row: true for the row whose chatId matches
+ * `currentChatId` (the card's own chat), false/undefined for all others.
+ * Pure helper — extracted so it can be unit-tested without a live DC session.
+ */
+export function markCurrentChat(list: TeleportOutChat[], currentChatId: number): void {
+  for (const row of list) {
+    row.isCurrent = (row.chatId === currentChatId)
+  }
 }
 
 export function buildTeleportOutList(ctx: TeleportOutListCtx): TeleportOutChat[] {

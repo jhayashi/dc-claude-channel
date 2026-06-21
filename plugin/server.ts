@@ -3068,15 +3068,15 @@ async function main(): Promise<void> {
 
   // Wire ControlAuthDeps for the teleport app's §6 authorization gate.
   // `humanMemberCount` uses `client` (module-level); `owner` uses
-  // `access.firstPermissionedContact`; `currentDriver` uses `_currentDriver`.
-  // All three primitives are fully initialized by this point in main().
+  // `access.firstPermissionedContact`. Both primitives are fully initialized
+  // by this point in main(). Note: `currentDriver` was removed (GH #114) —
+  // webXDC taps are unauthenticated and cannot be verified against any driver.
   setControlAuthDeps({
     humanMemberCount: async (chatId: number) => {
       const contacts = await client.getChatContacts(chatId)
       return contacts.filter(id => id !== 1).length
     },
     owner: (chatId: number) => access.firstPermissionedContact(chatId),
-    currentDriver: (chatId: number) => _currentDriver.get(chatId)?.contactId ?? null,
   })
 
   // Start all app lifecycle hooks.

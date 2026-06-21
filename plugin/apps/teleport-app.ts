@@ -15,7 +15,7 @@ import * as access from '../access/index.js'
 import * as agents from '../agents.js'
 import * as resume from '../resume.js'
 import * as bindings from '../bindings.js'
-import { buildTeleportOutList } from '../teleport-core.js'
+import { buildTeleportOutList, markCurrentChat } from '../teleport-core.js'
 import { getTeleportVersion, buildTeleportXDC } from '../teleport.js'
 import {
   isControlCommandAuthorized,
@@ -87,7 +87,7 @@ export async function handleTeleportOutCommit(
   const authResult = await auth()
   if (!authResult.ok) {
     const message = authResult.reason === 'needs-confirmation'
-      ? "Confirm in chat: send 'yes, teleport' to authorize."
+      ? "Teleporting from a group has to come from you directly — say 'teleport this session' in our chat, or open this from your 1:1 with me."
       : 'No owner found for this chat.'
     await sendErr('auth', message)
     return
@@ -190,7 +190,7 @@ export async function handleResumeAttach(
   const authResult = await auth()
   if (!authResult.ok) {
     const message = authResult.reason === 'needs-confirmation'
-      ? "Confirm in chat: send 'yes, teleport' to authorize."
+      ? "Teleporting from a group has to come from you directly — say 'teleport this session' in our chat, or open this from your 1:1 with me."
       : 'No owner found for this chat.'
     await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
       payload: {
@@ -478,6 +478,8 @@ export const teleportApp: WebXDCApp = {
               if (name) row.chatName = name
             } catch { /* keep fallback */ }
           }
+          // Mark which row is the card's own chat so the UI can pin/badge it.
+          markCurrentChat(list, chatId)
           await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
             payload: {
               type: 'teleport_out_list',
