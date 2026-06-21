@@ -110,6 +110,14 @@ Channel system prompt has a "Trust evaluation in shared chats" paragraph instruc
 
 Multi-user dispatch (#70) shipped in v1.3 alongside #71 capability-based access — any permissioned principal can drive any chat, gated per-tool by their role's capability bundle.
 
+## Settings-app decomposition (v1.4.15+, epic #109)
+
+The monolithic `agent-setup` WebXDC card is being peeled into small single-purpose cards, summoned by NL ∪ native-moment offers ∪ existing slash commands (no new ones). Design spec (local/gitignored): `docs/superpowers/specs/2026-06-19-settings-app-decomposition-design.md`; versioned implementation plans live in the (now git-tracked) `docs/plans/`.
+
+**Increment 1 (v1.4.15):** the **`teleport`** card (`plugin/webxdc/teleport.html`, `plugin/apps/teleport-app.ts`, `plugin/teleport.ts`, `plugin/teleport-core.ts`) split out of agent-setup, opened by the `dc_open_teleport_card` tool. agent-setup `APP_VERSION` → 2.18 (teleport screens removed).
+
+**§6 control-command authorization (`plugin/access/webxdc-control-auth.ts`).** WebXDC `senderAddr` is **app-relayed and unauthenticated** (verified, dc-core 2.53; #110) — never authorize on it. State-changing webXDC handlers call `isControlCommandAuthorized(chatId, deps)`, which authorizes on **message `fromId` + chat membership**: solo chats (owner + bot, the common case) act directly; multi-human groups return `needs-confirmation` (the tap can't be authenticated, so the owner must drive via an authenticated chat message). This is the shared gate every future control card reuses.
+
 ## Development
 
 ```bash

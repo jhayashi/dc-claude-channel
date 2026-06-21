@@ -4,6 +4,27 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.15] — 2026-06-21
+
+Bundles a high-impact bug fix with the first slice of the settings-app decomposition.
+
+### Fixed
+
+- **New agents could not receive any messages (#115).** Both agent-creation paths — coach/wall graduation (`graduateAgent`) and the `dc_create_agent` tool — called `access.addChat` but never `recordContactPair`, so the new agent's contact sidecar had no owner record. `isContactPermissioned(agentId, ownerContactId)` then returned false and the dispatcher rejected every inbound message as "unauthorized sender" on the very first turn. Both paths now seed the owner's contact record at creation.
+
+### Added — settings-app decomposition, increment 1
+
+- **Standalone `teleport` WebXDC card.** The teleport-out and resume-in-terminal flows are peeled out of the monolithic agent-setup card into a dedicated card, summoned by the new `dc_open_teleport_card` MCP tool (or natural language like "teleport this session"). Two entry views — send-to-terminal (with the current chat pinned to the top of the list) and import-a-terminal-session. The agent-setup card (`APP_VERSION` 2.17 → 2.18) no longer carries those screens. First step of the decomposition tracked in epic #109.
+- **§6 control-command authorization gate (`isControlCommandAuthorized`).** Webxdc control commands are authorized on the **message `fromId` + chat membership**, never on the webXDC `senderAddr` (verified spoofable on dc-core 2.53 — see #110). Solo chats (owner + bot) act directly; multi-human groups require an authenticated chat-message confirmation. Establishes the shared authorization layer the remaining cards reuse.
+
+### Known issues
+
+- A teleport card opened *before* a `bun server.ts` restart goes silently unresponsive on the next tap (in-memory `teleportSessions` map is not persisted) — reopen the card. Tracked in #114.
+
+### Migration notes
+
+Restart the dispatcher (`bun server.ts`) to pick up the new tool, the teleport card, and the #115 fix. WebXDC cards auto-upgrade from disk.
+
 ## [1.4.14] — 2026-06-19
 
 Surfaces the chat-search memory feature in the agent-setup card. The recall backend (the `dc_search_messages` pull tool and per-turn post-compaction auto-injection) already shipped; this release adds the user-facing toggle so memory boost can be turned on or off per agent from the UI.
@@ -866,6 +887,7 @@ First public release of the Delta Chat channel for Claude Code.
 
 [1.3.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.0...v1.3.1
+[1.4.15]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.14...v1.4.15
 [1.4.14]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.13...v1.4.14
 [1.4.13]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.12...v1.4.13
 [1.4.12]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.11...v1.4.12
