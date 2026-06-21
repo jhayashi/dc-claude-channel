@@ -907,6 +907,12 @@ export async function graduateAgent(ctx: AppContext, chatId: number): Promise<vo
       createdAt: new Date().toISOString(),
     })
 
+    // Seed the owner's contact record in the new agent's sidecar.
+    // Without this, isContactPermissioned(agentId, contactId) finds no file
+    // and rejects every first message with "unauthorized sender" (#115).
+    const ownerContactId = access.firstPermissionedContact(chatId)
+    if (ownerContactId) access.recordContactPair(agentId, ownerContactId)
+
     // Rename the chat to the agent name + install the agent badge so the
     // chat avatar swaps from the placeholder to the real agent. These two
     // are still individually try/caught because they're cosmetic — a
@@ -1837,6 +1843,9 @@ export const agentSetupApp: WebXDCApp = {
           agents.saveAgent(newAgent)
           if (!skipChat && newChatId !== null) {
             bindings.bindAgent(newChatId, agentId, { inheritClaudeMd })
+            // Seed the owner's contact record so the first message isn't
+            // rejected as "unauthorized sender" (#115).
+            access.recordContactPair(agentId, ownerContactId)
             const savedAgent = agents.getAgent(agentId)
             if (savedAgent) await decorateAgentChat(ctx, newChatId, savedAgent)
             ctx.logf('agent-setup: created agent %s for chat %d (owner %d)', agentId, newChatId, ownerContactId)
