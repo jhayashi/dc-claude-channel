@@ -4,6 +4,7 @@ import { permissionsApp } from './apps/permissions-app.js'
 import { agentSetupApp } from './apps/agent-setup-app.js'
 import { familiarApp } from './apps/familiar-app.js'
 import { teleportApp } from './apps/teleport-app.js'
+import { contactsApp } from './apps/contacts-app.js'
 
 export const apps: WebXDCApp[] = [
   fileReviewerApp,
@@ -11,4 +12,5 @@ export const apps: WebXDCApp[] = [
   agentSetupApp,
   familiarApp,
   teleportApp,
+  contactsApp,
 ]
