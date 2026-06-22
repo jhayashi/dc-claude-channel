@@ -57,6 +57,7 @@ import { createActivityReactor, THINKING_EMOJIS, type ActivityReactor } from './
 import { logToolCall, logTurn, logPermission, logWebXDC, logAutoPairDenial, logSubagentStderr, buildArgPreview, getEventDir } from './events.js'
 import { logLifecycleEvent } from './events-lifecycle.js'
 import { formatHistoryLine, evaluateAttachmentDownload } from './dispatcher/trust-filter.js'
+import { shouldOfferPermissions } from './dispatcher/member-added-offer.js'
 import { parseSince, queryEvents, renderEventsMarkdown, ALL_STREAMS, type EventStream } from './events-query.js'
 import { pruneEventLogs } from './dispatcher/event-log-rotate.js'
 import * as resume from './resume.js'
@@ -2019,6 +2020,42 @@ async function main(): Promise<void> {
         }
       } catch (err) {
         logf('dc channel: cleanup error for chat %d: %v', msg.chatId, err)
+      }
+    }
+    if (msg.systemMessageType === 'MemberAddedToGroup') {
+      try {
+        const isAgentChat =
+          access.isAllowed(msg.chatId) && bindings.getBinding(msg.chatId)?.agentId != null
+        if (isAgentChat) {
+          const agentId = bindings.getBinding(msg.chatId)!.agentId!
+          const contacts = await client.getChatContacts(msg.chatId)
+          // Candidates: human members (id > 9, not CONTACT_SELF=1) who are not yet permissioned.
+          const unpermissioned = contacts.filter(
+            (id) => id > 9 && !access.isContactPermissioned(agentId, id),
+          )
+          if (unpermissioned.length > 0) {
+            const newId = unpermissioned[0]
+            const decision = shouldOfferPermissions({
+              isAgentChat: true,
+              newMemberPermissioned: false,
+              newMemberIsBotSelf: newId === 1,
+            })
+            if (decision.offer) {
+              const prompt =
+                `[system] A new person (contact ${newId}) just joined this agent chat and isn't permissioned yet. ` +
+                `Briefly offer to set what they can do with this agent — full access, limited, or chat-only — ` +
+                `and tell the owner they can also open the contacts card by saying "manage permissions". ` +
+                `Do not assign any role yourself; wait for the owner.`
+              ctx
+                .dispatchAndCollect(msg.chatId, prompt)
+                .catch((err) =>
+                  logf('member-added-offer: dispatch failed chat=%d: %v', msg.chatId, err),
+                )
+            }
+          }
+        }
+      } catch (err) {
+        logf('dc channel: member-added-offer error for chat %d: %v', msg.chatId, err)
       }
     }
   }
