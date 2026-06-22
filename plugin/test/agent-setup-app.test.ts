@@ -763,11 +763,15 @@ describe('contact management handlers', () => {
 
   // ── handleAssignRole ─────────────────────────────────────────────────────
 
+  // Shared always-authorize stub for handleAssignRole unit tests.
+  // The §6 gate is exercised separately in contacts-auth.test.ts.
+  const alwaysOk = async () => ({ ok: true as const })
+
   test('handleAssignRole updates contact role on disk', async () => {
     access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
     const { ctx } = makeCtx()
 
-    await handleAssignRole(ctx, 99, 0, 5, 'family-member', null)
+    await handleAssignRole(ctx, 99, 0, 5, 'family-member', null, alwaysOk)
 
     expect(access.loadContact(access.DEFAULT_AGENT_ID, 5)?.role).toBe('family-member')
   })
@@ -776,7 +780,7 @@ describe('contact management handlers', () => {
     access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
     const { ctx, sendWebXDCUpdate } = makeCtx()
 
-    await handleAssignRole(ctx, 99, 0, 5, 'trusted-agent', null)
+    await handleAssignRole(ctx, 99, 0, 5, 'trusted-agent', null, alwaysOk)
 
     expect(sendWebXDCUpdate).toHaveBeenCalledTimes(1)
     const update = capturedUpdate(sendWebXDCUpdate) as { type: string; contact: { contactId: number; role: string } }
@@ -789,7 +793,7 @@ describe('contact management handlers', () => {
     access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
     const { ctx, lookupContactByAddr } = makeCtx(42)
 
-    await handleAssignRole(ctx, 99, 0, 5, 'family-member', 'alice@nine.testrun.org')
+    await handleAssignRole(ctx, 99, 0, 5, 'family-member', 'alice@nine.testrun.org', alwaysOk)
 
     expect(lookupContactByAddr).toHaveBeenCalledWith('alice@nine.testrun.org')
     const entry = readPermissionsLog() as { assignerContactId: number; reason: string }
@@ -801,7 +805,7 @@ describe('contact management handlers', () => {
     access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
     const { ctx } = makeCtx(null)
 
-    await handleAssignRole(ctx, 99, 0, 5, 'family-member', 'unknown@example.com')
+    await handleAssignRole(ctx, 99, 0, 5, 'family-member', 'unknown@example.com', alwaysOk)
 
     const entry = readPermissionsLog() as { assignerContactId: null }
     expect(entry.assignerContactId).toBeNull()
@@ -811,7 +815,7 @@ describe('contact management handlers', () => {
     access.setContactRole(access.DEFAULT_AGENT_ID, 5, 'subscriber', 'Alice')
     const { ctx } = makeCtx()
 
-    await handleAssignRole(ctx, 99, 0, 5, 'family-member', null)
+    await handleAssignRole(ctx, 99, 0, 5, 'family-member', null, alwaysOk)
 
     const entry = readPermissionsLog() as { assignedRole: string; previousRole: string }
     expect(entry.assignedRole).toBe('family-member')
@@ -821,7 +825,7 @@ describe('contact management handlers', () => {
   test('handleAssignRole with unpaired contact creates record (Option B)', async () => {
     const { ctx, sendWebXDCUpdate } = makeCtx()
 
-    await handleAssignRole(ctx, 99, 0, 999, 'family-member', null)
+    await handleAssignRole(ctx, 99, 0, 999, 'family-member', null, alwaysOk)
 
     // Record now exists for the previously-unpaired contact
     expect(access.loadContact(access.DEFAULT_AGENT_ID, 999)?.role).toBe('family-member')
@@ -837,7 +841,7 @@ describe('contact management handlers', () => {
     access.recordContactPair(access.DEFAULT_AGENT_ID, 5, 'Alice')
     const { ctx, sendWebXDCUpdate } = makeCtx()
 
-    await handleAssignRole(ctx, 99, 0, 5, null as unknown as string, null)
+    await handleAssignRole(ctx, 99, 0, 5, null as unknown as string, null, alwaysOk)
 
     expect(sendWebXDCUpdate).not.toHaveBeenCalled()
   })

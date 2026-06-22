@@ -44,9 +44,6 @@ export function setControlAuthDeps(deps: ControlAuthDeps): void {
   _controlAuthDeps = deps
 }
 
-// ── Default always-authorized callback (for backwards-compat test call sites) ──
-const _alwaysOk: () => Promise<{ ok: true }> = async () => ({ ok: true })
-
 function availableToolsPayload(ctx: AppContext) {
   return {
     availableBuiltinTools: ALL_BUILTIN_TOOLS.map(name => ({
@@ -1134,7 +1131,7 @@ export async function handleAssignRole(
   contactId: number | null,
   role: string | null,
   senderAddr: string | null,
-  auth: () => Promise<{ ok: true } | { ok: false; reason: 'no-owner' | 'needs-confirmation' }> = _alwaysOk,
+  auth: () => Promise<{ ok: true } | { ok: false; reason: 'no-owner' | 'needs-confirmation' }>,
 ): Promise<void> {
   if (!contactId || !role) return
   const authResult = await auth()
