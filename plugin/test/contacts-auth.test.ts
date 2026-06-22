@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { handleAssignRole } from '../apps/agent-setup-app.js'
+import { handleAssignRole } from '../apps/contacts-app.js'
 
 test('assign_role refused when not authorized → emits role_assign_err, no write', async () => {
   const sent: any[] = []

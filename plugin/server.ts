@@ -30,7 +30,7 @@ import * as familiarRuntime from './familiar-runtime.js'
 import { apps } from './apps.js'
 import type { WebXDCApp, AppContext } from './webxdc-app.js'
 import { filterUpdatesByOwner } from './webxdc-filter.js'
-import { decorateAgentChat, setAgentIcon, coachSessions, graduateAgent, graduateRefineSession, setControlAuthDeps as setAgentSetupControlAuthDeps } from './apps/agent-setup-app.js'
+import { decorateAgentChat, setAgentIcon, coachSessions, graduateAgent, graduateRefineSession } from './apps/agent-setup-app.js'
 import { setControlAuthDeps } from './apps/teleport-app.js'
 import { setControlAuthDeps as setContactsControlAuthDeps } from './apps/contacts-app.js'
 import { advanceCoach, isCoachDone, startRefineCoach } from './coach.js'
@@ -3117,7 +3117,6 @@ async function main(): Promise<void> {
     owner: (chatId: number) => access.firstPermissionedContact(chatId),
   }
   setControlAuthDeps(controlAuthDeps)
-  setAgentSetupControlAuthDeps(controlAuthDeps)
   setContactsControlAuthDeps(controlAuthDeps)
 
   // Start all app lifecycle hooks.

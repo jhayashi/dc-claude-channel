@@ -9,14 +9,13 @@ import {
   createReuseChat,
   rebindChat,
   resolveAttachAgent,
-  handleListContacts,
-  handleAssignRole,
   buildCreateAgentToolsCsv,
   shouldResendCard,
   parseSessions,
   resolveMemoryBoost,
   type Session,
 } from '../apps/agent-setup-app.js'
+import { handleListContacts, handleAssignRole } from '../apps/contacts-app.js'
 import type { CoachAnswers } from '../coach.js'
 import * as agents from '../agents.js'
 import * as bindings from '../bindings.js'
@@ -663,44 +662,6 @@ describe('contact management handlers', () => {
     const update = capturedUpdate(sendWebXDCUpdate) as { contacts: { contactId: number }[] }
     const ids = update.contacts.map(c => c.contactId).sort((a, b) => a - b)
     expect(ids).toEqual([50, 51])
-  })
-
-  // Regression guard for the silent-strip bug found 2026-05-30 in chat 27:
-  // commit 9035b34 (2026-05-03 "retire legacy new-chat and Paired devices
-  // views") accidentally removed the `payload.type === 'list_contacts'`
-  // dispatcher branch alongside the legacy view cleanup. handleListContacts
-  // (above) stayed exported and unit-tested, but no wire reached it from
-  // onWebXDCUpdate — the Contacts overflow menu on any agent silently
-  // produced an empty UI ("None" in needs / assigned / subscribers).
-  //
-  // This is a structural test (matches source text), not a behavioral one,
-  // because seeding the private `sessions` map for an end-to-end dispatcher
-  // call would require a test-only seam that doesn't exist yet. Keep this
-  // test even if a richer integration harness lands — the failure mode it
-  // catches (someone strips the routing during cleanup) is exactly what
-  // happened once and could happen again.
-  test('list_contacts payload is dispatched to handleListContacts (regression for 9035b34)', () => {
-    const src = readFileSync(
-      join(import.meta.dirname, '..', 'apps', 'agent-setup-app.ts'),
-      'utf-8',
-    )
-    expect(src).toMatch(/payload\.type === 'list_contacts'/)
-    expect(src).toMatch(/handleListContacts\(ctx,\s*session\.msgId,\s*session\.sourceChatId\)/)
-  })
-
-  // Same regression as the list_contacts test above — commit 9035b34 also
-  // stripped the assign_role dispatcher branch. handleAssignRole has 7 unit
-  // tests (below) that all pass, but the wire from onWebXDCUpdate was
-  // missing. Restoring only list_contacts and not assign_role would create a
-  // half-broken UI: Joe could see contacts but role-save taps in the picker
-  // would silently no-op. Both wires are restored together.
-  test('assign_role payload is dispatched to handleAssignRole (regression for 9035b34)', () => {
-    const src = readFileSync(
-      join(import.meta.dirname, '..', 'apps', 'agent-setup-app.ts'),
-      'utf-8',
-    )
-    expect(src).toMatch(/payload\.type === 'assign_role'/)
-    expect(src).toMatch(/handleAssignRole\(ctx,\s*session\.msgId/)
   })
 
   // ── buildCreateAgentToolsCsv ─────────────────────────────────────────────

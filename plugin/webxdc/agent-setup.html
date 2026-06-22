@@ -372,8 +372,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
    region. Nested .body elements (.trust-card .body, .tool-group > .body)
    keep their own rules. */
 #step0 > .body, #wall-screen > .body, #new-chat-mode > .body,
-#reuse-picker > .body, #manage > .body, #step2 > .body, #step3 > .body,
-#contacts > .body, #role-picker > .body {
+#reuse-picker > .body, #manage > .body, #step2 > .body, #step3 > .body {
   flex: 1 1 0;
   overflow-y: auto;
   min-height: 0;
@@ -563,16 +562,6 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   font-style: italic;
 }
 
-#contacts, #role-picker {
-  display: none;
-}
-#contacts.visible, #role-picker.visible {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 0;
-  min-height: 0;
-  width: 100%;
-}
 .seg {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1046,84 +1035,6 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .pattern-thumb { width: 100%; height: auto; display: block; border-radius: 4px; aspect-ratio: 1; }
 .pattern-tile-name { font-size: 9px; color: var(--text-dim); margin-top: 4px; text-transform: capitalize; }
 
-/* ── Contact management screens ─────────────────────────────────────── */
-.contact-row {
-  display: flex; align-items: center; gap: 12px;
-  background: var(--surface); border: 1px solid var(--line);
-  border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 6px;
-  cursor: pointer; font-family: inherit; color: var(--ink); text-align: left;
-  width: 100%; transition: border-color 0.15s, background 0.15s;
-}
-.contact-row:hover { border-color: var(--orange); background: var(--surface-2); }
-.contact-row:active { transform: scale(0.98); }
-.contact-badge {
-  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-}
-.contact-badge-orange { background: var(--orange); }
-.contact-badge-surface { background: var(--surface-3); border: 1px solid var(--line); }
-.contact-badge-amber { background: rgba(201,154,53,0.15); border: 1px solid var(--amber); }
-.contact-badge-faint { background: var(--surface-2); border: 1px solid var(--line-soft); }
-.contact-meta { flex: 1; min-width: 0; }
-.contact-row-name { font: 600 13px/1.2 inherit; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.contact-row-addr { font: 400 11px/1.3 'SF Mono', 'Cascadia Code', monospace; color: var(--ink-faint); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.role-chip {
-  border-radius: var(--radius-pill); padding: 3px 8px;
-  font-size: 10px; font-weight: 700; white-space: nowrap; flex-shrink: 0;
-  letter-spacing: 0.03em; text-transform: uppercase;
-}
-.role-chip-none     { background: transparent; color: var(--ink-faint); border: 1px dashed var(--line); }
-.role-chip-sub      { background: var(--surface-3); color: var(--ink-mute); border: 1px solid var(--line); }
-.role-chip-trusted  { background: rgba(217,119,87,0.15); color: var(--orange); border: 1px solid rgba(217,119,87,0.3); }
-.role-chip-family   { background: rgba(201,154,53,0.15); color: var(--amber); border: 1px solid rgba(201,154,53,0.3); }
-.role-chip-untrust  { background: var(--surface-2); color: var(--ink-faint); border: 1px solid var(--line-soft); }
-.contact-chevron { color: var(--line); flex-shrink: 0; }
-.contacts-empty { font-size: 12px; color: var(--ink-faint); font-style: italic; margin-bottom: 8px; }
-.contact-hero {
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-  padding: 20px 0 16px; border-bottom: 1px solid var(--line-soft); margin-bottom: 4px;
-}
-.contact-hero-badge {
-  width: 56px; height: 56px; border-radius: 50%; background: var(--orange);
-  display: flex; align-items: center; justify-content: center;
-}
-.contact-hero-name { font: 700 17px/1.2 inherit; color: var(--ink); letter-spacing: -0.01em; text-align: center; }
-.contact-hero-addr { font: 400 11px/1.3 'SF Mono', 'Cascadia Code', monospace; color: var(--ink-faint); text-align: center; }
-.role-option-row {
-  display: flex; align-items: flex-start; gap: 12px;
-  background: var(--surface); border: 1px solid var(--line);
-  border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 6px;
-  cursor: pointer; font-family: inherit; color: var(--ink); text-align: left;
-  width: 100%; transition: border-color 0.15s, background 0.15s;
-}
-.role-option-row:hover  { border-color: var(--orange); background: var(--surface-2); }
-.role-option-row.selected { border-color: var(--orange); background: rgba(217,119,87,0.06); }
-.role-option-row:active { transform: scale(0.98); }
-.role-radio-outer {
-  width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; margin-top: 2px;
-  border: 2px solid var(--line); background: var(--surface-3);
-  display: flex; align-items: center; justify-content: center;
-  transition: border-color 0.15s, background 0.15s;
-}
-.role-option-row.selected .role-radio-outer { border-color: var(--orange); background: var(--orange); }
-.role-radio-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--paper); display: none; }
-.role-option-row.selected .role-radio-dot { display: block; }
-.role-option-info { flex: 1; }
-.role-option-name { font: 600 13px/1.3 inherit; color: var(--ink); }
-.role-option-row.selected .role-option-name { color: var(--orange); }
-.role-option-caps {
-  display: inline-block; font: 600 9px/1 'SF Mono', 'Cascadia Code', monospace;
-  letter-spacing: 0.04em; color: var(--ink-faint); background: var(--surface-3);
-  border: 1px solid var(--line); border-radius: 3px; padding: 2px 5px;
-  margin: 4px 0 3px;
-}
-.role-option-desc { font: 400 11px/1.4 inherit; color: var(--ink-faint); }
-.contacts-save-bar {
-  position: sticky; bottom: 0; background: var(--bg);
-  border-top: 1px solid var(--line-soft);
-  padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
-  margin: 12px -20px -18px;
-}
 </style>
 </head>
 <body>
@@ -1476,53 +1387,6 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     <div class="outdated-sub">A newer agent settings card was sent to this chat. Swipe back and open the latest one.</div>
   </div>
 
-  <div id="contacts">
-    <div class="title-bar">
-      <button class="crumb" type="button" onclick="show('manage')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        Manage
-      </button>
-      <div class="title">Contacts</div>
-    </div>
-    <div class="body">
-      <div class="section-label">Needs Role</div>
-      <div id="contacts-needs"></div>
-      <div class="section-label">Assigned Roles</div>
-      <div id="contacts-assigned"></div>
-      <div class="section-label">Subscribers</div>
-      <div id="contacts-subscribers"></div>
-    </div>
-  </div>
-
-  <div id="role-picker">
-    <div class="title-bar">
-      <button class="crumb" type="button" onclick="show('contacts')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        Contacts
-      </button>
-      <div class="title" id="role-picker-title">Contact</div>
-    </div>
-    <div class="body">
-      <div id="role-picker-hero"></div>
-      <div class="section-label" style="margin-top:12px;">Assign Role</div>
-      <div id="role-picker-list"></div>
-      <div class="contacts-save-bar">
-        <div style="display:flex;gap:8px;">
-          <button class="btn btn-ghost" style="flex:1;" onclick="show('contacts')">Cancel</button>
-          <button class="btn btn-primary" style="flex:1;" id="role-save-btn" onclick="saveRole()" disabled>Save Role</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-</div>
-
-<div id="assign-progress-modal" class="modal-overlay">
-  <div class="modal-box" onclick="event.stopPropagation()">
-    <div class="spinner"></div>
-    <div class="modal-heading" style="color:var(--ink);">Assigning role</div>
-    <div class="modal-sub" id="assign-progress-sub" style="color:var(--ink-mute);margin-top:4px;font-size:13px;"></div>
-  </div>
 </div>
 
 <div id="modal" class="modal-overlay" onclick="dismissModal(event)">
@@ -1579,7 +1443,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 2.18;
+var APP_VERSION = 2.19;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:   { solid: '#B4862A', checker: '#D9B25B' },
@@ -1867,7 +1731,7 @@ function wireSeg(segEl, onChange) {
 }
 
 function show(id) {
-  var ids = ['loading', 'step0', 'wall-screen', 'new-chat-mode', 'reuse-picker', 'manage', 'step2', 'step3', 'outdated', 'contacts', 'role-picker'];
+  var ids = ['loading', 'step0', 'wall-screen', 'new-chat-mode', 'reuse-picker', 'manage', 'step2', 'step3', 'outdated'];
   for (var i = 0; i < ids.length; i++) {
     var el = document.getElementById(ids[i]);
     if (ids[i] === id) el.classList.add('visible'); else el.classList.remove('visible');
@@ -2039,13 +1903,6 @@ function renderManageList() {
     startBtn.textContent = 'Start a new chat';
     startBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); overflow.open = false; pickExisting(id); }; })(a.id);
     menu.appendChild(startBtn);
-
-    var contactsBtn = document.createElement('button');
-    contactsBtn.className = 'menu-item';
-    contactsBtn.type = 'button';
-    contactsBtn.textContent = 'Contacts';
-    contactsBtn.onclick = function(e){ e.stopPropagation(); overflow.open = false; openContacts(); };
-    menu.appendChild(contactsBtn);
 
     var exportBtn = document.createElement('button');
     exportBtn.className = 'menu-item';
@@ -3608,167 +3465,6 @@ function refreshList() {
   renderHomeCount();
 }
 
-// ── Contact management ────────────────────────────────────────────────────
-var contactList = [];
-var activeContact = null;
-var selectedRole = null;
-
-var ROLE_DISPLAY = {
-  'subscriber':      { label: 'Subscriber',        chipCls: 'role-chip-sub',     badgeCls: 'contact-badge-surface', iconColor: 'var(--ink-mute)' },
-  'trusted-agent':   { label: 'Trusted Agent',     chipCls: 'role-chip-trusted', badgeCls: 'contact-badge-orange',  iconColor: 'var(--paper)' },
-  'family-member':   { label: 'Family Member',     chipCls: 'role-chip-family',  badgeCls: 'contact-badge-amber',   iconColor: 'var(--amber)' },
-  'untrusted-agent': { label: 'Untrusted Contact', chipCls: 'role-chip-untrust', badgeCls: 'contact-badge-faint',   iconColor: 'var(--ink-faint)' },
-  'guest':           { label: 'Untrusted Contact', chipCls: 'role-chip-untrust', badgeCls: 'contact-badge-faint',   iconColor: 'var(--ink-faint)' },
-  'no-permissions':  { label: 'No Permissions',    chipCls: 'role-chip-untrust', badgeCls: 'contact-badge-faint',   iconColor: 'var(--ink-faint)' },
-};
-var ROLE_OPTIONS = [
-  { id: 'subscriber',      label: 'Subscriber',        caps: '["*"]',                    desc: 'Full access — all agent tools, schedules, and data operations' },
-  { id: 'trusted-agent',   label: 'Trusted Agent',     caps: '["*"]',                    desc: 'Automated account with full subscriber privileges' },
-  { id: 'family-member',   label: 'Family Member',     caps: '["chat", "low_stakes_*"]', desc: 'Messaging and low-stakes operations — no schedules or infrastructure' },
-  { id: 'untrusted-agent', label: 'Untrusted Contact', caps: '["chat"]',                 desc: 'Messaging only — no tool access, schedules, or data operations' },
-  { id: 'no-permissions',  label: 'No Permissions',    caps: '[]',                       desc: 'Bot ignores this contact entirely — no replies, no tool access' },
-];
-
-function userIconSVG(size, color) {
-  return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>';
-}
-var CHEVRON_SVG = '<svg class="contact-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
-
-function roleChipHTML(role) {
-  if (!role) return '<span class="role-chip role-chip-none">No role</span>';
-  var d = ROLE_DISPLAY[role];
-  if (!d) return '<span class="role-chip role-chip-none">' + role + '</span>';
-  return '<span class="role-chip ' + d.chipCls + '">' + d.label + '</span>';
-}
-
-function contactRowHTML(c) {
-  var d = c.role ? ROLE_DISPLAY[c.role] : null;
-  var bc = d ? d.badgeCls : 'contact-badge-faint';
-  var ic = d ? d.iconColor : 'var(--line)';
-  return '<button class="contact-row" onclick="openRolePicker(' + c.contactId + ')">' +
-    '<div class="contact-badge ' + bc + '">' + userIconSVG(17, ic) + '</div>' +
-    '<div class="contact-meta">' +
-      '<div class="contact-row-name">' + (c.displayName || 'Contact ' + c.contactId) + '</div>' +
-      (c.chatmailAddress ? '<div class="contact-row-addr">' + c.chatmailAddress + '</div>' : '') +
-    '</div>' +
-    roleChipHTML(c.role) +
-    CHEVRON_SVG +
-  '</button>';
-}
-
-function renderContactList(contacts) {
-  contactList = contacts || [];
-  var needs = contactList.filter(function(c) { return !c.role; });
-  var assigned = contactList.filter(function(c) { return c.role && c.role !== 'subscriber'; });
-  var subs = contactList.filter(function(c) { return c.role === 'subscriber'; });
-
-  function fill(elId, arr) {
-    var el = document.getElementById(elId);
-    if (!el) return;
-    el.innerHTML = arr.length
-      ? arr.map(contactRowHTML).join('')
-      : '<div class="contacts-empty">None</div>';
-  }
-  fill('contacts-needs', needs);
-  fill('contacts-assigned', assigned);
-  fill('contacts-subscribers', subs);
-}
-
-function openContacts() {
-  window.webxdc.sendUpdate({
-    payload: { type: 'list_contacts', senderAddr: window.webxdc.selfAddr },
-  }, '');
-  show('contacts');
-}
-
-function openRolePicker(contactId) {
-  var c = null;
-  for (var i = 0; i < contactList.length; i++) {
-    if (contactList[i].contactId === contactId) { c = contactList[i]; break; }
-  }
-  if (!c) return;
-  activeContact = c;
-  selectedRole = c.role || null;
-
-  var titleEl = document.getElementById('role-picker-title');
-  if (titleEl) titleEl.textContent = c.displayName || ('Contact ' + c.contactId);
-
-  var heroEl = document.getElementById('role-picker-hero');
-  if (heroEl) heroEl.innerHTML =
-    '<div class="contact-hero">' +
-      '<div class="contact-hero-badge">' + userIconSVG(28, 'var(--paper)') + '</div>' +
-      '<div class="contact-hero-name">' + (c.displayName || 'Contact ' + c.contactId) + '</div>' +
-      (c.chatmailAddress ? '<div class="contact-hero-addr">' + c.chatmailAddress + '</div>' : '') +
-      roleChipHTML(c.role) +
-    '</div>';
-
-  renderRoleOptions();
-  updateSaveBtn();
-  show('role-picker');
-}
-
-function renderRoleOptions() {
-  var el = document.getElementById('role-picker-list');
-  if (!el) return;
-  el.innerHTML = ROLE_OPTIONS.map(function(r) {
-    var sel = selectedRole === r.id ? ' selected' : '';
-    return '<button class="role-option-row' + sel + '" onclick="pickRole(\'' + r.id + '\')">' +
-      '<div class="role-radio-outer"><div class="role-radio-dot"></div></div>' +
-      '<div class="role-option-info">' +
-        '<div class="role-option-name">' + r.label + '</div>' +
-        '<div class="role-option-caps">' + r.caps + '</div>' +
-        '<div class="role-option-desc">' + r.desc + '</div>' +
-      '</div>' +
-    '</button>';
-  }).join('');
-}
-
-function pickRole(roleId) {
-  selectedRole = roleId;
-  renderRoleOptions();
-  updateSaveBtn();
-}
-
-function updateSaveBtn() {
-  var btn = document.getElementById('role-save-btn');
-  if (!btn) return;
-  var unchanged = activeContact && selectedRole === (activeContact.role || null);
-  btn.disabled = unchanged || !selectedRole;
-}
-
-function saveRole() {
-  if (!activeContact || !selectedRole) return;
-  var sub = document.getElementById('assign-progress-sub');
-  var displayRole = (ROLE_DISPLAY[selectedRole] || {}).label || selectedRole;
-  if (sub) sub.textContent = (activeContact.displayName || 'Contact') + ' → ' + displayRole;
-  var modal = document.getElementById('assign-progress-modal');
-  if (modal) modal.classList.add('visible');
-  var btn = document.getElementById('role-save-btn');
-  if (btn) btn.disabled = true;
-  window.webxdc.sendUpdate({
-    payload: {
-      type: 'assign_role',
-      contactId: activeContact.contactId,
-      role: selectedRole,
-      senderAddr: window.webxdc.selfAddr,
-    },
-  }, '');
-}
-
-function onRoleAssigned(updatedContact) {
-  var modal = document.getElementById('assign-progress-modal');
-  if (modal) modal.classList.remove('visible');
-  // Patch local list
-  for (var i = 0; i < contactList.length; i++) {
-    if (contactList[i].contactId === updatedContact.contactId) {
-      contactList[i] = updatedContact;
-      break;
-    }
-  }
-  renderContactList(contactList);
-  show('contacts');
-}
-
 window.webxdc.setUpdateListener(function(update) {
   var d = update.payload;
   if (!d) return;
@@ -3900,15 +3596,6 @@ window.webxdc.setUpdateListener(function(update) {
     return;
   }
 
-  if (d.type === 'contacts_loaded') {
-    renderContactList(d.contacts || []);
-    return;
-  }
-
-  if (d.type === 'role_assigned') {
-    if (d.contact) onRoleAssigned(d.contact);
-    return;
-  }
 }, 0);
 </script>
 </body>
