@@ -21,10 +21,31 @@ import { PATTERN_IDS, type PatternId } from '../agent-icons/palettes.js'
 import { logLifecycleEvent } from '../events-lifecycle.js'
 import { logRoleAssignment } from '../events.js'
 import * as sessionAgents from '../session-agents.js'
+import {
+  isControlCommandAuthorized,
+  type ControlAuthDeps,
+} from '../access/webxdc-control-auth.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
+
+// ── §6 authorization (mirrors teleport-app.ts wiring) ───────────────────────
+
+/** Production ControlAuthDeps — wired from server.ts via setControlAuthDeps(). */
+let _controlAuthDeps: ControlAuthDeps | null = null
+
+/**
+ * Wire the production ControlAuthDeps. Called once from main() in server.ts
+ * after `client` and `access` are in scope. Tests inject fakes by passing
+ * them directly to exported handler functions as the `auth` parameter.
+ */
+export function setControlAuthDeps(deps: ControlAuthDeps): void {
+  _controlAuthDeps = deps
+}
+
+// ── Default always-authorized callback (for backwards-compat test call sites) ──
+const _alwaysOk: () => Promise<{ ok: true }> = async () => ({ ok: true })
 
 function availableToolsPayload(ctx: AppContext) {
   return {
@@ -1113,8 +1134,19 @@ export async function handleAssignRole(
   contactId: number | null,
   role: string | null,
   senderAddr: string | null,
+  auth: () => Promise<{ ok: true } | { ok: false; reason: 'no-owner' | 'needs-confirmation' }> = _alwaysOk,
 ): Promise<void> {
   if (!contactId || !role) return
+  const authResult = await auth()
+  if (!authResult.ok) {
+    const message = authResult.reason === 'needs-confirmation'
+      ? "Setting permissions in a group has to come from you directly — say it in our chat, or open this from your 1:1 with me."
+      : 'No owner found for this chat.'
+    await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
+      payload: { type: 'role_assign_err', contactId, message, senderAddr: 'server' },
+    })).catch(() => {})
+    return
+  }
   // v1.4.9: write the role assignment to the *managed agent's* sidecar
   // (the agent bound to the chat the picker was launched from), not to
   // the canonical claude-code namespace. This makes per-agent role
@@ -1893,7 +1925,12 @@ export const agentSetupApp: WebXDCApp = {
           ? (payload as { role: string }).role : null
         const senderAddr = typeof (payload as { senderAddr?: unknown }).senderAddr === 'string'
           ? (payload as { senderAddr: string }).senderAddr : null
-        await handleAssignRole(ctx, session.msgId, session.sourceChatId, contactId, role, senderAddr)
+        const chatId = session.sourceChatId
+        const auth = async (): Promise<{ ok: true } | { ok: false; reason: 'no-owner' | 'needs-confirmation' }> => {
+          if (!_controlAuthDeps) return { ok: false, reason: 'no-owner' }
+          return isControlCommandAuthorized(chatId, _controlAuthDeps)
+        }
+        await handleAssignRole(ctx, session.msgId, session.sourceChatId, contactId, role, senderAddr, auth)
         continue
       }
     }

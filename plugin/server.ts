@@ -30,7 +30,7 @@ import * as familiarRuntime from './familiar-runtime.js'
 import { apps } from './apps.js'
 import type { WebXDCApp, AppContext } from './webxdc-app.js'
 import { filterUpdatesByOwner } from './webxdc-filter.js'
-import { decorateAgentChat, setAgentIcon, coachSessions, graduateAgent, graduateRefineSession } from './apps/agent-setup-app.js'
+import { decorateAgentChat, setAgentIcon, coachSessions, graduateAgent, graduateRefineSession, setControlAuthDeps as setAgentSetupControlAuthDeps } from './apps/agent-setup-app.js'
 import { setControlAuthDeps } from './apps/teleport-app.js'
 import { advanceCoach, isCoachDone, startRefineCoach } from './coach.js'
 import { classifyIntent, shouldClassify } from './nl-intents.js'
@@ -3071,13 +3071,15 @@ async function main(): Promise<void> {
   // `access.firstPermissionedContact`. Both primitives are fully initialized
   // by this point in main(). Note: `currentDriver` was removed (GH #114) —
   // webXDC taps are unauthenticated and cannot be verified against any driver.
-  setControlAuthDeps({
+  const controlAuthDeps = {
     humanMemberCount: async (chatId: number) => {
       const contacts = await client.getChatContacts(chatId)
       return contacts.filter(id => id !== 1).length
     },
     owner: (chatId: number) => access.firstPermissionedContact(chatId),
-  })
+  }
+  setControlAuthDeps(controlAuthDeps)
+  setAgentSetupControlAuthDeps(controlAuthDeps)
 
   // Start all app lifecycle hooks.
   for (const app of apps) {
