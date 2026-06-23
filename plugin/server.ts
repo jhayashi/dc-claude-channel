@@ -57,7 +57,7 @@ import { createActivityReactor, THINKING_EMOJIS, type ActivityReactor } from './
 import { logToolCall, logTurn, logPermission, logWebXDC, logAutoPairDenial, logSubagentStderr, buildArgPreview, getEventDir } from './events.js'
 import { logLifecycleEvent } from './events-lifecycle.js'
 import { formatHistoryLine, evaluateAttachmentDownload } from './dispatcher/trust-filter.js'
-import { shouldOfferPermissions } from './dispatcher/member-added-offer.js'
+import { shouldOfferPermissions, shouldOfferAgentSetup } from './dispatcher/member-added-offer.js'
 import { parseSince, queryEvents, renderEventsMarkdown, ALL_STREAMS, type EventStream } from './events-query.js'
 import { pruneEventLogs } from './dispatcher/event-log-rotate.js'
 import * as resume from './resume.js'
@@ -2026,6 +2026,8 @@ async function main(): Promise<void> {
       try {
         const isAgentChat =
           access.isAllowed(msg.chatId) && bindings.getBinding(msg.chatId)?.agentId != null
+        const binding = bindings.getBinding(msg.chatId)
+        const chatHasAgent = binding?.agentId != null
         if (isAgentChat) {
           const agentId = bindings.getBinding(msg.chatId)!.agentId!
           const contacts = await client.getChatContacts(msg.chatId)
@@ -2047,11 +2049,26 @@ async function main(): Promise<void> {
                 `and tell the owner they can also open the contacts card by saying "manage permissions". ` +
                 `Do not assign any role yourself; wait for the owner.`
               ctx
-                .dispatchAndCollect(msg.chatId, prompt)
-                .catch((err) =>
+                .dispatchAndCollect?.(msg.chatId, prompt)
+                ?.catch((err) =>
                   logf('member-added-offer: dispatch failed chat=%d: %v', msg.chatId, err),
                 )
             }
+          }
+        } else {
+          // Agent-setup offer: fires only when the bot itself was just added and
+          // there is no agent bound (mutually exclusive with the permissions offer above).
+          const members = await client.getChatContacts(msg.chatId)
+          const botWasAdded = members.includes(1) && !chatHasAgent
+          const setupDecision = shouldOfferAgentSetup({ botWasAdded, chatHasAgent })
+          if (setupDecision.offer) {
+            const prompt =
+              `[system] You were just added to a new group chat that has no agent set up yet. ` +
+              `Briefly offer to set up a specialist agent for this chat (or use one of the owner's existing agents), ` +
+              `and mention they can say "set up an agent" or describe what they need (e.g. "I want a sleep coach"). ` +
+              `Do not create anything yourself; wait for the owner.`
+            ctx.dispatchAndCollect?.(msg.chatId, prompt)?.catch((err) =>
+              logf('agent-setup-offer: dispatch failed chat=%d: %v', msg.chatId, err))
           }
         }
       } catch (err) {

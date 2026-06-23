@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { shouldOfferPermissions } from '../dispatcher/member-added-offer.js'
+import { shouldOfferPermissions, shouldOfferAgentSetup } from '../dispatcher/member-added-offer.js'
 
 test('offers when an unpermissioned human joins an agent chat', () => {
   expect(shouldOfferPermissions({ isAgentChat: true, newMemberPermissioned: false, newMemberIsBotSelf: false }).offer).toBe(true)
@@ -12,4 +12,14 @@ test('does not offer when the bot itself is added', () => {
 })
 test('does not offer in a non-agent chat', () => {
   expect(shouldOfferPermissions({ isAgentChat: false, newMemberPermissioned: false, newMemberIsBotSelf: false }).offer).toBe(false)
+})
+
+test('offers agent setup when the bot is added to an agentless chat', () => {
+  expect(shouldOfferAgentSetup({ botWasAdded: true, chatHasAgent: false }).offer).toBe(true)
+})
+test('does not offer agent setup when an agent is already bound', () => {
+  expect(shouldOfferAgentSetup({ botWasAdded: true, chatHasAgent: true }).offer).toBe(false)
+})
+test('does not offer agent setup when the bot was not the added member', () => {
+  expect(shouldOfferAgentSetup({ botWasAdded: false, chatHasAgent: false }).offer).toBe(false)
 })
