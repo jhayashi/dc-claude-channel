@@ -41,3 +41,24 @@ test("created reply clears timeout, re-enables Create button, and shows success 
 
   await h.close();
 });
+
+test("create_err reply surfaces the §6 refusal message and re-enables Create", async () => {
+  const h: HarnessHandle = await createHarness(xdc());
+  await h.push({ type: 'init', senderAddr: 'server', leaves: [], l2Summary: [],
+    availableModels: [], defaultModel: null,
+    availableBuiltinTools: [], availableMcpServers: [], connectedMcpServers: [] });
+  await h.page.waitForSelector('#shell', { state: 'visible', timeout: 4000 });
+
+  // Dispatcher refuses a form-create (multi-human group → needs-confirmation).
+  await h.push({ type: 'create_err', senderAddr: 'server',
+    message: 'Creating an agent in a group has to come from you directly — say it in our chat, or open this from your 1:1 with me.' });
+
+  // The needs-confirmation guidance is shown (not the misleading "no response" timeout).
+  await h.page.waitForSelector('text=say it in our chat', { state: 'visible', timeout: 3000 });
+
+  // Create button must be re-enabled so the user can retry from the right place.
+  const createBtn = h.page.locator('#create-btn');
+  await expect(createBtn).not.toBeDisabled({ timeout: 3000 });
+
+  await h.close();
+});

@@ -682,7 +682,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.00;
+var APP_VERSION = 1.01;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:   { solid: '#B4862A', checker: '#D9B25B' },
@@ -1747,6 +1747,21 @@ window.webxdc.setUpdateListener(function(update) {
     var createBtn = document.getElementById('create-btn');
     if (createBtn) createBtn.disabled = false;
     showModal('Agent created', 'Open the new chat in your chat list to get started.');
+    return;
+  }
+
+  // Form-create refusal (e.g. §6 gate: creating in a multi-human group has
+  // to come from you directly). The server emits create_err instead of
+  // created; clear the pending timeout and surface the guidance so the
+  // 15s "no response" modal never fires and the button re-enables.
+  if (d.type === 'create_err') {
+    if (createTimeout) { clearTimeout(createTimeout); createTimeout = null; }
+    creating = false;
+    var createErrBtn = document.getElementById('create-btn');
+    if (createErrBtn) createErrBtn.disabled = false;
+    showModal('Not created', typeof d.message === 'string' && d.message
+      ? d.message
+      : 'The agent could not be created.');
     return;
   }
 }, 0);
