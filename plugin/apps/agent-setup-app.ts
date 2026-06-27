@@ -25,7 +25,7 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 
-function availableToolsPayload(ctx: AppContext) {
+export function availableToolsPayload(ctx: AppContext) {
   return {
     availableBuiltinTools: ALL_BUILTIN_TOOLS.map(name => ({
       name,
@@ -110,7 +110,7 @@ interface L2Summary {
   sample: string[]
 }
 
-function buildL2Summary(leaves: Leaf[]): L2Summary[] {
+export function buildL2Summary(leaves: Leaf[]): L2Summary[] {
   const map = new Map<string, L2Summary>()
   for (const l of leaves) {
     if (!map.has(l.l2)) {
@@ -1043,6 +1043,173 @@ export async function graduateRefineSession(ctx: AppContext, chatId: number): Pr
   }
 }
 
+/**
+ * Resolve the owner contact for a new chat created from a setup/create
+ * card opened in `sourceChatId`. Prefers the first permissioned contact
+ * (the common 1:1 case); falls back to the first non-self member of the
+ * source chat. Returns null when no human can be identified.
+ *
+ * Shared by the monolith's create/build-agent branches and the standalone
+ * create-app card so the owner-resolution policy lives in one place.
+ */
+export async function resolveOwnerForChat(
+  ctx: AppContext,
+  sourceChatId: number,
+): Promise<number | null> {
+  const ownerContactId = access.firstPermissionedContact(sourceChatId)
+  if (ownerContactId) return ownerContactId
+  try {
+    const contacts = await ctx.client.getChatContacts(sourceChatId)
+    const found = contacts.find(id => id !== 1)
+    if (!found) {
+      ctx.logf('agent-setup: could not find contact in source chat %d', sourceChatId)
+      return null
+    }
+    return found
+  } catch (err) {
+    ctx.logf('agent-setup: getChatContacts failed for chat %d: %v', sourceChatId, err)
+    return null
+  }
+}
+
+/**
+ * Form-`create` handler: persist an agent definition from the create
+ * form's config payload, and (unless `skipChat`) spin up a new bound DC
+ * chat for it. Extracted from the monolith's `create` dispatch branch so
+ * both the monolith and the standalone create-app card call one function.
+ *
+ * Gated by `auth` (same pattern as `handleAssignRole`): on a failed auth
+ * result it emits a `create_err` reply and returns without mutating state.
+ *
+ * On success it replies `{type:'created', chatId, name, skipChat,
+ * senderAddr:'server'}` so the card can clear its in-flight state and show
+ * the success modal. For `skipChat` (library-only create from Manage) it
+ * additionally re-fires the monolith's init so the Manage screen's agent
+ * list refreshes — that branch is monolith-only (the standalone create
+ * card has no Manage screen).
+ *
+ * @param ctx  AppContext (or a compatible stub for tests).
+ * @param msgId  The card's msgId — used to send WebXDC updates back.
+ * @param sourceChatId  The chat the card was opened from (owner resolution).
+ * @param payload  Decoded `create` payload from the card.
+ * @param auth  Auth callback; returns {ok:true} or {ok:false, reason}.
+ */
+export async function handleCreateAgent(
+  ctx: AppContext,
+  msgId: number,
+  sourceChatId: number,
+  payload: { type?: string; config?: unknown; [key: string]: unknown },
+  auth: () => Promise<{ ok: true } | { ok: false; reason: 'no-owner' | 'needs-confirmation' }>,
+): Promise<void> {
+  const parsed = agents.DraftAgentSchema.safeParse(payload.config)
+  if (!parsed.success) {
+    ctx.logf('agent-setup: invalid config from chat %d: %v', sourceChatId, parsed.error)
+    return
+  }
+
+  // §6 authorization gate — fail-safe refuse, mirroring handleAssignRole.
+  const authResult = await auth()
+  if (!authResult.ok) {
+    const message = authResult.reason === 'needs-confirmation'
+      ? "Creating an agent in a group has to come from you directly — say it in our chat, or open this from your 1:1 with me."
+      : 'No owner found for this chat.'
+    await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
+      payload: { type: 'create_err', message, senderAddr: 'server' },
+      summary: 'Create unauthorized',
+    })).catch(() => {})
+    return
+  }
+
+  const draft = parsed.data
+  const skipPerms = (payload as { skipPermissions?: boolean }).skipPermissions === true
+  // #97: "+ Create new agent" from the Manage screen sets skipChat:true
+  // — we save the agent into the library only and skip the chat-creation
+  // steps (createGroup / addContactToChat / bindAgent / decorateAgentChat).
+  // Mirrors terminal CC's `/agents` flow: an agent definition is a pure
+  // library artifact, not tied to a chat. The legacy form-based create
+  // path (no skipChat) still creates a chat as before.
+  const skipChat = (payload as { skipChat?: boolean }).skipChat === true
+  const rawArchetype = (payload as { archetype?: unknown }).archetype
+  const archetype = (typeof rawArchetype === 'string' && (agents.ARCHETYPES as readonly string[]).includes(rawArchetype))
+    ? rawArchetype as agents.Archetype : null
+  const allowedBuiltinTools = (payload as { allowedBuiltinTools?: string[] | null }).allowedBuiltinTools ?? undefined
+  const allowedMcpServers = (payload as { allowedMcpServers?: string[] | null }).allowedMcpServers ?? undefined
+  const inheritClaudeMd = agents.inheritClaudeMdForModel(draft.model)
+
+  // Resolve the owner contact for the new chat (1:1 source: extract from
+  // contacts; group source: use the first permissioned contact).
+  const ownerContactId = await resolveOwnerForChat(ctx, sourceChatId)
+  if (!ownerContactId) return
+
+  // Display name comes from the form's `name` payload field, slugged
+  // for the canonical `name`. The display label is preserved in
+  // x-dc-display-name.
+  const displayName = (draft as unknown as { name?: string }).name
+    ?? agents.DEFAULT_AGENT_ID
+  const agentId = agents.synthesizeAgentName(displayName)
+  try {
+    // Chat creation only on the legacy path; skipChat short-circuits.
+    let newChatId: number | null = null
+    if (!skipChat) {
+      newChatId = await ctx.client.createGroup(displayName)
+      await ctx.client.addContactToChat(newChatId, ownerContactId)
+      access.addChat(newChatId, ownerContactId)
+    }
+    const newAgent: agents.AgentDef = {
+      ...draft,
+      name: agentId,
+      'x-dc-display-name': displayName,
+      // buildCreateAgentToolsCsv encodes the client picker's null=all,
+      // [] =none semantics so a user who taps Create with the default
+      // (all-checked) picker gets the full built-in toolkit, not an
+      // empty CSV. Pre-fix, `?? []` made null → none → no built-ins.
+      tools: buildCreateAgentToolsCsv(allowedBuiltinTools, allowedMcpServers),
+      'x-dc-memory-boost': resolveMemoryBoost((payload as { memoryBoost?: boolean }).memoryBoost, draft.body ?? ''),
+    } as agents.AgentDef
+    agents.setSkipPermissions(newAgent, skipPerms)
+    if (archetype) agents.setArchetype(newAgent, archetype)
+    const rawIcon = (payload as { icon?: unknown }).icon
+    if (typeof rawIcon === 'string' && rawIcon.trim()) {
+      agents.setIcon(newAgent, rawIcon.trim())
+    }
+    // Roll a random orientation once at creation so same-model agents
+    // are visually differentiable. Edits can override via the setup card.
+    agents.setIconMirror(newAgent, Math.random() < 0.5)
+    agents.saveAgent(newAgent)
+    if (!skipChat && newChatId !== null) {
+      bindings.bindAgent(newChatId, agentId, { inheritClaudeMd })
+      // Seed the owner's contact record so the first message isn't
+      // rejected as "unauthorized sender" (#115).
+      access.recordContactPair(agentId, ownerContactId)
+      const savedAgent = agents.getAgent(agentId)
+      if (savedAgent) await decorateAgentChat(ctx, newChatId, savedAgent)
+      ctx.logf('agent-setup: created agent %s for chat %d (owner %d)', agentId, newChatId, ownerContactId)
+    } else {
+      ctx.logf('agent-setup: created agent %s (library only, no chat) (owner %d)', agentId, ownerContactId)
+    }
+
+    const update = JSON.stringify({
+      payload: { type: 'created', chatId: newChatId, name: draft.name, skipChat, senderAddr: 'server' },
+      summary: 'Agent created',
+    })
+    await ctx.client.sendWebXDCUpdate(msgId, update)
+    // For skipChat, explicitly re-fire init so the (monolith) Manage
+    // screen's existingAgents list refreshes with the new entry. The
+    // legacy chat-creating path doesn't need this because the user
+    // navigates to the new chat (where state restarts fresh). The
+    // standalone create card has no Manage screen and never sets
+    // skipChat, so this is monolith-only in practice.
+    if (skipChat) {
+      await sendInit(ctx, agentSetupApp, sourceChatId)
+    }
+    // Session stays alive — user may keep using the settings card.
+  } catch (err) {
+    ctx.logf('agent-setup: create failed: %v', err)
+    // Roll back the agent file if it was written but binding failed.
+    try { agents.deleteAgent(agentId) } catch {}
+  }
+}
+
 export const agentSetupApp: WebXDCApp = {
   id: 'agent-setup',
 
@@ -1676,94 +1843,17 @@ export const agentSetupApp: WebXDCApp = {
       }
 
       if (payload.type === 'create') {
-        const parsed = agents.DraftAgentSchema.safeParse(payload.config)
-        if (!parsed.success) {
-          ctx.logf('agent-setup: invalid config from chat %d: %v', session.sourceChatId, parsed.error)
-          continue
-        }
-        const draft = parsed.data
-        const skipPerms = (payload as { skipPermissions?: boolean }).skipPermissions === true
-        // #97: "+ Create new agent" from the Manage screen sets skipChat:true
-        // — we save the agent into the library only and skip the chat-creation
-        // steps (createGroup / addContactToChat / bindAgent / decorateAgentChat).
-        // Mirrors terminal CC's `/agents` flow: an agent definition is a pure
-        // library artifact, not tied to a chat. The legacy form-based create
-        // path (no skipChat) still creates a chat as before.
-        const skipChat = (payload as { skipChat?: boolean }).skipChat === true
-        const rawArchetype = (payload as { archetype?: unknown }).archetype
-        const archetype = (typeof rawArchetype === 'string' && (agents.ARCHETYPES as readonly string[]).includes(rawArchetype))
-          ? rawArchetype as agents.Archetype : null
-        const allowedBuiltinTools = (payload as { allowedBuiltinTools?: string[] | null }).allowedBuiltinTools ?? undefined
-        const allowedMcpServers = (payload as { allowedMcpServers?: string[] | null }).allowedMcpServers ?? undefined
-        const inheritClaudeMd = agents.inheritClaudeMdForModel(draft.model)
-        const ownerContactId = await resolveOwner()
-        if (!ownerContactId) continue
-
-        // Display name comes from the form's `name` payload field, slugged
-        // for the canonical `name`. The display label is preserved in
-        // x-dc-display-name.
-        const displayName = (draft as unknown as { name?: string }).name
-          ?? agents.DEFAULT_AGENT_ID
-        const agentId = agents.synthesizeAgentName(displayName)
-        try {
-          // Chat creation only on the legacy path; skipChat short-circuits.
-          let newChatId: number | null = null
-          if (!skipChat) {
-            newChatId = await ctx.client.createGroup(displayName)
-            await ctx.client.addContactToChat(newChatId, ownerContactId)
-            access.addChat(newChatId, ownerContactId)
-          }
-          const newAgent: agents.AgentDef = {
-            ...draft,
-            name: agentId,
-            'x-dc-display-name': displayName,
-            // buildCreateAgentToolsCsv encodes the client picker's null=all,
-            // [] =none semantics so a user who taps Create with the default
-            // (all-checked) picker gets the full built-in toolkit, not an
-            // empty CSV. Pre-fix, `?? []` made null → none → no built-ins.
-            tools: buildCreateAgentToolsCsv(allowedBuiltinTools, allowedMcpServers),
-            'x-dc-memory-boost': resolveMemoryBoost((payload as { memoryBoost?: boolean }).memoryBoost, draft.body ?? ''),
-          } as agents.AgentDef
-          agents.setSkipPermissions(newAgent, skipPerms)
-          if (archetype) agents.setArchetype(newAgent, archetype)
-          const rawIcon = (payload as { icon?: unknown }).icon
-          if (typeof rawIcon === 'string' && rawIcon.trim()) {
-            agents.setIcon(newAgent, rawIcon.trim())
-          }
-          // Roll a random orientation once at creation so same-model agents
-          // are visually differentiable. Edits can override via the setup card.
-          agents.setIconMirror(newAgent, Math.random() < 0.5)
-          agents.saveAgent(newAgent)
-          if (!skipChat && newChatId !== null) {
-            bindings.bindAgent(newChatId, agentId, { inheritClaudeMd })
-            // Seed the owner's contact record so the first message isn't
-            // rejected as "unauthorized sender" (#115).
-            access.recordContactPair(agentId, ownerContactId)
-            const savedAgent = agents.getAgent(agentId)
-            if (savedAgent) await decorateAgentChat(ctx, newChatId, savedAgent)
-            ctx.logf('agent-setup: created agent %s for chat %d (owner %d)', agentId, newChatId, ownerContactId)
-          } else {
-            ctx.logf('agent-setup: created agent %s (library only, no chat) (owner %d)', agentId, ownerContactId)
-          }
-
-          const update = JSON.stringify({
-            payload: { type: 'created', chatId: newChatId, name: draft.name, skipChat },
-            summary: 'Agent created',
-          })
-          await ctx.client.sendWebXDCUpdate(session.msgId, update)
-          // For skipChat, explicitly re-fire init so the Manage screen's
-          // existingAgents list refreshes with the new entry. The legacy
-          // chat-creating path doesn't need this because the user navigates
-          // to the new chat (where state restarts fresh).
-          if (skipChat) {
-            await sendInit(ctx, agentSetupApp, session.sourceChatId)
-          }
-          // Session stays alive — user may keep using the settings card.
-        } catch (err) {
-          ctx.logf('agent-setup: create failed: %v', err)
-          // Roll back the agent file if it was written but binding failed.
-          try { agents.deleteAgent(agentId) } catch {}
-        }
+        // Behavior preserved from the inline branch: the monolith never
+        // gated create, so pass an always-ok auth. Task 4 removes this
+        // branch entirely (the standalone create-app card carries the
+        // §6-gated path). All create logic now lives in handleCreateAgent.
+        await handleCreateAgent(
+          ctx,
+          session.msgId,
+          session.sourceChatId,
+          payload as { type?: string; config?: unknown; [key: string]: unknown },
+          async () => ({ ok: true as const }),
+        )
       }
 
     }

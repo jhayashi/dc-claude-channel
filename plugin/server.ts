@@ -33,6 +33,7 @@ import { filterUpdatesByOwner } from './webxdc-filter.js'
 import { decorateAgentChat, setAgentIcon, coachSessions, graduateAgent, graduateRefineSession } from './apps/agent-setup-app.js'
 import { setControlAuthDeps } from './apps/teleport-app.js'
 import { setControlAuthDeps as setContactsControlAuthDeps } from './apps/contacts-app.js'
+import { setControlAuthDeps as setCreateControlAuthDeps } from './apps/create-app.js'
 import { advanceCoach, isCoachDone, startRefineCoach } from './coach.js'
 import { classifyIntent, shouldClassify } from './nl-intents.js'
 import { handleNlIntent } from './nl-intent-handler.js'
@@ -3135,6 +3136,7 @@ async function main(): Promise<void> {
   }
   setControlAuthDeps(controlAuthDeps)
   setContactsControlAuthDeps(controlAuthDeps)
+  setCreateControlAuthDeps(controlAuthDeps)
 
   // Start all app lifecycle hooks.
   for (const app of apps) {
