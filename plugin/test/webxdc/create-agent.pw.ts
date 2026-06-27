@@ -20,3 +20,24 @@ test("init renders the catalog and a seeded leaf is preselected", async () => {
   await h.page.waitForSelector('text=Sleep coach', { state: 'visible', timeout: 3000 });
   await h.close();
 });
+
+test("created reply clears timeout, re-enables Create button, and shows success modal", async () => {
+  const h: HarnessHandle = await createHarness(xdc());
+  // Seed an init so the card is fully live.
+  await h.push({ type: 'init', senderAddr: 'server', leaves: [], l2Summary: [],
+    availableModels: [], defaultModel: null,
+    availableBuiltinTools: [], availableMcpServers: [], connectedMcpServers: [] });
+  await h.page.waitForSelector('#shell', { state: 'visible', timeout: 4000 });
+
+  // Simulate the dispatcher's success reply for the manual "Build from scratch" path.
+  await h.push({ type: 'created', chatId: 42, name: 'Sleep coach', skipChat: false, senderAddr: 'server' });
+
+  // Success modal should appear with the agent-created heading.
+  await h.page.waitForSelector('text=Agent created', { state: 'visible', timeout: 3000 });
+
+  // Create button must be re-enabled (disabled=false).
+  const createBtn = h.page.locator('#create-btn');
+  await expect(createBtn).not.toBeDisabled({ timeout: 3000 });
+
+  await h.close();
+});

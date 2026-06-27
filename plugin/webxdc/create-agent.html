@@ -1740,6 +1740,15 @@ window.webxdc.setUpdateListener(function(update) {
     handleChatFailed(typeof d.error === 'string' ? d.error : '');
     return;
   }
+
+  if (d.type === 'created') {
+    if (createTimeout) { clearTimeout(createTimeout); createTimeout = null; }
+    creating = false;
+    var createBtn = document.getElementById('create-btn');
+    if (createBtn) createBtn.disabled = false;
+    showModal('Agent created', 'Open the new chat in your chat list to get started.');
+    return;
+  }
 }, 0);
 
 // ── DOM ready ──────────────────────────────────────────────────────────
