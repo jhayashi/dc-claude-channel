@@ -11,6 +11,7 @@ import { buildViewerXDC } from '../file-reviewer.js'
 import { buildAgentSetupXDC } from '../agent-setup.js'
 import { buildTeleportXDC } from '../teleport.js'
 import { buildContactsXDC } from '../contacts.js'
+import { buildCreateAgentXDC } from '../create-agent.js'
 import { mkdirSync, copyFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -23,6 +24,7 @@ const targets = [
   { id: 'agent-setup', build: buildAgentSetupXDC },
   { id: 'teleport', build: buildTeleportXDC },
   { id: 'contacts', build: buildContactsXDC },
+  { id: 'create-agent', build: buildCreateAgentXDC },
 ]
 
 for (const t of targets) {

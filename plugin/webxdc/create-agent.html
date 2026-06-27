@@ -1,0 +1,1754 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="webxdc.js"></script>
+<style>
+:root {
+  --bg:        #0B0F17;
+  --surface:   #131826;
+  --surface-2: #1A2030;
+  --surface-3: #232A3C;
+  --line:      #2C3447;
+  --line-soft: #1F2536;
+  --ink:       #E8ECF5;
+  --ink-mute:  #99A2B8;
+  --ink-faint: #6C748A;
+  --paper:     #FAF9F5;
+  --orange:    #D97757;
+  --green:     #3DA85A;
+  --amber:     #C99A35;
+  --blue:      #6DA3D9;
+  --danger:    #E5694C;
+  --radius:    14px;
+  --radius-sm: 10px;
+  --radius-pill: 999px;
+  /* Aliases for wall-screen styling (Phase 6 redesign). */
+  --text-mute: var(--ink-mute);
+  --text-dim:  var(--ink-faint);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, sans-serif;
+  letter-spacing: 0.005em;
+  background: var(--bg);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+.field-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+  margin-bottom: 6px;
+}
+
+/* Card wrapper fills the viewport */
+#shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+  width: 100%;
+}
+
+.section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #6e7681;
+  margin: 4px 0 10px;
+  font-weight: 600;
+}
+label.field {
+  display: block;
+  font-size: 12px;
+  color: #8b949e;
+  margin-bottom: 6px;
+  margin-top: 14px;
+  font-weight: 500;
+}
+input.text, textarea.text, select.text {
+  width: 100%;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #e6edf3;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+}
+select.text { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238b949e' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; cursor: pointer; }
+select.text option { background: #0d1117; color: #e6edf3; }
+textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Cascadia Code', monospace; font-size: 12px; }
+.btn {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+
+.btn-primary {
+  background: var(--orange);
+  color: var(--paper);
+  border: 1px solid var(--orange);
+}
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-primary:disabled { opacity: 0.45; }
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.btn-ghost:hover { background: var(--surface-2); }
+
+/* Full-page layout: every view fills the #shell flex column. Only one is
+   .visible at a time. The .body inside each view is the scrollable region;
+   optional .footer-bar sticks at the bottom. */
+#wall-screen, #step2, #outdated {
+  display: none;
+}
+#wall-screen.visible, #step2.visible, #outdated.visible {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+}
+#wall-screen > .body, #step2 > .body {
+  flex: 1 1 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+#outdated.visible {
+  align-items: center;
+  justify-content: center;
+}
+.center { text-align: center; padding: 50px 20px; color: #8b949e; }
+.outdated-icon {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  margin: 0 auto 14px;
+}
+.outdated-icon svg {
+  width: 22px; height: 22px;
+  stroke: var(--ink-mute);
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.outdated-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+.outdated-sub { font-size: 12px; color: var(--ink-mute); margin-top: 6px; line-height: 1.5; }
+.spinner {
+  width: 28px; height: 28px;
+  border: 3px solid var(--line);
+  border-top-color: var(--amber);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 14px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Modal overlay */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.visible { display: flex; }
+.modal-box {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 16px;
+  padding: 28px 24px;
+  max-width: 320px;
+  width: 90%;
+  text-align: center;
+}
+.modal-icon { font-size: 40px; margin-bottom: 10px; }
+.modal-heading { font-size: 16px; font-weight: 600; color: #3fb950; margin-bottom: 6px; }
+.modal-sub { font-size: 12px; color: #8b949e; margin-bottom: 16px; line-height: 1.4; }
+.modal-hint { font-size: 11px; color: #6e7681; margin-bottom: 16px; }
+.modal-dismiss {
+  background: #30363d;
+  border: 1px solid #444c56;
+  border-radius: 8px;
+  color: #e6edf3;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 10px 20px;
+  cursor: pointer;
+  min-width: 120px;
+}
+.modal-dismiss:hover { background: #3d444d; }
+.modal-dismiss:active { transform: scale(0.97); }
+
+.tool-group {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  margin-top: 10px;
+  overflow: hidden;
+}
+.tool-group summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  font: 600 13px/1.2 inherit;
+  color: var(--ink);
+}
+.tool-group summary::-webkit-details-marker { display: none; }
+.tool-group summary .chev { margin-left: auto; transition: transform .15s; color: var(--ink-faint); font-size: 16px; }
+.tool-group[open] summary .chev { transform: rotate(90deg); }
+.tool-group .count {
+  font: 600 11px/1 inherit;
+  padding: 3px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--ink-mute);
+}
+.tool-group > .body {
+  padding: 4px 14px 12px;
+  border-top: 1px solid var(--line-soft);
+}
+.tool-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 14px;
+  padding-top: 8px;
+}
+.tool-grid label {
+  display: flex; gap: 8px; align-items: center;
+  font: 400 13px/1.2 inherit;
+  color: var(--ink);
+  padding: 4px 0;
+  cursor: pointer;
+}
+.tool-grid input[type=checkbox] { accent-color: var(--orange); width: 14px; height: 14px; }
+.mcp-list > .mcp-row {
+  display: flex; gap: 10px; align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.mcp-list > .mcp-row:first-child { border-top: 0; padding-top: 4px; }
+.mcp-list .mcp-label { flex: 1; font: 400 13px/1.2 inherit; color: var(--ink); }
+.mcp-list .mcp-auth {
+  font: 600 10px/1 inherit;
+  color: var(--amber);
+  padding: 2px 6px;
+  border: 1px solid var(--amber);
+  border-radius: var(--radius-pill);
+  margin-left: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mcp-list label { display: flex; align-items: center; cursor: pointer; }
+.mcp-list input[type=checkbox] { accent-color: var(--orange); width: 14px; height: 14px; }
+
+/* Title bar + sticky footer */
+.title-bar {
+  position: relative;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  flex-shrink: 0;
+}
+.title-bar .crumb {
+  font: 500 11px/1 inherit;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+}
+.title-bar .crumb svg { width: 12px; height: 12px; }
+.title-bar .title { font: 600 18px/1.2 inherit; color: var(--ink); }
+.title-bar .title-row { display: flex; align-items: center; gap: 10px; }
+.title-bar .app-logo {
+  width: 26px; height: 26px;
+  border-radius: 7px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.title-bar .app-logo img { width: 100%; height: 100%; display: block; object-fit: cover; }
+
+.footer-bar {
+  position: sticky;
+  bottom: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  padding: 10px 20px calc(10px + env(safe-area-inset-bottom));
+  display: flex;
+  gap: 10px;
+  /* Negative margin cancels the parent .body's padding so the bar
+     extends edge-to-edge inside the full-page view. */
+  margin: 0 -20px -18px;
+}
+.footer-bar .btn { flex: 1; }
+
+.body { padding: 18px 20px; }
+
+/* Model picker segmented control */
+.seg {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-top: 6px;
+}
+.seg > button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--line-soft);
+  color: var(--ink-mute);
+  font: 500 13px/1 inherit;
+  padding: 10px 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.seg > button:last-child { border-right: 0; }
+.seg > button[aria-pressed=true] {
+  background: var(--surface-3);
+  color: var(--ink);
+  font-weight: 600;
+}
+.seg .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.seg .dot.haiku  { background: var(--amber); }
+.seg .dot.sonnet { background: var(--green); }
+.seg .dot.opus   { background: var(--orange); }
+.seg .dot.fable  { background: #6D28D9; }
+.seg .dot.other  { background: #3F3F46; }
+.custom-model-row {
+  margin-top: 8px;
+  display: none;
+}
+.custom-model-row.visible { display: block; }
+.custom-model-row input.text {
+  width: 100%;
+}
+.custom-model-row .help {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.custom-model-row code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+.preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+}
+.preview-bar .badge {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.preview-bar .badge svg { width: 100%; height: 100%; display: block; }
+.preview-bar .meta { min-width: 0; flex: 1; }
+.preview-bar .meta .name { font: 600 15px/1.2 inherit; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.preview-bar .meta .info { font: 500 11px/1.3 inherit; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; }
+
+/* Trust / memory switch */
+.trust-card {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  display: flex; gap: 12px; align-items: flex-start;
+  cursor: pointer;
+}
+.switch {
+  appearance: none;
+  width: 36px; height: 20px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background .15s;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 1px; left: 1px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--ink-mute);
+  transition: left .15s, background .15s;
+}
+.switch:checked { background: var(--green); border-color: var(--green); }
+.switch:checked::after { left: 17px; background: var(--paper); }
+.trust-card .body { flex: 1; padding: 0; }
+.trust-card .heading { font: 600 13px/1.2 inherit; color: var(--ink); display: flex; align-items: center; gap: 6px; min-height: 20px; }
+.trust-card .caveat { font: 400 12px/1.4 inherit; color: var(--ink-mute); margin-top: 4px; }
+.trust-card .shield { width: 14px; height: 14px; color: var(--ink-mute); flex-shrink: 0; }
+.trust-card.on .shield { color: var(--green); }
+.trust-card .brain { width: 14px; height: 14px; color: var(--ink-mute); flex-shrink: 0; }
+.trust-card.on .brain { color: var(--green); }
+
+/* Wall navigation (Phase 6) */
+.wall-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wall-tile { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px; cursor: pointer; transition: border-color 0.12s; }
+.wall-tile:hover { border-color: var(--orange); }
+.wall-tile-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.wall-tile-name { font-weight: 600; font-size: 12.5px; line-height: 1.3; }
+.wall-tile-count { margin-left: auto; font-size: 10px; color: var(--text-dim); font-family: ui-monospace, monospace; }
+.wall-tile-samples { color: var(--text-mute); font-size: 10.5px; line-height: 1.5; }
+.wall-tile-samples .dot { color: var(--text-dim); margin: 0 4px; }
+
+.tag { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 7px; border-radius: 999px; line-height: 1.4; }
+.tag.expert { color: var(--orange); background: rgba(217, 119, 87, 0.13); }
+.tag.service { color: var(--green); background: rgba(109, 184, 109, 0.13); }
+.tag.goal { color: var(--blue); background: rgba(109, 163, 217, 0.14); }
+
+.search-wrap { position: relative; margin-bottom: 14px; }
+.search-wrap input { width: 100%; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink); padding: 11px 14px 11px 38px; border-radius: 10px; font: inherit; outline: none; }
+.search-wrap input:focus { border-color: var(--orange); }
+.search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; stroke: var(--text-mute); fill: none; stroke-width: 2; }
+
+.helper { color: var(--text-mute); font-size: 12px; line-height: 1.5; margin-bottom: 12px; }
+
+.results-empty { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 18px; text-align: center; color: var(--text-dim); font-size: 12px; }
+
+.leaf-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 6px; cursor: pointer; }
+.leaf-row:hover { border-color: var(--orange); }
+
+.L2-list { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 6px 0; margin-bottom: 14px; }
+.back-bar { padding: 8px 14px; border-bottom: 1px solid var(--line); color: var(--text-mute); font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.back-bar:hover { color: var(--orange); }
+.L2-list .leaf-row { padding: 9px 14px; cursor: pointer; font-size: 13px; color: var(--ink); line-height: 1.45; display: flex; align-items: center; gap: 6px; background: transparent; border: 0; border-radius: 0; margin-bottom: 0; }
+.L2-list .leaf-row:hover { background: rgba(217, 119, 87, 0.08); color: var(--orange); border-color: transparent; }
+.L2-list .leaf-row .param { color: var(--text-dim); font-size: 11px; }
+.leaf-detail { margin-top: 14px; padding: 14px; background: var(--surface-2); border: 1px solid var(--orange); border-radius: 10px; }
+.leaf-detail-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.leaf-detail h3 { font-size: 16px; flex: 1; }
+.leaf-detail .pitch { color: var(--text-mute); font-size: 13px; line-height: 1.55; margin: 8px 0 12px; }
+.leaf-detail .meta { font-size: 11px; color: var(--text-dim); margin-bottom: 10px; }
+.leaf-detail .meta strong { color: var(--text-mute); font-weight: 600; }
+.cta-row { display: flex; gap: 8px; margin-top: 8px; }
+
+/* Phase 7 mash-up build pill + cap-warn (top of #wall-screen .body) */
+.build-pill { background: linear-gradient(135deg, var(--orange) 0%, #c46a4d 100%); color: #fff; border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; cursor: pointer; box-shadow: 0 0 0 1px rgba(217,119,87,0.25); display: flex; align-items: center; gap: 10px; }
+.build-pill .glyph { width: 24px; height: 24px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
+.build-pill-title { font-weight: 700; font-size: 13.5px; line-height: 1.3; }
+.build-pill-sub { font-size: 11px; opacity: 0.85; margin-top: 2px; }
+.build-pill-cta { margin-left: auto; font-size: 12px; font-weight: 600; background: rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 999px; }
+.cap-warn { background: rgba(201, 140, 64, 0.12); border: 1px solid #c98c40; color: #c98c40; border-radius: 8px; padding: 8px 12px; font-size: 12px; line-height: 1.4; margin-bottom: 14px; }
+
+/* Phase 7 pairs-with chips inside .leaf-detail */
+.pairs-with-label { font-size: 11px; color: var(--text-mute); margin: 12px 0 6px; font-weight: 600; }
+.pairs-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.pair-chip { background: var(--surface); border: 1px solid var(--line); color: var(--ink); border-radius: 999px; padding: 5px 11px 5px 9px; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.pair-chip:hover { border-color: var(--orange); color: var(--orange); }
+.pair-chip .plus { font-weight: 700; color: var(--orange); font-size: 13px; }
+.pair-chip.added { background: rgba(217, 119, 87, 0.12); border-color: var(--orange); color: var(--orange); }
+
+/* Phase 7 review screen (rendered into #wall-l2) */
+.review-screen { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.review-screen h2 { font-size: 17px; margin-bottom: 4px; }
+.review-screen .sub { color: var(--text-mute); font-size: 12px; margin-bottom: 16px; line-height: 1.5; }
+.review-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.review-item { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; align-items: center; gap: 8px; }
+.review-item .name { font-weight: 600; font-size: 13px; flex: 1; }
+.review-item .where { color: var(--text-dim); font-size: 11px; }
+.review-item .x { color: var(--text-dim); cursor: pointer; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
+.review-item .x:hover { background: var(--line); color: var(--ink); }
+.merged-pitch { background: var(--surface); border: 1px dashed var(--orange); border-radius: 8px; padding: 12px 14px; color: var(--text-mute); font-size: 12.5px; line-height: 1.55; margin-bottom: 16px; }
+.merged-pitch strong { color: var(--orange); display: block; margin-bottom: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.review-cta-row { display: flex; gap: 8px; }
+.btn-back-to-wall { background: transparent; border: 1px solid var(--line); color: var(--text-mute); border-radius: 8px; padding: 11px 14px; cursor: pointer; font: inherit; }
+.btn-build-final { flex: 1; background: var(--orange); color: #fff; border: none; border-radius: 8px; padding: 11px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+
+/* Phase 7 secondary CTA — outline variant of .btn-primary. */
+.btn-secondary { flex: 1; padding: 11px 14px; border-radius: 8px; font: inherit; font-weight: 600; cursor: pointer; background: transparent; border: 1px solid var(--orange); color: var(--orange); }
+
+/* Pattern picker (Phase 9.2) */
+.pattern-picker { margin-bottom: 16px; }
+.pattern-picker-label { font-size: 11px; color: var(--text-mute); margin-bottom: 8px; font-weight: 600; }
+.pattern-picker-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.pattern-tile { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px; cursor: pointer; text-align: center; transition: border-color 0.12s; }
+.pattern-tile:hover { border-color: var(--orange); }
+.pattern-tile.selected { border: 2px solid var(--orange); padding: 5px; box-shadow: 0 0 0 1px var(--orange); }
+.pattern-thumb { width: 100%; height: auto; display: block; border-radius: 4px; aspect-ratio: 1; }
+.pattern-tile-name { font-size: 9px; color: var(--text-dim); margin-top: 4px; text-transform: capitalize; }
+
+</style>
+</head>
+<body>
+<div id="shell">
+  <div id="wall-screen" class="visible">
+    <div class="title-bar">
+      <div class="title-row">
+        <span class="app-logo" aria-hidden="true"><img src="/*__ICON_DATA_URI__*/" alt=""></span>
+        <div class="title">Build new agent</div>
+      </div>
+    </div>
+    <div class="body">
+      <!-- Phase 7 mash-up build pill + cap warning. Both hidden until
+           state.build has entries; .build-pill becomes a Review affordance,
+           .cap-warn fires soft-warn at 4+ leaves. -->
+      <div id="build-pill" style="display:none"></div>
+      <div id="cap-warn" style="display:none" class="cap-warn"></div>
+      <div class="search-wrap">
+        <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+        <input id="wall-search" placeholder="Filter — e.g., 'sleep', 'tax', 'kid'…">
+      </div>
+      <div id="wall-helper" class="helper">Tap a tile to see all of its agents, or filter. Or build one from scratch below.</div>
+      <div id="wall-grid"></div>
+      <div id="wall-results" style="display:none"></div>
+      <div id="wall-l2"></div>
+      <div id="wall-leaf-detail"></div>
+      <div id="wall-manual" style="margin-top:14px;">
+        <button class="btn btn-ghost" type="button" onclick="gotoCreateForm()" style="width:100%;">Build from scratch</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="step2">
+    <div class="title-bar">
+      <button class="crumb" type="button" id="create-back-crumb" onclick="backFromCreate()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Catalog
+      </button>
+      <div class="title">New agent</div>
+    </div>
+    <div class="body">
+      <div class="preview-bar" id="create-preview-bar">
+        <div class="badge" id="create-preview-badge"></div>
+        <div class="meta">
+          <div class="name" id="create-preview-name" style="color: var(--ink-mute); font-weight: 500;">Unnamed agent</div>
+          <div class="info" id="create-preview-info">Sonnet</div>
+        </div>
+      </div>
+      <label class="field-label" for="name">Name</label>
+      <input id="name" class="text" type="text" maxlength="256" placeholder="e.g. Research buddy">
+      <label class="field-label" style="margin-top:12px;">Model</label>
+      <div class="seg" id="create-model-seg" role="group" aria-label="Model">
+        <button type="button" data-tier="haiku"  aria-pressed="false"><span class="dot haiku"></span>Haiku</button>
+        <button type="button" data-tier="sonnet" aria-pressed="true"><span class="dot sonnet"></span>Sonnet</button>
+        <button type="button" data-tier="opus"   aria-pressed="false"><span class="dot opus"></span>Opus</button>
+        <button type="button" data-tier="fable"  aria-pressed="false"><span class="dot fable"></span>Fable</button>
+        <button type="button" data-tier="__other__" aria-pressed="false"><span class="dot other"></span>Other…</button>
+      </div>
+      <div class="custom-model-row" id="create-custom-model-row">
+        <input type="text" id="create-custom-model-id" class="text" placeholder="claude-fable-1-0" autocomplete="off" spellcheck="false">
+        <div class="help">Custom Anthropic model ID. Verify it's accepted by <code>claude --model</code> before saving.</div>
+      </div>
+      <label class="field-label" for="system" style="margin-top:12px;">System prompt <span style="color: var(--ink-faint); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 11px; margin-left: 4px;">optional</span></label>
+      <textarea id="system" class="text" maxlength="100000" style="min-height:96px;font-family:inherit;" placeholder="Describe the agent's role, tone, and any constraints. Leave blank to use the default assistant prompt."></textarea>
+      <label class="field-label" style="margin-top:12px;">Permissions</label>
+      <label class="trust-card" id="create-trust-card">
+        <input class="switch" type="checkbox" id="skip-permissions">
+        <span class="body">
+          <span class="heading">
+            <svg class="shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.5 9.5 8 11 4.5-1.5 8-6 8-11V5l-8-3Z"/></svg>
+            Trusted agent
+          </span>
+          <span class="caveat">Skips per-tool permission prompts. Every decision is recorded in the permission event log.</span>
+        </span>
+      </label>
+      <label class="field-label" style="margin-top:12px;">Memory</label>
+      <label class="trust-card" id="create-memory-card">
+        <input class="switch" type="checkbox" id="memory-boost">
+        <span class="body">
+          <span class="heading">
+            <svg class="brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 0 0-6 0c0 .3 0 .6.1.9A3 3 0 0 0 5 8.6a3 3 0 0 0 1 5.6V16a3 3 0 0 0 5 2 3 3 0 0 0 5-2v-1.8a3 3 0 0 0 1-5.6 3 3 0 0 0-1.1-2.7c.1-.3.1-.6.1-.9a3 3 0 0 0-3-3Z"/></svg>
+            Memory boost
+          </span>
+          <span class="caveat">Re-surfaces relevant past chat history when the conversation is compacted or context fills up.</span>
+        </span>
+      </label>
+      <label class="field-label" style="margin-top:12px;">Tools</label>
+      <details class="tool-group" id="create-tool-group-builtin">
+        <summary>
+          <span>Built-in</span>
+          <span class="count" id="create-count-builtin">0 of 0</span>
+          <span class="chev">&rsaquo;</span>
+        </summary>
+        <div class="body">
+          <div class="tool-grid" id="create-builtin-grid"></div>
+        </div>
+      </details>
+      <details class="tool-group" id="create-tool-group-mcp">
+        <summary>
+          <span>Connected services</span>
+          <span class="count" id="create-count-mcp">0 of 0</span>
+          <span class="chev">&rsaquo;</span>
+        </summary>
+        <div class="body">
+          <div class="mcp-list" id="create-mcp-list"></div>
+        </div>
+      </details>
+      <div class="footer-bar">
+        <button class="btn btn-ghost" type="button" onclick="backFromCreate()">Cancel</button>
+        <button class="btn btn-primary" type="button" id="create-btn" onclick="create()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="outdated" style="text-align:center;padding:44px 22px;">
+    <div class="outdated-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+    </div>
+    <div class="outdated-title">New version available</div>
+    <div class="outdated-sub">A newer create-agent card was sent to this chat. Swipe back and open the latest one.</div>
+  </div>
+</div>
+
+<div id="modal" class="modal-overlay" onclick="dismissModal(event)">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-icon" id="modal-icon">&#x2705;</div>
+    <div class="modal-heading" id="modal-heading"></div>
+    <div class="modal-sub" id="modal-sub"></div>
+    <div class="modal-hint">Swipe or tap back to close the app</div>
+    <button class="modal-dismiss" id="modal-dismiss" onclick="dismissModal()"></button>
+  </div>
+</div>
+
+<!-- Build confirmation modal. Three states:
+     idle       → Cancel + Start chat buttons
+     processing → spinner + "Setting up your chat…" (no buttons)
+     error      → Cancel + Retry, with the error in #build-confirm-sub.
+     Closes on chat-ready update from dispatcher. -->
+<div id="build-confirm-modal" class="modal-overlay">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-icon">&#x1F4AC;</div>
+    <div class="modal-heading" id="build-confirm-heading"></div>
+    <div class="modal-sub" id="build-confirm-sub"></div>
+    <div id="build-confirm-buttons" style="display:flex; gap:8px; margin-top:16px;">
+      <button class="modal-dismiss" onclick="closeBuildConfirm()" style="flex:1; background:#444;">Cancel</button>
+      <button class="modal-dismiss" id="build-confirm-ok" onclick="buildConfirmOk()" style="flex:1; background:var(--orange);">Start chat</button>
+    </div>
+    <div id="build-confirm-processing" style="display:none; text-align:center; padding:8px; margin-top:16px;">
+      <div class="spinner"></div>
+      <div style="margin-top:8px; color:var(--ink-mute);">Setting up your chat&hellip;</div>
+    </div>
+  </div>
+</div>
+
+<script>
+var APP_VERSION = 1.00;
+var GLYPHS = /*__GLYPHS__*/{};
+var PREVIEW_PALETTE = {
+  haiku:   { solid: '#B4862A', checker: '#D9B25B' },
+  sonnet:  { solid: '#3DA85A', checker: '#65C081' },
+  opus:    { solid: '#D97757', checker: '#F2A778' },
+  fable:   { solid: '#6D28D9', checker: '#A78BFA' },
+  // Mirrors UNKNOWN_MODEL_COLOR in agent-icons/palettes.ts so the live
+  // preview shows the Zinc-grey badge a user-typed custom model ID will
+  // render with server-side. Used for tier='__other__'.
+  unknown: { solid: '#3F3F46', checker: '#52525B' },
+};
+
+// Build the inner shape XML for a pattern variant on a 256x256 canvas,
+// given solid + accent colors. Mirrors the server-side renderer in
+// agent-icon-render.ts and the picker thumb in renderPatternThumb so
+// all three render the same pattern for a given (id, palette).
+function renderPatternBg(pattern, solid, accent) {
+  var rects, i, r, c;
+  switch (pattern) {
+    case 'mini-checker':
+      rects = '';
+      for (i = 0; i < 64; i++) { r = Math.floor(i / 8); c = i % 8;
+        rects += '<rect x="' + (c * 32) + '" y="' + (r * 32) + '" width="32" height="32" fill="' + ((r + c) % 2 === 0 ? solid : accent) + '"/>';
+      }
+      return rects;
+    case 'stripes':
+      return '<rect width="256" height="64" fill="' + solid + '"/><rect y="64" width="256" height="64" fill="' + accent + '"/>'
+           + '<rect y="128" width="256" height="64" fill="' + solid + '"/><rect y="192" width="256" height="64" fill="' + accent + '"/>';
+    case 'v-stripes':
+      return '<rect width="64" height="256" fill="' + solid + '"/><rect x="64" width="64" height="256" fill="' + accent + '"/>'
+           + '<rect x="128" width="64" height="256" fill="' + solid + '"/><rect x="192" width="64" height="256" fill="' + accent + '"/>';
+    case 'quartered':
+      return '<rect width="128" height="128" fill="' + solid + '"/><rect x="128" width="128" height="128" fill="' + accent + '"/>'
+           + '<rect y="128" width="128" height="128" fill="' + accent + '"/><rect x="128" y="128" width="128" height="128" fill="' + solid + '"/>';
+    case 'quartered-x':
+      return '<rect width="256" height="256" fill="' + solid + '"/>'
+           + '<polygon points="0,0 256,0 128,128" fill="' + accent + '"/><polygon points="0,256 256,256 128,128" fill="' + accent + '"/>'
+           + '<polygon points="0,0 0,256 128,128" fill="' + solid + '"/><polygon points="256,0 256,256 128,128" fill="' + solid + '"/>';
+    case 'dots':
+      var dots = '';
+      for (var dy = 32; dy < 256; dy += 64) {
+        for (var dx = 32; dx < 256; dx += 64) {
+          dots += '<circle cx="' + dx + '" cy="' + dy + '" r="20" fill="' + accent + '"/>';
+        }
+      }
+      return '<rect width="256" height="256" fill="' + solid + '"/>' + dots;
+    case 'big-dots':
+      var bdots = '';
+      for (var by = 64; by < 256; by += 128) {
+        for (var bx = 64; bx < 256; bx += 128) {
+          bdots += '<circle cx="' + bx + '" cy="' + by + '" r="40" fill="' + accent + '"/>';
+        }
+      }
+      return '<rect width="256" height="256" fill="' + solid + '"/>' + bdots;
+    case 'checker':
+    default:
+      // 4x4 grid of 64px alternating cells.
+      rects = '';
+      for (i = 0; i < 16; i++) { r = Math.floor(i / 4); c = i % 4;
+        rects += '<rect x="' + (c * 64) + '" y="' + (r * 64) + '" width="64" height="64" fill="' + ((r + c) % 2 === 0 ? solid : accent) + '"/>';
+      }
+      return rects;
+  }
+}
+
+function renderPreviewSvg(modelFamily, trust, glyph, pattern) {
+  var p = PREVIEW_PALETTE[modelFamily] || PREVIEW_PALETTE.sonnet;
+  var inner = GLYPHS[glyph] || GLYPHS['user-round'] || '';
+  // Trust-off agents render solid color regardless of pattern (mirrors
+  // the server renderer — pattern is only visually meaningful when trust
+  // is on, since both colors collapse to the model accent otherwise).
+  var bgShapes = trust
+    ? renderPatternBg(pattern || 'checker', p.solid, p.checker)
+    : '<rect width="256" height="256" fill="' + p.solid + '"/>';
+  return '<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">'
+    + '<defs><clipPath id="k"><circle cx="128" cy="128" r="128"/></clipPath></defs>'
+    + '<g clip-path="url(#k)">'
+      + bgShapes
+      + '<g transform="translate(64,64) scale(5.333)" stroke="#FAF9F5" stroke-width="3" '
+        + 'fill="none" stroke-linecap="round" stroke-linejoin="round">' + inner + '</g>'
+    + '</g>'
+    + '<circle cx="128" cy="128" r="127.5" fill="none" stroke="rgba(11,15,23,0.12)"/>'
+  + '</svg>';
+}
+
+// Lucide-glyph defaults by archetype, mirrors palettes.ts ARCHETYPE_DEFAULT_GLYPH.
+var ARCHETYPE_DEFAULT_GLYPH = {
+  role: 'user-round',
+  utility: 'cog',
+  project: 'folder-kanban',
+};
+
+var TIER_LABEL = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus', fable: 'Fable' };
+// What the live preview shows in the "model" label when composing with the
+// "Other…" segment. Stays generic to avoid suggesting the typed ID is validated.
+var CUSTOM_MODEL_LABEL = 'Custom';
+
+function setBadgeSvg(el, svgString) {
+  var doc = new DOMParser().parseFromString(svgString, 'image/svg+xml');
+  var node = doc.documentElement;
+  if (!node || node.tagName === 'parsererror') return;
+  el.replaceChildren(document.importNode(node, true));
+}
+
+function wirePreviewInputs(scope) {
+  var bar = document.getElementById('create-preview-bar');
+  if (!bar || bar.dataset.wired === 'true') return;
+  bar.dataset.wired = 'true';
+  var nameInput = document.getElementById('name');
+  var trustInput = document.getElementById('skip-permissions');
+  if (nameInput) nameInput.addEventListener('input', function () { refreshLivePreview(); });
+  if (trustInput) trustInput.addEventListener('change', function () { refreshLivePreview(); });
+}
+
+function refreshLivePreview() {
+  var badge = document.getElementById('create-preview-badge');
+  var nameEl = document.getElementById('create-preview-name');
+  var infoEl = document.getElementById('create-preview-info');
+  if (!badge || !nameEl || !infoEl) return;
+  var seg = document.getElementById('create-model-seg');
+  var tier = segGetValue(seg);
+  var nameInput = document.getElementById('name');
+  var trustInput = document.getElementById('skip-permissions');
+  var rawName = (nameInput && nameInput.value.trim()) || '';
+  var trust = !!(trustInput && trustInput.checked);
+  var glyph = ARCHETYPE_DEFAULT_GLYPH[createArchetype] || 'user-round';
+  var pattern = createPattern || 'checker';
+  // When the user is on "Other…", preview with the Zinc-grey unknown
+  // palette and a generic "Custom" label — never silently fall back to
+  // Sonnet (which would mislead about the saved model).
+  var previewTier = (tier === '__other__') ? 'unknown' : tier;
+  setBadgeSvg(badge, renderPreviewSvg(previewTier, trust, glyph, pattern));
+  if (!rawName) {
+    nameEl.textContent = 'Unnamed agent';
+    nameEl.style.color = 'var(--ink-mute)';
+    nameEl.style.fontWeight = '500';
+  } else {
+    nameEl.textContent = rawName;
+    nameEl.style.color = '';
+    nameEl.style.fontWeight = '';
+  }
+  var tierLabelText = (tier === '__other__')
+    ? CUSTOM_MODEL_LABEL
+    : (TIER_LABEL[tier] || 'Sonnet');
+  infoEl.textContent = tierLabelText + (trust ? ' • Trusted' : '');
+}
+
+// Holds the slow-changing catalog payload the wall reads:
+// { leaves[], l2Summary[], combines }. build/openLeafId/pattern seeded
+// here so the pre-init DOMContentLoaded render (empty wall) is safe.
+var state = { catalog: { leaves: [], l2Summary: [], combines: [] }, build: [], openLeafId: null, pattern: 'checker' };
+var createArchetype = 'role';
+var createPattern = 'checker';
+var creating = false;
+var versionMismatchSent = false;
+var modalTimer = null;
+var modalCountdown = 0;
+
+// Populated from the init payload's availableModels list.
+// MODEL_TIERS: id -> tier. LATEST_PER_TIER: tier -> latest id (models.json
+// is ordered newest-first per tier, so the first occurrence per tier wins).
+var MODEL_TIERS = {};
+var LATEST_PER_TIER = {};
+var DEFAULT_MODEL_ID = 'claude-sonnet-4-6';
+
+function populateModelDropdowns(availableModels, defaultModel) {
+  if (!Array.isArray(availableModels) || availableModels.length === 0) {
+    if (defaultModel) DEFAULT_MODEL_ID = defaultModel;
+    return;
+  }
+  MODEL_TIERS = {};
+  LATEST_PER_TIER = {};
+  for (var i = 0; i < availableModels.length; i++) {
+    var m = availableModels[i];
+    if (!m || !m.id || !m.tier) continue;
+    MODEL_TIERS[m.id] = m.tier;
+    if (!LATEST_PER_TIER[m.tier]) LATEST_PER_TIER[m.tier] = m.id;
+  }
+  if (defaultModel) DEFAULT_MODEL_ID = defaultModel;
+}
+
+// Infer a tier for an arbitrary model id. Manifest-first lookup, then regex
+// extract on the claude-<tier>-<N>-<N> prefix, then a substring heuristic
+// for legacy/alias inputs, else 'unknown'.
+function tierForModel(id) {
+  if (!id) return 'sonnet';
+  if (MODEL_TIERS[id]) return MODEL_TIERS[id];
+  var m = /^claude-([a-z]+)-/i.exec(id);
+  if (m) return m[1].toLowerCase();
+  if (id.indexOf('opus')   >= 0) return 'opus';
+  if (id.indexOf('haiku')  >= 0) return 'haiku';
+  if (id.indexOf('sonnet') >= 0) return 'sonnet';
+  return 'unknown';
+}
+
+function isKnownModelId(id) {
+  return !!(id && MODEL_TIERS[id]);
+}
+
+// Wire show/hide of the custom-model-id row to the matching segmented
+// control. Called once per form during init.
+function wireCustomModelId(segId, rowId) {
+  var segEl = document.getElementById(segId);
+  var rowEl = document.getElementById(rowId);
+  if (!segEl || !rowEl) return;
+  var buttons = segEl.querySelectorAll('button[data-tier]');
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].addEventListener('click', function (e) {
+      var t = e.currentTarget.getAttribute('data-tier');
+      if (t === '__other__') rowEl.classList.add('visible');
+      else rowEl.classList.remove('visible');
+    });
+  }
+  if (segEl.getAttribute('data-value') === '__other__') {
+    rowEl.classList.add('visible');
+  } else {
+    rowEl.classList.remove('visible');
+  }
+}
+
+// Resolve the segmented control's tier choice to a concrete model id.
+function resolveModelFromTier(tier, currentPinnedId) {
+  if (currentPinnedId && tierForModel(currentPinnedId) === tier) return currentPinnedId;
+  return LATEST_PER_TIER[tier] || DEFAULT_MODEL_ID;
+}
+
+function segSetValue(segEl, value) {
+  if (!segEl) return;
+  var buttons = segEl.querySelectorAll('button[data-tier]');
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].setAttribute('aria-pressed', buttons[i].getAttribute('data-tier') === value ? 'true' : 'false');
+  }
+  segEl.setAttribute('data-value', value);
+}
+
+function segGetValue(segEl) {
+  return (segEl && segEl.getAttribute('data-value')) || 'sonnet';
+}
+
+function wireSeg(segEl, onChange) {
+  if (!segEl || segEl.dataset.wired === 'true') return;
+  segEl.dataset.wired = 'true';
+  segEl.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('button[data-tier]') : null;
+    if (!b || !segEl.contains(b)) return;
+    segSetValue(segEl, b.getAttribute('data-tier'));
+    if (onChange) onChange(b.getAttribute('data-tier'));
+  });
+}
+
+function show(id) {
+  var ids = ['wall-screen', 'step2', 'outdated'];
+  for (var i = 0; i < ids.length; i++) {
+    var el = document.getElementById(ids[i]);
+    if (!el) continue;
+    if (ids[i] === id) el.classList.add('visible'); else el.classList.remove('visible');
+  }
+}
+
+function showModal(heading, sub) {
+  document.getElementById('modal-heading').textContent = heading;
+  document.getElementById('modal-sub').textContent = sub;
+  modalCountdown = 5;
+  updateDismissLabel();
+  document.getElementById('modal').classList.add('visible');
+  if (modalTimer) clearInterval(modalTimer);
+  modalTimer = setInterval(function() {
+    modalCountdown--;
+    if (modalCountdown <= 0) {
+      dismissModal();
+    } else {
+      updateDismissLabel();
+    }
+  }, 1000);
+}
+
+function updateDismissLabel() {
+  document.getElementById('modal-dismiss').textContent = 'Dismiss (' + modalCountdown + ')';
+}
+
+function dismissModal() {
+  if (modalTimer) { clearInterval(modalTimer); modalTimer = null; }
+  document.getElementById('modal').classList.remove('visible');
+  creating = false;
+  var createBtn = document.getElementById('create-btn');
+  if (createBtn) createBtn.disabled = false;
+}
+
+var availableBuiltinTools = [];
+var availableMcpServers = [];
+var connectedMcpServers = [];
+
+function populateCreateToolPicker(allowedBuiltinTools, allowedMcpServers) {
+  var grid = document.getElementById('create-builtin-grid');
+  var mcp  = document.getElementById('create-mcp-list');
+  if (!grid || !mcp) return;
+  grid.textContent = '';
+  mcp.textContent  = '';
+  var gb = document.getElementById('create-tool-group-builtin');
+  var gm = document.getElementById('create-tool-group-mcp');
+  if (gb) gb.open = false;
+  if (gm) gm.open = false;
+
+  var allBuiltin = allowedBuiltinTools === null || allowedBuiltinTools === undefined;
+  availableBuiltinTools.forEach(function (tool) {
+    var label = document.createElement('label');
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = allBuiltin || allowedBuiltinTools.indexOf(tool.name) >= 0;
+    cb.dataset.toolName = tool.name;
+    cb.dataset.toolField = 'builtin';
+    cb.addEventListener('change', refreshCreateToolCounts);
+    var span = document.createElement('span');
+    span.textContent = tool.name;
+    span.title = tool.description || '';
+    label.appendChild(cb);
+    label.appendChild(span);
+    grid.appendChild(label);
+  });
+
+  var allMcp = allowedMcpServers === null || allowedMcpServers === undefined;
+  availableMcpServers.forEach(function (srv) {
+    var row = document.createElement('div');
+    row.className = 'mcp-row';
+    var label = document.createElement('label');
+    label.style.display = 'flex';
+    label.style.alignItems = 'center';
+    label.style.gap = '8px';
+    label.style.flex = '1';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = allMcp || allowedMcpServers.indexOf(srv.prefix) >= 0;
+    cb.dataset.toolName = srv.prefix;
+    cb.dataset.toolField = 'mcp';
+    cb.addEventListener('change', refreshCreateToolCounts);
+    var name = document.createElement('span');
+    name.className = 'mcp-label';
+    name.textContent = srv.label;
+    var needsAuth = connectedMcpServers.indexOf(srv.prefix) < 0;
+    if (needsAuth) {
+      var badge = document.createElement('span');
+      badge.className = 'mcp-auth';
+      badge.textContent = 'needs auth';
+      name.appendChild(badge);
+    }
+    label.appendChild(cb);
+    label.appendChild(name);
+    row.appendChild(label);
+    if (srv.toolCount > 0) {
+      var meta = document.createElement('span');
+      meta.className = 'mcp-label';
+      meta.style.flex = '0';
+      meta.style.color = 'var(--ink-faint)';
+      meta.style.fontSize = '11px';
+      meta.textContent = srv.toolCount + ' tools';
+      row.appendChild(meta);
+    }
+    mcp.appendChild(row);
+  });
+
+  refreshCreateToolCounts();
+}
+
+function refreshCreateToolCounts() {
+  var b = document.querySelectorAll('#create-builtin-grid input[type=checkbox]');
+  var bOn = 0;
+  for (var i = 0; i < b.length; i++) { if (b[i].checked) bOn++; }
+  var bCount = document.getElementById('create-count-builtin');
+  if (bCount) bCount.textContent = bOn + ' of ' + b.length;
+  var m = document.querySelectorAll('#create-mcp-list input[type=checkbox]');
+  var mOn = 0;
+  for (var j = 0; j < m.length; j++) { if (m[j].checked) mOn++; }
+  var mCount = document.getElementById('create-count-mcp');
+  if (mCount) mCount.textContent = mOn + ' of ' + m.length;
+}
+
+function collectCreateToolPickerState() {
+  var builtinAll = true, mcpAll = true;
+  var builtinList = [], mcpList = [];
+  var boxes = document.querySelectorAll('#create-builtin-grid input[type=checkbox], #create-mcp-list input[type=checkbox]');
+  boxes.forEach(function (cb) {
+    if (cb.dataset.toolField === 'builtin') {
+      if (cb.checked) builtinList.push(cb.dataset.toolName);
+      else builtinAll = false;
+    } else if (cb.dataset.toolField === 'mcp') {
+      if (cb.checked) mcpList.push(cb.dataset.toolName);
+      else mcpAll = false;
+    }
+  });
+  return {
+    allowedBuiltinTools: builtinAll ? null : builtinList,
+    allowedMcpServers: mcpAll ? null : mcpList,
+  };
+}
+
+// Initialize the create form's wiring + model picker. Runs on every init.
+function initCreateForm() {
+  var createSeg = document.getElementById('create-model-seg');
+  wireSeg(createSeg, function () { refreshLivePreview(); });
+  segSetValue(createSeg, tierForModel(DEFAULT_MODEL_ID));
+  document.getElementById('create-custom-model-id').value = '';
+  wireCustomModelId('create-model-seg', 'create-custom-model-row');
+  wirePreviewInputs();
+  wireTrustCard();
+  wireMemoryCard();
+}
+
+// Open the manual create form (blank). The wall's leaf-driven path
+// dispatches `build-agent` (chat-coach takes over); this is the
+// build-it-yourself path that dispatches `create` directly.
+function gotoCreateForm() {
+  var nameEl = document.getElementById('name');
+  if (nameEl) nameEl.value = '';
+  var sysEl = document.getElementById('system');
+  if (sysEl) sysEl.value = '';
+  var trust = document.getElementById('skip-permissions');
+  if (trust) trust.checked = false;
+  var boost = document.getElementById('memory-boost');
+  if (boost) boost.checked = false;
+  var seg = document.getElementById('create-model-seg');
+  segSetValue(seg, tierForModel(DEFAULT_MODEL_ID));
+  var customRow = document.getElementById('create-custom-model-row');
+  if (customRow) customRow.classList.remove('visible');
+  var customId = document.getElementById('create-custom-model-id');
+  if (customId) customId.value = '';
+  createArchetype = 'role';
+  createPattern = 'checker';
+  creating = false;
+  var createBtn = document.getElementById('create-btn');
+  if (createBtn) createBtn.disabled = false;
+  populateCreateToolPicker(null, null);
+  syncTrustCard();
+  syncMemoryCard();
+  refreshLivePreview();
+  show('step2');
+}
+
+function backFromCreate() {
+  show('wall-screen');
+}
+
+function syncTrustCard() {
+  var card = document.getElementById('create-trust-card');
+  var trust = document.getElementById('skip-permissions');
+  if (!card || !trust) return;
+  card.classList.toggle('on', trust.checked);
+}
+
+function wireTrustCard() {
+  var trust = document.getElementById('skip-permissions');
+  if (!trust || trust.dataset.wired === 'true') return;
+  trust.dataset.wired = 'true';
+  trust.addEventListener('change', function () {
+    syncTrustCard();
+    refreshLivePreview();
+  });
+}
+
+function syncMemoryCard() {
+  var card = document.getElementById('create-memory-card');
+  var boost = document.getElementById('memory-boost');
+  if (!card || !boost) return;
+  card.classList.toggle('on', boost.checked);
+}
+
+function wireMemoryCard() {
+  var boost = document.getElementById('memory-boost');
+  if (!boost || boost.dataset.wired === 'true') return;
+  boost.dataset.wired = 'true';
+  boost.addEventListener('change', function () {
+    syncMemoryCard();
+  });
+}
+
+// ----- Wall navigation (Phase 6) ----------------------------------------
+// Renders the specialty tiles in a 2-col grid + a search filter that flips
+// into a flat leaf list. Drill-down (enterL2 / showLeafDetail) and mash-up
+// build state observe state.build.
+//
+// XSS-safety: every interpolated catalog value flows through escapeHtml,
+// and tile / leaf identifiers travel via data-* attributes, NOT inline
+// onclick="..." string concat.
+
+function pathTag(p) {
+  var s = (p == null) ? '' : String(p);
+  if (!s) return '';
+  return '<span class="tag '+s.toLowerCase()+'">'+escapeHtml(s)+'</span>';
+}
+
+function pathOf(x) {
+  // Catalog `path` may be a string ('Expert'/'Service'/'Goal') or, in
+  // minimal payloads, an empty array. Normalize to a string or ''.
+  if (typeof x === 'string') return x;
+  if (Array.isArray(x) && x.length && typeof x[0] === 'string') return x[0];
+  return '';
+}
+
+function renderWall() {
+  hideAll(['wall-results', 'wall-l2', 'wall-leaf-detail']);
+  document.getElementById('wall-helper').style.display = '';
+  document.getElementById('wall-grid').style.display = '';
+
+  var html = '<div class="wall-grid">';
+  var sorted = ((state.catalog && state.catalog.l2Summary) || []).slice().sort(function(a, b) {
+    var order = { Expert: 0, Service: 1, Goal: 2 };
+    var oa = order[pathOf(a.path)]; var ob = order[pathOf(b.path)];
+    if (oa === undefined) oa = 99;
+    if (ob === undefined) ob = 99;
+    return oa - ob;
+  });
+  for (var i = 0; i < sorted.length; i++) {
+    var t = sorted[i];
+    var samples = (t.sample || []).slice(0, 3).map(escapeHtml).join('<span class="dot">·</span>');
+    html += '<div class="wall-tile" data-l2="' + escapeHtml(t.l2) + '">' +
+              '<div class="wall-tile-head">' + pathTag(pathOf(t.path)) +
+                '<span class="wall-tile-name">' + escapeHtml(t.l2) + '</span>' +
+                '<span class="wall-tile-count">' + (t.count || 0) + '</span></div>' +
+              '<div class="wall-tile-samples">' + samples + '</div>' +
+            '</div>';
+  }
+  html += '</div>';
+  document.getElementById('wall-grid').innerHTML = html;
+  // Keep the build pill visible when navigating back to the wall (Phase 7).
+  renderBuildPill();
+}
+
+function onWallSearch() {
+  var q = (document.getElementById('wall-search').value || '').trim().toLowerCase();
+  if (!q) { renderWall(); return; }
+  document.getElementById('wall-helper').style.display = 'none';
+  document.getElementById('wall-grid').style.display = 'none';
+  document.getElementById('wall-l2').innerHTML = '';
+  document.getElementById('wall-leaf-detail').innerHTML = '';
+
+  var matches = (leavesOf()).filter(function(l) {
+    return (l.name + ' ' + l.l2 + ' ' + (l.pitch || '') + ' ' + (l.parameter || '')).toLowerCase().indexOf(q) !== -1;
+  });
+  var html = matches.length === 0
+    ? '<div class="results-empty">No agents match "'+ escapeHtml(q) +'"</div>'
+    : matches.slice(0, 25).map(function(l) {
+        return '<div class="leaf-row" data-leaf-id="'+ escapeHtml(l.id) +'">'+
+                  pathTag(pathOf(l.path)) +
+                  '<span style="flex:1; min-width:0">' + escapeHtml(l.name) + '</span>' +
+                  '<span style="color: var(--text-dim); font-size: 11px;">' + escapeHtml(l.l2) + '</span>' +
+                '</div>';
+      }).join('');
+  document.getElementById('wall-results').style.display = '';
+  document.getElementById('wall-results').innerHTML = html;
+}
+
+function leavesOf() {
+  return (state.catalog && state.catalog.leaves) || [];
+}
+
+// Drill into a single L2 specialty: hide grid + helper, render its leaves
+// in a back-bar-topped list.
+function enterL2(l2) {
+  document.getElementById('wall-helper').style.display = 'none';
+  document.getElementById('wall-grid').style.display = 'none';
+  document.getElementById('wall-results').style.display = 'none';
+  document.getElementById('wall-leaf-detail').innerHTML = '';
+  document.getElementById('wall-l2').style.display = '';
+
+  var leaves = leavesOf().filter(function(l) { return l.l2 === l2; });
+  var path = leaves[0] ? pathOf(leaves[0].path) : 'Expert';
+  var html = '<div class="L2-list">' +
+    '<div class="back-bar" data-action="back-to-wall"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 6 9 12 15 18"/></svg> Back to specialties</div>' +
+    '<div style="padding: 10px 14px; display: flex; align-items: center; gap: 8px;">' + pathTag(path) + '<strong style="font-size: 14px;">' + escapeHtml(l2) + '</strong></div>';
+  for (var i = 0; i < leaves.length; i++) {
+    var l = leaves[i];
+    var paramStr = l.parameter ? ' <span class="param">— ' + escapeHtml(l.parameter) + '</span>' : '';
+    html += '<div class="leaf-row" data-leaf-id="' + escapeHtml(l.id) + '">' + escapeHtml(l.name) + paramStr + '</div>';
+  }
+  html += '</div>';
+  document.getElementById('wall-l2').innerHTML = html;
+}
+
+// Open the leaf-detail card below whichever list is currently shown.
+// CTA matrix (Phase 7):
+//   inBuild                    → "✓ In your mash-up"  +  "Review →"
+//   build empty (this not in)  → "+ Add to mash-up"   +  "Build now"
+//   build non-empty (this not) → "+ Add to mash-up"   +  "Add & review"
+function showLeafDetail(leafId) {
+  var l = leavesOf().find(function(x) { return x.id === leafId; });
+  if (!l) return;
+  state.openLeafId = l.id;
+  var inBuild = state.build.indexOf(l.id) !== -1;
+
+  var pairs = (l.combinesWith || []).map(function(pid) {
+    return leavesOf().find(function(x) { return x.id === pid; });
+  }).filter(Boolean);
+
+  var pairsHtml = pairs.length === 0 ? '' :
+    '<div class="pairs-with-label">Pairs well with — tap to add to your mash-up</div>' +
+    '<div class="pairs-chips">' +
+      pairs.map(function(p) {
+        var added = state.build.indexOf(p.id) !== -1;
+        return '<span class="pair-chip ' + (added ? 'added' : '') + '" data-pair-add="' + escapeHtml(p.id) + '">' +
+                 '<span class="plus">' + (added ? '✓' : '+') + '</span>' + escapeHtml(p.name) +
+               '</span>';
+      }).join('') +
+    '</div>';
+
+  var ctaHtml;
+  if (inBuild) {
+    ctaHtml = '<button class="btn-secondary" data-pair-add="' + escapeHtml(l.id) + '">✓ In your mash-up</button>' +
+              '<button class="btn btn-primary" data-action="review">Review →</button>';
+  } else if (state.build.length === 0) {
+    ctaHtml = '<button class="btn-secondary" data-pair-add="' + escapeHtml(l.id) + '">+ Add to mash-up</button>' +
+              '<button class="btn btn-primary" data-action="build-now" data-leaf-id-build="' + escapeHtml(l.id) + '">Build now</button>';
+  } else {
+    ctaHtml = '<button class="btn-secondary" data-pair-add="' + escapeHtml(l.id) + '">+ Add to mash-up</button>' +
+              '<button class="btn btn-primary" data-action="add-and-review" data-leaf-id-add="' + escapeHtml(l.id) + '">Add &amp; review</button>';
+  }
+
+  document.getElementById('wall-leaf-detail').style.display = '';
+  document.getElementById('wall-leaf-detail').innerHTML =
+    '<div class="leaf-detail">' +
+      '<div class="leaf-detail-head">' + pathTag(pathOf(l.path)) + '<h3>' + escapeHtml(l.name) + '</h3></div>' +
+      (l.parameter ? '<div class="meta"><strong>Asks you about:</strong> ' + escapeHtml(l.parameter) + '</div>' : '') +
+      '<div class="pitch">' + escapeHtml(l.pitch || '') + '</div>' +
+      pairsHtml +
+      '<div class="cta-row">' + ctaHtml + '</div>' +
+      '<div style="text-align: center; margin-top: 10px;"><a href="#" data-action="hide-leaf" style="font-size: 12px; color: var(--text-dim);">cancel</a></div>' +
+    '</div>';
+  document.getElementById('wall-leaf-detail').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+function hideLeafDetail() {
+  state.openLeafId = null;
+  document.getElementById('wall-leaf-detail').innerHTML = '';
+}
+
+// Single-leaf build — opens the confirm modal first; the modal's OK path
+// dispatches the build-agent payload via buildConfirmOk.
+function buildSingleLeaf(leafId) {
+  confirmCustomBuild([leafId], state.pattern);
+}
+
+// ----- Phase 7 mash-up state machine -----------------------------------
+// state.build is the source of truth for which leaves the user has queued.
+// Mutations always flow through toggleBuild so all observers stay in sync.
+
+function renderBuildPill() {
+  var pill = document.getElementById('build-pill');
+  var capWarn = document.getElementById('cap-warn');
+  if (!pill || !capWarn) return;
+  if (state.build.length === 0) {
+    pill.style.display = 'none';
+    capWarn.style.display = 'none';
+    return;
+  }
+  var leaves = state.build.map(function(id) {
+    return leavesOf().find(function(l) { return l.id === id; });
+  }).filter(Boolean);
+  var n = leaves.length;
+  var label = n === 1 ? 'Building 1 specialist' : 'Mashing up ' + n + ' specialists';
+  var sub = leaves.slice(0, 3).map(function(l) { return l.name; }).join(' + ') +
+            (n > 3 ? ' + ' + (n - 3) + ' more' : '');
+  pill.className = 'build-pill';
+  pill.innerHTML =
+    '<div class="glyph">' + n + '</div>' +
+    '<div style="flex:1; min-width:0">' +
+      '<div class="build-pill-title">' + escapeHtml(label) + '</div>' +
+      '<div class="build-pill-sub">' + escapeHtml(sub) + '</div>' +
+    '</div>' +
+    '<div class="build-pill-cta">Review →</div>';
+  pill.onclick = function() { showReviewScreen(); };
+  pill.style.display = 'flex';
+
+  if (state.build.length >= 4) {
+    capWarn.textContent = "Adding more may dilute the agent's focus. Three is usually the sweet spot.";
+    capWarn.style.display = 'block';
+  } else {
+    capWarn.style.display = 'none';
+  }
+}
+
+function toggleBuild(leafId) {
+  var idx = state.build.indexOf(leafId);
+  if (idx === -1) state.build.push(leafId);
+  else state.build.splice(idx, 1);
+  renderBuildPill();
+  if (state.openLeafId) {
+    showLeafDetail(state.openLeafId);
+  }
+}
+
+function rerenderReviewIfOpen() {
+  if (state.build.length === 0) { renderWall(); return; }
+  showReviewScreen();
+}
+
+// Render the review screen into #wall-l2 (replacing any L2 drill-in).
+function showReviewScreen() {
+  if (state.build.length === 0) return;
+  document.getElementById('wall-l2').style.display = '';
+  hideAll(['wall-grid', 'wall-helper', 'wall-results', 'wall-leaf-detail']);
+  var leaves = state.build.map(function(id) {
+    return leavesOf().find(function(l) { return l.id === id; });
+  }).filter(Boolean);
+  var n = leaves.length;
+  var h2 = n === 1 ? 'Your new agent' : 'Your mash-up agent';
+  var sub = n === 1
+    ? 'A single specialist. The coach will help you tune its voice and tools next.'
+    : 'These ' + n + ' specialties combine into <strong>one</strong> agent with a unified system prompt. The coach helps you weight them and tune voice next.';
+
+  var patternIds = ['checker', 'mini-checker', 'stripes', 'v-stripes', 'quartered', 'quartered-x', 'dots', 'big-dots'];
+  var patternHtml = '<div class="pattern-picker">' +
+    '<div class="pattern-picker-label">Pick a badge pattern</div>' +
+    '<div class="pattern-picker-grid">' +
+      patternIds.map(function(p) {
+        var selected = state.pattern === p;
+        return '<div class="pattern-tile' + (selected ? ' selected' : '') + '" data-pattern="' + escapeHtml(p) + '">' +
+                 renderPatternThumb(p) +
+                 '<div class="pattern-tile-name">' + escapeHtml(p.replace(/-/g, ' ')) + '</div>' +
+               '</div>';
+      }).join('') +
+    '</div></div>';
+
+  var html = '<div class="review-screen">' +
+    '<h2>' + escapeHtml(h2) + '</h2><div class="sub">' + sub + '</div>' +
+    '<div class="review-list">' + leaves.map(function(l) {
+      return '<div class="review-item">' + pathTag(pathOf(l.path)) +
+              '<div class="name">' + escapeHtml(l.name) + '</div>' +
+              '<div class="where">' + escapeHtml(l.l2) + '</div>' +
+              '<div class="x" data-action="remove-from-build" data-leaf-rm="' + escapeHtml(l.id) + '">×</div>' +
+            '</div>';
+    }).join('') + '</div>' +
+    '<div class="merged-pitch"><strong>How it will introduce itself</strong>' +
+      escapeHtml(composeMergedPitch(leaves)) + '</div>' +
+    patternHtml +
+    '<div class="review-cta-row">' +
+      '<button class="btn-back-to-wall" data-action="back-to-wall">+ Add another</button>' +
+      '<button class="btn-build-final" data-action="build-mashup">Build &amp; start chatting →</button>' +
+    '</div></div>';
+  document.getElementById('wall-l2').innerHTML = html;
+}
+
+// Render a small SVG preview of a badge pattern. Fixed orange/coral
+// preview because the picker shows shape, not the eventual model-tier accent.
+function renderPatternThumb(p) {
+  var solid = 'var(--orange)';
+  var accent = '#F2A778';  // Opus accent works as a contrast preview
+  switch (p) {
+    case 'checker':
+      var checkerRects = '';
+      for (var i = 0; i < 16; i++) {
+        var row = Math.floor(i / 4), col = i % 4;
+        var fill = (row + col) % 2 === 0 ? solid : accent;
+        checkerRects += '<rect x="' + (col * 64) + '" y="' + (row * 64) + '" width="64" height="64" fill="' + fill + '"/>';
+      }
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' + checkerRects + '</svg>';
+    case 'mini-checker':
+      var miniRects = '';
+      for (var i = 0; i < 64; i++) {
+        var row = Math.floor(i / 8), col = i % 8;
+        var fill = (row + col) % 2 === 0 ? solid : accent;
+        miniRects += '<rect x="' + (col * 32) + '" y="' + (row * 32) + '" width="32" height="32" fill="' + fill + '"/>';
+      }
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' + miniRects + '</svg>';
+    case 'stripes':
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
+        '<rect width="256" height="64" fill="' + solid + '"/><rect y="64" width="256" height="64" fill="' + accent + '"/>' +
+        '<rect y="128" width="256" height="64" fill="' + solid + '"/><rect y="192" width="256" height="64" fill="' + accent + '"/>' +
+        '</svg>';
+    case 'v-stripes':
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
+        '<rect width="64" height="256" fill="' + solid + '"/><rect x="64" width="64" height="256" fill="' + accent + '"/>' +
+        '<rect x="128" width="64" height="256" fill="' + solid + '"/><rect x="192" width="64" height="256" fill="' + accent + '"/>' +
+        '</svg>';
+    case 'quartered':
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
+        '<rect width="128" height="128" fill="' + solid + '"/><rect x="128" width="128" height="128" fill="' + accent + '"/>' +
+        '<rect y="128" width="128" height="128" fill="' + accent + '"/><rect x="128" y="128" width="128" height="128" fill="' + solid + '"/>' +
+        '</svg>';
+    case 'quartered-x':
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
+        '<rect width="256" height="256" fill="' + solid + '"/>' +
+        '<polygon points="0,0 256,0 128,128" fill="' + accent + '"/><polygon points="0,256 256,256 128,128" fill="' + accent + '"/>' +
+        '<polygon points="0,0 0,256 128,128" fill="' + solid + '"/><polygon points="256,0 256,256 128,128" fill="' + solid + '"/>' +
+        '</svg>';
+    case 'dots':
+      var smallDots = '';
+      for (var y = 32; y < 256; y += 64) {
+        for (var x = 32; x < 256; x += 64) {
+          smallDots += '<circle cx="' + x + '" cy="' + y + '" r="20" fill="' + accent + '"/>';
+        }
+      }
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
+        '<rect width="256" height="256" fill="' + solid + '"/>' + smallDots +
+        '</svg>';
+    case 'big-dots':
+      var bigDots = '';
+      for (var y2 = 64; y2 < 256; y2 += 128) {
+        for (var x2 = 64; x2 < 256; x2 += 128) {
+          bigDots += '<circle cx="' + x2 + '" cy="' + y2 + '" r="40" fill="' + accent + '"/>';
+        }
+      }
+      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
+        '<rect width="256" height="256" fill="' + solid + '"/>' + bigDots +
+        '</svg>';
+  }
+  return '';
+}
+
+// Compose a single-line preview of how the mash-up agent will introduce itself.
+function composeMergedPitch(leaves) {
+  if (leaves.length === 1) return leaves[0].pitch || '';
+  var firstSentences = leaves.map(function(l) {
+    var s = (l.pitch || '').split('. ')[0];
+    return s.charAt(0).toLowerCase() + s.slice(1);
+  });
+  return '"I am a single agent who ' + firstSentences.join('; also ') + '. Tell me which side of me you need today."';
+}
+
+// Final commit. Same flow as buildSingleLeaf — opens the confirm modal,
+// which dispatches the build-agent payload on OK with the full queue.
+function buildMashup() {
+  if (state.build.length === 0) return;
+  confirmCustomBuild(state.build.slice(), state.pattern);
+}
+// ----- End Phase 7 mash-up state machine -------------------------------
+
+// Delegated listeners — install once at startup. Handles wall tiles +
+// search input. All wall navigation triggers via data-* attributes set
+// during render — no inline JS, no string concatenation of identifiers.
+function installWallDelegates() {
+  var wallScreen = document.getElementById('wall-screen');
+  if (!wallScreen || wallScreen.__delegatesInstalled) return;
+  wallScreen.__delegatesInstalled = true;
+
+  wallScreen.addEventListener('click', function(e) {
+    var t = e.target;
+    while (t && t !== wallScreen) {
+      if (t.dataset) {
+        if (t.dataset.action === 'back-to-wall') { renderWall(); return; }
+        if (t.dataset.action === 'hide-leaf') { e.preventDefault(); hideLeafDetail(); return; }
+        if (t.dataset.action === 'build-now') { buildSingleLeaf(t.dataset.leafIdBuild); return; }
+        if (t.dataset.action === 'review') { showReviewScreen(); return; }
+        if (t.dataset.action === 'add-and-review') { toggleBuild(t.dataset.leafIdAdd); showReviewScreen(); return; }
+        if (t.dataset.action === 'build-mashup') { buildMashup(); return; }
+        if (t.dataset.action === 'remove-from-build') { toggleBuild(t.dataset.leafRm); rerenderReviewIfOpen(); return; }
+        if (t.dataset.pairAdd) { toggleBuild(t.dataset.pairAdd); return; }
+        if (t.dataset.pattern) { state.pattern = t.dataset.pattern; showReviewScreen(); return; }
+        if (t.dataset.l2) { enterL2(t.dataset.l2); return; }
+        if (t.dataset.leafId) { showLeafDetail(t.dataset.leafId); return; }
+      }
+      t = t.parentElement;
+    }
+  });
+
+  var searchInput = document.getElementById('wall-search');
+  searchInput.addEventListener('input', onWallSearch);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function hideAll(ids) {
+  for (var i = 0; i < ids.length; i++) {
+    var el = document.getElementById(ids[i]);
+    if (el) el.style.display = 'none';
+  }
+}
+// ----- End wall navigation ---------------------------------------------
+
+// ----- Build confirmation modal ----------------------------------------
+// Three-state machine: idle → processing → (chat-ready: close) |
+// (chat-failed: error). From error, Retry returns to processing.
+var buildConfirmLeafIds = null;
+var buildConfirmPattern = null;
+
+function confirmCustomBuild(leafIds, pattern) {
+  if (!leafIds || leafIds.length === 0) return;
+  var byId = {};
+  leavesOf().forEach(function(l) { byId[l.id] = l; });
+  var resolved = leafIds.map(function(id){ return byId[id]; }).filter(Boolean);
+  if (resolved.length === 0) return;
+  buildConfirmLeafIds = leafIds.slice();
+  buildConfirmPattern = pattern || 'checker';
+  var heading;
+  if (resolved.length === 1) {
+    heading = 'Start a new chat with the ' + resolved[0].name + ' specialist?';
+  } else {
+    heading = 'Start a new chat blending ' + resolved.length + ' specialists?';
+  }
+  document.getElementById('build-confirm-heading').textContent = heading;
+  document.getElementById('build-confirm-sub').textContent =
+    "I'll set it up and ask you a few quick questions to tailor it.";
+  setBuildConfirmState('idle');
+  document.getElementById('build-confirm-modal').classList.add('visible');
+}
+
+function buildConfirmOk() {
+  if (!buildConfirmLeafIds) return;
+  setBuildConfirmState('processing');
+  webxdc.sendUpdate({
+    payload: {
+      type: 'build-agent',
+      leafIds: buildConfirmLeafIds.slice(),
+      pattern: buildConfirmPattern,
+      senderAddr: webxdc.selfAddr,
+    },
+  }, '');
+}
+
+function setBuildConfirmState(s) {
+  var buttons = document.getElementById('build-confirm-buttons');
+  var processing = document.getElementById('build-confirm-processing');
+  var ok = document.getElementById('build-confirm-ok');
+  buttons.style.display = (s === 'idle' || s === 'error') ? '' : 'none';
+  processing.style.display = (s === 'processing') ? '' : 'none';
+  ok.textContent = (s === 'error') ? 'Retry' : 'Start chat';
+}
+
+function closeBuildConfirm() {
+  document.getElementById('build-confirm-modal').classList.remove('visible');
+  buildConfirmLeafIds = null;
+  buildConfirmPattern = null;
+}
+
+function handleChatReady() {
+  closeBuildConfirm();
+  show('wall-screen');
+}
+
+function handleChatFailed(errorMessage) {
+  document.getElementById('build-confirm-sub').textContent = errorMessage || 'Something went wrong.';
+  setBuildConfirmState('error');
+}
+// ----- End build confirmation modal ------------------------------------
+
+var createTimeout = null;
+function create() {
+  if (creating) return;
+  var nameVal = document.getElementById('name').value.trim();
+  if (!nameVal) {
+    document.getElementById('name').focus();
+    return;
+  }
+  creating = true;
+  document.getElementById('create-btn').disabled = true;
+  var createTier = segGetValue(document.getElementById('create-model-seg'));
+  // "Other…" sentinel reads the custom-model-id text input and passes the
+  // value verbatim. Empty → block create with focus on the input.
+  var createModelId;
+  if (createTier === '__other__') {
+    createModelId = (document.getElementById('create-custom-model-id').value || '').trim();
+    if (!createModelId) {
+      creating = false;
+      document.getElementById('create-btn').disabled = false;
+      document.getElementById('create-custom-model-id').focus();
+      return;
+    }
+  } else {
+    createModelId = resolveModelFromTier(createTier, null);
+  }
+  var cfg = {
+    name: nameVal,
+    model: createModelId,
+    system: document.getElementById('system').value,
+    tools: [],
+  };
+  var skipPermissions = document.getElementById('skip-permissions').checked;
+  var memoryBoost = document.getElementById('memory-boost').checked;
+  var toolState = collectCreateToolPickerState();
+  window.webxdc.sendUpdate({
+    payload: {
+      type: 'create',
+      config: cfg,
+      skipPermissions: skipPermissions,
+      memoryBoost: memoryBoost,
+      archetype: createArchetype || 'role',
+      icon: '',
+      allowedBuiltinTools: toolState.allowedBuiltinTools,
+      allowedMcpServers: toolState.allowedMcpServers,
+      senderAddr: window.webxdc.selfAddr
+    },
+    summary: 'Create agent: ' + cfg.name
+  }, 'Create agent');
+  createTimeout = setTimeout(function() {
+    if (creating) {
+      creating = false;
+      document.getElementById('create-btn').disabled = false;
+      showModal('No response', 'The server did not respond. This app may not be connected — ask Claude to send you the create-agent card.');
+    }
+  }, 15000);
+}
+
+// ── WebXDC update listener ─────────────────────────────────────────────
+// setUpdateListener(fn, 0) replays every update from serial 0 on every
+// open. The card's transient state resets here on each init so a replayed
+// catalog rebuilds the wall cleanly.
+window.webxdc.setUpdateListener(function(update) {
+  var d = update.payload;
+  if (!d) return;
+
+  if (d.type === 'init') {
+    if (d.version && d.version > APP_VERSION && !versionMismatchSent) {
+      versionMismatchSent = true;
+      window.webxdc.sendUpdate({
+        payload: { type: 'version_mismatch', appVersion: APP_VERSION, serverVersion: d.version, senderAddr: window.webxdc.selfAddr },
+        summary: 'Update requested'
+      }, 'Version mismatch');
+      show('outdated');
+      return;
+    }
+    // Catalog: flat top-level keys on the init payload (leaves / l2Summary /
+    // combines). Held in state.catalog for the wall to read.
+    state.catalog = {
+      leaves: d.leaves || [],
+      l2Summary: d.l2Summary || [],
+      combines: d.combines || [],
+    };
+    // Phase 7 mash-up state. state.build holds leaf IDs the user has tapped
+    // to combine; state.openLeafId tracks the open detail card. Reset on
+    // every re-init since setUpdateListener replays from serial 0.
+    state.build = [];
+    state.openLeafId = null;
+    state.pattern = 'checker';
+    creating = false;
+    dismissModal();
+
+    populateModelDropdowns(d.availableModels, d.defaultModel);
+    availableBuiltinTools = d.availableBuiltinTools || [];
+    availableMcpServers = d.availableMcpServers || [];
+    connectedMcpServers = d.connectedMcpServers || [];
+    initCreateForm();
+    populateCreateToolPicker(null, null);
+
+    installWallDelegates();
+    renderWall();
+    show('wall-screen');
+
+    // If the dispatcher seeded a leaf (NL "make me a sleep coach"),
+    // pre-select it and open the wall at its detail card.
+    if (d.seedLeaf) {
+      var seeded = leavesOf().find(function(l) { return l.id === d.seedLeaf; });
+      if (seeded) {
+        enterL2(seeded.l2);
+        showLeafDetail(seeded.id);
+      }
+    }
+    return;
+  }
+
+  if (d.type === 'chat-ready') {
+    handleChatReady();
+    return;
+  }
+
+  if (d.type === 'chat-failed') {
+    handleChatFailed(typeof d.error === 'string' ? d.error : '');
+    return;
+  }
+}, 0);
+
+// ── DOM ready ──────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  // Shell is visible immediately (late-init: no blank state). The wall is
+  // the default view; an empty catalog renders an empty grid until init.
+  installWallDelegates();
+  renderWall();
+});
+</script>
+</body>
+</html>
