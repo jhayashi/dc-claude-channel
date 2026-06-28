@@ -17,7 +17,7 @@ import { decideCleanup, CONTACT_SELF } from '../cleanup.js'
 import { ALL_BUILTIN_TOOLS, BUILTIN_TOOL_DESCRIPTIONS } from '../dispatcher/subagent-process.js'
 import { startCoach, advanceCoach, isCoachDone, collectAnswers, type CoachState, type CoachAnswers } from '../coach.js'
 import { assembleSystemPrompt } from '../prompt-assembler.js'
-import { PATTERN_IDS, type PatternId } from '../agent-icons/palettes.js'
+import { type PatternId } from '../agent-icons/palettes.js'
 import { logLifecycleEvent } from '../events-lifecycle.js'
 import * as sessionAgents from '../session-agents.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
@@ -1360,35 +1360,6 @@ export const agentSetupApp: WebXDCApp = {
         }
       }
 
-      if (payload.type === 'build-agent') {
-        const rawLeafIds = (payload as { leafIds?: unknown }).leafIds
-        if (!Array.isArray(rawLeafIds) || rawLeafIds.length === 0) {
-          await sendChatFailed(session, ctx, 'No specialties were sent.')
-          continue
-        }
-        const leafIds = rawLeafIds.filter((x): x is string => typeof x === 'string' && x.length > 0)
-        if (leafIds.length === 0) {
-          await sendChatFailed(session, ctx, 'No specialties were sent.')
-          continue
-        }
-        // Phase 9.2: pattern picker on review screen. Validate against
-        // PATTERN_IDS — fall back to 'checker' if missing or unknown so a
-        // stale client (pre-1.93) still graduates with a sensible default.
-        const rawPattern = (payload as { pattern?: unknown }).pattern
-        const validPattern: PatternId =
-          typeof rawPattern === 'string' && (PATTERN_IDS as readonly string[]).includes(rawPattern)
-            ? (rawPattern as PatternId)
-            : 'checker'
-        try {
-          const newChatId = await handleBuildAgent(ctx, session.sourceChatId, leafIds, validPattern, resolveOwner)
-          await sendChatReady(session, ctx, newChatId)
-        } catch (err) {
-          ctx.logf('agent-setup: build-agent failed: %v', err)
-          await sendChatFailed(session, ctx, err instanceof Error ? err.message : 'unknown error')
-        }
-        continue
-      }
-
       if (payload.type === 'editRequest') {
         // Edit an existing agent. Re-open the setup card with the agent pre-filled.
         const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
@@ -1840,20 +1811,6 @@ export const agentSetupApp: WebXDCApp = {
           await sendChatFailed(session, ctx, err instanceof Error ? err.message : 'unknown error')
         }
         continue
-      }
-
-      if (payload.type === 'create') {
-        // Behavior preserved from the inline branch: the monolith never
-        // gated create, so pass an always-ok auth. Task 4 removes this
-        // branch entirely (the standalone create-app card carries the
-        // §6-gated path). All create logic now lives in handleCreateAgent.
-        await handleCreateAgent(
-          ctx,
-          session.msgId,
-          session.sourceChatId,
-          payload as { type?: string; config?: unknown; [key: string]: unknown },
-          async () => ({ ok: true as const }),
-        )
       }
 
     }

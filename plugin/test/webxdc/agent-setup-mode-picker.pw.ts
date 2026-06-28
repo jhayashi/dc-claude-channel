@@ -2,9 +2,11 @@
  * Mode-picker smoke (Phase 12).
  *
  * Drives the agent-setup card through the new "Start a new chat"
- * intermediate screen that landed in Phase 12: three cards (default
- * agent, reuse a saved agent, build a custom agent) and the reuse-
- * confirmation modal with its idle / processing / error states.
+ * intermediate screen that landed in Phase 12: two cards (default
+ * agent, reuse a saved agent) and the reuse-confirmation modal with
+ * its idle / processing / error states. The "build a custom agent"
+ * card was removed when the create flow was peeled to the standalone
+ * create-agent card (epic #109).
  *
  * Synthetic init payload — two saved agents (one trust-on with a
  * stripes pattern so the picker exercise covers the post-1.2 pattern-
@@ -98,11 +100,13 @@ test.describe("agent-setup mode picker (Phase 12)", () => {
     h = null;
   });
 
-  test("intermediate screen shows three cards with the right labels", async () => {
+  test("intermediate screen shows two cards with the right labels", async () => {
     h = await createHarness(findAgentSetupXdc());
     await openModePicker(h);
 
-    // Three .home-action buttons visible inside #new-chat-mode.
+    // Two .home-action buttons visible inside #new-chat-mode. The
+    // "Build with agent assist" card was removed when the create flow
+    // was peeled out to the standalone create-agent card (epic #109).
     const cardLabels = await h.page.$$eval(
       "#new-chat-mode .home-action .home-action-label",
       (els) => els.map((el) => (el.textContent ?? "").trim()),
@@ -110,7 +114,6 @@ test.describe("agent-setup mode picker (Phase 12)", () => {
     expect(cardLabels).toEqual([
       "Default agent",
       "Reuse a saved agent",
-      "Build a custom agent",
     ]);
   });
 

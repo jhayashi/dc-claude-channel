@@ -1090,36 +1090,11 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     </div>
   </div>
 
-  <div id="wall-screen">
-    <div class="title-bar">
-      <button class="crumb" type="button" onclick="show('step0')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        Home
-      </button>
-      <div class="title">Build new agent</div>
-    </div>
-    <div class="body">
-      <!-- Phase 7 mash-up build pill + cap warning. Both hidden until
-           state.build has entries; .build-pill becomes a Review affordance,
-           .cap-warn fires soft-warn at 4+ leaves. -->
-      <div id="build-pill" style="display:none"></div>
-      <div id="cap-warn" style="display:none" class="cap-warn"></div>
-      <div class="search-wrap">
-        <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
-        <input id="wall-search" placeholder="Filter — e.g., 'sleep', 'tax', 'kid'…">
-      </div>
-      <div id="wall-helper" class="helper">155 agents grouped by 26 specialties. Tap a tile to see all of its agents, or filter.</div>
-      <div id="wall-grid"></div>
-      <div id="wall-results" style="display:none"></div>
-      <div id="wall-l2"></div>
-      <div id="wall-leaf-detail"></div>
-    </div>
-  </div>
-
   <!-- Phase 12 — intermediate mode-picker. Lands one tap below "Start a
-       new chat" on the home, three cards: default agent (one-tap),
-       reuse a saved agent (opens #reuse-picker), build custom (the
-       wall flow). Visual matches the home action cards. -->
+       new chat" on the home, two cards: default agent (one-tap) and
+       reuse a saved agent (opens #reuse-picker). The build-a-new-agent
+       flow now lives in the standalone create-agent card (epic #109),
+       so it's no longer offered here. Visual matches the home cards. -->
   <div id="new-chat-mode">
     <div class="title-bar">
       <button class="crumb" type="button" onclick="show('step0')">
@@ -1150,16 +1125,6 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
           </span>
           <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
         </button>
-        <button class="home-action" onclick="gotoBuildCustom()">
-          <span class="home-action-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8 19 13"/><path d="M15 9h0"/><path d="M17.8 6.2 19 5"/><path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/></svg>
-          </span>
-          <span class="home-action-body">
-            <span class="home-action-label">Build with agent assist</span>
-            <span class="home-action-desc">Let an agent coach you through building a new one.</span>
-          </span>
-          <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
-        </button>
       </div>
     </div>
   </div>
@@ -1175,8 +1140,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     </div>
     <div class="body">
       <div id="reuse-empty" class="results-empty" style="display:none;">
-        No saved agents yet.
-        <div style="margin-top:12px"><button class="btn btn-primary" onclick="gotoBuildCustom()">Build one</button></div>
+        No saved agents yet. Ask Claude in chat to set one up.
       </div>
       <div id="reuse-list"></div>
     </div>
@@ -1191,101 +1155,9 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       <div class="title">Manage agents</div>
     </div>
     <div class="body">
-      <button class="home-action" id="manage-create-btn" onclick="gotoCreateFromManage()" style="margin-bottom:12px">
-        <span class="home-action-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        </span>
-        <span class="home-action-body">
-          <span class="home-action-label">+ Create new agent</span>
-          <span class="home-action-desc">Add a new agent to your library.</span>
-        </span>
-        <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
-      </button>
       <div id="manage-list"></div>
       <div id="manage-empty" style="display:none;font-size:13px;color:var(--ink-mute);padding:8px 0;">
-        No agents yet. Tap <strong>+ Create new agent</strong> above to get started.
-      </div>
-    </div>
-  </div>
-
-  <div id="step2">
-    <div class="title-bar">
-      <button class="crumb" type="button" id="create-back-crumb" onclick="backFromCreate()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        Agents
-      </button>
-      <div class="title">New agent</div>
-    </div>
-    <div class="body">
-      <div class="preview-bar" id="create-preview-bar">
-        <div class="badge" id="create-preview-badge"></div>
-        <div class="meta">
-          <div class="name" id="create-preview-name" style="color: var(--ink-mute); font-weight: 500;">Unnamed agent</div>
-          <div class="info" id="create-preview-info">Sonnet</div>
-        </div>
-      </div>
-      <label class="field-label" for="name">Name</label>
-      <input id="name" class="text" type="text" maxlength="256" placeholder="e.g. Research buddy">
-      <label class="field-label" style="margin-top:12px;">Model</label>
-      <div class="seg" id="create-model-seg" role="group" aria-label="Model">
-        <button type="button" data-tier="haiku"  aria-pressed="false"><span class="dot haiku"></span>Haiku</button>
-        <button type="button" data-tier="sonnet" aria-pressed="true"><span class="dot sonnet"></span>Sonnet</button>
-        <button type="button" data-tier="opus"   aria-pressed="false"><span class="dot opus"></span>Opus</button>
-        <button type="button" data-tier="fable"  aria-pressed="false"><span class="dot fable"></span>Fable</button>
-        <button type="button" data-tier="__other__" aria-pressed="false"><span class="dot other"></span>Other…</button>
-      </div>
-      <div class="custom-model-row" id="create-custom-model-row">
-        <input type="text" id="create-custom-model-id" class="text" placeholder="claude-fable-1-0" autocomplete="off" spellcheck="false">
-        <div class="help">Custom Anthropic model ID. Verify it's accepted by <code>claude --model</code> before saving.</div>
-      </div>
-      <label class="field-label" for="system" style="margin-top:12px;">System prompt <span style="color: var(--ink-faint); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 11px; margin-left: 4px;">optional</span></label>
-      <textarea id="system" class="text" maxlength="100000" style="min-height:96px;font-family:inherit;" placeholder="Describe the agent's role, tone, and any constraints. Leave blank to use the default assistant prompt."></textarea>
-      <label class="field-label" style="margin-top:12px;">Permissions</label>
-      <label class="trust-card" id="create-trust-card">
-        <input class="switch" type="checkbox" id="skip-permissions">
-        <span class="body">
-          <span class="heading">
-            <svg class="shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.5 9.5 8 11 4.5-1.5 8-6 8-11V5l-8-3Z"/></svg>
-            Trusted agent
-          </span>
-          <span class="caveat">Skips per-tool permission prompts. Every decision is recorded in the permission event log.</span>
-        </span>
-      </label>
-      <label class="field-label" style="margin-top:12px;">Memory</label>
-      <label class="trust-card" id="create-memory-card">
-        <input class="switch" type="checkbox" id="memory-boost">
-        <span class="body">
-          <span class="heading">
-            <svg class="brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 0 0-6 0c0 .3 0 .6.1.9A3 3 0 0 0 5 8.6a3 3 0 0 0 1 5.6V16a3 3 0 0 0 5 2 3 3 0 0 0 5-2v-1.8a3 3 0 0 0 1-5.6 3 3 0 0 0-1.1-2.7c.1-.3.1-.6.1-.9a3 3 0 0 0-3-3Z"/></svg>
-            Memory boost
-          </span>
-          <span class="caveat">Re-surfaces relevant past chat history when the conversation is compacted or context fills up.</span>
-        </span>
-      </label>
-      <label class="field-label" style="margin-top:12px;">Tools</label>
-      <details class="tool-group" id="create-tool-group-builtin">
-        <summary>
-          <span>Built-in</span>
-          <span class="count" id="create-count-builtin">0 of 0</span>
-          <span class="chev">&rsaquo;</span>
-        </summary>
-        <div class="body">
-          <div class="tool-grid" id="create-builtin-grid"></div>
-        </div>
-      </details>
-      <details class="tool-group" id="create-tool-group-mcp">
-        <summary>
-          <span>Connected services</span>
-          <span class="count" id="create-count-mcp">0 of 0</span>
-          <span class="chev">&rsaquo;</span>
-        </summary>
-        <div class="body">
-          <div class="mcp-list" id="create-mcp-list"></div>
-        </div>
-      </details>
-      <div class="footer-bar">
-        <button class="btn btn-ghost" type="button" onclick="backFromCreate()">Cancel</button>
-        <button class="btn btn-primary" type="button" id="create-btn" onclick="create()">Create</button>
+        No agents yet. Ask Claude in chat to set one up.
       </div>
     </div>
   </div>
@@ -1443,7 +1315,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 2.19;
+var APP_VERSION = 2.20;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:   { solid: '#B4862A', checker: '#D9B25B' },
@@ -1614,10 +1486,9 @@ function refreshLivePreview(scope) {
 
 var draft = null;
 var existingAgents = [];
-// Holds slow-changing init-payload data the wall-screen reads (newAgentFlow:
-// { leaves[], l2Summary[] }). Existing v1.x state stays as flat top-level
-// vars — the bag is just a place to park forward-flow payloads.
-var state = {};
+// createArchetype is still read by refreshLivePreview's (shared) create
+// branch even though the create form was peeled to the create-agent card
+// (epic #109); keep it declared so that branch stays valid.
 var createArchetype = 'role';
 var editArchetype = 'role';
 var creating = false;
@@ -1731,7 +1602,7 @@ function wireSeg(segEl, onChange) {
 }
 
 function show(id) {
-  var ids = ['loading', 'step0', 'wall-screen', 'new-chat-mode', 'reuse-picker', 'manage', 'step2', 'step3', 'outdated'];
+  var ids = ['loading', 'step0', 'new-chat-mode', 'reuse-picker', 'manage', 'step3', 'outdated'];
   for (var i = 0; i < ids.length; i++) {
     var el = document.getElementById(ids[i]);
     if (ids[i] === id) el.classList.add('visible'); else el.classList.remove('visible');
@@ -1747,15 +1618,12 @@ function resetTransientState() {
   creating = false;
   pendingAction = null;
   editingAgentId = null;
-  if (createTimeout) { clearTimeout(createTimeout); createTimeout = null; }
   if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
   if (deleteTimeout) { clearTimeout(deleteTimeout); deleteTimeout = null; }
   var lm = document.getElementById('loading-modal');
   if (lm) lm.classList.remove('visible');
   var saveBtn = document.getElementById('save-btn');
   if (saveBtn) saveBtn.disabled = false;
-  var createBtn = document.getElementById('create-btn');
-  if (createBtn) createBtn.disabled = false;
 }
 
 function showModal(heading, sub) {
@@ -1785,8 +1653,6 @@ function dismissModal() {
   creating = false;
   var saveBtn = document.getElementById('save-btn');
   if (saveBtn) saveBtn.disabled = false;
-  var createBtn = document.getElementById('create-btn');
-  if (createBtn) createBtn.disabled = false;
 }
 
 // In-app confirmation dialog. Native window.confirm() is blocked by the
@@ -2034,20 +1900,8 @@ function renderReusePickList() {
 // off the default-agent quick path — Retry uses it to re-fire the
 // correct payload.
 var reuseConfirmAgentId = null;
-var reuseConfirmMode = null;  // 'reuse' | 'default' | 'custom' | 'rebind'
+var reuseConfirmMode = null;  // 'reuse' | 'default' | 'rebind'
 var reusePickerMode = 'new';  // 'new' | 'rebind' — affects picker row tap + current-agent display
-// For 'custom': the leaf ids the user picked on the wall + the pattern.
-// Held here so Retry can re-fire the same payload.
-var reuseConfirmCustomLeafIds = null;
-var reuseConfirmCustomPattern = null;
-// Tracks where the simple-form create (step2) was entered from so Done/
-// Cancel can route back to the right screen. The wall+coach "Build with
-// agent assist" path is unaffected — it's intrinsically chat-creating and
-// always returns to step0 via chat-ready. This flag only matters for the
-// #97 "+ Create new agent" entry from Manage, which uses step2 + skipChat.
-// Values: 'manage' (return to Manage after save) | null (default — return
-// to step0, matching pre-#97 behavior for any other future caller).
-var createFormOrigin = null;
 
 function confirmReuseAgent(agentId) {
   var agent = (existingAgents || []).find(function(a){ return a.id === agentId; });
@@ -2076,34 +1930,6 @@ function confirmRebindAgent(agentId) {
   document.getElementById('reuse-confirm-modal').classList.add('visible');
 }
 
-// Confirm before kicking off the custom-build flow (single-leaf "Build now"
-// from the leaf detail card, OR the mash-up "Build & start chatting" CTA on
-// the review screen). Same modal as reuse — just dispatches a `build-agent`
-// payload on OK instead of `start-reuse-chat`.
-function confirmCustomBuild(leafIds, pattern) {
-  if (!leafIds || leafIds.length === 0) return;
-  var leaves = (state.newAgentFlow && state.newAgentFlow.leaves) || [];
-  var byId = {};
-  leaves.forEach(function(l) { byId[l.id] = l; });
-  var resolved = leafIds.map(function(id){ return byId[id]; }).filter(Boolean);
-  if (resolved.length === 0) return;
-  reuseConfirmCustomLeafIds = leafIds.slice();
-  reuseConfirmCustomPattern = pattern || 'checker';
-  reuseConfirmMode = 'custom';
-  reuseConfirmAgentId = null;
-  var heading;
-  if (resolved.length === 1) {
-    heading = 'Start a new chat with the ' + resolved[0].name + ' specialist?';
-  } else {
-    heading = 'Start a new chat blending ' + resolved.length + ' specialists?';
-  }
-  document.getElementById('reuse-confirm-heading').textContent = heading;
-  document.getElementById('reuse-confirm-sub').textContent =
-    "I'll set it up and ask you a few quick questions to tailor it.";
-  setReuseConfirmState('idle');
-  document.getElementById('reuse-confirm-modal').classList.add('visible');
-}
-
 function reuseConfirmOk() {
   if (reuseConfirmMode === 'reuse' && reuseConfirmAgentId) {
     setReuseConfirmState('processing');
@@ -2128,16 +1954,6 @@ function reuseConfirmOk() {
     webxdc.sendUpdate({
       payload: { type: 'start-default-chat', senderAddr: webxdc.selfAddr },
     }, '');
-  } else if (reuseConfirmMode === 'custom' && reuseConfirmCustomLeafIds) {
-    setReuseConfirmState('processing');
-    webxdc.sendUpdate({
-      payload: {
-        type: 'build-agent',
-        leafIds: reuseConfirmCustomLeafIds.slice(),
-        pattern: reuseConfirmCustomPattern,
-        senderAddr: webxdc.selfAddr,
-      },
-    }, '');
   }
 }
 
@@ -2154,8 +1970,6 @@ function closeReuseConfirm() {
   document.getElementById('reuse-confirm-modal').classList.remove('visible');
   reuseConfirmAgentId = null;
   reuseConfirmMode = null;
-  reuseConfirmCustomLeafIds = null;
-  reuseConfirmCustomPattern = null;
 }
 
 // Called from the WebXDC update listener when the dispatcher reports
@@ -2496,109 +2310,6 @@ function collectEditToolPickerState() {
   };
 }
 
-function populateCreateToolPicker(allowedBuiltinTools, allowedMcpServers) {
-  var grid = document.getElementById('create-builtin-grid');
-  var mcp  = document.getElementById('create-mcp-list');
-  if (!grid || !mcp) return;
-  grid.textContent = '';
-  mcp.textContent  = '';
-  var gb = document.getElementById('create-tool-group-builtin');
-  var gm = document.getElementById('create-tool-group-mcp');
-  if (gb) gb.open = false;
-  if (gm) gm.open = false;
-
-  var allBuiltin = allowedBuiltinTools === null || allowedBuiltinTools === undefined;
-  availableBuiltinTools.forEach(function (tool) {
-    var label = document.createElement('label');
-    var cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.checked = allBuiltin || allowedBuiltinTools.indexOf(tool.name) >= 0;
-    cb.dataset.toolName = tool.name;
-    cb.dataset.toolField = 'builtin';
-    cb.addEventListener('change', refreshCreateToolCounts);
-    var span = document.createElement('span');
-    span.textContent = tool.name;
-    span.title = tool.description || '';
-    label.appendChild(cb);
-    label.appendChild(span);
-    grid.appendChild(label);
-  });
-
-  var allMcp = allowedMcpServers === null || allowedMcpServers === undefined;
-  availableMcpServers.forEach(function (srv) {
-    var row = document.createElement('div');
-    row.className = 'mcp-row';
-    var label = document.createElement('label');
-    label.style.display = 'flex';
-    label.style.alignItems = 'center';
-    label.style.gap = '8px';
-    label.style.flex = '1';
-    var cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.checked = allMcp || allowedMcpServers.indexOf(srv.prefix) >= 0;
-    cb.dataset.toolName = srv.prefix;
-    cb.dataset.toolField = 'mcp';
-    cb.addEventListener('change', refreshCreateToolCounts);
-    var name = document.createElement('span');
-    name.className = 'mcp-label';
-    name.textContent = srv.label;
-    var needsAuth = connectedMcpServers.indexOf(srv.prefix) < 0;
-    if (needsAuth) {
-      var badge = document.createElement('span');
-      badge.className = 'mcp-auth';
-      badge.textContent = 'needs auth';
-      name.appendChild(badge);
-    }
-    label.appendChild(cb);
-    label.appendChild(name);
-    row.appendChild(label);
-    if (srv.toolCount > 0) {
-      var meta = document.createElement('span');
-      meta.className = 'mcp-label';
-      meta.style.flex = '0';
-      meta.style.color = 'var(--ink-faint)';
-      meta.style.fontSize = '11px';
-      meta.textContent = srv.toolCount + ' tools';
-      row.appendChild(meta);
-    }
-    mcp.appendChild(row);
-  });
-
-  refreshCreateToolCounts();
-}
-
-function refreshCreateToolCounts() {
-  var b = document.querySelectorAll('#create-builtin-grid input[type=checkbox]');
-  var bOn = 0;
-  for (var i = 0; i < b.length; i++) { if (b[i].checked) bOn++; }
-  var bCount = document.getElementById('create-count-builtin');
-  if (bCount) bCount.textContent = bOn + ' of ' + b.length;
-  var m = document.querySelectorAll('#create-mcp-list input[type=checkbox]');
-  var mOn = 0;
-  for (var j = 0; j < m.length; j++) { if (m[j].checked) mOn++; }
-  var mCount = document.getElementById('create-count-mcp');
-  if (mCount) mCount.textContent = mOn + ' of ' + m.length;
-}
-
-function collectCreateToolPickerState() {
-  var builtinAll = true, mcpAll = true;
-  var builtinList = [], mcpList = [];
-  var boxes = document.querySelectorAll('#create-builtin-grid input[type=checkbox], #create-mcp-list input[type=checkbox]');
-  boxes.forEach(function (cb) {
-    if (cb.dataset.toolField === 'builtin') {
-      if (cb.checked) builtinList.push(cb.dataset.toolName);
-      else builtinAll = false;
-    } else if (cb.dataset.toolField === 'mcp') {
-      if (cb.checked) mcpList.push(cb.dataset.toolName);
-      else mcpAll = false;
-    }
-  });
-  return {
-    allowedBuiltinTools: builtinAll ? null : builtinList,
-    allowedMcpServers: mcpAll ? null : mcpList,
-  };
-}
-
 function collectToolPickerState(containerId) {
   var container = document.getElementById(containerId);
   if (!container) return { allowedBuiltinTools: null, allowedMcpServers: null };
@@ -2620,45 +2331,12 @@ function collectToolPickerState(containerId) {
   };
 }
 
-function gotoCreate() {
-  populateForm();
-  show('step2');
-}
-
 // Phase 12 — entry point from the home card. Lands on the mode picker
-// instead of going straight to the wall, so the user can pick between
-// the default agent, reusing a saved agent, or building a custom one.
+// so the user can pick between the default agent and reusing a saved
+// agent. (Building a new agent moved to the standalone create-agent
+// card in epic #109, so it's no longer offered from this picker.)
 function gotoNewChat() {
   show('new-chat-mode');
-}
-
-// Build-from-leaves path ("Build with agent assist" in new-chat-mode).
-// The wall flow that v1.2.0 wired straight to "Start a new chat"; now
-// reached from the mode picker. Always creates a chat (the coach lives
-// inside the new chat); always returns to step0 via chat-ready.
-function gotoBuildCustom() {
-  show('wall-screen');
-  installWallDelegates();
-  renderWall();
-}
-
-// #97 entry: + Create new agent from the Manage screen. Routes to the
-// existing step2 simple-form (name / model / tools / system prompt) and
-// flags the origin so the submit path includes skipChat:true and the
-// init re-fire after save routes back to Manage instead of step0.
-// Mirrors terminal CC's `/agents` create flow — no chat side-effect.
-function gotoCreateFromManage() {
-  createFormOrigin = 'manage';
-  // Seed an empty-object draft (NOT null) so populateForm runs its full
-  // wiring path — wireSeg (model picker), wirePreviewInputs, wireTrust-
-  // CardFor, archetype reset. populateForm short-circuits on falsy draft
-  // (`if (!draft) return`), so null leaves the form half-initialized with
-  // dead controls; {} lets every field fall through to its `|| default`
-  // and every wiring call runs. gotoCreate was previously only called
-  // after the dispatcher seeded a draft via init/edit, so this is the
-  // first blank-form entry point and we have to provide one ourselves.
-  draft = {};
-  gotoCreate();
 }
 
 function gotoReusePicker() {
@@ -2688,449 +2366,6 @@ function gotoDefaultAgent() {
   webxdc.sendUpdate({ payload: { type: 'start-default-chat', senderAddr: webxdc.selfAddr } }, '');
 }
 
-// ----- Wall navigation (Phase 6) ----------------------------------------
-// Renders the 26 specialty tiles in a 2-col grid + a search filter that
-// flips into a flat leaf list. Drill-down (enterL2 / showLeafDetail) and
-// mash-up build state are wired in Tasks 6.3 + 7.1 — the click delegate
-// here just stubs them out via data-* attributes so a future change can
-// fill in the bodies without touching the render code.
-//
-// XSS-safety: every interpolated catalog value flows through escapeHtml,
-// and tile / leaf identifiers travel via data-* attributes, NOT inline
-// onclick="..." string concat. Do NOT reintroduce escapeJs — L2 names
-// contain commas and would break attribute interpolation.
-
-function pathTag(p) {
-  return '<span class="tag '+p.toLowerCase()+'">'+escapeHtml(p)+'</span>';
-}
-
-function renderWall() {
-  hideAll(['wall-results', 'wall-l2', 'wall-leaf-detail']);
-  document.getElementById('wall-helper').style.display = '';
-  document.getElementById('wall-grid').style.display = '';
-
-  var html = '<div class="wall-grid">';
-  var sorted = (state.newAgentFlow.l2Summary || []).slice().sort(function(a, b) {
-    var order = { Expert: 0, Service: 1, Goal: 2 };
-    return order[a.path] - order[b.path];
-  });
-  for (var i = 0; i < sorted.length; i++) {
-    var t = sorted[i];
-    var samples = t.sample.slice(0, 3).map(escapeHtml).join('<span class="dot">·</span>');
-    html += '<div class="wall-tile" data-l2="' + escapeHtml(t.l2) + '">' +
-              '<div class="wall-tile-head">' + pathTag(t.path) +
-                '<span class="wall-tile-name">' + escapeHtml(t.l2) + '</span>' +
-                '<span class="wall-tile-count">' + t.count + '</span></div>' +
-              '<div class="wall-tile-samples">' + samples + '</div>' +
-            '</div>';
-  }
-  html += '</div>';
-  document.getElementById('wall-grid').innerHTML = html;
-  // Keep the build pill visible when navigating back to the wall (Phase 7).
-  renderBuildPill();
-}
-
-function onWallSearch() {
-  var q = (document.getElementById('wall-search').value || '').trim().toLowerCase();
-  if (!q) { renderWall(); return; }
-  document.getElementById('wall-helper').style.display = 'none';
-  document.getElementById('wall-grid').style.display = 'none';
-  document.getElementById('wall-l2').innerHTML = '';
-  document.getElementById('wall-leaf-detail').innerHTML = '';
-
-  var matches = (state.newAgentFlow.leaves || []).filter(function(l) {
-    return (l.name + ' ' + l.l2 + ' ' + (l.pitch || '') + ' ' + (l.parameter || '')).toLowerCase().indexOf(q) !== -1;
-  });
-  var html = matches.length === 0
-    ? '<div class="results-empty">No agents match "'+ escapeHtml(q) +'"</div>'
-    : matches.slice(0, 25).map(function(l) {
-        return '<div class="leaf-row" data-leaf-id="'+ escapeHtml(l.id) +'">'+
-                  pathTag(l.path) +
-                  '<span style="flex:1; min-width:0">' + escapeHtml(l.name) + '</span>' +
-                  '<span style="color: var(--text-dim); font-size: 11px;">' + escapeHtml(l.l2) + '</span>' +
-                '</div>';
-      }).join('');
-  document.getElementById('wall-results').style.display = '';
-  document.getElementById('wall-results').innerHTML = html;
-}
-
-// Drill into a single L2 specialty: hide grid + helper, render its leaves
-// in a back-bar-topped list. Search results (if any) are also hidden — the
-// user picked a tile, the search filter no longer applies.
-function enterL2(l2) {
-  document.getElementById('wall-helper').style.display = 'none';
-  document.getElementById('wall-grid').style.display = 'none';
-  document.getElementById('wall-results').style.display = 'none';
-  document.getElementById('wall-leaf-detail').innerHTML = '';
-  // renderWall() runs hideAll(['wall-results','wall-l2','wall-leaf-detail'])
-  // which set display:none on this container; restore it now that we're
-  // about to populate it.
-  document.getElementById('wall-l2').style.display = '';
-
-  var leaves = (state.newAgentFlow.leaves || []).filter(function(l) { return l.l2 === l2; });
-  var path = leaves[0] ? leaves[0].path : 'Expert';
-  var html = '<div class="L2-list">' +
-    '<div class="back-bar" data-action="back-to-wall"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 6 9 12 15 18"/></svg> Back to specialties</div>' +
-    '<div style="padding: 10px 14px; display: flex; align-items: center; gap: 8px;">' + pathTag(path) + '<strong style="font-size: 14px;">' + escapeHtml(l2) + '</strong></div>';
-  for (var i = 0; i < leaves.length; i++) {
-    var l = leaves[i];
-    var paramStr = l.parameter ? ' <span class="param">— ' + escapeHtml(l.parameter) + '</span>' : '';
-    html += '<div class="leaf-row" data-leaf-id="' + escapeHtml(l.id) + '">' + escapeHtml(l.name) + paramStr + '</div>';
-  }
-  html += '</div>';
-  document.getElementById('wall-l2').innerHTML = html;
-}
-
-// Open the leaf-detail card below whichever list is currently shown
-// (L2 drill-in or search results). state.openLeafId is read by Phase 7's
-// toggleBuild to re-render the open card after a build mutation so chip
-// checkmarks + CTAs reflect the current build state without the user
-// having to close and reopen the card.
-//
-// CTA matrix (Phase 7):
-//   inBuild                    → "✓ In your mash-up"  +  "Review →"
-//   build empty (this not in)  → "+ Add to mash-up"   +  "Build now"
-//   build non-empty (this not) → "+ Add to mash-up"   +  "Add & review"
-function showLeafDetail(leafId) {
-  var l = (state.newAgentFlow.leaves || []).find(function(x) { return x.id === leafId; });
-  if (!l) return;
-  state.openLeafId = l.id;
-  var inBuild = state.build.indexOf(l.id) !== -1;
-
-  // Pairs-with chips. combinesWith holds leaf IDs from the catalog;
-  // resolve each one and skip any that didn't survive the catalog
-  // (defensive — the catalog could change between releases).
-  var pairs = (l.combinesWith || []).map(function(pid) {
-    return (state.newAgentFlow.leaves || []).find(function(x) { return x.id === pid; });
-  }).filter(Boolean);
-
-  var pairsHtml = pairs.length === 0 ? '' :
-    '<div class="pairs-with-label">Pairs well with — tap to add to your mash-up</div>' +
-    '<div class="pairs-chips">' +
-      pairs.map(function(p) {
-        var added = state.build.indexOf(p.id) !== -1;
-        return '<span class="pair-chip ' + (added ? 'added' : '') + '" data-pair-add="' + escapeHtml(p.id) + '">' +
-                 '<span class="plus">' + (added ? '✓' : '+') + '</span>' + escapeHtml(p.name) +
-               '</span>';
-      }).join('') +
-    '</div>';
-
-  var ctaHtml;
-  if (inBuild) {
-    ctaHtml = '<button class="btn-secondary" data-pair-add="' + escapeHtml(l.id) + '">✓ In your mash-up</button>' +
-              '<button class="btn btn-primary" data-action="review">Review →</button>';
-  } else if (state.build.length === 0) {
-    ctaHtml = '<button class="btn-secondary" data-pair-add="' + escapeHtml(l.id) + '">+ Add to mash-up</button>' +
-              '<button class="btn btn-primary" data-action="build-now" data-leaf-id-build="' + escapeHtml(l.id) + '">Build now</button>';
-  } else {
-    // "Add & review" needs a single delegate target; use a dedicated action
-    // so the click handler doesn't have to peek at state.build itself.
-    ctaHtml = '<button class="btn-secondary" data-pair-add="' + escapeHtml(l.id) + '">+ Add to mash-up</button>' +
-              '<button class="btn btn-primary" data-action="add-and-review" data-leaf-id-add="' + escapeHtml(l.id) + '">Add &amp; review</button>';
-  }
-
-  // Same display-restoration concern as enterL2 — renderWall() hid the
-  // container; populating innerHTML alone won't make it visible again.
-  document.getElementById('wall-leaf-detail').style.display = '';
-  document.getElementById('wall-leaf-detail').innerHTML =
-    '<div class="leaf-detail">' +
-      '<div class="leaf-detail-head">' + pathTag(l.path) + '<h3>' + escapeHtml(l.name) + '</h3></div>' +
-      (l.parameter ? '<div class="meta"><strong>Asks you about:</strong> ' + escapeHtml(l.parameter) + '</div>' : '') +
-      '<div class="pitch">' + escapeHtml(l.pitch || '') + '</div>' +
-      pairsHtml +
-      '<div class="cta-row">' + ctaHtml + '</div>' +
-      '<div style="text-align: center; margin-top: 10px;"><a href="#" data-action="hide-leaf" style="font-size: 12px; color: var(--text-dim);">cancel</a></div>' +
-    '</div>';
-  document.getElementById('wall-leaf-detail').scrollIntoView({behavior: 'smooth', block: 'start'});
-}
-
-function hideLeafDetail() {
-  state.openLeafId = null;
-  document.getElementById('wall-leaf-detail').innerHTML = '';
-}
-
-// Single-leaf build — opens the confirm modal first; the modal's OK
-// path dispatches the build-agent payload via reuseConfirmOk.
-function buildSingleLeaf(leafId) {
-  confirmCustomBuild([leafId], state.pattern);
-}
-
-// ----- Phase 7 mash-up state machine -----------------------------------
-// state.build is the source of truth for which leaves the user has
-// queued. Three render targets observe it:
-//   - #build-pill       (top of #wall-screen .body, via renderBuildPill)
-//   - #cap-warn         (sibling of pill, soft-warn at 4+)
-//   - #wall-leaf-detail (open card, via showLeafDetail re-render)
-//   - #wall-l2          (review screen, via showReviewScreen)
-// Mutations always flow through toggleBuild so all observers stay in sync.
-
-function renderBuildPill() {
-  var pill = document.getElementById('build-pill');
-  var capWarn = document.getElementById('cap-warn');
-  if (!pill || !capWarn) return;
-  if (state.build.length === 0) {
-    pill.style.display = 'none';
-    capWarn.style.display = 'none';
-    return;
-  }
-  var leaves = state.build.map(function(id) {
-    return (state.newAgentFlow.leaves || []).find(function(l) { return l.id === id; });
-  }).filter(Boolean);
-  var n = leaves.length;
-  var label = n === 1 ? 'Building 1 specialist' : 'Mashing up ' + n + ' specialists';
-  var sub = leaves.slice(0, 3).map(function(l) { return l.name; }).join(' + ') +
-            (n > 3 ? ' + ' + (n - 3) + ' more' : '');
-  pill.className = 'build-pill';
-  pill.innerHTML =
-    '<div class="glyph">' + n + '</div>' +
-    '<div style="flex:1; min-width:0">' +
-      '<div class="build-pill-title">' + escapeHtml(label) + '</div>' +
-      '<div class="build-pill-sub">' + escapeHtml(sub) + '</div>' +
-    '</div>' +
-    '<div class="build-pill-cta">Review →</div>';
-  pill.onclick = function() { showReviewScreen(); };
-  pill.style.display = 'flex';
-
-  // Cap warning at 4+ leaves — informational, NOT enforced.
-  if (state.build.length >= 4) {
-    capWarn.textContent = "Adding more may dilute the agent's focus. Three is usually the sweet spot.";
-    capWarn.style.display = 'block';
-  } else {
-    capWarn.style.display = 'none';
-  }
-}
-
-// Toggle a leaf in/out of the build queue. Always re-renders the pill and
-// the open detail card (if any) so chip checkmarks + CTAs flip immediately
-// — Alice review fix for the state/UI drift bug where the pill updated
-// but the open card kept showing stale "+ Add" buttons.
-function toggleBuild(leafId) {
-  var idx = state.build.indexOf(leafId);
-  if (idx === -1) state.build.push(leafId);
-  else state.build.splice(idx, 1);
-  renderBuildPill();
-  if (state.openLeafId) {
-    showLeafDetail(state.openLeafId);
-  }
-}
-
-// Called from the delegate after a review-screen × removes a leaf. If the
-// build emptied, bounce back to the wall (the review screen no longer
-// has anything to show); otherwise re-render the review screen in place.
-function rerenderReviewIfOpen() {
-  if (state.build.length === 0) { renderWall(); return; }
-  showReviewScreen();
-}
-
-// Render the review screen into #wall-l2 (replacing any L2 drill-in).
-// This is the same container the L2 drill-in uses — they're mutually
-// exclusive views. The merged-pitch composer below previews how the
-// resulting agent will introduce itself.
-function showReviewScreen() {
-  if (state.build.length === 0) return;
-  document.getElementById('wall-l2').style.display = '';
-  hideAll(['wall-grid', 'wall-helper', 'wall-results', 'wall-leaf-detail']);
-  var leaves = state.build.map(function(id) {
-    return (state.newAgentFlow.leaves || []).find(function(l) { return l.id === id; });
-  }).filter(Boolean);
-  var n = leaves.length;
-  var h2 = n === 1 ? 'Your new agent' : 'Your mash-up agent';
-  var sub = n === 1
-    ? 'A single specialist. The coach will help you tune its voice and tools next.'
-    : 'These ' + n + ' specialties combine into <strong>one</strong> agent with a unified system prompt. The coach helps you weight them and tune voice next.';
-
-  // Pattern picker (Phase 9.2). 8 inline-SVG thumbs preview the badge
-  // pattern that will be written to metadata['x-dc-pattern'] on graduation.
-  // The thumbs intentionally duplicate (don't share) the server-side
-  // renderer in agent-icons/pattern-renderer.ts — they're a 32-48px
-  // preview, the renderer produces a 256x256 PNG, and decoupling means
-  // a renderer change can't accidentally break the picker preview.
-  var patternIds = ['checker', 'mini-checker', 'stripes', 'v-stripes', 'quartered', 'quartered-x', 'dots', 'big-dots'];
-  var patternHtml = '<div class="pattern-picker">' +
-    '<div class="pattern-picker-label">Pick a badge pattern</div>' +
-    '<div class="pattern-picker-grid">' +
-      patternIds.map(function(p) {
-        var selected = state.pattern === p;
-        return '<div class="pattern-tile' + (selected ? ' selected' : '') + '" data-pattern="' + escapeHtml(p) + '">' +
-                 renderPatternThumb(p) +
-                 '<div class="pattern-tile-name">' + escapeHtml(p.replace(/-/g, ' ')) + '</div>' +
-               '</div>';
-      }).join('') +
-    '</div></div>';
-
-  var html = '<div class="review-screen">' +
-    '<h2>' + escapeHtml(h2) + '</h2><div class="sub">' + sub + '</div>' +
-    '<div class="review-list">' + leaves.map(function(l) {
-      return '<div class="review-item">' + pathTag(l.path) +
-              '<div class="name">' + escapeHtml(l.name) + '</div>' +
-              '<div class="where">' + escapeHtml(l.l2) + '</div>' +
-              '<div class="x" data-action="remove-from-build" data-leaf-rm="' + escapeHtml(l.id) + '">×</div>' +
-            '</div>';
-    }).join('') + '</div>' +
-    '<div class="merged-pitch"><strong>How it will introduce itself</strong>' +
-      escapeHtml(composeMergedPitch(leaves)) + '</div>' +
-    patternHtml +
-    '<div class="review-cta-row">' +
-      '<button class="btn-back-to-wall" data-action="back-to-wall">+ Add another</button>' +
-      '<button class="btn-build-final" data-action="build-mashup">Build &amp; start chatting →</button>' +
-    '</div></div>';
-  document.getElementById('wall-l2').innerHTML = html;
-}
-
-// Render a small SVG preview of a badge pattern. Fixed orange/coral
-// preview because the picker shows shape, not the eventual model-tier
-// accent color (which depends on which model the agent ends up running).
-// Intentionally duplicates the shape logic in agent-icons/pattern-renderer.ts —
-// see commentary in showReviewScreen.
-function renderPatternThumb(p) {
-  var solid = 'var(--orange)';
-  var accent = '#F2A778';  // Opus accent works as a contrast preview
-  switch (p) {
-    case 'checker':
-      // Server renders 'checker' as a 128px tile (64px cells) repeated 2x2
-      // across the 256px canvas — i.e. a 4x4 grid of 64px alternating cells.
-      // The previous 2x2 thumb (single solid + two 128px accents) misled the
-      // picker — users selecting it expected coarse quartering and got a
-      // dense checker.
-      var checkerRects = '';
-      for (var i = 0; i < 16; i++) {
-        var row = Math.floor(i / 4), col = i % 4;
-        var fill = (row + col) % 2 === 0 ? solid : accent;
-        checkerRects += '<rect x="' + (col * 64) + '" y="' + (row * 64) + '" width="64" height="64" fill="' + fill + '"/>';
-      }
-      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' + checkerRects + '</svg>';
-    case 'mini-checker':
-      // Server renders 'mini-checker' as a 64px tile (32px cells) repeated
-      // 4x4 — i.e. 8x8 alternating cells. Match it (and keep the picker
-      // visually distinct from 'checker').
-      var miniRects = '';
-      for (var i = 0; i < 64; i++) {
-        var row = Math.floor(i / 8), col = i % 8;
-        var fill = (row + col) % 2 === 0 ? solid : accent;
-        miniRects += '<rect x="' + (col * 32) + '" y="' + (row * 32) + '" width="32" height="32" fill="' + fill + '"/>';
-      }
-      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' + miniRects + '</svg>';
-    case 'stripes':
-      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
-        '<rect width="256" height="64" fill="' + solid + '"/><rect y="64" width="256" height="64" fill="' + accent + '"/>' +
-        '<rect y="128" width="256" height="64" fill="' + solid + '"/><rect y="192" width="256" height="64" fill="' + accent + '"/>' +
-        '</svg>';
-    case 'v-stripes':
-      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
-        '<rect width="64" height="256" fill="' + solid + '"/><rect x="64" width="64" height="256" fill="' + accent + '"/>' +
-        '<rect x="128" width="64" height="256" fill="' + solid + '"/><rect x="192" width="64" height="256" fill="' + accent + '"/>' +
-        '</svg>';
-    case 'quartered':
-      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
-        '<rect width="128" height="128" fill="' + solid + '"/><rect x="128" width="128" height="128" fill="' + accent + '"/>' +
-        '<rect y="128" width="128" height="128" fill="' + accent + '"/><rect x="128" y="128" width="128" height="128" fill="' + solid + '"/>' +
-        '</svg>';
-    case 'quartered-x':
-      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
-        '<rect width="256" height="256" fill="' + solid + '"/>' +
-        '<polygon points="0,0 256,0 128,128" fill="' + accent + '"/><polygon points="0,256 256,256 128,128" fill="' + accent + '"/>' +
-        '<polygon points="0,0 0,256 128,128" fill="' + solid + '"/><polygon points="256,0 256,256 128,128" fill="' + solid + '"/>' +
-        '</svg>';
-    case 'dots':
-      var smallDots = '';
-      for (var y = 32; y < 256; y += 64) {
-        for (var x = 32; x < 256; x += 64) {
-          smallDots += '<circle cx="' + x + '" cy="' + y + '" r="20" fill="' + accent + '"/>';
-        }
-      }
-      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
-        '<rect width="256" height="256" fill="' + solid + '"/>' + smallDots +
-        '</svg>';
-    case 'big-dots':
-      var bigDots = '';
-      for (var y2 = 64; y2 < 256; y2 += 128) {
-        for (var x2 = 64; x2 < 256; x2 += 128) {
-          bigDots += '<circle cx="' + x2 + '" cy="' + y2 + '" r="40" fill="' + accent + '"/>';
-        }
-      }
-      return '<svg viewBox="0 0 256 256" class="pattern-thumb">' +
-        '<rect width="256" height="256" fill="' + solid + '"/>' + bigDots +
-        '</svg>';
-  }
-  return '';
-}
-
-// Compose a single-line preview of how the mash-up agent will introduce
-// itself. For a single leaf we just echo the pitch; for multiple we
-// stitch the first sentence of each pitch with "; also " connectors.
-function composeMergedPitch(leaves) {
-  if (leaves.length === 1) return leaves[0].pitch;
-  var firstSentences = leaves.map(function(l) {
-    var s = (l.pitch || '').split('. ')[0];
-    return s.charAt(0).toLowerCase() + s.slice(1);
-  });
-  return '"I am a single agent who ' + firstSentences.join('; also ') + '. Tell me which side of me you need today."';
-}
-
-// Final commit. Same flow as buildSingleLeaf — opens the confirm modal,
-// which dispatches the build-agent payload on OK with the full queue.
-function buildMashup() {
-  if (state.build.length === 0) return;
-  confirmCustomBuild(state.build.slice(), state.pattern);
-}
-// ----- End Phase 7 mash-up state machine -------------------------------
-
-// Delegated listeners — install once at startup. Handles wall tiles +
-// search input. All wall navigation triggers via data-* attributes set
-// during render — no inline JS, no string concatenation of identifiers
-// into HTML (Alice review fix).
-function installWallDelegates() {
-  var wallScreen = document.getElementById('wall-screen');
-  if (!wallScreen || wallScreen.__delegatesInstalled) return;
-  wallScreen.__delegatesInstalled = true;
-
-  // Click delegate — handles tile clicks, L2 drill-down, leaf detail, and
-  // detail-card actions. Phase 7 will extend this with data-pair-add and
-  // data-action="review" for the mash-up flow. Action attributes are
-  // checked BEFORE data-l2 / data-leaf-id so a button carrying both can't
-  // fall through to the wrong handler (defense-in-depth).
-  wallScreen.addEventListener('click', function(e) {
-    var t = e.target;
-    while (t && t !== wallScreen) {
-      if (t.dataset) {
-        // Phase 6.3 actions
-        if (t.dataset.action === 'back-to-wall') { renderWall(); return; }
-        if (t.dataset.action === 'hide-leaf') { e.preventDefault(); hideLeafDetail(); return; }
-        if (t.dataset.action === 'build-now') { buildSingleLeaf(t.dataset.leafIdBuild); return; }
-        // Phase 7 mash-up actions. Order: explicit data-action first, then
-        // data-pair-add (fires for both chips and the leaf-card "+ Add"
-        // secondary button), then the wall navigation fallbacks below.
-        if (t.dataset.action === 'review') { showReviewScreen(); return; }
-        if (t.dataset.action === 'add-and-review') { toggleBuild(t.dataset.leafIdAdd); showReviewScreen(); return; }
-        if (t.dataset.action === 'build-mashup') { buildMashup(); return; }
-        if (t.dataset.action === 'remove-from-build') { toggleBuild(t.dataset.leafRm); rerenderReviewIfOpen(); return; }
-        if (t.dataset.pairAdd) { toggleBuild(t.dataset.pairAdd); return; }
-        // Phase 9.2 pattern picker — re-render the review screen so the
-        // selected tile flips to the .selected class.
-        if (t.dataset.pattern) { state.pattern = t.dataset.pattern; showReviewScreen(); return; }
-        // Tile + leaf-row drilling stays last so a button carrying both
-        // an action and a data-leaf-id can't fall through.
-        if (t.dataset.l2) { enterL2(t.dataset.l2); return; }
-        if (t.dataset.leafId) { showLeafDetail(t.dataset.leafId); return; }
-      }
-      t = t.parentElement;
-    }
-  });
-
-  // Input delegate — handles search filter
-  var searchInput = document.getElementById('wall-search');
-  searchInput.addEventListener('input', onWallSearch);
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function hideAll(ids) {
-  for (var i = 0; i < ids.length; i++) document.getElementById(ids[i]).style.display = 'none';
-}
-// ----- End wall navigation ---------------------------------------------
-
 function gotoManage() {
   if (existingAgents.length === 0) return;
   renderManageList();
@@ -3144,50 +2379,6 @@ function pickExisting(agentId) {
     payload: { type: 'bind', agentId: agentId, senderAddr: window.webxdc.selfAddr },
     summary: 'Bind agent: ' + agentId
   }, 'Bind agent');
-}
-
-function populateForm() {
-  if (!draft) return;
-  document.getElementById('name').value = draft.name || '';
-  var createSeg = document.getElementById('create-model-seg');
-  wireSeg(createSeg, function () { refreshLivePreview('create'); });
-  // v1.4.11: if the draft's model is in the manifest, preselect its tier;
-  // otherwise treat it as a custom ID and select __other__ + populate the
-  // text input. New drafts have model=undefined → tierForModel returns
-  // 'sonnet' → segment lands on Sonnet (existing behavior).
-  var createModelId = draft.model || DEFAULT_MODEL_ID;
-  if (isKnownModelId(createModelId) || !draft.model) {
-    segSetValue(createSeg, tierForModel(createModelId));
-    document.getElementById('create-custom-model-id').value = '';
-  } else {
-    segSetValue(createSeg, '__other__');
-    document.getElementById('create-custom-model-id').value = createModelId;
-  }
-  wireCustomModelId('create-model-seg', 'create-custom-model-row');
-  document.getElementById('system').value = draft.system || '';
-  var createTrust = document.getElementById('skip-permissions');
-  createTrust.checked = !!draft.skipPermissions;
-  syncTrustCardFor('create');
-  var createBoost = document.getElementById('memory-boost');
-  createBoost.checked = !!draft.memoryBoost;
-  syncMemoryCardFor('create');
-  createArchetype = draft.archetype || 'role';
-  wirePreviewInputs('create');
-  wireTrustCardFor('create');
-  wireMemoryCardFor('create');
-  refreshLivePreview('create');
-}
-
-function backFromCreate() {
-  // #97: cancel from the Manage-originated create returns to Manage
-  // instead of new-chat-mode. Clear the flag so a later non-Manage
-  // entry isn't accidentally routed here.
-  if (createFormOrigin === 'manage') {
-    createFormOrigin = null;
-    gotoManage();
-    return;
-  }
-  gotoNewChat();
 }
 
 function populateEditForm() {
@@ -3352,70 +2543,6 @@ function saveEdit() {
   }, 15000);
 }
 
-var createTimeout = null;
-function create() {
-  if (creating || !draft) return;
-  var nameVal = document.getElementById('name').value.trim();
-  if (!nameVal) {
-    document.getElementById('name').focus();
-    return;
-  }
-  creating = true;
-  pendingAction = 'create';
-  document.getElementById('create-btn').disabled = true;
-  var createTier = segGetValue(document.getElementById('create-model-seg'));
-  // v1.4.11: "Other…" sentinel reads the custom-model-id text input
-  // and passes the value verbatim. Empty → block create with focus
-  // on the input.
-  var createModelId;
-  if (createTier === '__other__') {
-    createModelId = (document.getElementById('create-custom-model-id').value || '').trim();
-    if (!createModelId) {
-      creating = false;
-      pendingAction = null;
-      document.getElementById('create-btn').disabled = false;
-      document.getElementById('create-custom-model-id').focus();
-      return;
-    }
-  } else {
-    createModelId = resolveModelFromTier(createTier, draft && draft.model);
-  }
-  var cfg = {
-    name: nameVal,
-    model: createModelId,
-    system: document.getElementById('system').value,
-    tools: [],
-  };
-  var skipPermissions = document.getElementById('skip-permissions').checked;
-  var memoryBoost = document.getElementById('memory-boost').checked;
-  var toolState = collectCreateToolPickerState();
-  window.webxdc.sendUpdate({
-    payload: {
-      type: 'create',
-      config: cfg,
-      skipPermissions: skipPermissions,
-      memoryBoost: memoryBoost,
-      archetype: createArchetype || 'role',
-      icon: '',
-      allowedBuiltinTools: toolState.allowedBuiltinTools,
-      allowedMcpServers: toolState.allowedMcpServers,
-      // #97: when entered from Manage (gotoCreateFromManage), tell the
-      // server to skip the chat-creation steps. The agent is saved into
-      // the library only; no DC group, no binding, no decorate.
-      skipChat: createFormOrigin === 'manage',
-      senderAddr: window.webxdc.selfAddr
-    },
-    summary: 'Create agent: ' + cfg.name
-  }, 'Create agent');
-  createTimeout = setTimeout(function() {
-    if (creating) {
-      creating = false;
-      document.getElementById('create-btn').disabled = false;
-      showModal('No response', 'The server did not respond. This app may not be connected — ask Claude to send you the agent settings card.');
-    }
-  }, 15000);
-}
-
 function editAgent(agentId) {
   if (creating) return;
   creating = true;
@@ -3481,34 +2608,16 @@ window.webxdc.setUpdateListener(function(update) {
     }
     draft = d.draft || null;
     existingAgents = d.existingAgents || [];
-    state.newAgentFlow = d.newAgentFlow || {};
-    // Phase 7 mash-up state. state.build holds leaf IDs the user has
-    // tapped to combine. state.openLeafId tracks the currently-displayed
-    // leaf detail card (set in showLeafDetail) so toggleBuild can re-render
-    // it after a chip flip without losing the open card. Reset on every
-    // re-init since setUpdateListener replays from serial 0.
-    state.build = [];
-    state.openLeafId = null;
-    state.pattern = 'checker';  // default; overridable via the review screen picker
     creating = false;
     editingAgentId = null;
     dismissModal();
     populateModelDropdowns(d.availableModels, d.defaultModel);
-    if (draft) populateForm();
     availableBuiltinTools = d.availableBuiltinTools || [];
     availableMcpServers = d.availableMcpServers || [];
     connectedMcpServers = d.connectedMcpServers || [];
-    populateCreateToolPicker(null, null);
     renderManageList();
     renderHomeCount();
-    // #97: a save from gotoCreateFromManage (skipChat path) returns the
-    // user to Manage with the new agent visible, not all the way home.
-    if (createFormOrigin === 'manage') {
-      createFormOrigin = null;  // reset for next time
-      show('manage');
-    } else {
-      show('step0');
-    }
+    show('step0');
   }
 
   // Phase 12 — reuse / default-agent flow callbacks. Sent by the
@@ -3540,22 +2649,6 @@ window.webxdc.setUpdateListener(function(update) {
     );
     creating = false;
     show('step3');
-  }
-
-  if (d.type === 'created') {
-    if (createTimeout) { clearTimeout(createTimeout); createTimeout = null; }
-    refreshList();
-    if (pendingAction === 'create') {
-      pendingAction = null;
-      if (d.skipChat) {
-        // #97: library-only create from Manage. The init re-fire (sent by
-        // the server right after) lands the user on the Manage screen, so
-        // the modal copy points there.
-        showModal('Agent created', 'Added to your library — find it in the Manage agents list.');
-      } else {
-        showModal('Agent created', 'Open the new chat in your chat list to get started.');
-      }
-    }
   }
 
   if (d.type === 'deleted') {
