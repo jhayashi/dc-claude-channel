@@ -130,8 +130,11 @@ export const AgentDefSchema = z.object({
   name: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'name must be a lowercase slug').max(64),
   description: z.string().max(2048).default(''),
   model: z.string().refine(
-    (v): v is string => models.isKnownModel(v),
-    v => ({ message: `Unknown model "${v}". Allowed: ${ALLOWED_MODELS.join(', ')}` }),
+    // Accept manifest-known ids AND custom claude-<tier>-* ids (v1.4.11) so a
+    // future/preview model doesn't fail to load and brick the bound chats.
+    // Non-claude garbage is still rejected. See models.isAcceptableModelId.
+    (v): v is string => models.isAcceptableModelId(v),
+    v => ({ message: `Unsupported model "${v}". Use a known id (${ALLOWED_MODELS.join(', ')}) or a custom claude-<tier>-… id.` }),
   ),
   tools: ToolsField.default(''),
   disallowedTools: ToolsField.optional(),

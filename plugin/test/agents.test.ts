@@ -59,8 +59,21 @@ describe('AgentDef schema', () => {
     expect(() => agents.AgentDefSchema.parse(makeDef({ name: 'Has Capitals' }))).toThrow()
   })
 
-  test('rejects an unknown model', () => {
+  test('rejects an unknown, non-claude-shaped model', () => {
+    // Garbage / non-claude ids stay rejected so typos surface early.
     expect(() => agents.AgentDefSchema.parse(makeDef({ model: 'not-a-real-model' }))).toThrow()
+    expect(() => agents.AgentDefSchema.parse(makeDef({ model: 'gpt-4' }))).toThrow()
+  })
+
+  test('accepts a custom claude-<tier>-* model id not in the manifest (v1.4.11)', () => {
+    // A future/preview model like claude-sonnet-5-0 must LOAD, not brick the
+    // agent. Regression (2026-06-30): the strict isKnownModel refine made
+    // getAgent() return null for such ids → resolveChat null → the dispatcher
+    // reported "Your agent was deleted" for every chat bound to that agent.
+    // CLAUDE.md v1.4.11: the model field accepts any string claude --model
+    // will accept; tierForModel() already infers the tier from claude-<tier>-.
+    expect(() => agents.AgentDefSchema.parse(makeDef({ model: 'claude-sonnet-5-0' }))).not.toThrow()
+    expect(() => agents.AgentDefSchema.parse(makeDef({ model: 'claude-opus-5-1' }))).not.toThrow()
   })
 
   test('accepts top-level x-dc-* extensions', () => {

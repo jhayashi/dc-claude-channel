@@ -94,6 +94,23 @@ export function tierForModel(id: string): string {
 }
 
 /**
+ * v1.4.11 — whether an id is acceptable as an agent's `model`: either a
+ * manifest-known id OR a claude-<tier>-* id the manifest doesn't yet know
+ * (a future/preview model like claude-sonnet-5-0). Custom claude ids are
+ * passed verbatim to `claude --model` at spawn, which does the final
+ * validation. Non-claude / garbage ids (gpt-4, not-a-real-model) are still
+ * rejected so typos surface at save/load rather than bricking the agent.
+ *
+ * Why load must be lenient: the shared `claude-code` default agent can be
+ * re-pointed to any model from terminal CC. A strict isKnownModel gate made
+ * getAgent() return null for an unknown id, so resolveChat() reported the
+ * agent as deleted for EVERY bound chat.
+ */
+export function isAcceptableModelId(id: string): boolean {
+  return isKnownModel(id) || TIER_FROM_ID_RE.test(id)
+}
+
+/**
  * Latest (newest) model id for a tier. Relies on models.json being
  * ordered newest-first per tier.
  */
