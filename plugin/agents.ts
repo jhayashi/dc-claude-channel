@@ -326,6 +326,56 @@ export function saveAgent(def: AgentDef): void {
 }
 
 /**
+ * Reconcile every agent's DC tool allowlist with the CURRENT registry —
+ * a startup migration that runs each boot (idempotent; writes only when an
+ * agent is actually missing a registered tool, so it no-ops once in sync).
+ *
+ * Why this is necessary: `ensureMcpDc` freezes an agent's DC surface once
+ * it holds specific `mcp__dc__<tool>` entries (the "narrow surface" guard),
+ * so DC tools added to the registry AFTER an agent was last saved never
+ * reach it. That made the decomposition card openers (`dc_open_create_card`
+ * / `dc_open_teleport_card` / `dc_open_contacts_card`) unreachable from
+ * every pre-existing agent — the tool exists in the proxy but isn't in the
+ * agent's `--agent` allowlist, so CC never surfaces it to the model.
+ *
+ * Following the repo's migration convention (see migrate-agents-v14), this
+ * is structurally self-gating — no version marker. MUST run AFTER
+ * `setDcToolNames()` so the registry is populated; refuses (no-op) if it
+ * isn't, to avoid rewriting agents against an empty set. Only agents that
+ * already have a DC surface (a bare `mcp__dc` or any `mcp__dc__*`) are
+ * reconciled; a deliberately DC-less agent is left untouched. Existing DC
+ * entries are preserved (union, never removed) so a tool dropped from the
+ * registry doesn't silently vanish from agents.
+ *
+ * Returns the number of agents rewritten.
+ */
+export function migrateAgentDcTools(): number {
+  const registryDcTools = getDcToolNames().map(t => `mcp__dc__${t}`)
+  if (registryDcTools.length === 0) return 0 // registry not populated — refuse
+  let updated = 0
+  for (const agent of listAgents()) {
+    const parts = (agent.tools ?? '').split(',').map(s => s.trim()).filter(Boolean)
+    const hasBareMcpDc = parts.includes('mcp__dc')
+    const existingDcTools = parts.filter(t => t.startsWith('mcp__dc__'))
+    if (!hasBareMcpDc && existingDcTools.length === 0) continue // no DC surface — leave alone
+    const existingSet = new Set(existingDcTools)
+    const missing = registryDcTools.filter(t => !existingSet.has(t))
+    // In sync (all registry tools present, no bare prefix to expand) → skip.
+    if (missing.length === 0 && !hasBareMcpDc) continue
+    // Rebuild: keep non-DC tools in place, then the unioned DC set. This
+    // also drops a bare `mcp__dc` (a no-op token in CC's parser) in favor of
+    // the expanded entries. saveAgent → ensureMcpDc leaves this list alone
+    // (it already has specific mcp__dc__* entries), so the union is written
+    // verbatim.
+    const nonDcTools = parts.filter(t => t !== 'mcp__dc' && !t.startsWith('mcp__dc__'))
+    const unionedDc = [...new Set([...existingDcTools, ...registryDcTools])]
+    saveAgent({ ...agent, tools: [...nonDcTools, ...unionedDc].join(', ') })
+    updated++
+  }
+  return updated
+}
+
+/**
  * Delete an agent. Returns true if anything was removed.
  *
  * Removes the agent definition (`<name>.md`) AND the DC-private sidecar

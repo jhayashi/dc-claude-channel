@@ -1825,6 +1825,24 @@ async function main(): Promise<void> {
     logf('dc channel: v1.4 agent migration failed: %v', err)
   }
 
+  // Reconcile every agent's DC tool allowlist with the current registry.
+  // ensureMcpDc freezes an agent's DC surface once it has specific
+  // mcp__dc__* entries, so DC tools added later (e.g. the decomposition
+  // card openers dc_open_create_card / dc_open_teleport_card /
+  // dc_open_contacts_card) never reach pre-existing agents and are
+  // unreachable from the model. This unions the current registry into each
+  // agent's allowlist. Idempotent (no-op once in sync); MUST run after
+  // setDcToolNames() above and after the v1.4 migration so all agents are
+  // in .md form.
+  try {
+    const reconciled = agents.migrateAgentDcTools()
+    if (reconciled > 0) {
+      logf('dc channel: reconciled DC tool allowlist for %d agent(s)', reconciled)
+    }
+  } catch (err) {
+    logf('dc channel: DC tool reconcile failed: %v', err)
+  }
+
   // v1.3 slice 7 phase 3 — copy any contact records still at the legacy
   // `principals/humans/<contactId>.json` path into the agent-scoped
   // `agents/claude-code.dc/contacts/` layout. Per-file idempotent so a

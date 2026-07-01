@@ -407,3 +407,47 @@ describe('lintSidecarDirs', () => {
     expect(agents.lintSidecarDirs()).toEqual([])
   })
 })
+
+describe('migrateAgentDcTools (DC tool registry reconcile)', () => {
+  test('adds newly-registered DC tools to an agent with a stale expanded allowlist', () => {
+    // Stale agent: has a DC surface (mcp__dc__reply) but is missing a tool
+    // added to the registry later (e.g. a decomposition card opener). This
+    // is the exact shape that made dc_open_create_card unreachable from
+    // every existing agent after increment 3.
+    agents.saveAgent(makeDef({ name: 'stale', tools: 'Read, Bash, mcp__dc__reply' }))
+    // Registry now includes the new tool.
+    agents.setDcToolNames(['reply', 'dc_open_create_card'])
+
+    const updated = agents.migrateAgentDcTools()
+    expect(updated).toBeGreaterThanOrEqual(1)
+
+    const def = agents.getAgent('stale')!
+    expect(def.tools).toContain('mcp__dc__dc_open_create_card') // new tool granted
+    expect(def.tools).toContain('mcp__dc__reply')               // existing DC tool preserved
+    expect(def.tools).toContain('Read')                          // non-DC tools preserved
+    expect(def.tools).toContain('Bash')
+  })
+
+  test('is idempotent — a second run over in-sync agents writes nothing', () => {
+    agents.saveAgent(makeDef({ name: 'stale', tools: 'Read, mcp__dc__reply' }))
+    agents.setDcToolNames(['reply', 'dc_open_create_card'])
+    expect(agents.migrateAgentDcTools()).toBeGreaterThanOrEqual(1)
+    expect(agents.migrateAgentDcTools()).toBe(0) // now in sync → no-op
+  })
+
+  test('skips agents with no DC surface (never grants DC access)', () => {
+    // Raw write bypasses ensureMcpDc, which would otherwise inject mcp__dc.
+    writeFileSync(join(testDir, 'dcless.md'),
+      '---\nname: dcless\nmodel: claude-sonnet-4-6\ntools: Read, Bash\n---\nbody\n')
+    agents.setDcToolNames(['reply', 'dc_open_create_card'])
+    agents.migrateAgentDcTools()
+    const def = agents.getAgent('dcless')!
+    expect(def.tools).not.toContain('mcp__dc')
+  })
+
+  test('refuses to run when the registry is empty (avoids clobbering)', () => {
+    agents.saveAgent(makeDef({ name: 'a', tools: 'Read, mcp__dc__reply' }))
+    agents.setDcToolNames([])
+    expect(agents.migrateAgentDcTools()).toBe(0)
+  })
+})
