@@ -51,6 +51,65 @@ export function setControlAuthDeps(deps: ControlAuthDeps): void {
   _controlAuthDeps = deps
 }
 
+/**
+ * Build + send the Create Agent card into `chatId` and ship the FLAT init
+ * update carrying the catalog. Returns the sent message's msgId.
+ *
+ * Extracted from `dc_open_create_card`'s callTool body (increment 4, #109)
+ * so other cards (agent-manage's "+ Create new agent" cross-card handoff)
+ * can summon this card via a plain function call rather than duplicating
+ * the build/send/register/init sequence.
+ */
+export async function openCreateCard(
+  ctx: AppContext,
+  chatId: number,
+  seedLeaf: string | null,
+): Promise<number> {
+  const { xdcPath } = await buildCreateAgentXDC()
+  const msgId = await ctx.client.sendWebXDC(chatId, xdcPath)
+  createSessions.set(msgId, chatId)
+  ctx.registerWebXDCMsg(msgId, createApp, chatId)
+
+  // Send the FLAT init update carrying the catalog. The card reads
+  // d.leaves / d.l2Summary / d.combines / d.seedLeaf /
+  // d.availableModels / d.defaultModel / d.availableBuiltinTools /
+  // d.availableMcpServers / d.connectedMcpServers at the TOP LEVEL —
+  // do NOT nest under a newAgentFlow wrapper (the monolith's sendInit
+  // shape). symmetricCombines() is already folded into each leaf's
+  // combinesWith; the top-level `combines` is a stored-but-unused
+  // catalog slot, sent empty.
+  const leaves = loadAllLeaves()
+  const sym = symmetricCombines()
+  await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
+    payload: {
+      type: 'init',
+      version: getCreateAgentVersion(),
+      senderAddr: 'server',
+      leaves: leaves.map(l => ({
+        id: l.id,
+        path: l.path,
+        l2: l.l2,
+        name: l.name,
+        parameter: l.parameter,
+        liability: l.liability,
+        pitch: l.pitch,
+        combinesWith: [...(sym.get(l.id) ?? new Set<string>())].sort(),
+      })),
+      l2Summary: buildL2Summary(leaves),
+      combines: [],
+      seedLeaf,
+      availableModels: models.MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier })),
+      defaultModel: models.DEFAULT_MODEL,
+      ...availableToolsPayload(ctx),
+    },
+    summary: 'Create agent',
+    info: 'Tap to open Create Agent',
+    href: 'index.html',
+  }))
+
+  return msgId
+}
+
 // ── WebXDCApp implementation ─────────────────────────────────────────────
 
 export const createApp: WebXDCApp = {
@@ -107,47 +166,7 @@ export const createApp: WebXDCApp = {
       : null
 
     try {
-      const { xdcPath } = await buildCreateAgentXDC()
-      const msgId = await ctx.client.sendWebXDC(targetChatId, xdcPath)
-      createSessions.set(msgId, targetChatId)
-      ctx.registerWebXDCMsg(msgId, createApp, targetChatId)
-
-      // Send the FLAT init update carrying the catalog. The card reads
-      // d.leaves / d.l2Summary / d.combines / d.seedLeaf /
-      // d.availableModels / d.defaultModel / d.availableBuiltinTools /
-      // d.availableMcpServers / d.connectedMcpServers at the TOP LEVEL —
-      // do NOT nest under a newAgentFlow wrapper (the monolith's sendInit
-      // shape). symmetricCombines() is already folded into each leaf's
-      // combinesWith; the top-level `combines` is a stored-but-unused
-      // catalog slot, sent empty.
-      const leaves = loadAllLeaves()
-      const sym = symmetricCombines()
-      await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
-        payload: {
-          type: 'init',
-          version: getCreateAgentVersion(),
-          senderAddr: 'server',
-          leaves: leaves.map(l => ({
-            id: l.id,
-            path: l.path,
-            l2: l.l2,
-            name: l.name,
-            parameter: l.parameter,
-            liability: l.liability,
-            pitch: l.pitch,
-            combinesWith: [...(sym.get(l.id) ?? new Set<string>())].sort(),
-          })),
-          l2Summary: buildL2Summary(leaves),
-          combines: [],
-          seedLeaf,
-          availableModels: models.MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier })),
-          defaultModel: models.DEFAULT_MODEL,
-          ...availableToolsPayload(ctx),
-        },
-        summary: 'Create agent',
-        info: 'Tap to open Create Agent',
-        href: 'index.html',
-      }))
+      await openCreateCard(ctx, targetChatId, seedLeaf)
 
       return {
         content: [{

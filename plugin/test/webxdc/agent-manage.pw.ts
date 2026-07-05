@@ -34,3 +34,23 @@ test("'+ Create new agent' emits an open-create action (cross-card handoff)", as
   expect(out.some((o: any) => o.update.payload?.type === "open-create")).toBe(true);
   await h.close();
 });
+
+// §6 refusal (e.g. saveEdit/delete/bind/start-*/rebind-chat/open-create
+// refused because a webXDC tap can't be authenticated in a multi-human
+// group). The server emits ONE generic `action_err` type regardless of
+// which action was refused — this runtime-proves the increment-4 handler
+// against the rebuilt v1.01 prebuilt (mirrors create-agent.pw.ts's
+// `create_err` test).
+test("action_err reply surfaces the §6 refusal message", async () => {
+  const h: HarnessHandle = await createHarness(xdc());
+  await h.push({ ...INIT, version: await h.getAppVersion() });
+  await h.page.waitForSelector('#manage-list .agent-row:has-text("Sleep coach")', { state: "visible", timeout: 4000 });
+
+  await h.push({
+    type: "action_err", senderAddr: "server",
+    message: "That change has to come from you directly — say it in our chat, or open this from your 1:1 with me.",
+  });
+
+  await h.page.waitForSelector('text=say it in our chat', { state: "visible", timeout: 3000 });
+  await h.close();
+});

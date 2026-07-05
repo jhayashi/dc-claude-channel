@@ -1316,7 +1316,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.00;
+var APP_VERSION = 1.01;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:   { solid: '#B4862A', checker: '#D9B25B' },
@@ -2701,6 +2701,28 @@ window.webxdc.setUpdateListener(function(update) {
   if (d.type === 'exportError') {
     creating = false;
     alert(d.message || 'Export failed.');
+    return;
+  }
+
+  // Generic §6 refusal (e.g. saveEdit/delete/bind/start-*/rebind-chat/
+  // open-create refused because a webXDC tap can't be authenticated in a
+  // multi-human group). The server emits ONE `action_err` type regardless
+  // of which action was refused, so this is the single reset+notify path
+  // for every pending-control surface in this card (increment-3 create_err
+  // lesson: a refusal has to reach whatever was left mid-flight, or the
+  // UI is stuck until the 10-15s "no response" timeout fires its own,
+  // more confusing modal on top).
+  if (d.type === 'action_err') {
+    resetTransientState();
+    var reuseModal = document.getElementById('reuse-confirm-modal');
+    if (reuseModal && reuseModal.classList.contains('visible')) {
+      document.getElementById('reuse-confirm-sub').textContent =
+        typeof d.message === 'string' && d.message ? d.message : 'Something went wrong.';
+      setReuseConfirmState('error');
+    }
+    showModal('Not done', typeof d.message === 'string' && d.message
+      ? d.message
+      : 'That action could not be completed.');
     return;
   }
 
