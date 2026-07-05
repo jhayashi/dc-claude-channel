@@ -1,28 +1,29 @@
 /**
- * Agent setup WebXDC app — sends a setup card into a paired chat that
- * lets the user pick an existing agent to reuse OR create a new one
- * from scratch. On confirm, creates a new DC chat (if needed) and
- * persists an agent definition + binding per the 2026-04-09 spec.
+ * Agent-flow shared helpers. Formerly the agent-setup WebXDC monolith;
+ * the card itself (its screens, the init sender, and the open tool) was
+ * retired in increment 4 (#109) when its flows were peeled into the
+ * standalone create-agent and agent-manage cards. This module now holds
+ * only the shared surface those cards + server.ts + the coach machinery
+ * import: the create/build/graduate flow, the §6-gated manage/edit/reuse/
+ * rebind handlers, and the agent-chat decoration + naming helpers.
+ *
+ * (Optional follow-up, deferred: rename this file to agent-flows.ts.)
  */
 
-import type { WebXDCApp, ToolDef, ToolResult, AppContext } from '../webxdc-app.js'
-import type { WebXDCUpdate } from '../dc-client.js'
-import * as agentSetup from '../agent-setup.js'
+import type { AppContext } from '../webxdc-app.js'
+import { getAgentManageVersion } from '../agent-manage.js'
 import * as agents from '../agents.js'
 import * as models from '../models.js'
 import * as bindings from '../bindings.js'
 import * as access from '../access/index.js'
 import { loadAllLeaves, symmetricCombines, getDefaultCatalog, type Catalog, type Leaf, type Path } from '../leaves.js'
-import { decideCleanup, CONTACT_SELF } from '../cleanup.js'
 import { ALL_BUILTIN_TOOLS, BUILTIN_TOOL_DESCRIPTIONS } from '../dispatcher/subagent-process.js'
 import { startCoach, advanceCoach, isCoachDone, collectAnswers, type CoachState, type CoachAnswers } from '../coach.js'
 import { assembleSystemPrompt } from '../prompt-assembler.js'
 import { type PatternId } from '../agent-icons/palettes.js'
 import { logLifecycleEvent } from '../events-lifecycle.js'
 import * as sessionAgents from '../session-agents.js'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 
 export function availableToolsPayload(ctx: AppContext) {
@@ -129,29 +130,28 @@ export interface Session {
   lastSerial?: number
   needsSerialSeed?: boolean
   /**
-   * Snapshot of agent-setup.html's APP_VERSION at the time the card was
-   * sent to this chat. Used by sendInit to decide whether the existing
-   * card is current. Pre-2026-05-31 sessions don't have this field
-   * (undefined), which shouldResendCard treats as stale so the user
-   * lands on the fresh HTML immediately instead of going through the
-   * version_mismatch round-trip.
+   * Snapshot of the card HTML's APP_VERSION at the time the card was sent
+   * to this chat, used to decide whether the existing card is current.
+   * Pre-2026-05-31 sessions don't have this field (undefined), which
+   * shouldResendCard treats as stale so the user lands on the fresh HTML
+   * immediately instead of going through the version_mismatch round-trip.
+   *
+   * NOTE (increment 4): the agent-setup monolith that used this Session
+   * type at runtime is retired. `Session` / `shouldResendCard` /
+   * `parseSessions` are kept as pure, unit-tested helpers.
    */
   appVersion?: number
 }
 
 /**
- * Decide whether `dc_open_agent_settings` (and the dispatcher-side
- * sendInit closure) should send a *new* xdc card to the chat, or just
- * push a status update to the existing one.
+ * Decide whether a card opener should send a *new* xdc card to the chat,
+ * or just push a status update to the existing one.
  *
- * Pre-fix sendInit always reused the existing session if one existed,
- * which forced the user through the version_mismatch flow after a
- * release: their old card detected the higher server version, fired
- * version_mismatch, the dispatcher re-spawned a fresh card, and the
- * user saw "outdated, upgrading…" UI flash on the old card.
- *
- * The fix: track appVersion per session and only reuse when the
- * recorded version matches the current on-disk HTML version.
+ * Reusing a stale card forces the user through the version_mismatch flow
+ * after a release: their old card detects the higher server version, fires
+ * version_mismatch, the dispatcher re-spawns a fresh card, and the user
+ * sees the "outdated, upgrading…" UI flash on the old card. Tracking
+ * appVersion per session and only reusing on an exact match avoids that.
  *
  * Reuse rules:
  *   - No existing session              → send new (true)
@@ -169,10 +169,10 @@ export function shouldResendCard(
 }
 
 /**
- * Pure parser for the sessions-on-disk JSON. Extracted from
- * loadSessions so the load path is unit-testable without a real
- * filesystem. Returns an empty array on malformed/missing/non-array
- * input — never throws.
+ * Pure parser for the legacy sessions-on-disk JSON. Kept unit-tested
+ * without a real filesystem; the monolith load path that consumed it is
+ * retired (increment 4). Returns an empty array on malformed/missing/
+ * non-array input — never throws.
  *
  * Validates each entry shape:
  *   - msgId, sourceChatId: required, must be numbers
@@ -248,40 +248,6 @@ export function resolveMemoryBoost(explicit: boolean | undefined, body: string):
   return agents.classifyMemoryBoost(body)
 }
 
-// Per-chat msgId pointer: "has this chat seen the setup card yet, and if so,
-// which msgId?" First dc_open_agent_settings call sends a new xdc; later calls
-// send a status update to the same msgId so the card returns to the top via
-// the info notification. No flow state lives here — the card always opens on
-// home.
-//
-// Persisted to disk so `bun server.ts` restarts don't orphan existing cards
-// (which would silently drop user interactions — every sent update arrives
-// at onWebXDCUpdate with a msgId the central registry doesn't know about).
-const sessions = new Map<number, Session>()
-
-const SESSIONS_FILE = join(homedir(), '.claude', 'channels', 'deltachat', 'agent-setup-sessions.json')
-
-function persistSessions(): void {
-  try {
-    mkdirSync(join(homedir(), '.claude', 'channels', 'deltachat'), { recursive: true })
-    const array = Array.from(sessions.values())
-    writeFileSync(SESSIONS_FILE, JSON.stringify(array, null, 2))
-  } catch {
-    // Non-fatal: worst case, next restart orphans these cards. Log via ctx
-    // isn't available here; silent swallow is acceptable since the caller
-    // already logged the successful send.
-  }
-}
-
-function loadSessions(): Session[] {
-  if (!existsSync(SESSIONS_FILE)) return []
-  try {
-    return parseSessions(readFileSync(SESSIONS_FILE, 'utf-8'))
-  } catch {
-    return []
-  }
-}
-
 /**
  * Per-chat coach interview state. Populated when the user taps "Build now"
  * on the new-agent wall (`build-agent` payload), torn down when the coach
@@ -318,18 +284,6 @@ export interface CoachSession {
 
 export const coachSessions = new Map<number, CoachSession>()
 
-/** Baseline draft for a fresh "create agent" form. The client populates
- *  these values when the user navigates to the create screen from home. */
-function blankDraft(): agents.DraftAgent {
-  return {
-    name: 'New agent',
-    model: agents.DEFAULT_MODEL,
-    description: '',
-    system: agents.DEFAULT_SYSTEM_PROMPT,
-    tools: [],
-  }
-}
-
 /** Summarize agents for the picker screen. */
 export async function listExistingForPicker(sourceChatId: number): Promise<Array<{ id: string; name: string; model: string; archetype: string; icon: string; glyph: string; pattern: PatternId; tier: string; isTrusted: boolean; iconDataUri: string; bindingCount: number; isCurrentAgent: boolean; isUndeletable: boolean }>> {
   const { renderAgentBadge } = await import('../agent-icon-render.js')
@@ -364,137 +318,6 @@ export async function listExistingForPicker(sourceChatId: number): Promise<Array
       isUndeletable: agents.isUndeletableAgent(a.name),
     }
   }))
-}
-
-/**
- * Proactively detect dead chats (owner left or chat deleted locally)
- * that the event-based cleanup missed. Uses getFullChat to check
- * contactIds (current members) and pastContactIds (former members).
- *
- * A chat is swept if:
- *   1. The bot is no longer a member (bot-removed), OR
- *   2. The bot is the only current member (bot-alone), OR
- *   3. The chat can no longer send (canSend=false).
- *
- * Called before building the manage-screen payload so binding counts
- * are accurate.
- */
-async function sweepDeadChats(ctx: AppContext): Promise<void> {
-  for (const b of bindings.listBindings()) {
-    if (!access.isAllowed(b.chatId)) continue
-    try {
-      const fc = await ctx.client.getFullChat(b.chatId)
-      const decision = decideCleanup('ChatModified', fc.contactIds)
-      if (decision.cleanup) {
-        bindings.deleteBinding(b.chatId)
-        access.removeChat(b.chatId)
-        ctx.logf('agent-setup: swept dead chat %d (%s) contacts=%v past=%v',
-          b.chatId, decision.reason, fc.contactIds, fc.pastContactIds)
-        continue
-      }
-      if (!fc.canSend) {
-        bindings.deleteBinding(b.chatId)
-        access.removeChat(b.chatId)
-        ctx.logf('agent-setup: swept unsendable chat %d canSend=false', b.chatId)
-        continue
-      }
-      ctx.logf('agent-setup: sweep kept chat %d agent=%s contacts=%v past=%v canSend=%v selfInGroup=%v',
-        b.chatId, b.agentId ?? 'none', fc.contactIds, fc.pastContactIds, fc.canSend, fc.selfInGroup)
-    } catch (err) {
-      ctx.logf('agent-setup: sweep check failed chat %d: %v', b.chatId, err)
-    }
-  }
-}
-
-async function sendInit(
-  ctx: AppContext,
-  app: WebXDCApp,
-  sourceChatId: number,
-): Promise<Session> {
-  await sweepDeadChats(ctx)
-  const existing = sessions.get(sourceChatId)
-  const currentVersion = agentSetup.getAgentSetupVersion()
-  const draft = blankDraft()
-  const leaves = loadAllLeaves()
-  const sym = symmetricCombines()
-  const payload = {
-    type: 'init' as const,
-    version: currentVersion,
-    draft: {
-      ...draft,
-      skipPermissions: agents.getSkipPermissions(draft as agents.AgentDef),
-      memoryBoost: agents.memoryBoostEnabled(draft as agents.AgentDef),
-      iconMirror: agents.getIconMirror(draft as agents.AgentDef),
-    },
-    existingAgents: await listExistingForPicker(sourceChatId),
-    senderAddr: 'server',
-    availableModels: models.MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier })),
-    defaultModel: models.DEFAULT_MODEL,
-    ...availableToolsPayload(ctx),
-    newAgentFlow: {
-      leaves: leaves.map(l => ({
-        id: l.id,
-        path: l.path,
-        l2: l.l2,
-        name: l.name,
-        parameter: l.parameter,
-        liability: l.liability,
-        pitch: l.pitch,
-        combinesWith: [...(sym.get(l.id) ?? new Set<string>())].sort(),
-      })),
-      l2Summary: buildL2Summary(leaves),
-    },
-  }
-  const update = JSON.stringify({
-    payload,
-    summary: 'Agent setup',
-    info: 'Tap to open agent settings',
-    href: 'index.html',
-  })
-
-  // 2026-05-31 (Joe chat 14 msg 8916+): reuse the existing card only when its
-  // recorded appVersion matches the current on-disk HTML version. Otherwise
-  // we'd be pushing an update to a STALE card that would then fire
-  // version_mismatch and force the user through the "outdated, upgrading…"
-  // flow. shouldResendCard codifies the decision (see helper for the table).
-  if (existing && !shouldResendCard(existing, currentVersion)) {
-    await ctx.client.sendWebXDCUpdate(existing.msgId, update)
-    return existing
-  }
-
-  const { xdcPath } = await agentSetup.buildAgentSetupXDC()
-  const msgId = await ctx.client.sendWebXDC(sourceChatId, xdcPath)
-  try {
-    const { unlinkSync } = await import('node:fs')
-    unlinkSync(xdcPath)
-  } catch {}
-  await ctx.client.sendWebXDCUpdate(msgId, update)
-  // Drop the old session BEFORE setting the new one — the old msgId is now
-  // stale (we just sent a replacement) and must be unregistered so future
-  // taps on it route to the version_mismatch fallback path, not the active
-  // session.
-  if (existing) {
-    ctx.unregisterWebXDCMsg(existing.msgId)
-  }
-  const session: Session = { msgId, sourceChatId, appVersion: currentVersion }
-  sessions.set(sourceChatId, session)
-  persistSessions()
-  ctx.registerWebXDCMsg(msgId, app, sourceChatId)
-  ctx.logf(
-    'agent-setup: sent app (msg %d, version %s) to chat %d%s',
-    msgId, currentVersion, sourceChatId,
-    existing ? ` (replacing stale msg ${existing.msgId})` : '',
-  )
-  return session
-}
-
-/**
- * Public entry point for other apps (e.g. permissions) that want to
- * summon the agent settings card into a chat. Equivalent to the subagent
- * calling `dc_open_agent_settings` but callable from the dispatcher side.
- */
-export async function summonAgentSettings(ctx: AppContext, chatId: number): Promise<void> {
-  await sendInit(ctx, agentSetupApp, chatId)
 }
 
 /** Minimal context for decorating agent chats (icon + welcome). */
@@ -1193,16 +1016,9 @@ export async function handleCreateAgent(
       summary: 'Agent created',
     })
     await ctx.client.sendWebXDCUpdate(msgId, update)
-    // For skipChat, explicitly re-fire init so the (monolith) Manage
-    // screen's existingAgents list refreshes with the new entry. The
-    // legacy chat-creating path doesn't need this because the user
-    // navigates to the new chat (where state restarts fresh). The
-    // standalone create card has no Manage screen and never sets
-    // skipChat, so this is monolith-only in practice.
-    if (skipChat) {
-      await sendInit(ctx, agentSetupApp, sourceChatId)
-    }
-    // Session stays alive — user may keep using the settings card.
+    // Session stays alive — the caller card may keep operating. The
+    // former skipChat re-init (monolith Manage-screen refresh) is gone
+    // with the monolith; the standalone create card never sets skipChat.
   } catch (err) {
     ctx.logf('agent-setup: create failed: %v', err)
     // Roll back the agent file if it was written but binding failed.
@@ -1268,7 +1084,7 @@ export async function handleEditRequest(
       payload: {
         type: 'edit',
         draft: editDraft,
-        version: agentSetup.getAgentSetupVersion(),
+        version: getAgentManageVersion(),
         senderAddr: 'server',
         availableModels: models.MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier })),
         defaultModel: models.DEFAULT_MODEL,
@@ -1352,7 +1168,7 @@ export async function handleDeleteAgent(
         type: 'deleted',
         name: agent.name,
         existingAgents: await listExistingForPicker(sourceChatId),
-        version: agentSetup.getAgentSetupVersion(),
+        version: getAgentManageVersion(),
         senderAddr: 'server',
       },
       summary: 'Agent deleted',
@@ -1389,7 +1205,7 @@ export async function handleExportAgent(
         payload: {
           type: 'exportError',
           message: 'Agent no longer exists.',
-          version: agentSetup.getAgentSetupVersion(),
+          version: getAgentManageVersion(),
           senderAddr: 'server',
         },
         summary: 'Export failed',
@@ -1423,7 +1239,7 @@ export async function handleExportAgent(
       payload: {
         type: 'exported',
         agentId,
-        version: agentSetup.getAgentSetupVersion(),
+        version: getAgentManageVersion(),
         senderAddr: 'server',
       },
       summary: 'Agent exported',
@@ -1607,7 +1423,7 @@ export async function handleSaveEdit(
         type: 'editComplete',
         name: draft.name,
         existingAgents: await listExistingForPicker(sourceChatId),
-        version: agentSetup.getAgentSetupVersion(),
+        version: getAgentManageVersion(),
         senderAddr: 'server',
       },
       summary: 'Agent updated',
@@ -1764,203 +1580,4 @@ export async function handleRebindChat(
     ctx.logf('agent-setup: rebind-chat failed for agent %s: %v', agentId, err)
     await sendChatFailed(msgId, ctx, err instanceof Error ? err.message : 'unknown error')
   }
-}
-
-export const agentSetupApp: WebXDCApp = {
-  id: 'agent-setup',
-
-  start(ctx: AppContext): void {
-    const saved = loadSessions()
-    for (const s of saved) {
-      if (s.lastSerial == null) s.needsSerialSeed = true
-      sessions.set(s.sourceChatId, s)
-      ctx.registerWebXDCMsg(s.msgId, agentSetupApp, s.sourceChatId, s.lastSerial)
-    }
-    if (saved.length > 0) {
-      ctx.logf('agent-setup: rehydrated %d session(s) from disk (%d need serial seed)',
-        saved.length, saved.filter(s => s.needsSerialSeed).length)
-    }
-  },
-
-  instructions:
-    'AGENT SETTINGS APP:\n' +
-    '1. The agent settings app is a self-contained UI where the user manages ' +
-    'their agents, starts new chats, and resumes terminal sessions. Call ' +
-    'dc_open_agent_settings to surface it whenever the user mentions ANY of: ' +
-    'creating a new agent, starting a new chat, editing/deleting/managing ' +
-    'agents, "agent app", "agent card", "settings app", "send me the app", ' +
-    '"change the model", "change my prompt", "edit this agent", "teleport", ' +
-    '"import terminal session", "resume a session". The app always opens on ' +
-    'its home screen — the user picks what they want to do from there.\n' +
-    '2. Do NOT build or send agent-setup.xdc yourself via Bash/dc_send_webxdc. ' +
-    'Do NOT read agent-setup.ts or agent-setup-app.ts. Do NOT read or edit ' +
-    'agent YAML files. dc_open_agent_settings is the only supported path.\n' +
-    '3. Do NOT offer to change agent settings through conversation — send ' +
-    'the app instead.',
-
-  tools(): ToolDef[] {
-    return [
-      {
-        name: 'dc_open_agent_settings',
-        requiresCapability: 'chat',
-        description:
-          'Surface the Agent settings app in the user\'s chat. The app always ' +
-          'opens on a home screen where the user chooses what to do: start a ' +
-          'new chat with an agent, manage (edit / delete / export) existing ' +
-          'agents, or resume a terminal session. Call this whenever the user ' +
-          'asks about agents, new chats, resuming a terminal session, or anything ' +
-          'else that belongs in the settings UI — the app handles all of it.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            source_chat_id: {
-              type: 'string',
-              description: 'The chat the user is messaging from (where to surface the settings app).',
-            },
-          },
-          required: ['source_chat_id'],
-        },
-      },
-    ]
-  },
-
-  async callTool(name: string, args: Record<string, unknown>, ctx: AppContext): Promise<ToolResult | null> {
-    if (name !== 'dc_open_agent_settings') return null
-
-    const sourceChatId = Number(args.source_chat_id as string)
-    if (!sourceChatId || Number.isNaN(sourceChatId)) {
-      return { content: [{ type: 'text', text: 'dc_open_agent_settings: invalid source_chat_id' }], isError: true }
-    }
-    if (!ctx.isAllowed(sourceChatId)) {
-      return { content: [{ type: 'text', text: `dc_open_agent_settings: chat ${sourceChatId} not allowed` }], isError: true }
-    }
-
-    try {
-      await sendInit(ctx, agentSetupApp, sourceChatId)
-    } catch (err) {
-      ctx.logf('agent-setup: send failed: %v', err)
-      return { content: [{ type: 'text', text: `dc_open_agent_settings: send failed: ${(err as Error).message}` }], isError: true }
-    }
-
-    return {
-      content: [{
-        type: 'text',
-        text: `Agent settings app surfaced in chat ${sourceChatId}.`,
-      }],
-    }
-  },
-
-  async onWebXDCUpdate(msgId: number, updates: WebXDCUpdate[], ctx: AppContext): Promise<void> {
-    // Find the session for this msgId.
-    let session: Session | null = null
-    for (const s of sessions.values()) {
-      if (s.msgId === msgId) { session = s; break }
-    }
-    if (!session) return
-
-    // Migration guard: sessions loaded from disk without a persisted
-    // lastSerial (pre-fix) would replay every old create/bind action on
-    // the first update batch. Instead, seed the serial from the batch
-    // and skip processing — the next batch will be new updates only.
-    if (session.needsSerialSeed) {
-      const maxSerial = updates.reduce((m, u) => Math.max(m, u.serial ?? 0), 0)
-      session.lastSerial = maxSerial
-      delete session.needsSerialSeed
-      persistSessions()
-      ctx.logf('agent-setup: seeded serial %d for chat %d (migration)', maxSerial, session.sourceChatId)
-      return
-    }
-
-    for (const u of updates) {
-      const payload = u.payload as {
-        type?: string
-        config?: unknown
-        agentId?: string
-        inheritClaudeMd?: boolean
-        appVersion?: number
-        serverVersion?: number
-      } | null
-      if (!payload) continue
-
-      if (payload.type === 'version_mismatch') {
-        // Guard against double-handling.
-        const current = sessions.get(session.sourceChatId)
-        if (!current || current.msgId !== msgId) return
-        ctx.logf('agent-setup: version mismatch from chat %d, resending app', session.sourceChatId)
-        ctx.unregisterWebXDCMsg(msgId)
-        sessions.delete(session.sourceChatId)
-        try {
-          await sendInit(ctx, agentSetupApp, session.sourceChatId)
-        } catch (err) {
-          ctx.logf('agent-setup: resend after version mismatch failed: %v', err)
-        }
-        return
-      }
-
-      // Interim (increment 4): the monolith delegates each manage/edit/reuse
-      // branch to the extracted, §6-gated handlers, passing an always-ok auth
-      // because the monolith never gated these actions. Task 4 deletes these
-      // branches once the standalone agent-manage card is the sole caller.
-      // Mirrors exactly how increment 3 left `create` calling handleCreateAgent.
-      const okAuth = async () => ({ ok: true as const })
-
-      if (payload.type === 'editRequest') {
-        const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
-        await handleEditRequest(ctx, session.msgId, session.sourceChatId, agentId)
-        continue
-      }
-
-      if (payload.type === 'delete') {
-        const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
-        await handleDeleteAgent(ctx, session.msgId, session.sourceChatId, agentId, okAuth)
-        continue
-      }
-
-      if (payload.type === 'export') {
-        const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
-        await handleExportAgent(ctx, session.msgId, session.sourceChatId, agentId)
-        continue
-      }
-
-      if (payload.type === 'saveEdit') {
-        await handleSaveEdit(ctx, session.msgId, session.sourceChatId, payload, okAuth)
-        continue
-      }
-
-      if (payload.type === 'bind') {
-        await handleBindAgent(ctx, session.msgId, session.sourceChatId, payload, okAuth)
-        continue
-      }
-
-      // Phase 12 — mode-picker flows. start-default-chat / start-reuse-chat
-      // create a NEW bound chat and reply chat-ready / chat-failed; rebind-chat
-      // re-points the current chat in place. All three delegate to the
-      // §6-gated handlers with an interim always-ok auth (Task 4 removes these).
-      if (payload.type === 'start-default-chat') {
-        await handleStartDefaultChat(ctx, session.msgId, session.sourceChatId, okAuth)
-        continue
-      }
-
-      if (payload.type === 'start-reuse-chat') {
-        const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
-        await handleStartReuseChat(ctx, session.msgId, session.sourceChatId, agentId, okAuth)
-        continue
-      }
-
-      if (payload.type === 'rebind-chat') {
-        const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
-        await handleRebindChat(ctx, session.msgId, session.sourceChatId, agentId, okAuth)
-        continue
-      }
-
-    }
-
-    // Persist the high-water serial so a dispatcher restart doesn't
-    // replay old create/bind/edit actions and create duplicate chats.
-    const maxSerial = updates.reduce((m, u) => Math.max(m, u.serial ?? 0), 0)
-    if (session && maxSerial > (session.lastSerial ?? 0)) {
-      session.lastSerial = maxSerial
-      persistSessions()
-    }
-  },
 }

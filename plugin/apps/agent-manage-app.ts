@@ -60,6 +60,52 @@ export function setControlAuthDeps(deps: ControlAuthDeps): void {
   _controlAuthDeps = deps
 }
 
+/**
+ * Build + send the Manage Agents card into `chatId` and ship the FLAT
+ * init update. Returns the sent message's msgId.
+ *
+ * Extracted from `dc_open_agent_manage_card`'s callTool body (increment 4,
+ * #109) so the dispatcher side (server.ts's native-moment offer, the
+ * permissions card's "manage" hand-off) can summon this card via a plain
+ * function call instead of the retired monolith's card-summon helper.
+ */
+export async function openManageCard(ctx: AppContext, chatId: number): Promise<number> {
+  const { xdcPath } = await buildAgentManageXDC()
+  const msgId = await ctx.client.sendWebXDC(chatId, xdcPath)
+  manageSessions.set(msgId, chatId)
+  ctx.registerWebXDCMsg(msgId, agentManageApp, chatId)
+
+  // ownerEmail resolves the same owner the §6 gate and the reuse/bind
+  // flows use (resolveOwnerForChat) — the chat's paired human, falling
+  // back to the first non-self member. Sent so the card can compare
+  // window.webxdc.selfAddr against it (layer-1 cosmetic "not
+  // permissioned" view — deferred, see design spec's Known limitation).
+  const ownerContactId = await resolveOwnerForChat(ctx, chatId)
+  const ownerEmail = ownerContactId
+    ? (await ctx.client.getContact(ownerContactId))?.address ?? null
+    : null
+
+  // FLAT init: manage/edit fields at the TOP LEVEL, no newAgentFlow
+  // catalog wrapper (creation is the separate create-agent card).
+  await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
+    payload: {
+      type: 'init',
+      version: getAgentManageVersion(),
+      existingAgents: await listExistingForPicker(chatId),
+      availableModels: models.MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier })),
+      defaultModel: models.DEFAULT_MODEL,
+      ...availableToolsPayload(ctx),
+      ownerEmail,
+      senderAddr: 'server',
+    },
+    summary: 'Manage agents',
+    info: 'Tap to manage your agents',
+    href: 'index.html',
+  }))
+
+  return msgId
+}
+
 // ── WebXDCApp implementation ─────────────────────────────────────────────
 
 export const agentManageApp: WebXDCApp = {
@@ -106,39 +152,7 @@ export const agentManageApp: WebXDCApp = {
     }
 
     try {
-      const { xdcPath } = await buildAgentManageXDC()
-      const msgId = await ctx.client.sendWebXDC(targetChatId, xdcPath)
-      manageSessions.set(msgId, targetChatId)
-      ctx.registerWebXDCMsg(msgId, agentManageApp, targetChatId)
-
-      // ownerEmail resolves the same owner the §6 gate and the reuse/bind
-      // flows use (resolveOwnerForChat) — the chat's paired human, falling
-      // back to the first non-self member. Sent so the card can compare
-      // window.webxdc.selfAddr against it (layer-1 cosmetic "not
-      // permissioned" view — deferred, see design spec's Known limitation).
-      const ownerContactId = await resolveOwnerForChat(ctx, targetChatId)
-      const ownerEmail = ownerContactId
-        ? (await ctx.client.getContact(ownerContactId))?.address ?? null
-        : null
-
-      // FLAT init: manage/edit fields at the TOP LEVEL, no newAgentFlow
-      // catalog wrapper (creation is the separate create-agent card).
-      await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
-        payload: {
-          type: 'init',
-          version: getAgentManageVersion(),
-          existingAgents: await listExistingForPicker(targetChatId),
-          availableModels: models.MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier })),
-          defaultModel: models.DEFAULT_MODEL,
-          ...availableToolsPayload(ctx),
-          ownerEmail,
-          senderAddr: 'server',
-        },
-        summary: 'Manage agents',
-        info: 'Tap to manage your agents',
-        href: 'index.html',
-      }))
-
+      await openManageCard(ctx, targetChatId)
       return {
         content: [{ type: 'text', text: `Manage card opened in chat ${targetChatId}.` }],
       }

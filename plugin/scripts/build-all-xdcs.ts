@@ -8,7 +8,6 @@
 
 import { buildPermissionsXDC } from '../permissions.js'
 import { buildViewerXDC } from '../file-reviewer.js'
-import { buildAgentSetupXDC } from '../agent-setup.js'
 import { buildTeleportXDC } from '../teleport.js'
 import { buildContactsXDC } from '../contacts.js'
 import { buildCreateAgentXDC } from '../create-agent.js'
@@ -22,7 +21,6 @@ mkdirSync(OUT, { recursive: true })
 const targets = [
   { id: 'permission-prompt', build: buildPermissionsXDC },
   { id: 'file-reviewer', build: buildViewerXDC },
-  { id: 'agent-setup', build: buildAgentSetupXDC },
   { id: 'teleport', build: buildTeleportXDC },
   { id: 'contacts', build: buildContactsXDC },
   { id: 'create-agent', build: buildCreateAgentXDC },

@@ -23,7 +23,7 @@ const TEST_DC_TOOLS = [
   'reply',
   'dc_react',
   'dc_chat_history',
-  'dc_open_agent_settings',
+  'dc_open_agent_manage_card',
   'dc_status',
   'dc_send_file',
 ]
@@ -280,7 +280,7 @@ describe('mcp__dc auto-injection', () => {
     expect(reloaded?.tools).not.toMatch(/,\s*mcp__dc$/)  // bare prefix stripped
     expect(reloaded?.tools).toContain('mcp__dc__dc_react')
     expect(reloaded?.tools).toContain('mcp__dc__dc_chat_history')
-    expect(reloaded?.tools).toContain('mcp__dc__dc_open_agent_settings')
+    expect(reloaded?.tools).toContain('mcp__dc__dc_open_agent_manage_card')
   })
 
   test('adds the full mcp__dc__<tool> set when no dc entry is present', () => {
@@ -289,7 +289,7 @@ describe('mcp__dc auto-injection', () => {
     expect(reloaded?.tools).toContain('Read')
     expect(reloaded?.tools).toContain('Bash')
     expect(reloaded?.tools).toContain('mcp__dc__dc_react')
-    expect(reloaded?.tools).toContain('mcp__dc__dc_open_agent_settings')
+    expect(reloaded?.tools).toContain('mcp__dc__dc_open_agent_manage_card')
   })
 
   test('respects narrow opt-in when specific mcp__dc__<tool> already present', () => {
@@ -312,11 +312,11 @@ describe('mcp__dc auto-injection', () => {
   })
 
   test('getDcToolNames reflects the injected set (deduped + sorted)', () => {
-    agents.setDcToolNames(['dc_react', 'reply', 'dc_react', 'dc_open_agent_settings'])
+    agents.setDcToolNames(['dc_react', 'reply', 'dc_react', 'dc_open_agent_manage_card'])
     const names = agents.getDcToolNames()
-    expect(names).toEqual(['dc_open_agent_settings', 'dc_react', 'reply'])
+    expect(names).toEqual(['dc_open_agent_manage_card', 'dc_react', 'reply'])
     expect(names).toContain('dc_react')
-    expect(names).toContain('dc_open_agent_settings')
+    expect(names).toContain('dc_open_agent_manage_card')
   })
 
   test('ensureMcpDc emits nothing concrete when the injected set is empty', () => {
