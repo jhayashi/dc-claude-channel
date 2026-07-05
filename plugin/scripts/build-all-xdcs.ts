@@ -12,6 +12,7 @@ import { buildAgentSetupXDC } from '../agent-setup.js'
 import { buildTeleportXDC } from '../teleport.js'
 import { buildContactsXDC } from '../contacts.js'
 import { buildCreateAgentXDC } from '../create-agent.js'
+import { buildAgentManageXDC } from '../agent-manage.js'
 import { mkdirSync, copyFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -25,6 +26,7 @@ const targets = [
   { id: 'teleport', build: buildTeleportXDC },
   { id: 'contacts', build: buildContactsXDC },
   { id: 'create-agent', build: buildCreateAgentXDC },
+  { id: 'agent-manage', build: buildAgentManageXDC },
 ]
 
 for (const t of targets) {

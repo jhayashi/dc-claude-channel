@@ -1,0 +1,36 @@
+import { test, expect } from "@playwright/test";
+import { readdirSync } from "node:fs"; import { join, dirname } from "node:path"; import { fileURLToPath } from "node:url";
+import { createHarness, type HarnessHandle } from "./harness.js";
+const PREBUILT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "webxdc-prebuilt");
+const xdc = () => { const m = readdirSync(PREBUILT).filter(n => n.startsWith("agent-manage-v") && n.endsWith(".xdc")).sort(); return join(PREBUILT, m[m.length-1]); };
+
+const INIT = {
+  type: "init", senderAddr: "server", ownerEmail: "me@example.com",
+  existingAgents: [
+    { id: "sleep-coach", name: "Sleep coach", model: "claude-sonnet-4-6", pattern: "checker", bindingCount: 1, trusted: true },
+  ],
+  availableModels: [{ id: "claude-sonnet-4-6", label: "Sonnet", tier: "sonnet" }],
+  defaultModel: "claude-sonnet-4-6",
+  availableBuiltinTools: [{ name: "Bash", description: "Run shell commands" }],
+  availableMcpServers: [], connectedMcpServers: [],
+};
+
+test("init renders the manage list", async () => {
+  const h: HarnessHandle = await createHarness(xdc());
+  const errs: string[] = []; h.page.on("pageerror", e => errs.push(String(e)));
+  await h.push({ ...INIT, version: await h.getAppVersion() });
+  await h.page.waitForSelector('#manage-list .agent-row:has-text("Sleep coach")', { state: "visible", timeout: 4000 });
+  await h.close(); expect(errs).toEqual([]);
+});
+
+test("'+ Create new agent' emits an open-create action (cross-card handoff)", async () => {
+  const h: HarnessHandle = await createHarness(xdc());
+  await h.push({ ...INIT, version: await h.getAppVersion() });
+  await h.page.waitForSelector("#manage-create-btn", { state: "visible", timeout: 3000 });
+  await h.page.click("#manage-create-btn");
+  // harness.outbound() returns Array<{ update, descr }>; update is the object
+  // passed to webxdc.sendUpdate ({ payload: {...} }).
+  const out = await h.outbound();
+  expect(out.some((o: any) => o.update.payload?.type === "open-create")).toBe(true);
+  await h.close();
+});
