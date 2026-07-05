@@ -331,7 +331,7 @@ function blankDraft(): agents.DraftAgent {
 }
 
 /** Summarize agents for the picker screen. */
-async function listExistingForPicker(sourceChatId: number): Promise<Array<{ id: string; name: string; model: string; archetype: string; icon: string; glyph: string; pattern: PatternId; tier: string; isTrusted: boolean; iconDataUri: string; bindingCount: number; isCurrentAgent: boolean; isUndeletable: boolean }>> {
+export async function listExistingForPicker(sourceChatId: number): Promise<Array<{ id: string; name: string; model: string; archetype: string; icon: string; glyph: string; pattern: PatternId; tier: string; isTrusted: boolean; iconDataUri: string; bindingCount: number; isCurrentAgent: boolean; isUndeletable: boolean }>> {
   const { renderAgentBadge } = await import('../agent-icon-render.js')
   const sourceBinding = bindings.getBinding(sourceChatId)
   const { readFileSync } = await import('node:fs')
@@ -628,7 +628,7 @@ export async function rebindChat(
  * closes the confirmation modal, and routes back to the home screen.
  */
 async function sendChatReady(
-  session: Session,
+  msgId: number,
   ctx: AppContext,
   newChatId: number,
 ): Promise<void> {
@@ -637,7 +637,7 @@ async function sendChatReady(
     summary: 'Chat created',
   })
   try {
-    await ctx.client.sendWebXDCUpdate(session.msgId, update)
+    await ctx.client.sendWebXDCUpdate(msgId, update)
   } catch (err) {
     ctx.logf('agent-setup: chat-ready dispatch failed: %v', err)
   }
@@ -650,7 +650,7 @@ async function sendChatReady(
  * where possible.
  */
 async function sendChatFailed(
-  session: Session,
+  msgId: number,
   ctx: AppContext,
   error: string,
 ): Promise<void> {
@@ -659,7 +659,7 @@ async function sendChatFailed(
     summary: 'Chat creation failed',
   })
   try {
-    await ctx.client.sendWebXDCUpdate(session.msgId, update)
+    await ctx.client.sendWebXDCUpdate(msgId, update)
   } catch (err) {
     ctx.logf('agent-setup: chat-failed dispatch failed: %v', err)
   }
@@ -1210,6 +1210,562 @@ export async function handleCreateAgent(
   }
 }
 
+/**
+ * Auth callback shape shared by every §6-gated manage handler. Returns
+ * `{ok:true}` when the caller is authorized to mutate state from this card,
+ * or `{ok:false, reason}` when the tap can't be authenticated (multi-human
+ * group → `needs-confirmation`; no resolvable owner → `no-owner`).
+ */
+type ControlAuth = () => Promise<{ ok: true } | { ok: false; reason: 'no-owner' | 'needs-confirmation' }>
+
+/**
+ * §6 refusal reply for a state-changing manage handler. Emits ONE generic
+ * `action_err` type (decision #1, increment 4) so the standalone
+ * agent-manage card needs a single refusal handler regardless of which
+ * action was refused. Returns true when the caller should stop (refused).
+ */
+async function refuseIfUnauthorized(
+  ctx: AppContext,
+  msgId: number,
+  auth: ControlAuth,
+): Promise<boolean> {
+  const authResult = await auth()
+  if (authResult.ok) return false
+  const message = authResult.reason === 'needs-confirmation'
+    ? "That change has to come from you directly — say it in our chat, or open this from your 1:1 with me."
+    : 'No owner found for this chat.'
+  await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
+    payload: { type: 'action_err', message, senderAddr: 'server' },
+    summary: 'Action unauthorized',
+  })).catch(() => {})
+  return true
+}
+
+/**
+ * Read-only: re-open the setup card with an existing agent pre-filled for
+ * editing. Surfaces the edit draft only (no mutation), so it carries no §6
+ * auth gate. Extracted from the monolith's `editRequest` dispatch branch.
+ */
+export async function handleEditRequest(
+  ctx: AppContext,
+  msgId: number,
+  sourceChatId: number,
+  agentId: string,
+): Promise<void> {
+  // Edit an existing agent. Re-open the setup card with the agent pre-filled.
+  if (!agentId) {
+    ctx.logf('agent-setup: edit payload missing agentId')
+    return
+  }
+  const agent = agents.getAgent(agentId)
+  if (!agent) {
+    ctx.logf('agent-setup: edit requested agent %s not found', agentId)
+    return
+  }
+  const editDraft = legacyDraftFromAgent(agent)
+  try {
+    const update = JSON.stringify({
+      payload: {
+        type: 'edit',
+        draft: editDraft,
+        version: agentSetup.getAgentSetupVersion(),
+        senderAddr: 'server',
+        availableModels: models.MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier })),
+        defaultModel: models.DEFAULT_MODEL,
+        ...availableToolsPayload(ctx),
+      },
+      summary: 'Editing agent',
+    })
+    await ctx.client.sendWebXDCUpdate(msgId, update)
+    ctx.logf('agent-setup: sent edit screen for agent %s', agentId)
+  } catch (err) {
+    ctx.logf('agent-setup: edit send failed: %v', err)
+  }
+}
+
+/**
+ * §6-gated: delete an agent, rebind any affected chats to the default
+ * assistant, and reply `{type:'deleted', existingAgents}`. On a refused
+ * auth result it emits `action_err` and mutates nothing. Extracted from the
+ * monolith's `delete` dispatch branch.
+ */
+export async function handleDeleteAgent(
+  ctx: AppContext,
+  msgId: number,
+  sourceChatId: number,
+  agentId: string,
+  auth: ControlAuth,
+): Promise<void> {
+  if (await refuseIfUnauthorized(ctx, msgId, auth)) return
+  if (!agentId) {
+    ctx.logf('agent-setup: delete payload missing agentId')
+    return
+  }
+  if (agents.isUndeletableAgent(agentId)) {
+    ctx.logf('agent-setup: refusing to delete built-in default agent %s', agentId)
+    return
+  }
+  const agent = agents.getAgent(agentId)
+  if (!agent) {
+    ctx.logf('agent-setup: delete requested agent %s not found', agentId)
+    return
+  }
+  try {
+    // Rebind affected chats to the default agent and refresh their
+    // profile icon so the chat avatar reflects the new assistant
+    // immediately (don't wait for the next message / auto-repair).
+    const affected = bindings.listBindings().filter(b => b.agentId === agentId)
+    if (affected.length > 0) {
+      const defaultAgent = agents.ensureDefaultAgent()
+      await Promise.all(
+        affected.map(b =>
+          ctx.client.send(
+            b.chatId,
+            `The "${agent.name}" agent was deleted. This chat will use the "${defaultAgent.name}" default assistant.`,
+          ).catch(() => {}),
+        ),
+      )
+      await Promise.all(
+        affected.map(async b => {
+          await ctx.evictSubagent(b.chatId)
+          bindings.saveBinding({
+            chatId: b.chatId,
+            agentId: defaultAgent.name,
+            inheritClaudeMd: agents.inheritClaudeMdForModel(defaultAgent.model),
+            createdAt: new Date().toISOString(),
+          })
+          bindings.clearSessionId(b.chatId)
+          try {
+            await setAgentIcon({ client: ctx.client, logf: ctx.logf }, b.chatId, defaultAgent)
+          } catch (err) {
+            ctx.logf('agent-setup: icon refresh failed for chat %d: %v', b.chatId, err)
+          }
+        }),
+      )
+      ctx.logf('agent-setup: rebound %d chat(s) from agent %s to default', affected.length, agentId)
+    }
+
+    agents.deleteAgent(agentId)
+    ctx.logf('agent-setup: deleted agent %s', agentId)
+    const update = JSON.stringify({
+      payload: {
+        type: 'deleted',
+        name: agent.name,
+        existingAgents: await listExistingForPicker(sourceChatId),
+        version: agentSetup.getAgentSetupVersion(),
+        senderAddr: 'server',
+      },
+      summary: 'Agent deleted',
+    })
+    await ctx.client.sendWebXDCUpdate(msgId, update)
+    // Keep the session alive — user stays on the main screen
+    // and may want to delete/edit more agents.
+  } catch (err) {
+    ctx.logf('agent-setup: delete failed: %v', err)
+  }
+}
+
+/**
+ * Low-stakes read-only: write the agent's YAML to a `.md`-style attachment
+ * in the owner's own chat and reply `{type:'exported'}`. No §6 gate — this
+ * only exposes the caller's own agent definition back to them. Extracted
+ * from the monolith's `export` dispatch branch.
+ */
+export async function handleExportAgent(
+  ctx: AppContext,
+  msgId: number,
+  sourceChatId: number,
+  agentId: string,
+): Promise<void> {
+  if (!agentId) {
+    ctx.logf('agent-setup: export payload missing agentId')
+    return
+  }
+  const agent = agents.getAgent(agentId)
+  if (!agent) {
+    ctx.logf('agent-setup: export requested agent %s not found', agentId)
+    try {
+      const update = JSON.stringify({
+        payload: {
+          type: 'exportError',
+          message: 'Agent no longer exists.',
+          version: agentSetup.getAgentSetupVersion(),
+          senderAddr: 'server',
+        },
+        summary: 'Export failed',
+      })
+      await ctx.client.sendWebXDCUpdate(msgId, update)
+    } catch (err) {
+      ctx.logf('agent-setup: export error update failed: %v', err)
+    }
+    return
+  }
+  try {
+    const { writeFileSync, unlinkSync, mkdtempSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const YAML = (await import('yaml')).default
+
+    const yamlStr = YAML.stringify(agent)
+    const dir = mkdtempSync(join(tmpdir(), 'dc-agent-export-'))
+    const filePath = join(dir, `${agentId}.yaml`)
+    writeFileSync(filePath, yamlStr)
+
+    await ctx.client.sendAttachment(
+      sourceChatId,
+      filePath,
+      `Exported agent "${agent.name}"`,
+    )
+    ctx.logf('agent-setup: exported agent %s to chat %d', agentId, sourceChatId)
+
+    // Notify the card so it can reset the button state.
+    const update = JSON.stringify({
+      payload: {
+        type: 'exported',
+        agentId,
+        version: agentSetup.getAgentSetupVersion(),
+        senderAddr: 'server',
+      },
+      summary: 'Agent exported',
+    })
+    await ctx.client.sendWebXDCUpdate(msgId, update)
+
+    // Clean up temp file.
+    try { unlinkSync(filePath) } catch {}
+  } catch (err) {
+    ctx.logf('agent-setup: export failed for agent %s: %v', agentId, err)
+  }
+}
+
+/**
+ * §6-gated: persist an edit to an existing agent from the card's legacy
+ * form payload, evict/restart affected subagents, and reply
+ * `{type:'editComplete', name, existingAgents}`. On a refused auth result
+ * it emits `action_err` and mutates nothing. Extracted from the monolith's
+ * `saveEdit` dispatch branch.
+ */
+export async function handleSaveEdit(
+  ctx: AppContext,
+  msgId: number,
+  sourceChatId: number,
+  payload: { type?: string; config?: unknown; agentId?: string; [key: string]: unknown },
+  auth: ControlAuth,
+): Promise<void> {
+  if (await refuseIfUnauthorized(ctx, msgId, auth)) return
+  // Legacy WebXDC form contract — full rewrite is Slice 6. This handler
+  // adapts the v1.3-shape payload onto the v1.4 AgentDef in-memory shape.
+  const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
+  if (!agentId) {
+    ctx.logf('agent-setup: saveEdit missing agentId')
+    return
+  }
+  const agent = agents.getAgent(agentId)
+  if (!agent) {
+    ctx.logf('agent-setup: saveEdit requested agent %s not found', agentId)
+    return
+  }
+  // Translate the legacy config payload to a v1.4 AgentDef:
+  //   { id, name (display), model, system, tools:[], allowedBuiltinTools, allowedMcpServers }
+  //   →
+  //   { name (slug), x-dc-display-name, model, body, tools: CSV }
+  const config = (payload.config ?? {}) as Record<string, unknown>
+  const allowedBuiltinTools = (payload as { allowedBuiltinTools?: string[] | null }).allowedBuiltinTools
+    ?? (config.allowedBuiltinTools as string[] | null | undefined)
+    ?? undefined
+  const allowedMcpServers = (payload as { allowedMcpServers?: string[] | null }).allowedMcpServers
+    ?? (config.allowedMcpServers as string[] | null | undefined)
+    ?? undefined
+  const draft = {
+    name: typeof config.id === 'string' ? config.id : agentId,
+    description: typeof config.description === 'string' ? config.description : '',
+    model: typeof config.model === 'string' ? config.model : agent.model,
+    tools: [
+      ...(allowedBuiltinTools ?? []),
+      ...((allowedMcpServers ?? []).map(s => `mcp__${s}`)),
+    ].join(', '),
+    body: typeof config.system === 'string' ? config.system : agent.body,
+    'x-dc-display-name': typeof config.name === 'string' ? config.name : undefined,
+  }
+  const skipPerms = (payload as { skipPermissions?: boolean }).skipPermissions === true
+  const iconMirror = (payload as { iconMirror?: boolean }).iconMirror === true
+  const rawArchetype = (payload as { archetype?: unknown }).archetype
+  const archetype = (typeof rawArchetype === 'string' && (agents.ARCHETYPES as readonly string[]).includes(rawArchetype))
+    ? rawArchetype as agents.Archetype : null
+  const prevModel = agent.model
+  const prevSystem = agent.body
+  const prevSkip = agents.getSkipPermissions(agent)
+  const prevMirror = agents.getIconMirror(agent)
+  const prevArchetype = agents.getArchetype(agent)
+  const prevExplicitIcon = agents.getExplicitIcon(agent)
+  try {
+    // Preserve any unknown frontmatter (via .passthrough()) by spreading
+    // the existing agent first, then overlaying the new fields. v1.4
+    // x-dc-* extensions live at top level — saveAgent's mcp__dc inject
+    // covers the tools field.
+    const updated: agents.AgentDef = {
+      ...agent,
+      ...draft,
+      name: agentId,
+    } as agents.AgentDef
+    agents.setSkipPermissions(updated, skipPerms)
+    // Only write when the card actually sent the field, so an
+    // un-upgraded older card instance that omits memoryBoost can't
+    // silently clobber the stored value (the `...agent` spread
+    // preserves it otherwise).
+    const memoryBoostRaw = (payload as { memoryBoost?: boolean }).memoryBoost
+    if (typeof memoryBoostRaw === 'boolean') {
+      agents.setMemoryBoost(updated, memoryBoostRaw ? 'on' : 'off')
+    }
+    agents.setIconMirror(updated, iconMirror)
+    if (archetype) agents.setArchetype(updated, archetype)
+    const rawIcon = (payload as { icon?: unknown }).icon
+    if (typeof rawIcon === 'string') {
+      agents.setIcon(updated, rawIcon.trim() || null)
+    }
+    agents.saveAgent(updated)
+    ctx.logf(
+      'agent-setup: edited agent %s (model=%s skip=%s mirror=%s archetype=%s)',
+      agentId, draft.model, skipPerms, iconMirror, archetype ?? 'unchanged',
+    )
+
+    // Evict all cached subagents bound to this agent so they respawn
+    // with the new model/prompt on the next message. Also update
+    // inheritClaudeMd on each binding in case the model changed
+    // (e.g. haiku→sonnet flips inherit from false→true).
+    //
+    // If the model changed, clear session IDs too — Claude Code's
+    // built-in system prompt ("You are powered by model X") is baked
+    // into the session store at creation time and replayed on resume.
+    // There's no way to override it, so a model change requires a
+    // fresh session.
+    const modelChanged = prevModel !== draft.model
+    const systemChanged = prevSystem !== draft.body
+    const skipPermsChanged = prevSkip !== skipPerms
+    const mirrorChanged = prevMirror !== iconMirror
+    const archetypeChanged = archetype != null && prevArchetype !== archetype
+    const newExplicitIcon = agents.getExplicitIcon(updated)
+    const explicitIconChanged = prevExplicitIcon !== newExplicitIcon
+    // v1.4 single source: compare the tools CSV directly.
+    const toolsChanged = (agent.tools ?? '') !== draft.tools
+    // Restart on any change that's baked into the subagent at spawn
+    // time. v1.4: --permission-mode is passed at spawn so toggling
+    // skipPermissions via this card MUST evict, otherwise the running
+    // subagent keeps the old mode for MCP tool calls (which don't
+    // route through the PreToolUse hook, so the dispatcher can't
+    // re-read the .md mid-flight). The NL meta-command "trust me"
+    // path evicts via its own handler; this card is the regression
+    // surface (Oliver P1-4). Cosmetic changes (icon orientation,
+    // archetype, mirror) don't affect spawn argv — no restart needed.
+    const needsRestart =
+      modelChanged || systemChanged || toolsChanged || skipPermsChanged
+    const iconChanged =
+      modelChanged || skipPermsChanged || mirrorChanged ||
+      archetypeChanged || explicitIconChanged
+    const affected = bindings.listBindings().filter(b => b.agentId === agentId)
+    const newInherit = agents.inheritClaudeMdForModel(draft.model)
+
+    // Notify affected chats before evicting so the user knows
+    // the pause is intentional, not a hang.
+    if (needsRestart && affected.length > 0) {
+      const restartMsg = modelChanged
+        ? `Agent updated. Restarting with new model (${draft.model.replace('claude-', '')})...`
+        : toolsChanged
+          ? 'Agent updated. Restarting with new tool configuration...'
+          : 'Agent updated. Restarting...'
+      await Promise.all(
+        affected.map(b => ctx.client.send(b.chatId, restartMsg).catch(() => {})),
+      )
+    }
+
+    await Promise.all(
+      affected.map(async b => {
+        if (b.inheritClaudeMd !== newInherit) {
+          bindings.saveBinding({ ...b, inheritClaudeMd: newInherit })
+        }
+        if (modelChanged) {
+          bindings.clearSessionId(b.chatId)
+        }
+        if (iconChanged) {
+          await setAgentIcon(ctx, b.chatId, updated).catch(err =>
+            ctx.logf('agent-setup: icon update failed chat=%d: %v', b.chatId, err),
+          )
+        }
+        if (needsRestart) {
+          await ctx.evictSubagent(b.chatId)
+        }
+      }),
+    )
+    if (needsRestart && affected.length > 0) {
+      ctx.logf(
+        'agent-setup: evicted %d subagent(s) for agent %s%s',
+        affected.length, agentId, modelChanged ? ' (model changed, sessions cleared)' : '',
+      )
+    }
+
+    const update = JSON.stringify({
+      payload: {
+        type: 'editComplete',
+        name: draft.name,
+        existingAgents: await listExistingForPicker(sourceChatId),
+        version: agentSetup.getAgentSetupVersion(),
+        senderAddr: 'server',
+      },
+      summary: 'Agent updated',
+    })
+    await ctx.client.sendWebXDCUpdate(msgId, update)
+    // Keep the session alive — user stays on the main screen.
+  } catch (err) {
+    ctx.logf('agent-setup: saveEdit failed: %v', err)
+  }
+}
+
+/**
+ * §6-gated: reuse an existing agent definition in a NEW DC chat (legacy
+ * `bind` flow — replies `{type:'created', chatId, name}`). On a refused
+ * auth result it emits `action_err` and mutates nothing. Extracted from the
+ * monolith's `bind` dispatch branch.
+ */
+export async function handleBindAgent(
+  ctx: AppContext,
+  msgId: number,
+  sourceChatId: number,
+  payload: { type?: string; agentId?: string; [key: string]: unknown },
+  auth: ControlAuth,
+): Promise<void> {
+  if (await refuseIfUnauthorized(ctx, msgId, auth)) return
+  // Reuse an existing agent definition in a new DC chat.
+  const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
+  if (!agentId) {
+    ctx.logf('agent-setup: bind payload missing agentId')
+    return
+  }
+  const agent = agents.getAgent(agentId)
+  if (!agent) {
+    ctx.logf('agent-setup: bind requested agent %s not found', agentId)
+    return
+  }
+  const ownerContactId = await resolveOwnerForChat(ctx, sourceChatId)
+  if (!ownerContactId) return
+
+  try {
+    const newChatId = await ctx.client.createGroup(agent.name)
+    await ctx.client.addContactToChat(newChatId, ownerContactId)
+    access.addChat(newChatId, ownerContactId)
+    bindings.bindAgent(newChatId, agent.name, {
+      inheritClaudeMd: agents.inheritClaudeMdForModel(agent.model),
+    })
+    await decorateAgentChat(ctx, newChatId, agent)
+    ctx.logf('agent-setup: bound existing agent %s to new chat %d for owner %d', agent.name, newChatId, ownerContactId)
+
+    const update = JSON.stringify({
+      payload: { type: 'created', chatId: newChatId, name: agent.name },
+      summary: 'Agent created',
+    })
+    await ctx.client.sendWebXDCUpdate(msgId, update)
+    // Session stays alive — user may keep using the settings card.
+  } catch (err) {
+    ctx.logf('agent-setup: bind failed: %v', err)
+  }
+}
+
+/**
+ * §6-gated: default-agent quick path from the mode picker. Same chat-create
+ * flow as handleStartReuseChat but the agent is the built-in default.
+ * Replies `chat-ready`/`chat-failed`; on a refused auth result it emits
+ * `action_err`. Extracted from the monolith's `start-default-chat` branch.
+ */
+export async function handleStartDefaultChat(
+  ctx: AppContext,
+  msgId: number,
+  sourceChatId: number,
+  auth: ControlAuth,
+): Promise<void> {
+  if (await refuseIfUnauthorized(ctx, msgId, auth)) return
+  const ownerContactId = await resolveOwnerForChat(ctx, sourceChatId)
+  if (!ownerContactId) {
+    await sendChatFailed(msgId, ctx, "I can't tell who owns this chat — try unpairing and re-pairing.")
+    return
+  }
+  try {
+    const defaultAgent = agents.ensureDefaultAgent()
+    const newChatId = await createReuseChat(ctx, defaultAgent, ownerContactId)
+    ctx.logf('agent-setup: default-chat bound %s to chat %d for owner %d', defaultAgent.name, newChatId, ownerContactId)
+    await sendChatReady(msgId, ctx, newChatId)
+  } catch (err) {
+    ctx.logf('agent-setup: start-default-chat failed: %v', err)
+    await sendChatFailed(msgId, ctx, err instanceof Error ? err.message : 'unknown error')
+  }
+}
+
+/**
+ * §6-gated: reuse an existing agent in a NEW DC chat from the mode picker
+ * (replies `chat-ready`/`chat-failed`). On a refused auth result it emits
+ * `action_err`. Extracted from the monolith's `start-reuse-chat` branch.
+ */
+export async function handleStartReuseChat(
+  ctx: AppContext,
+  msgId: number,
+  sourceChatId: number,
+  agentId: string,
+  auth: ControlAuth,
+): Promise<void> {
+  if (await refuseIfUnauthorized(ctx, msgId, auth)) return
+  if (!agentId) {
+    await sendChatFailed(msgId, ctx, 'Missing agent id.')
+    return
+  }
+  const agent = agents.getAgent(agentId)
+  if (!agent) {
+    await sendChatFailed(msgId, ctx, `Agent "${agentId}" no longer exists.`)
+    return
+  }
+  const ownerContactId = await resolveOwnerForChat(ctx, sourceChatId)
+  if (!ownerContactId) {
+    await sendChatFailed(msgId, ctx, "I can't tell who owns this chat — try unpairing and re-pairing.")
+    return
+  }
+  try {
+    const newChatId = await createReuseChat(ctx, agent, ownerContactId)
+    ctx.logf('agent-setup: reuse-chat bound %s to chat %d for owner %d', agent.name, newChatId, ownerContactId)
+    await sendChatReady(msgId, ctx, newChatId)
+  } catch (err) {
+    ctx.logf('agent-setup: start-reuse-chat failed for agent %s: %v', agentId, err)
+    await sendChatFailed(msgId, ctx, err instanceof Error ? err.message : 'unknown error')
+  }
+}
+
+/**
+ * §6-gated: re-point the CURRENT chat to a different agent in place (#86 —
+ * replies `chat-ready`/`chat-failed`). On a refused auth result it emits
+ * `action_err`. Extracted from the monolith's `rebind-chat` dispatch branch.
+ */
+export async function handleRebindChat(
+  ctx: AppContext,
+  msgId: number,
+  sourceChatId: number,
+  agentId: string,
+  auth: ControlAuth,
+): Promise<void> {
+  if (await refuseIfUnauthorized(ctx, msgId, auth)) return
+  if (!agentId) {
+    await sendChatFailed(msgId, ctx, 'Missing agent id.')
+    return
+  }
+  const agent = agents.getAgent(agentId)
+  if (!agent) {
+    await sendChatFailed(msgId, ctx, `Agent "${agentId}" no longer exists.`)
+    return
+  }
+  try {
+    await rebindChat(ctx, sourceChatId, agent)
+    ctx.logf('agent-setup: rebound chat %d -> %s', sourceChatId, agentId)
+    await sendChatReady(msgId, ctx, sourceChatId)
+  } catch (err) {
+    ctx.logf('agent-setup: rebind-chat failed for agent %s: %v', agentId, err)
+    await sendChatFailed(msgId, ctx, err instanceof Error ? err.message : 'unknown error')
+  }
+}
+
 export const agentSetupApp: WebXDCApp = {
   id: 'agent-setup',
 
@@ -1341,475 +1897,59 @@ export const agentSetupApp: WebXDCApp = {
         return
       }
 
-      // Resolve the owner contact for the new chat (1:1 source: extract from
-      // contacts; group source: use the stored owner).
-      const resolveOwner = async (): Promise<number | null> => {
-        let ownerContactId = access.firstPermissionedContact(session!.sourceChatId)
-        if (ownerContactId) return ownerContactId
-        try {
-          const contacts = await ctx.client.getChatContacts(session!.sourceChatId)
-          const found = contacts.find(id => id !== 1)
-          if (!found) {
-            ctx.logf('agent-setup: could not find contact in source chat %d', session!.sourceChatId)
-            return null
-          }
-          return found
-        } catch (err) {
-          ctx.logf('agent-setup: getChatContacts failed for chat %d: %v', session!.sourceChatId, err)
-          return null
-        }
-      }
+      // Interim (increment 4): the monolith delegates each manage/edit/reuse
+      // branch to the extracted, §6-gated handlers, passing an always-ok auth
+      // because the monolith never gated these actions. Task 4 deletes these
+      // branches once the standalone agent-manage card is the sole caller.
+      // Mirrors exactly how increment 3 left `create` calling handleCreateAgent.
+      const okAuth = async () => ({ ok: true as const })
 
       if (payload.type === 'editRequest') {
-        // Edit an existing agent. Re-open the setup card with the agent pre-filled.
         const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
-        if (!agentId) {
-          ctx.logf('agent-setup: edit payload missing agentId')
-          continue
-        }
-        const agent = agents.getAgent(agentId)
-        if (!agent) {
-          ctx.logf('agent-setup: edit requested agent %s not found', agentId)
-          continue
-        }
-        const editDraft = legacyDraftFromAgent(agent)
-        try {
-          const update = JSON.stringify({
-            payload: {
-              type: 'edit',
-              draft: editDraft,
-              version: agentSetup.getAgentSetupVersion(),
-              senderAddr: 'server',
-              availableModels: models.MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier })),
-              defaultModel: models.DEFAULT_MODEL,
-              ...availableToolsPayload(ctx),
-            },
-            summary: 'Editing agent',
-          })
-          await ctx.client.sendWebXDCUpdate(session.msgId, update)
-          ctx.logf('agent-setup: sent edit screen for agent %s', agentId)
-        } catch (err) {
-          ctx.logf('agent-setup: edit send failed: %v', err)
-        }
+        await handleEditRequest(ctx, session.msgId, session.sourceChatId, agentId)
         continue
       }
 
       if (payload.type === 'delete') {
         const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
-        if (!agentId) {
-          ctx.logf('agent-setup: delete payload missing agentId')
-          continue
-        }
-        if (agents.isUndeletableAgent(agentId)) {
-          ctx.logf('agent-setup: refusing to delete built-in default agent %s', agentId)
-          continue
-        }
-        const agent = agents.getAgent(agentId)
-        if (!agent) {
-          ctx.logf('agent-setup: delete requested agent %s not found', agentId)
-          continue
-        }
-        try {
-          // Rebind affected chats to the default agent and refresh their
-          // profile icon so the chat avatar reflects the new assistant
-          // immediately (don't wait for the next message / auto-repair).
-          const affected = bindings.listBindings().filter(b => b.agentId === agentId)
-          if (affected.length > 0) {
-            const defaultAgent = agents.ensureDefaultAgent()
-            await Promise.all(
-              affected.map(b =>
-                ctx.client.send(
-                  b.chatId,
-                  `The "${agent.name}" agent was deleted. This chat will use the "${defaultAgent.name}" default assistant.`,
-                ).catch(() => {}),
-              ),
-            )
-            await Promise.all(
-              affected.map(async b => {
-                await ctx.evictSubagent(b.chatId)
-                bindings.saveBinding({
-                  chatId: b.chatId,
-                  agentId: defaultAgent.name,
-                  inheritClaudeMd: agents.inheritClaudeMdForModel(defaultAgent.model),
-                  createdAt: new Date().toISOString(),
-                })
-                bindings.clearSessionId(b.chatId)
-                try {
-                  await setAgentIcon({ client: ctx.client, logf: ctx.logf }, b.chatId, defaultAgent)
-                } catch (err) {
-                  ctx.logf('agent-setup: icon refresh failed for chat %d: %v', b.chatId, err)
-                }
-              }),
-            )
-            ctx.logf('agent-setup: rebound %d chat(s) from agent %s to default', affected.length, agentId)
-          }
-
-          agents.deleteAgent(agentId)
-          ctx.logf('agent-setup: deleted agent %s', agentId)
-          const update = JSON.stringify({
-            payload: {
-              type: 'deleted',
-              name: agent.name,
-              existingAgents: await listExistingForPicker(session.sourceChatId),
-              version: agentSetup.getAgentSetupVersion(),
-              senderAddr: 'server',
-            },
-            summary: 'Agent deleted',
-          })
-          await ctx.client.sendWebXDCUpdate(session.msgId, update)
-          // Keep the session alive — user stays on the main screen
-          // and may want to delete/edit more agents.
-        } catch (err) {
-          ctx.logf('agent-setup: delete failed: %v', err)
-        }
+        await handleDeleteAgent(ctx, session.msgId, session.sourceChatId, agentId, okAuth)
         continue
       }
 
       if (payload.type === 'export') {
         const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
-        if (!agentId) {
-          ctx.logf('agent-setup: export payload missing agentId')
-          continue
-        }
-        const agent = agents.getAgent(agentId)
-        if (!agent) {
-          ctx.logf('agent-setup: export requested agent %s not found', agentId)
-          try {
-            const update = JSON.stringify({
-              payload: {
-                type: 'exportError',
-                message: 'Agent no longer exists.',
-                version: agentSetup.getAgentSetupVersion(),
-                senderAddr: 'server',
-              },
-              summary: 'Export failed',
-            })
-            await ctx.client.sendWebXDCUpdate(session.msgId, update)
-          } catch (err) {
-            ctx.logf('agent-setup: export error update failed: %v', err)
-          }
-          continue
-        }
-        try {
-          const { writeFileSync, unlinkSync, mkdtempSync } = await import('node:fs')
-          const { join } = await import('node:path')
-          const { tmpdir } = await import('node:os')
-          const YAML = (await import('yaml')).default
-
-          const yamlStr = YAML.stringify(agent)
-          const dir = mkdtempSync(join(tmpdir(), 'dc-agent-export-'))
-          const filePath = join(dir, `${agentId}.yaml`)
-          writeFileSync(filePath, yamlStr)
-
-          await ctx.client.sendAttachment(
-            session.sourceChatId,
-            filePath,
-            `Exported agent "${agent.name}"`,
-          )
-          ctx.logf('agent-setup: exported agent %s to chat %d', agentId, session.sourceChatId)
-
-          // Notify the card so it can reset the button state.
-          const update = JSON.stringify({
-            payload: {
-              type: 'exported',
-              agentId,
-              version: agentSetup.getAgentSetupVersion(),
-              senderAddr: 'server',
-            },
-            summary: 'Agent exported',
-          })
-          await ctx.client.sendWebXDCUpdate(session.msgId, update)
-
-          // Clean up temp file.
-          try { unlinkSync(filePath) } catch {}
-        } catch (err) {
-          ctx.logf('agent-setup: export failed for agent %s: %v', agentId, err)
-        }
+        await handleExportAgent(ctx, session.msgId, session.sourceChatId, agentId)
         continue
       }
 
       if (payload.type === 'saveEdit') {
-        // Legacy WebXDC form contract — full rewrite is Slice 6. This handler
-        // adapts the v1.3-shape payload onto the v1.4 AgentDef in-memory shape.
-        const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
-        if (!agentId) {
-          ctx.logf('agent-setup: saveEdit missing agentId')
-          continue
-        }
-        const agent = agents.getAgent(agentId)
-        if (!agent) {
-          ctx.logf('agent-setup: saveEdit requested agent %s not found', agentId)
-          continue
-        }
-        // Translate the legacy config payload to a v1.4 AgentDef:
-        //   { id, name (display), model, system, tools:[], allowedBuiltinTools, allowedMcpServers }
-        //   →
-        //   { name (slug), x-dc-display-name, model, body, tools: CSV }
-        const config = (payload.config ?? {}) as Record<string, unknown>
-        const allowedBuiltinTools = (payload as { allowedBuiltinTools?: string[] | null }).allowedBuiltinTools
-          ?? (config.allowedBuiltinTools as string[] | null | undefined)
-          ?? undefined
-        const allowedMcpServers = (payload as { allowedMcpServers?: string[] | null }).allowedMcpServers
-          ?? (config.allowedMcpServers as string[] | null | undefined)
-          ?? undefined
-        const draft = {
-          name: typeof config.id === 'string' ? config.id : agentId,
-          description: typeof config.description === 'string' ? config.description : '',
-          model: typeof config.model === 'string' ? config.model : agent.model,
-          tools: [
-            ...(allowedBuiltinTools ?? []),
-            ...((allowedMcpServers ?? []).map(s => `mcp__${s}`)),
-          ].join(', '),
-          body: typeof config.system === 'string' ? config.system : agent.body,
-          'x-dc-display-name': typeof config.name === 'string' ? config.name : undefined,
-        }
-        const skipPerms = (payload as { skipPermissions?: boolean }).skipPermissions === true
-        const iconMirror = (payload as { iconMirror?: boolean }).iconMirror === true
-        const rawArchetype = (payload as { archetype?: unknown }).archetype
-        const archetype = (typeof rawArchetype === 'string' && (agents.ARCHETYPES as readonly string[]).includes(rawArchetype))
-          ? rawArchetype as agents.Archetype : null
-        const prevModel = agent.model
-        const prevSystem = agent.body
-        const prevSkip = agents.getSkipPermissions(agent)
-        const prevMirror = agents.getIconMirror(agent)
-        const prevArchetype = agents.getArchetype(agent)
-        const prevExplicitIcon = agents.getExplicitIcon(agent)
-        try {
-          // Preserve any unknown frontmatter (via .passthrough()) by spreading
-          // the existing agent first, then overlaying the new fields. v1.4
-          // x-dc-* extensions live at top level — saveAgent's mcp__dc inject
-          // covers the tools field.
-          const updated: agents.AgentDef = {
-            ...agent,
-            ...draft,
-            name: agentId,
-          } as agents.AgentDef
-          agents.setSkipPermissions(updated, skipPerms)
-          // Only write when the card actually sent the field, so an
-          // un-upgraded older card instance that omits memoryBoost can't
-          // silently clobber the stored value (the `...agent` spread
-          // preserves it otherwise).
-          const memoryBoostRaw = (payload as { memoryBoost?: boolean }).memoryBoost
-          if (typeof memoryBoostRaw === 'boolean') {
-            agents.setMemoryBoost(updated, memoryBoostRaw ? 'on' : 'off')
-          }
-          agents.setIconMirror(updated, iconMirror)
-          if (archetype) agents.setArchetype(updated, archetype)
-          const rawIcon = (payload as { icon?: unknown }).icon
-          if (typeof rawIcon === 'string') {
-            agents.setIcon(updated, rawIcon.trim() || null)
-          }
-          agents.saveAgent(updated)
-          ctx.logf(
-            'agent-setup: edited agent %s (model=%s skip=%s mirror=%s archetype=%s)',
-            agentId, draft.model, skipPerms, iconMirror, archetype ?? 'unchanged',
-          )
-
-          // Evict all cached subagents bound to this agent so they respawn
-          // with the new model/prompt on the next message. Also update
-          // inheritClaudeMd on each binding in case the model changed
-          // (e.g. haiku→sonnet flips inherit from false→true).
-          //
-          // If the model changed, clear session IDs too — Claude Code's
-          // built-in system prompt ("You are powered by model X") is baked
-          // into the session store at creation time and replayed on resume.
-          // There's no way to override it, so a model change requires a
-          // fresh session.
-          const modelChanged = prevModel !== draft.model
-          const systemChanged = prevSystem !== draft.body
-          const skipPermsChanged = prevSkip !== skipPerms
-          const mirrorChanged = prevMirror !== iconMirror
-          const archetypeChanged = archetype != null && prevArchetype !== archetype
-          const newExplicitIcon = agents.getExplicitIcon(updated)
-          const explicitIconChanged = prevExplicitIcon !== newExplicitIcon
-          // v1.4 single source: compare the tools CSV directly.
-          const toolsChanged = (agent.tools ?? '') !== draft.tools
-          // Restart on any change that's baked into the subagent at spawn
-          // time. v1.4: --permission-mode is passed at spawn so toggling
-          // skipPermissions via this card MUST evict, otherwise the running
-          // subagent keeps the old mode for MCP tool calls (which don't
-          // route through the PreToolUse hook, so the dispatcher can't
-          // re-read the .md mid-flight). The NL meta-command "trust me"
-          // path evicts via its own handler; this card is the regression
-          // surface (Oliver P1-4). Cosmetic changes (icon orientation,
-          // archetype, mirror) don't affect spawn argv — no restart needed.
-          const needsRestart =
-            modelChanged || systemChanged || toolsChanged || skipPermsChanged
-          const iconChanged =
-            modelChanged || skipPermsChanged || mirrorChanged ||
-            archetypeChanged || explicitIconChanged
-          const affected = bindings.listBindings().filter(b => b.agentId === agentId)
-          const newInherit = agents.inheritClaudeMdForModel(draft.model)
-
-          // Notify affected chats before evicting so the user knows
-          // the pause is intentional, not a hang.
-          if (needsRestart && affected.length > 0) {
-            const restartMsg = modelChanged
-              ? `Agent updated. Restarting with new model (${draft.model.replace('claude-', '')})...`
-              : toolsChanged
-                ? 'Agent updated. Restarting with new tool configuration...'
-                : 'Agent updated. Restarting...'
-            await Promise.all(
-              affected.map(b => ctx.client.send(b.chatId, restartMsg).catch(() => {})),
-            )
-          }
-
-          await Promise.all(
-            affected.map(async b => {
-              if (b.inheritClaudeMd !== newInherit) {
-                bindings.saveBinding({ ...b, inheritClaudeMd: newInherit })
-              }
-              if (modelChanged) {
-                bindings.clearSessionId(b.chatId)
-              }
-              if (iconChanged) {
-                await setAgentIcon(ctx, b.chatId, updated).catch(err =>
-                  ctx.logf('agent-setup: icon update failed chat=%d: %v', b.chatId, err),
-                )
-              }
-              if (needsRestart) {
-                await ctx.evictSubagent(b.chatId)
-              }
-            }),
-          )
-          if (needsRestart && affected.length > 0) {
-            ctx.logf(
-              'agent-setup: evicted %d subagent(s) for agent %s%s',
-              affected.length, agentId, modelChanged ? ' (model changed, sessions cleared)' : '',
-            )
-          }
-
-          const update = JSON.stringify({
-            payload: {
-              type: 'editComplete',
-              name: draft.name,
-              existingAgents: await listExistingForPicker(session.sourceChatId),
-              version: agentSetup.getAgentSetupVersion(),
-              senderAddr: 'server',
-            },
-            summary: 'Agent updated',
-          })
-          await ctx.client.sendWebXDCUpdate(session.msgId, update)
-          // Keep the session alive — user stays on the main screen.
-        } catch (err) {
-          ctx.logf('agent-setup: saveEdit failed: %v', err)
-        }
+        await handleSaveEdit(ctx, session.msgId, session.sourceChatId, payload, okAuth)
         continue
       }
 
       if (payload.type === 'bind') {
-        // Reuse an existing agent definition in a new DC chat.
-        const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
-        if (!agentId) {
-          ctx.logf('agent-setup: bind payload missing agentId')
-          continue
-        }
-        const agent = agents.getAgent(agentId)
-        if (!agent) {
-          ctx.logf('agent-setup: bind requested agent %s not found', agentId)
-          continue
-        }
-        const ownerContactId = await resolveOwner()
-        if (!ownerContactId) continue
-
-        try {
-          const newChatId = await ctx.client.createGroup(agent.name)
-          await ctx.client.addContactToChat(newChatId, ownerContactId)
-          access.addChat(newChatId, ownerContactId)
-          bindings.bindAgent(newChatId, agent.name, {
-            inheritClaudeMd: agents.inheritClaudeMdForModel(agent.model),
-          })
-          await decorateAgentChat(ctx, newChatId, agent)
-          ctx.logf('agent-setup: bound existing agent %s to new chat %d for owner %d', agent.name, newChatId, ownerContactId)
-
-          const update = JSON.stringify({
-            payload: { type: 'created', chatId: newChatId, name: agent.name },
-            summary: 'Agent created',
-          })
-          await ctx.client.sendWebXDCUpdate(session.msgId, update)
-          // Session stays alive — user may keep using the settings card.
-        } catch (err) {
-          ctx.logf('agent-setup: bind failed: %v', err)
-        }
+        await handleBindAgent(ctx, session.msgId, session.sourceChatId, payload, okAuth)
         continue
       }
 
-      // Phase 12 — reuse-an-agent flow from the new mode picker. Same
-      // chat-create + bind sequence as the legacy `bind` handler above,
-      // but emits chat-ready / chat-failed (which the modal listens for)
-      // instead of `created` (which closes the create-form flow). Kept
-      // as a separate payload type so future divergence (e.g. richer
-      // processing-state UX) doesn't have to thread through the legacy
-      // path.
-      // Phase 12 — default-agent quick path. Same chat-create flow as
-      // start-reuse-chat, but the agent is the built-in default
-      // (auto-seeded by ensureDefaultAgent on first use). The default
-      // is editable / deletable via Manage like any other agent;
-      // tapping this card again just re-seeds and creates another chat.
+      // Phase 12 — mode-picker flows. start-default-chat / start-reuse-chat
+      // create a NEW bound chat and reply chat-ready / chat-failed; rebind-chat
+      // re-points the current chat in place. All three delegate to the
+      // §6-gated handlers with an interim always-ok auth (Task 4 removes these).
       if (payload.type === 'start-default-chat') {
-        const ownerContactId = await resolveOwner()
-        if (!ownerContactId) {
-          await sendChatFailed(session, ctx, "I can't tell who owns this chat — try unpairing and re-pairing.")
-          continue
-        }
-        try {
-          const defaultAgent = agents.ensureDefaultAgent()
-          const newChatId = await createReuseChat(ctx, defaultAgent, ownerContactId)
-          ctx.logf('agent-setup: default-chat bound %s to chat %d for owner %d', defaultAgent.name, newChatId, ownerContactId)
-          await sendChatReady(session, ctx, newChatId)
-        } catch (err) {
-          ctx.logf('agent-setup: start-default-chat failed: %v', err)
-          await sendChatFailed(session, ctx, err instanceof Error ? err.message : 'unknown error')
-        }
+        await handleStartDefaultChat(ctx, session.msgId, session.sourceChatId, okAuth)
         continue
       }
 
       if (payload.type === 'start-reuse-chat') {
         const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
-        if (!agentId) {
-          await sendChatFailed(session, ctx, 'Missing agent id.')
-          continue
-        }
-        const agent = agents.getAgent(agentId)
-        if (!agent) {
-          await sendChatFailed(session, ctx, `Agent "${agentId}" no longer exists.`)
-          continue
-        }
-        const ownerContactId = await resolveOwner()
-        if (!ownerContactId) {
-          await sendChatFailed(session, ctx, "I can't tell who owns this chat — try unpairing and re-pairing.")
-          continue
-        }
-        try {
-          const newChatId = await createReuseChat(ctx, agent, ownerContactId)
-          ctx.logf('agent-setup: reuse-chat bound %s to chat %d for owner %d', agent.name, newChatId, ownerContactId)
-          await sendChatReady(session, ctx, newChatId)
-        } catch (err) {
-          ctx.logf('agent-setup: start-reuse-chat failed for agent %s: %v', agentId, err)
-          await sendChatFailed(session, ctx, err instanceof Error ? err.message : 'unknown error')
-        }
+        await handleStartReuseChat(ctx, session.msgId, session.sourceChatId, agentId, okAuth)
         continue
       }
 
       if (payload.type === 'rebind-chat') {
         const agentId = typeof payload.agentId === 'string' ? payload.agentId : ''
-        if (!agentId) {
-          await sendChatFailed(session, ctx, 'Missing agent id.')
-          continue
-        }
-        const agent = agents.getAgent(agentId)
-        if (!agent) {
-          await sendChatFailed(session, ctx, `Agent "${agentId}" no longer exists.`)
-          continue
-        }
-        try {
-          await rebindChat(ctx, session.sourceChatId, agent)
-          ctx.logf('agent-setup: rebound chat %d -> %s', session.sourceChatId, agentId)
-          await sendChatReady(session, ctx, session.sourceChatId)
-        } catch (err) {
-          ctx.logf('agent-setup: rebind-chat failed for agent %s: %v', agentId, err)
-          await sendChatFailed(session, ctx, err instanceof Error ? err.message : 'unknown error')
-        }
+        await handleRebindChat(ctx, session.msgId, session.sourceChatId, agentId, okAuth)
         continue
       }
 
