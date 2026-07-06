@@ -17,11 +17,23 @@
  * Authorization note (§6): webXDC senderAddr is app-relayed and spoofable
  * (verified, dc-core 2.53). State-changing handlers MUST gate on
  * isControlCommandAuthorized rather than anything the card payload says.
+ * §6 always refuses in multi-human groups — a webXDC tap has no reliable
+ * per-tap identity to authorize against.
+ *
+ * `dc_rebind_chat` is a SEPARATE, directly-callable tool (not a card
+ * action) for "switch this chat to <named agent>" via a chat message. It
+ * deliberately has NO §6/auth callback: a chat message carries a real,
+ * DC-core-verified `fromId`, so the dispatcher's standard capability gate
+ * (requiresCapability: 'infrastructure', evaluated against that actual
+ * sender) is sufficient authorization on its own — and unlike the card's
+ * rebind action, it works in multi-human groups, since there's no
+ * ambiguous-tapper problem to compensate for.
  */
 
 import type { WebXDCApp, ToolDef, ToolResult, AppContext } from '../webxdc-app.js'
 import type { WebXDCUpdate } from '../dc-client.js'
 import * as models from '../models.js'
+import * as agents from '../agents.js'
 import { getAgentManageVersion, buildAgentManageXDC } from '../agent-manage.js'
 import { openCreateCard } from './create-app.js'
 import {
@@ -37,6 +49,7 @@ import {
   handleStartDefaultChat,
   handleStartReuseChat,
   handleRebindChat,
+  rebindChat,
   resolveOwnerForChat,
   listExistingForPicker,
   availableToolsPayload,
@@ -125,12 +138,14 @@ export const agentManageApp: WebXDCApp = {
           'export, or switch/rebind their existing agents, and start a new chat with ' +
           'the default assistant or a reused agent. Sends a self-contained WebXDC ' +
           'app card into the chat. ' +
-          'CALL THIS whenever the user wants to switch / change / rebind this chat\'s agent, ' +
-          'or manage (view / edit / delete / export) their agents — open the card rather than ' +
-          'listing agents in text or describing manual steps; rebinding is a card-only action. ' +
+          'Use this when the user wants to BROWSE or is vague about which agent ' +
+          '(e.g. "switch my agent", "manage my agents") — open the card rather than ' +
+          'listing agents in text or describing manual steps. If the user names a ' +
+          'SPECIFIC existing agent to switch to (e.g. "switch this chat to dc-developer"), ' +
+          'call dc_rebind_chat directly instead — no card needed for a fully-specified request. ' +
           'chat_id is REQUIRED — pass the caller\'s bound chat ID (the chat you are operating in). ' +
           'view is OPTIONAL — pass \'switch\' to open DIRECTLY on the pick-an-agent (rebind) screen ' +
-          '(use this for "switch/change this chat\'s agent"); omit or \'manage\' opens the agent list.',
+          '(use this for "switch/change this chat\'s agent" with no name given); omit or \'manage\' opens the agent list.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -148,38 +163,135 @@ export const agentManageApp: WebXDCApp = {
         },
         requiresCapability: 'infrastructure',
       },
+      {
+        name: 'dc_rebind_chat',
+        description:
+          'Switch THIS chat directly to a different, already-known agent — immediate ' +
+          'effect, no card. Use this when the user names a SPECIFIC existing agent ' +
+          '(e.g. "switch this chat to dc-developer", "rebind to Patient Advocate") — a ' +
+          'fully-specified request should just happen. If the user is vague (no agent ' +
+          'named) or wants to browse options, call dc_open_agent_manage_card with ' +
+          'view:\'switch\' instead so they can pick from a list. ' +
+          'Unlike the card\'s rebind action, this works even in multi-human groups: it is ' +
+          'authorized by who actually SENT this message (a real, authenticated chat message), ' +
+          'not by an unauthenticated webXDC tap — so it is the answer to "that has to come ' +
+          'from you directly, say it in our chat". ' +
+          'chat_id is REQUIRED — the chat to rebind (the chat you are operating in). ' +
+          'agent_id is REQUIRED — the target agent\'s canonical name (slug). If you only know ' +
+          'a display name, resolve it first (e.g. via dc_open_agent_manage_card\'s agent list). ' +
+          'keep_context is OPTIONAL (default false) — pass true only if the user explicitly asks ' +
+          'to keep/preserve the conversation; by default rebinding starts a fresh session for ' +
+          'the new agent (a full identity swap shouldn\'t carry the old agent\'s transcript).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            chat_id: {
+              type: 'string',
+              description: 'DC chat ID to rebind. Should be the caller\'s bound chat.',
+            },
+            agent_id: {
+              type: 'string',
+              description: 'Canonical (slug) name of the target agent to switch this chat to.',
+            },
+            keep_context: {
+              type: 'boolean',
+              description: 'Preserve the current conversation/session instead of starting fresh. Default false.',
+            },
+          },
+          required: ['chat_id', 'agent_id'],
+        },
+        requiresCapability: 'infrastructure',
+      },
     ]
   },
 
   async callTool(name: string, args: Record<string, unknown>, ctx: AppContext): Promise<ToolResult | null> {
-    if (name !== 'dc_open_agent_manage_card') return null
+    if (name === 'dc_open_agent_manage_card') {
+      const rawChatId = args.chat_id
+      const targetChatId = typeof rawChatId === 'string' && rawChatId.length > 0
+        ? Number(rawChatId)
+        : NaN
 
-    const rawChatId = args.chat_id
-    const targetChatId = typeof rawChatId === 'string' && rawChatId.length > 0
-      ? Number(rawChatId)
-      : NaN
+      if (!Number.isFinite(targetChatId)) {
+        return {
+          content: [{ type: 'text', text: 'dc_open_agent_manage_card: chat_id is required (the chat to open the manage card in).' }],
+          isError: true,
+        }
+      }
 
-    if (!Number.isFinite(targetChatId)) {
-      return {
-        content: [{ type: 'text', text: 'dc_open_agent_manage_card: chat_id is required (the chat to open the manage card in).' }],
-        isError: true,
+      const view = args.view === 'switch' ? 'switch' : 'manage'
+
+      try {
+        await openManageCard(ctx, targetChatId, view)
+        return {
+          content: [{ type: 'text', text: `Manage card opened in chat ${targetChatId}${view === 'switch' ? ' (pick-an-agent view)' : ''}.` }],
+        }
+      } catch (err) {
+        ctx.logf('agent-manage: dc_open_agent_manage_card failed: %v', err)
+        return {
+          content: [{ type: 'text', text: `dc_open_agent_manage_card failed: ${(err as Error).message}` }],
+          isError: true,
+        }
       }
     }
 
-    const view = args.view === 'switch' ? 'switch' : 'manage'
-
-    try {
-      await openManageCard(ctx, targetChatId, view)
-      return {
-        content: [{ type: 'text', text: `Manage card opened in chat ${targetChatId}${view === 'switch' ? ' (pick-an-agent view)' : ''}.` }],
+    if (name === 'dc_rebind_chat') {
+      // NO §6/auth callback here by design: this tool is only reachable via
+      // a real, DC-core-authenticated chat message (fromId), not an
+      // unauthenticated webXDC tap. The dispatcher's capability gate
+      // (requiresCapability: 'infrastructure', resolved against the actual
+      // message sender — see access/gate.ts + server.ts's _currentDriver)
+      // already authorizes the call before callTool ever runs, so it works
+      // correctly in multi-human groups where the card's rebind action
+      // (§6-gated) always refuses.
+      const rawChatId = args.chat_id
+      const targetChatId = typeof rawChatId === 'string' && rawChatId.length > 0
+        ? Number(rawChatId)
+        : NaN
+      if (!Number.isFinite(targetChatId)) {
+        return {
+          content: [{ type: 'text', text: 'dc_rebind_chat: chat_id is required (the chat to rebind).' }],
+          isError: true,
+        }
       }
-    } catch (err) {
-      ctx.logf('agent-manage: dc_open_agent_manage_card failed: %v', err)
-      return {
-        content: [{ type: 'text', text: `dc_open_agent_manage_card failed: ${(err as Error).message}` }],
-        isError: true,
+
+      const agentId = typeof args.agent_id === 'string' ? args.agent_id : ''
+      if (!agentId) {
+        return {
+          content: [{ type: 'text', text: 'dc_rebind_chat: agent_id is required (the target agent\'s canonical name).' }],
+          isError: true,
+        }
+      }
+
+      const agent = agents.getAgent(agentId)
+      if (!agent) {
+        return {
+          content: [{ type: 'text', text: `dc_rebind_chat: agent "${agentId}" not found.` }],
+          isError: true,
+        }
+      }
+
+      const keepContext = args.keep_context === true
+
+      try {
+        await rebindChat(ctx, targetChatId, agent, { keepContext })
+        return {
+          content: [{
+            type: 'text',
+            text: `Chat ${targetChatId} switched to "${agent.name}"` +
+              `${keepContext ? ' (kept the current conversation)' : ' (started a fresh conversation)'}.`,
+          }],
+        }
+      } catch (err) {
+        ctx.logf('agent-manage: dc_rebind_chat failed: %v', err)
+        return {
+          content: [{ type: 'text', text: `dc_rebind_chat failed: ${(err as Error).message}` }],
+          isError: true,
+        }
       }
     }
+
+    return null
   },
 
   async onWebXDCUpdate(msgId: number, updates: WebXDCUpdate[], ctx: AppContext): Promise<void> {
