@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { isControlCommandAuthorized, type ControlAuthDeps } from '../access/webxdc-control-auth.js'
+import { isControlCommandAuthorized, countHumanMembers, type ControlAuthDeps } from '../access/webxdc-control-auth.js'
 
 function deps(over: Partial<{ humans: number; owner: number | null }>): ControlAuthDeps {
   return {
@@ -29,5 +29,38 @@ describe('isControlCommandAuthorized', () => {
   test('multi-human group with 2 members → still needs-confirmation', async () => {
     const r = await isControlCommandAuthorized(42, deps({ humans: 2 }))
     expect(r).toEqual({ ok: false, reason: 'needs-confirmation' })
+  })
+})
+
+describe('countHumanMembers', () => {
+  // members: 1 = CONTACT_SELF (bot); the rest are per-id bot flags.
+  const mk = (members: number[], bots: Record<number, boolean>) =>
+    countHumanMembers(
+      async () => members,
+      async (id) => bots[id] ?? false,
+      42,
+    )
+
+  test('solo chat (owner + bot only) → 1 human', async () => {
+    expect(await mk([1, 7], {})).toBe(1)
+  })
+
+  test('owner + Claude + another AGENT/bot → 1 human (bots excluded)', async () => {
+    // The regression: World Cup Pool = owner(7) + two bot agents(20,21) read
+    // as 3 "humans" under the old count and wrongly tripped needs-confirmation.
+    expect(await mk([1, 7, 20, 21], { 20: true, 21: true })).toBe(1)
+  })
+
+  test('genuine multi-human group (two people) → 2 humans', async () => {
+    expect(await mk([1, 7, 8], {})).toBe(2)
+  })
+
+  test('getContact failure defaults to human (fail-safe: does not under-count)', async () => {
+    const n = await countHumanMembers(
+      async () => [1, 7, 8],
+      async (id) => { if (id === 8) throw new Error('no such contact'); return false },
+      42,
+    )
+    expect(n).toBe(2)
   })
 })

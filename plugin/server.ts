@@ -35,6 +35,7 @@ import { setControlAuthDeps } from './apps/teleport-app.js'
 import { setControlAuthDeps as setContactsControlAuthDeps } from './apps/contacts-app.js'
 import { setControlAuthDeps as setCreateControlAuthDeps } from './apps/create-app.js'
 import { setControlAuthDeps as setManageControlAuthDeps } from './apps/agent-manage-app.js'
+import { countHumanMembers } from './access/webxdc-control-auth.js'
 import { advanceCoach, isCoachDone, startRefineCoach } from './coach.js'
 import { classifyIntent, shouldClassify } from './nl-intents.js'
 import { handleNlIntent } from './nl-intent-handler.js'
@@ -3147,10 +3148,14 @@ async function main(): Promise<void> {
   // by this point in main(). Note: `currentDriver` was removed (GH #114) —
   // webXDC taps are unauthenticated and cannot be verified against any driver.
   const controlAuthDeps = {
-    humanMemberCount: async (chatId: number) => {
-      const contacts = await client.getChatContacts(chatId)
-      return contacts.filter(id => id !== 1).length
-    },
+    // Count only HUMAN members — other bots/agents in the chat must not trip
+    // the multi-human gate (they can't be the ambiguous card-tapper). See
+    // countHumanMembers.
+    humanMemberCount: (chatId: number) => countHumanMembers(
+      id => client.getChatContacts(id),
+      async id => (await client.getContact(id)).isBot,
+      chatId,
+    ),
     owner: (chatId: number) => access.firstPermissionedContact(chatId),
   }
   setControlAuthDeps(controlAuthDeps)

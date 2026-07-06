@@ -21,6 +21,27 @@ export interface ControlAuthDeps {
   owner: (chatId: number) => number | null
 }
 
+/**
+ * Count the HUMAN members of a chat for the multi-human §6 gate. Excludes
+ * CONTACT_SELF (the bot, id 1) AND any other bots/agents in the chat.
+ *
+ * Why bots must not count: the gate exists to disambiguate *which human*
+ * tapped an unauthenticated webXDC card — a bot can't be that tapper. The old
+ * inline count (`contacts.filter(id => id !== 1).length`) counted every
+ * non-self contact, so a chat of `owner + Claude + one other agent/bot` read
+ * as multi-human and wrongly refused the owner's own card taps with
+ * `needs-confirmation`, even though the owner is the ONLY human present.
+ */
+export async function countHumanMembers(
+  getChatContacts: (chatId: number) => Promise<number[]>,
+  isBot: (contactId: number) => Promise<boolean>,
+  chatId: number,
+): Promise<number> {
+  const nonSelf = (await getChatContacts(chatId)).filter(id => id !== 1)
+  const botFlags = await Promise.all(nonSelf.map(id => isBot(id).catch(() => false)))
+  return nonSelf.filter((_, i) => !botFlags[i]).length
+}
+
 export async function isControlCommandAuthorized(
   chatId: number,
   deps: ControlAuthDeps,

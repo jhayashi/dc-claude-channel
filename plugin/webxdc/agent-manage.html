@@ -1071,7 +1071,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
             </span>
             <span class="home-action-body">
               <span class="home-action-label">Switch this chat's agent</span>
-              <span class="home-action-desc">Move this chat to a different agent. Starts fresh.</span>
+              <span class="home-action-desc">Switch this chat to a different agent. Starts fresh.</span>
             </span>
             <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
           </button>
@@ -1316,7 +1316,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.03;
+var APP_VERSION = 1.04;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:   { solid: '#B4862A', checker: '#D9B25B' },
@@ -1924,7 +1924,7 @@ function confirmRebindAgent(agentId) {
   reuseConfirmAgentId = agentId;
   reuseConfirmMode = 'rebind';
   document.getElementById('reuse-confirm-heading').textContent =
-    'Move this chat to "' + agent.name + '"?';
+    'Switch this chat to "' + agent.name + '"?';
   document.getElementById('reuse-confirm-sub').textContent =
     'Your next message starts a fresh conversation with the new agent.';
   setReuseConfirmState('idle');
@@ -1964,7 +1964,7 @@ function setReuseConfirmState(s) {
   var ok = document.getElementById('reuse-confirm-ok');
   buttons.style.display = (s === 'idle' || s === 'error') ? '' : 'none';
   processing.style.display = (s === 'processing') ? '' : 'none';
-  ok.textContent = (s === 'error') ? 'Retry' : (reuseConfirmMode === 'rebind' ? 'Move' : 'Start chat');
+  ok.textContent = (s === 'error') ? 'Retry' : (reuseConfirmMode === 'rebind' ? 'Switch' : 'Start chat');
 }
 
 function closeReuseConfirm() {
