@@ -68,3 +68,18 @@ test("created reply confirms the bound new chat (I-1 fix)", async () => {
   await h.page.waitForSelector('text=Chat created', { state: "visible", timeout: 3000 });
   await h.close();
 });
+
+test("view:'switch' deep-links to the pick-an-agent (rebind) screen", async () => {
+  // "switch this chat's agent" → dc_open_agent_manage_card(view:'switch') →
+  // the card lands on the rebind picker instead of the manage list, so the
+  // user picks a replacement directly (no manual navigation).
+  const h: HarnessHandle = await createHarness(xdc());
+  await h.push({
+    ...INIT, version: await h.getAppVersion(), view: "switch",
+    // mark the current agent so isBound is true (rebind requires a bound chat)
+    existingAgents: [{ ...INIT.existingAgents[0], isCurrentAgent: true }],
+  });
+  // The reuse-picker screen (used for reuse AND rebind) becomes visible.
+  await h.page.waitForSelector("#reuse-picker", { state: "visible", timeout: 4000 });
+  await h.close();
+});

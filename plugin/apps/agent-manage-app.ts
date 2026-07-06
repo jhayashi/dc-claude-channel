@@ -69,7 +69,11 @@ export function setControlAuthDeps(deps: ControlAuthDeps): void {
  * permissions card's "manage" hand-off) can summon this card via a plain
  * function call instead of the retired monolith's card-summon helper.
  */
-export async function openManageCard(ctx: AppContext, chatId: number): Promise<number> {
+export async function openManageCard(
+  ctx: AppContext,
+  chatId: number,
+  view: 'manage' | 'switch' = 'manage',
+): Promise<number> {
   const { xdcPath } = await buildAgentManageXDC()
   const msgId = await ctx.client.sendWebXDC(chatId, xdcPath)
   manageSessions.set(msgId, chatId)
@@ -91,6 +95,7 @@ export async function openManageCard(ctx: AppContext, chatId: number): Promise<n
     payload: {
       type: 'init',
       version: getAgentManageVersion(),
+      view,
       existingAgents: await listExistingForPicker(chatId),
       availableModels: models.MODELS.map(m => ({ id: m.id, label: m.label, tier: m.tier })),
       defaultModel: models.DEFAULT_MODEL,
@@ -117,16 +122,26 @@ export const agentManageApp: WebXDCApp = {
         name: 'dc_open_agent_manage_card',
         description:
           'Open the Manage Agents card in a chat. Lets the user view, edit, delete, ' +
-          'export, reuse, or rebind their existing agents, and start a new chat with ' +
+          'export, or switch/rebind their existing agents, and start a new chat with ' +
           'the default assistant or a reused agent. Sends a self-contained WebXDC ' +
           'app card into the chat. ' +
-          'chat_id is REQUIRED — pass the caller\'s bound chat ID (the chat you are operating in).',
+          'CALL THIS whenever the user wants to switch / change / rebind this chat\'s agent, ' +
+          'or manage (view / edit / delete / export) their agents — open the card rather than ' +
+          'listing agents in text or describing manual steps; rebinding is a card-only action. ' +
+          'chat_id is REQUIRED — pass the caller\'s bound chat ID (the chat you are operating in). ' +
+          'view is OPTIONAL — pass \'switch\' to open DIRECTLY on the pick-an-agent (rebind) screen ' +
+          '(use this for "switch/change this chat\'s agent"); omit or \'manage\' opens the agent list.',
         inputSchema: {
           type: 'object',
           properties: {
             chat_id: {
               type: 'string',
               description: 'DC chat ID to send the manage card into. Should be the caller\'s bound chat.',
+            },
+            view: {
+              type: 'string',
+              enum: ['manage', 'switch'],
+              description: '\'switch\' opens the pick-an-agent (rebind) screen directly — use for "switch this chat\'s agent". \'manage\' (default) opens the agent list.',
             },
           },
           required: ['chat_id'],
@@ -151,10 +166,12 @@ export const agentManageApp: WebXDCApp = {
       }
     }
 
+    const view = args.view === 'switch' ? 'switch' : 'manage'
+
     try {
-      await openManageCard(ctx, targetChatId)
+      await openManageCard(ctx, targetChatId, view)
       return {
-        content: [{ type: 'text', text: `Manage card opened in chat ${targetChatId}.` }],
+        content: [{ type: 'text', text: `Manage card opened in chat ${targetChatId}${view === 'switch' ? ' (pick-an-agent view)' : ''}.` }],
       }
     } catch (err) {
       ctx.logf('agent-manage: dc_open_agent_manage_card failed: %v', err)

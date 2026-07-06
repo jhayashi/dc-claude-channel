@@ -1316,7 +1316,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.02;
+var APP_VERSION = 1.03;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:   { solid: '#B4862A', checker: '#D9B25B' },
@@ -2628,11 +2628,18 @@ window.webxdc.setUpdateListener(function(update) {
     connectedMcpServers = d.connectedMcpServers || [];
     renderManageList();
     renderHomeCount();
-    // Standalone Manage Agents card (epic #109): land directly on the
-    // manage list — that's this card's purpose. The step0 hub stays
-    // reachable via the manage screen's "Home" crumb (Start-a-new-chat /
-    // reuse / rebind flows live there).
-    show('manage');
+    // Deep-link: view:'switch' (from "switch this chat's agent") lands
+    // directly on the pick-an-agent rebind screen — but only when this chat
+    // actually has a bound agent to switch away from; otherwise fall back to
+    // the manage list. Default view ('manage' / omitted) lands on the manage
+    // list, this card's purpose; step0 (Start-a-new-chat / reuse) stays
+    // reachable via the manage screen's "Home" crumb.
+    var isBound = (existingAgents || []).some(function(a){ return a.isCurrentAgent; });
+    if (d.view === 'switch' && isBound) {
+      gotoRebindPicker();
+    } else {
+      show('manage');
+    }
   }
 
   // Phase 12 — reuse / default-agent flow callbacks. Sent by the
