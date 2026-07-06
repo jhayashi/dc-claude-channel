@@ -54,3 +54,17 @@ test("action_err reply surfaces the §6 refusal message", async () => {
   await h.page.waitForSelector('text=say it in our chat', { state: "visible", timeout: 3000 });
   await h.close();
 });
+
+test("created reply confirms the bound new chat (I-1 fix)", async () => {
+  // pickExisting → {type:'bind'} → handleBindAgent creates+binds the chat and
+  // replies {type:'created', chatId, name}. The card must confirm it (before
+  // this fix it sat in creating=true with no feedback).
+  const h: HarnessHandle = await createHarness(xdc());
+  await h.push({ ...INIT, version: await h.getAppVersion() });
+  await h.page.waitForSelector('#manage-list .agent-row:has-text("Sleep coach")', { state: "visible", timeout: 4000 });
+
+  await h.push({ type: "created", senderAddr: "server", chatId: 42, name: "Sleep coach" });
+
+  await h.page.waitForSelector('text=Chat created', { state: "visible", timeout: 3000 });
+  await h.close();
+});

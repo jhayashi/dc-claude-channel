@@ -1316,7 +1316,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.01;
+var APP_VERSION = 1.02;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:   { solid: '#B4862A', checker: '#D9B25B' },
@@ -2647,6 +2647,17 @@ window.webxdc.setUpdateListener(function(update) {
 
   if (d.type === 'chat-failed') {
     handleChatFailed(typeof d.error === 'string' ? d.error : '');
+    return;
+  }
+
+  // A bind from the manage list's per-agent "Start a new chat" (pickExisting
+  // → {type:'bind'}) succeeded: handleBindAgent created + bound the new chat
+  // server-side and replies {type:'created', chatId, name}. Clear the pending
+  // flag and confirm — the user switches to the new chat from their chat list.
+  // (Without this the card would sit in creating=true with no feedback.)
+  if (d.type === 'created') {
+    resetTransientState();
+    showModal('Chat created', 'Open the new chat with "' + (d.name || 'your agent') + '" from your chat list to get started.');
     return;
   }
 
