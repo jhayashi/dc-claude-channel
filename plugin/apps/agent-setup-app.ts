@@ -425,16 +425,24 @@ export async function rebindChat(
   ctx: AppContext,
   sourceChatId: number,
   agent: agents.AgentDef,
+  opts: { keepContext?: boolean } = {},
 ): Promise<void> {
   const current = bindings.getBinding(sourceChatId)
   if (current?.agentId === agent.name) {
     throw new Error('This chat is already on that agent.')
   }
-  bindings.clearSessionId(sourceChatId)   // fresh CC session for the new agent
+  // Default: fresh CC session for the new agent — a full identity swap
+  // (different system prompt/tools/persona) shouldn't carry the old
+  // agent's transcript into the new one. keepContext opts out for a
+  // "wrong pick, quick handoff" rebind where the owner wants the new
+  // agent to resume the same conversation instead.
+  if (!opts.keepContext) {
+    bindings.clearSessionId(sourceChatId)
+  }
   bindings.bindAgent(sourceChatId, agent.name, {
     inheritClaudeMd: agents.inheritClaudeMdForModel(agent.model),
   })
-  await ctx.evictSubagent(sourceChatId)   // next message picks up the new .md
+  await ctx.evictSubagent(sourceChatId)   // next message picks up the new .md (even when keeping context)
   // Decoration is cosmetic (avatar swap + intro line). The rebind already
   // took effect above, so don't fail it — and mislead the user into a retry
   // that hits the same-agent guard — over a badge/send hiccup.
@@ -1560,6 +1568,7 @@ export async function handleRebindChat(
   msgId: number,
   sourceChatId: number,
   agentId: string,
+  keepContext: boolean,
   auth: ControlAuth,
 ): Promise<void> {
   if (await refuseIfUnauthorized(ctx, msgId, auth)) return
@@ -1573,8 +1582,8 @@ export async function handleRebindChat(
     return
   }
   try {
-    await rebindChat(ctx, sourceChatId, agent)
-    ctx.logf('agent-setup: rebound chat %d -> %s', sourceChatId, agentId)
+    await rebindChat(ctx, sourceChatId, agent, { keepContext })
+    ctx.logf('agent-setup: rebound chat %d -> %s (keepContext=%s)', sourceChatId, agentId, String(keepContext))
     await sendChatReady(msgId, ctx, sourceChatId)
   } catch (err) {
     ctx.logf('agent-setup: rebind-chat failed for agent %s: %v', agentId, err)

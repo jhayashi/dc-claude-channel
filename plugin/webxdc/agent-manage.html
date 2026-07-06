@@ -1304,6 +1304,10 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     <div class="modal-icon" id="reuse-confirm-icon">&#x1F4AC;</div>
     <div class="modal-heading" id="reuse-confirm-heading"></div>
     <div class="modal-sub" id="reuse-confirm-sub"></div>
+    <label id="reuse-confirm-keep-context" style="display:none; align-items:center; gap:8px; margin-top:12px; font-size:14px; color:var(--ink-mute); cursor:pointer;">
+      <input type="checkbox" id="reuse-confirm-keep-context-cb" onchange="updateRebindSub()">
+      Keep this conversation (don't start fresh)
+    </label>
     <div id="reuse-confirm-buttons" style="display:flex; gap:8px; margin-top:16px;">
       <button class="modal-dismiss" onclick="closeReuseConfirm()" style="flex:1; background:#444;">Cancel</button>
       <button class="modal-dismiss" id="reuse-confirm-ok" onclick="reuseConfirmOk()" style="flex:1; background:var(--orange);">Start chat</button>
@@ -1316,7 +1320,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.04;
+var APP_VERSION = 1.05;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:   { solid: '#B4862A', checker: '#D9B25B' },
@@ -1912,12 +1916,21 @@ function confirmReuseAgent(agentId) {
   document.getElementById('reuse-confirm-heading').textContent =
     'Start a new chat with "' + agent.name + '"?';
   document.getElementById('reuse-confirm-sub').textContent = '';
+  document.getElementById('reuse-confirm-keep-context').style.display = 'none';
   setReuseConfirmState('idle');
   document.getElementById('reuse-confirm-modal').classList.add('visible');
 }
 
 // Rebind: same modal/list as reuse, but retargets THIS chat (issue #86)
 // instead of creating a new one. Dispatches `rebind-chat` on OK.
+//
+// Keep-context toggle: rebinding is a full identity swap (new system
+// prompt/tools/persona), so the DEFAULT is a fresh session — carrying the
+// old agent's transcript into a differently-scoped agent risks identity
+// bleed, tool-availability mismatches, and cross-purpose context leakage
+// (see #109 design discussion). The toggle opts OUT of that default for a
+// "wrong pick, quick handoff" rebind where the owner wants the new agent
+// to resume the same conversation instead of starting cold.
 function confirmRebindAgent(agentId) {
   var agent = (existingAgents || []).find(function(a){ return a.id === agentId; });
   if (!agent) return;
@@ -1925,10 +1938,20 @@ function confirmRebindAgent(agentId) {
   reuseConfirmMode = 'rebind';
   document.getElementById('reuse-confirm-heading').textContent =
     'Switch this chat to "' + agent.name + '"?';
-  document.getElementById('reuse-confirm-sub').textContent =
-    'Your next message starts a fresh conversation with the new agent.';
+  document.getElementById('reuse-confirm-keep-context').style.display = 'flex';
+  document.getElementById('reuse-confirm-keep-context-cb').checked = false;
+  updateRebindSub();
   setReuseConfirmState('idle');
   document.getElementById('reuse-confirm-modal').classList.add('visible');
+}
+
+// Reflects the keep-context checkbox state in the confirm sub-text. Called
+// on open (default unchecked) and on every checkbox change.
+function updateRebindSub() {
+  var keep = document.getElementById('reuse-confirm-keep-context-cb').checked;
+  document.getElementById('reuse-confirm-sub').textContent = keep
+    ? 'The new agent will see everything discussed in this chat so far.'
+    : 'Your next message starts a fresh conversation with the new agent.';
 }
 
 function reuseConfirmOk() {
@@ -1947,6 +1970,7 @@ function reuseConfirmOk() {
       payload: {
         type: 'rebind-chat',
         agentId: reuseConfirmAgentId,
+        keepContext: document.getElementById('reuse-confirm-keep-context-cb').checked,
         senderAddr: webxdc.selfAddr,
       },
     }, '');
@@ -2362,6 +2386,7 @@ function gotoDefaultAgent() {
   reuseConfirmMode = 'default';
   document.getElementById('reuse-confirm-heading').textContent = 'Setting up your default chat';
   document.getElementById('reuse-confirm-sub').textContent = '';
+  document.getElementById('reuse-confirm-keep-context').style.display = 'none';
   setReuseConfirmState('processing');
   document.getElementById('reuse-confirm-modal').classList.add('visible');
   webxdc.sendUpdate({ payload: { type: 'start-default-chat', senderAddr: webxdc.selfAddr } }, '');

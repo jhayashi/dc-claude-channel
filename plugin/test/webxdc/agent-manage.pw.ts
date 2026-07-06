@@ -83,3 +83,39 @@ test("view:'switch' deep-links to the pick-an-agent (rebind) screen", async () =
   await h.page.waitForSelector("#reuse-picker", { state: "visible", timeout: 4000 });
   await h.close();
 });
+
+test("rebind confirm: keep-context toggle defaults off and carries keepContext:true when checked", async () => {
+  // Rebinding is a full identity swap, so the toggle defaults OFF (fresh
+  // session, current behavior). Checking it must flow keepContext:true
+  // through to the rebind-chat payload so the new agent resumes instead of
+  // starting cold.
+  const h: HarnessHandle = await createHarness(xdc());
+  await h.push({
+    ...INIT, version: await h.getAppVersion(), view: "switch",
+    existingAgents: [
+      { ...INIT.existingAgents[0], isCurrentAgent: true },
+      { id: "tutor-agent", name: "Tutor", model: "claude-sonnet-4-6", pattern: "checker", bindingCount: 0, trusted: true },
+    ],
+  });
+  await h.page.waitForSelector("#reuse-picker", { state: "visible", timeout: 4000 });
+  await h.page.click('#reuse-list .agent-row:has-text("Tutor")');
+
+  await h.page.waitForSelector("#reuse-confirm-modal.visible", { timeout: 3000 });
+  // Toggle hidden/unchecked by default is the OTHER flows' contract; here it
+  // must be visible and unchecked for a rebind confirm.
+  const checkbox = h.page.locator("#reuse-confirm-keep-context-cb");
+  await expect(checkbox).toBeVisible();
+  await expect(checkbox).not.toBeChecked();
+  await expect(h.page.locator("#reuse-confirm-sub")).toContainText("fresh conversation");
+
+  await checkbox.check();
+  await expect(h.page.locator("#reuse-confirm-sub")).toContainText("everything discussed");
+
+  await h.page.click("#reuse-confirm-ok");
+  const out = await h.outbound();
+  const rebind = out.find((o: any) => o.update.payload?.type === "rebind-chat");
+  expect(rebind?.update.payload.keepContext).toBe(true);
+  expect(rebind?.update.payload.agentId).toBe("tutor-agent");
+
+  await h.close();
+});

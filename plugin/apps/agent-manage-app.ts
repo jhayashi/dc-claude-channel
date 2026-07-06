@@ -240,7 +240,7 @@ export const agentManageApp: WebXDCApp = {
           break
 
         case 'rebind-chat':
-          await handleRebindChat(ctx, msgId, chatId, agentId, auth)
+          await handleRebindChat(ctx, msgId, chatId, agentId, payload.keepContext === true, auth)
           break
 
         case 'open-create': {

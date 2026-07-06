@@ -8,6 +8,7 @@ import {
   composeAgentName,
   createReuseChat,
   rebindChat,
+  handleRebindChat,
   resolveAttachAgent,
   buildCreateAgentToolsCsv,
   shouldResendCard,
@@ -295,11 +296,17 @@ describe('rebindChat', () => {
     }
   })
 
-  function makeStubCtx(): { ctx: AppContext; send: ReturnType<typeof mock>; evict: ReturnType<typeof mock> } {
+  function makeStubCtx(): {
+    ctx: AppContext
+    send: ReturnType<typeof mock>
+    evict: ReturnType<typeof mock>
+    sendWebXDCUpdate: ReturnType<typeof mock>
+  } {
     const send = mock(async () => 1)
     const setChatProfileImage = mock(async () => {})
     const evict = mock(async () => {})
-    const client = { send, setChatProfileImage } as unknown as AppContext['client']
+    const sendWebXDCUpdate = mock(async () => {})
+    const client = { send, setChatProfileImage, sendWebXDCUpdate } as unknown as AppContext['client']
     const ctx: AppContext = {
       client,
       mcp: {} as unknown as AppContext['mcp'],
@@ -316,7 +323,7 @@ describe('rebindChat', () => {
       subagentCache: { evictChat: async () => {} },
       cleanupChatState: async () => {},
     }
-    return { ctx, send, evict }
+    return { ctx, send, evict, sendWebXDCUpdate }
   }
 
   function seedAgent(name: string, model = 'claude-sonnet-4-6'): agents.AgentDef {
@@ -343,6 +350,52 @@ describe('rebindChat', () => {
     expect(after.workingDir).toBe('/repo/x')        // project context preserved
     expect(after.createdAt).toBe(seeded.createdAt)  // not a new binding
     expect(evict).toHaveBeenCalledWith(700)         // in-flight subagent dropped
+  })
+
+  test('keepContext:true preserves the session so the new agent resumes the conversation', async () => {
+    const oldAgent = seedAgent('old-agent-2')
+    const newAgent = seedAgent('new-agent-2')
+    bindings.bindAgent(703, oldAgent.name, { inheritClaudeMd: false })
+    const seeded = bindings.getBinding(703)!
+    bindings.saveBinding({ ...seeded, sessionId: 'sess-KEEP', workingDir: '/repo/y' })
+
+    const { ctx, evict } = makeStubCtx()
+    await rebindChat(ctx, 703, newAgent, { keepContext: true })
+
+    const after = bindings.getBinding(703)!
+    expect(after.agentId).toBe('new-agent-2')
+    expect(after.sessionId).toBe('sess-KEEP')       // session preserved, not cleared
+    expect(evict).toHaveBeenCalledWith(703)         // still evicted: new agent's .md must load next spawn
+  })
+
+  test('omitting opts (or keepContext:false) still clears the session (default unchanged)', async () => {
+    const oldAgent = seedAgent('old-agent-3')
+    const newAgent = seedAgent('new-agent-3')
+    bindings.bindAgent(704, oldAgent.name, { inheritClaudeMd: false })
+    const seeded = bindings.getBinding(704)!
+    bindings.saveBinding({ ...seeded, sessionId: 'sess-DEFAULT' })
+
+    const { ctx } = makeStubCtx()
+    await rebindChat(ctx, 704, newAgent, { keepContext: false })
+
+    expect(bindings.getBinding(704)!.sessionId).toBeUndefined()
+  })
+
+  test('handleRebindChat passes keepContext through end-to-end (card→handler→rebindChat)', async () => {
+    const oldAgent = seedAgent('old-agent-4')
+    const newAgent = seedAgent('new-agent-4')
+    bindings.bindAgent(705, oldAgent.name, { inheritClaudeMd: false })
+    const seeded = bindings.getBinding(705)!
+    bindings.saveBinding({ ...seeded, sessionId: 'sess-E2E' })
+
+    const { ctx, sendWebXDCUpdate } = makeStubCtx()
+    const alwaysOk = async () => ({ ok: true as const })
+    await handleRebindChat(ctx, 99, 705, newAgent.name, true, alwaysOk)
+
+    expect(bindings.getBinding(705)!.sessionId).toBe('sess-E2E')
+    expect(sendWebXDCUpdate).toHaveBeenCalledTimes(1)
+    const [, raw] = sendWebXDCUpdate.mock.calls[0] as [number, string]
+    expect(JSON.parse(raw).payload.type).toBe('chat-ready')
   })
 
   test('decorates the chat (avatar swap + intro line) on the SAME chat id', async () => {
