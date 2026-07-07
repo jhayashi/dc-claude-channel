@@ -49,6 +49,7 @@ import {
   handleStartDefaultChat,
   handleStartReuseChat,
   handleRebindChat,
+  refuseIfUnauthorized,
   rebindChat,
   resolveOwnerForChat,
   listExistingForPicker,
@@ -358,22 +359,22 @@ export const agentManageApp: WebXDCApp = {
         case 'open-create': {
           // Cross-card handoff: gate on the same §6 auth as any other
           // state-changing action (a create summoned from this card is
-          // still "creating an agent from a control surface"), then open
-          // the create-agent card into the same chat. On refusal emit the
-          // same generic `action_err` the Task-2 handlers use so the card
-          // needs only one refusal handler.
-          const authResult = await auth()
-          if (!authResult.ok) {
-            const message = authResult.reason === 'needs-confirmation'
-              ? 'That change has to come from you directly — send it as a message here (e.g. "switch this chat to <agent name>"), or open this card from your 1:1 chat with me.'
-              : 'No owner found for this chat.'
+          // still "creating an agent from a control surface"). refuseIfUnauthorized
+          // emits the shared `action_err` on refusal (one refusal handler in the
+          // card), so we don't duplicate that copy here (#117).
+          if (await refuseIfUnauthorized(ctx, msgId, auth)) break
+          // Wrap the summon: if openCreateCard throws (e.g. sendWebXDC fails),
+          // still tell the card instead of leaving it silent — symmetry with
+          // dc_open_create_card's own error path (#117).
+          try {
+            await openCreateCard(ctx, chatId, null)
+          } catch (err) {
+            ctx.logf('agent-manage: open-create failed: %v', err)
             await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
-              payload: { type: 'action_err', message, senderAddr: 'server' },
-              summary: 'Action unauthorized',
+              payload: { type: 'action_err', message: 'Could not open the create-agent card — try again.', senderAddr: 'server' },
+              summary: 'Open create failed',
             })).catch(() => {})
-            break
           }
-          await openCreateCard(ctx, chatId, null)
           break
         }
 

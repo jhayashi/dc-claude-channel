@@ -1059,7 +1059,7 @@ type ControlAuth = () => Promise<{ ok: true } | { ok: false; reason: 'no-owner' 
  * agent-manage card needs a single refusal handler regardless of which
  * action was refused. Returns true when the caller should stop (refused).
  */
-async function refuseIfUnauthorized(
+export async function refuseIfUnauthorized(
   ctx: AppContext,
   msgId: number,
   auth: ControlAuth,
@@ -1084,7 +1084,7 @@ async function refuseIfUnauthorized(
 export async function handleEditRequest(
   ctx: AppContext,
   msgId: number,
-  sourceChatId: number,
+  _sourceChatId: number,  // unused; kept positional for symmetry with sibling handlers (#117)
   agentId: string,
 ): Promise<void> {
   // Edit an existing agent. Re-open the setup card with the agent pre-filled.
