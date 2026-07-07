@@ -4,6 +4,38 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.16] — 2026-07-06
+
+Completes the settings-app decomposition (epic #109): the monolithic `agent-setup` card is retired, replaced by four bespoke WebXDC cards. Bundles increments 2–4 (none previously released), a new authenticated NL rebind command, two production bug fixes, and a full CX polish pass across all four cards.
+
+### Added — settings-app decomposition, increments 2–4 (epic #109)
+
+- **`contacts-roles` card** (`dc_open_contacts_card`) — view every contact known to the current agent and assign/change roles, peeled out of the monolith. Native moment: an unpermissioned member added to an agent chat triggers a proactive "want to set their permissions?" offer.
+- **`create-agent` card** (`dc_open_create_card`) — the guided specialty-catalog / mash-up / coach-interview flow, plus a direct form-create. Native moment: Claude joining a brand-new, agentless group proactively offers to set one up. The coach interview itself stays a chat conversation, unchanged.
+- **`agent-manage` card** (`dc_open_agent_manage_card`) — view / edit / delete / export / reuse / rebind existing agents, replacing the monolith's home hub. **The `agent-setup` WebXDC and its `dc_open_agent_settings` tool are deleted.** Supports `view: 'switch'` to deep-link straight to the pick-an-agent screen.
+- **`dc_rebind_chat` tool** — an authenticated, message-driven "switch this chat to `<agent>`" command that works even in multi-human groups (a real chat message carries a verified sender; a webXDC card tap does not, so the card's rebind action still requires a solo chat or an explicit chat-message confirmation).
+- **Keep-context toggle on rebind** — switching a chat's agent starts a fresh session by default (a full identity swap shouldn't carry another agent's conversation), but a new opt-in toggle lets the owner preserve the conversation for a "wrong pick, quick handoff" rebind.
+- Every `dc_open_*_card` tool is now auto-granted to all existing agents on dispatcher boot (see the DC-tool allowlist fix below) — no manual reinstall needed to pick up new cards.
+
+### Added — CX polish pass across all four decomposed cards (#120–#125)
+
+- **Terminal-state confirmations.** Actions that used to complete silently (or dump the user on the retired hub) now confirm what happened and point back to the chat: rebind → "Agent switched"; coach handoff → "Your new chat is ready"; role assignment → a "Role saved" banner.
+- **Error affordances.** Failure modals across `agent-manage`, `create-agent`, and `teleport` used to render with the same green checkmark as success — they now get a distinct error variant and no longer auto-dismiss before you can read them. Fixed a blank/unlabeled dismiss button in `teleport`, and export failures (previously silently swallowed by the WebXDC sandbox blocking `alert()`) now surface properly.
+- **State hygiene.** Added a 15s "no response" timeout to the `create-agent` coach-handoff path and the `contacts` role-assign flow (previously an unresponsive server left an un-cancellable spinner). Closed two duplicate-submission windows: a completed agent-create no longer leaves a re-submittable form live, and a completed session-attach in `teleport` no longer leaves the same row re-attachable.
+- **Honest refusal copy.** Every multi-human-group refusal now names a real, working path instead of a vague "say it in our chat" — including `contacts`, where that guidance was previously a dead end (no chat-message path for role assignment exists).
+- **Legacy navigation cleanup.** `agent-manage`'s retired-monolith home hub is retitled and de-emphasized; deep-links (rebind, teleport-out) now land exactly where the natural-language request implied instead of requiring extra manual navigation.
+
+### Fixed
+
+- **A future/custom model id could brick every chat bound to that agent.** The agent schema hard-rejected any `model` value absent from the curated manifest — so pointing the shared default agent at a preview model (e.g. from terminal Claude Code) made `getAgent()` return null, and the dispatcher reported "Your agent was deleted" for every chat on it. Custom `claude-<tier>-*` ids are now accepted at load (matching the v1.4.11 custom-model-id design intent); non-`claude`-shaped garbage is still rejected.
+- **New DC tools (including every `dc_open_*_card` opener) never reached existing agents.** `ensureMcpDc` only expands an agent's tool allowlist once — after that, tools added to the registry later were invisible to the model, so "set me up an agent" or "switch this chat's agent" silently did nothing for any agent created before the tool existed. A new boot-time reconcile migration unions the current tool registry into every agent's allowlist (idempotent, self-healing on every restart).
+- **The multi-human §6 authorization gate counted other bots/agents in a chat as "humans."** A chat of just the owner plus two agents was wrongly treated as multi-human, refusing the owner's own card taps with "that has to come from you directly." The gate now excludes bots from the human count.
+
+### Migration notes
+
+Restart the dispatcher (`bun server.ts`) to pick up the new cards, the retired `agent-setup` tool, `dc_rebind_chat`, and both bug fixes. All decomposed cards auto-upgrade from disk on next open.
+
+
 ## [1.4.15] — 2026-06-21
 
 Bundles a high-impact bug fix with the first slice of the settings-app decomposition.
@@ -887,6 +919,7 @@ First public release of the Delta Chat channel for Claude Code.
 
 [1.3.2]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/jhayashi/dc-claude-channel/compare/v1.3.0...v1.3.1
+[1.4.16]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.15...v1.4.16
 [1.4.15]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.14...v1.4.15
 [1.4.14]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.13...v1.4.14
 [1.4.13]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.12...v1.4.13
