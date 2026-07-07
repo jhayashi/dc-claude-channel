@@ -234,6 +234,37 @@ export function isPluginCacheVersionPath(dir: string): boolean {
   return PLUGIN_CACHE_VERSION_RE.test(dir)
 }
 
+export type SpawnCwdResolution =
+  | { kind: 'ok'; workingDir: string }
+  | { kind: 'adopt'; workingDir: string }
+  | { kind: 'healed'; workingDir: string; healedFrom: string }
+  | { kind: 'unresolvable'; missingDir: string }
+
+/**
+ * Resolve the cwd to spawn a subagent in. Discriminates missing-dir cases:
+ *  - no recorded dir (brand-new chat) → adopt the dispatcher's cwd.
+ *  - recorded dir exists → use it.
+ *  - recorded dir gone AND it's a pruned plugin-cache-version path → heal to
+ *    the running dispatcher's own plugin dir (same path, live version). This
+ *    is the #126 auto-update case.
+ *  - recorded dir gone otherwise (deleted worktree, moved project) →
+ *    unresolvable; the caller surfaces a chat error rather than silently
+ *    running the agent in the wrong place.
+ * Pure: `dirExists` is injected so it unit-tests without the filesystem.
+ */
+export function resolveSpawnCwd(
+  workingDir: string | undefined,
+  deps: { fallbackCwd: string; currentPluginDir: string; dirExists: (p: string) => boolean },
+): SpawnCwdResolution {
+  const { fallbackCwd, currentPluginDir, dirExists } = deps
+  if (!workingDir) return { kind: 'adopt', workingDir: fallbackCwd }
+  if (dirExists(workingDir)) return { kind: 'ok', workingDir }
+  if (isPluginCacheVersionPath(workingDir) && dirExists(currentPluginDir)) {
+    return { kind: 'healed', workingDir: currentPluginDir, healedFrom: workingDir }
+  }
+  return { kind: 'unresolvable', missingDir: workingDir }
+}
+
 /** Save a binding. Atomic via temp + rename. */
 export function saveBinding(binding: Binding): void {
   const validated = BindingSchema.parse(binding)
