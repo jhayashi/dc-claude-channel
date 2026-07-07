@@ -214,6 +214,7 @@ body {
 }
 .resume-row:hover { background: var(--surface-3); }
 .resume-row.selected { border-color: var(--orange); background: rgba(217,119,87,0.08); }
+.resume-row:disabled { opacity: 0.55; cursor: default; }
 .resume-header { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 .resume-name {
   font: 600 13px/1.2 inherit;
@@ -483,6 +484,7 @@ body {
         <p style="font-size:13px;color:var(--ink-mute);margin: 0 0 14px;line-height:1.5;">
           Here's what will happen when you tap "Send to terminal."
         </p>
+        <div id="to-confirm-error" style="display:none;font-size:13px;color:var(--danger);margin-bottom:12px;" role="alert"></div>
         <div id="to-summary" class="to-summary"></div>
         <div class="to-note to-note-warn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-2px;margin-right:4px;"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -520,6 +522,9 @@ body {
           The same command is also posted as a normal message in the DC chat, so it stays visible after you close this dialog.
         </div>
         <div id="to-done-summary" class="to-summary" style="margin-top:14px;"></div>
+        <div class="to-note">
+          You can close this card and return to your chat.
+        </div>
       </div>
 
     </div>
@@ -571,12 +576,12 @@ body {
     <div class="modal-heading" id="modal-heading"></div>
     <div class="modal-sub" id="modal-sub"></div>
     <div class="modal-hint">Swipe or tap back to close the app</div>
-    <button class="modal-dismiss" id="modal-dismiss" onclick="dismissModal()"></button>
+    <button class="modal-dismiss" id="modal-dismiss" onclick="dismissModal()">Got it</button>
   </div>
 </div>
 
 <script>
-var APP_VERSION = 1.00;
+var APP_VERSION = 1.01;
 var versionMismatchSent = false;
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -642,10 +647,28 @@ function hideLoadingModal() {
 }
 
 // ── Success modal ──────────────────────────────────────────────────────────
-function showModal(heading, sub) {
-  document.getElementById('modal-heading').textContent = heading;
+// opts.variant: 'success' (default) | 'error'. The modal element is REUSED
+// across opens, so every field (icon, heading color, error class) is reset
+// on each call — never rely on a prior open's styling. Unlike agent-manage /
+// create-agent, this card has no auto-dismiss countdown for either variant —
+// the dismiss button always reads "Got it" and is set once in the markup.
+function showModal(heading, sub, opts) {
+  var variant = (opts && opts.variant) || 'success';
+  var iconEl = document.getElementById('modal-icon');
+  var headingEl = document.getElementById('modal-heading');
+  var modalEl = document.getElementById('modal');
+  headingEl.textContent = heading;
   document.getElementById('modal-sub').textContent = sub;
-  document.getElementById('modal').classList.add('visible');
+  if (variant === 'error') {
+    iconEl.innerHTML = '&#x2716;';          // heavy multiplication X
+    headingEl.style.color = '#f85149';      // no --red token; GitHub-dark red
+    modalEl.classList.add('error-variant');
+  } else {
+    iconEl.innerHTML = '&#x2705;';          // check mark button
+    headingEl.style.color = '';             // revert to CSS green
+    modalEl.classList.remove('error-variant');
+  }
+  modalEl.classList.add('visible');
 }
 function dismissModal(event) {
   if (event && event.target !== document.getElementById('modal')) return;
@@ -661,6 +684,8 @@ function resetToCliState() {
   toShowScreen('pick');
   var errBox = document.getElementById('to-error');
   if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+  var confirmErrBox = document.getElementById('to-confirm-error');
+  if (confirmErrBox) { confirmErrBox.style.display = 'none'; confirmErrBox.textContent = ''; }
   var list = document.getElementById('to-list');
   if (list) list.replaceChildren();
 }
@@ -702,11 +727,12 @@ function toShowScreen(screen) {
   back.disabled = false;
 
   if (screen === 'pick') {
-    back.textContent = 'Cancel'; back.onclick = null; // no action — stay on pick
-    next.textContent = 'Next';   next.onclick = toAdvanceFromPick;
+    // Entry screen — there's nothing to cancel back to, so the "Cancel"
+    // button was inert (onclick = null) and rendered as dead-looking chrome.
+    // Hide it; Next is the only affordance here.
+    back.style.display = 'none';
+    next.textContent = 'Next'; next.onclick = toAdvanceFromPick;
     next.disabled = !toState.selectedChat;
-    footer.style.display = 'none'; // hide until a chat is selected; next handles it
-    // Actually show the footer but keep Next disabled
     footer.style.display = 'flex';
   } else if (screen === 'jobs') {
     back.textContent = 'Back'; back.onclick = function() { toShowScreen('pick'); };
@@ -729,12 +755,11 @@ function toShowScreen(screen) {
     back.textContent = 'Processing…'; back.onclick = null;
     next.style.display = 'none';
   } else if (screen === 'done') {
-    back.style.display = 'none';
-    next.textContent = 'Done'; next.onclick = function() {
-      resetToCliState();
-      sendTeleportListRequest();
-    };
-    next.disabled = false;
+    // Terminal state: the teleport is over (session moved to the terminal,
+    // DC chat left). Looping "Done" back to to-pick reads as "do it again" —
+    // there's nothing left to do here, so hide the footer entirely and rely
+    // on the on-screen copy pointing the user back to their chat.
+    footer.style.display = 'none';
   }
 }
 
@@ -797,10 +822,19 @@ function toRenderPickList(chats) {
           toState.selectedChat = chat;
           document.getElementById('to-next').disabled = false;
         };
+        // Deep-link preselect: the badge-pinned "this chat" row is the
+        // one-tap-to-confirm intent for a `view: 'to_cli'` open. Auto-select
+        // it (the user can still tap a different row to change their mind).
+        if (chat.isCurrent) {
+          row.classList.add('selected');
+          toState.selectedChat = chat;
+        }
       }
       list.appendChild(row);
     })(toState.chats[i]);
   }
+  var nextBtn = document.getElementById('to-next');
+  if (nextBtn) nextBtn.disabled = !toState.selectedChat;
 }
 
 function toBadge(text, cls) {
@@ -875,6 +909,8 @@ function toAdvanceFromJobs() {
 }
 
 function toRenderConfirm() {
+  var confirmErrBox = document.getElementById('to-confirm-error');
+  if (confirmErrBox) { confirmErrBox.style.display = 'none'; confirmErrBox.textContent = ''; }
   var c = toState.selectedChat;
   var jobsLine;
   if (c.jobCount === 0) jobsLine = '0';
@@ -986,9 +1022,30 @@ function toHandleDone(payload) {
 
 function toHandleError(payload) {
   if (payload.requestId !== toState.requestId) return;
+  // The §6 auth refusal is user-facing prose on its own ("Teleporting from
+  // a group has to come from you directly…") — wrapping it in "Step "auth"
+  // failed:" makes it read as an internal/jargon error. Genuine pipeline
+  // steps (evict/jobs/state/command) keep the step prefix; it's useful there.
+  var isAuthError = payload.step === 'auth';
+  var message = isAuthError ? payload.message : ('Step "' + payload.step + '" failed: ' + payload.message);
+
+  // An auth refusal fires right after the user tapped "Send to terminal" on
+  // the confirm screen — bouncing all the way back to to-pick would lose
+  // their chat/job-disposition selection for no reason (nothing about the
+  // selection was wrong; only the authorization check failed). Show the
+  // error on the confirm screen instead so "Send to terminal" is one tap
+  // away once they've said the phrase in a 1:1. Other errors keep the
+  // existing back-to-pick behavior.
+  if (isAuthError && toState.selectedChat) {
+    var confirmErrBox = document.getElementById('to-confirm-error');
+    if (confirmErrBox) { confirmErrBox.style.display = 'block'; confirmErrBox.textContent = message; }
+    toShowScreen('confirm');
+    return;
+  }
+
   var errBox = document.getElementById('to-error');
   errBox.style.display = 'block';
-  errBox.textContent = 'Step "' + payload.step + '" failed: ' + payload.message;
+  errBox.textContent = message;
   toShowScreen('pick');
 }
 
@@ -1235,8 +1292,28 @@ window.webxdc.setUpdateListener(function(update) {
     if (d.requestId !== attachRequestId) return;
     if (attachTimeout) { clearTimeout(attachTimeout); attachTimeout = null; }
     hideLoadingModal();
+    // Duplicate-attach guard: the attached row used to come back with Attach
+    // re-enabled and the same row still selected, so a second tap minted a
+    // second chat from the same session. Clear the selection, mark the row
+    // as attached (disabled + labeled), and leave Attach disabled until the
+    // user picks a *different* row (selectRow re-enables it then).
+    var attachedRow = null;
+    if (selectedResumeSessionId) {
+      var rows = document.querySelectorAll('#resume-list .resume-row');
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].dataset.sessionId === selectedResumeSessionId) { attachedRow = rows[i]; break; }
+      }
+    }
+    if (attachedRow) {
+      attachedRow.classList.remove('selected');
+      attachedRow.setAttribute('aria-pressed', 'false');
+      attachedRow.disabled = true;
+      var nameEl = attachedRow.querySelector('.resume-name');
+      if (nameEl) nameEl.appendChild(document.createTextNode(' — attached ✓'));
+    }
+    selectedResumeSessionId = null;
     var attachBtnOk = document.getElementById('resume-attach');
-    if (attachBtnOk) attachBtnOk.disabled = false;
+    if (attachBtnOk) attachBtnOk.disabled = true;
     var chatName = d.chatName ? '"' + d.chatName + '"' : 'A new chat';
     showModal('Session resumed', chatName + ' is ready in your chat list. Open it and send a message to continue.');
     return;
@@ -1255,10 +1332,23 @@ window.webxdc.setUpdateListener(function(update) {
 
 // ── DOM ready ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
-  // Resume-cancel: switch back to pick view in to_cli (or just stay neutral)
+  // Resume-cancel: a neutral reset within THIS view. Switching to the
+  // to_cli view here used to send a user who was importing (and had second
+  // thoughts) straight into "send to terminal" — the opposite task. Just
+  // clear the selection and disable Attach instead; the rendered list stays
+  // put so they can pick again without waiting on a re-fetch.
   var cancelBtn = document.getElementById('resume-cancel');
   if (cancelBtn) cancelBtn.addEventListener('click', function() {
-    switchView('to_cli');
+    selectedResumeSessionId = null;
+    var rows = document.querySelectorAll('#resume-list .resume-row');
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].classList.remove('selected');
+      rows[i].setAttribute('aria-pressed', 'false');
+    }
+    var attachBtn = document.getElementById('resume-attach');
+    if (attachBtn) attachBtn.disabled = true;
+    var errEl = document.getElementById('resume-error');
+    if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
   });
 
   // Resume-attach
@@ -1275,7 +1365,7 @@ document.addEventListener('DOMContentLoaded', function() {
       if (myReq === attachRequestId) {
         hideLoadingModal();
         attachBtn.disabled = false;
-        showModal('No response', 'The server did not respond. This card may be outdated — ask Claude to send you the teleport card again.');
+        showModal('No response', 'The server did not respond. This card may be outdated — ask Claude to send you the teleport card again.', { variant: 'error' });
       }
     }, 15000);
     window.webxdc.sendUpdate({

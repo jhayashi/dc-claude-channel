@@ -24,3 +24,39 @@ test("init view=to_cli requests the teleport-out list and renders rows", async (
   await h.page.waitForSelector('text=Health', { state: 'visible', timeout: 3000 });
   await h.close();
 });
+
+test("resume_attach_ok shows the success modal and leaves Attach disabled (duplicate-attach guard)", async () => {
+  const h: HarnessHandle = await createHarness(xdc());
+  await h.push({ type: 'init', view: 'here', senderAddr: 'server' });
+
+  // The card emits a resume_list_request on entering the "here" view; reply
+  // with one candidate session.
+  await h.push({
+    type: 'resume_list', requestId: 1, senderAddr: 'server',
+    candidates: [{ sessionId: 'abc123', cwd: '/home/joe/proj', mtimeMs: Date.now(), sessionName: 'Fix the bug', messageCount: 12 }],
+  });
+  await h.page.waitForSelector('.resume-row', { state: 'visible', timeout: 3000 });
+
+  // Select the row, then tap Attach — this is what increments the client's
+  // attachRequestId, so the server's requestId:1 below has to line up with it.
+  await h.page.click('.resume-row');
+  await h.page.click('#resume-attach');
+
+  await h.push({
+    type: 'resume_attach_ok', requestId: 1, senderAddr: 'server',
+    sessionId: 'abc123', chatId: 99, chatName: 'Fix the bug',
+  });
+
+  // Success modal, non-error variant.
+  await h.page.waitForSelector('text=Session resumed', { state: 'visible', timeout: 3000 });
+  await expect(h.page.locator('#modal')).not.toHaveClass(/error-variant/);
+
+  // Duplicate-attach guard: Attach stays disabled (no re-enable with the
+  // same row still selected — a second tap used to mint a duplicate chat),
+  // and the attached row is visibly marked and inert.
+  await expect(h.page.locator('#resume-attach')).toBeDisabled({ timeout: 3000 });
+  await expect(h.page.locator('.resume-row')).toBeDisabled({ timeout: 3000 });
+  await expect(h.page.locator('.resume-row')).toContainText('attached');
+
+  await h.close();
+});
