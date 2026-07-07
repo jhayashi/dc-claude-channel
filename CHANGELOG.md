@@ -4,6 +4,29 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.17] — 2026-07-07
+
+Post-decomposition cleanup (#117): removes dead code carried over from the retired `agent-setup` monolith, dedupes dispatcher logic, and tightens card copy. No behavior change — internal maintenance plus test hardening.
+
+### Changed
+
+- **Dispatcher dedup.** Collapsed a triple `getBinding` call in the member-added path to a single read, and factored the member-added permission-offer dedup into a reusable `freshPermissionOfferTargets` helper (a lingering unpermissioned member no longer re-triggers an offer on every later member-add).
+- **`agent-manage` refactor.** Deduped the §6 refusal copy behind a shared `refuseIfUnauthorized` guard, hardened the `open-create` branch with a try/catch that surfaces a real error instead of failing silently.
+- **Card copy.** `teleport` drops the "single-writer lock" jargon for plain language; `create-agent` names itself consistently ("New Agent card") and swaps the build-confirm heading to a failure line on error; `contacts` fixes the `guest` role label drift ("Untrusted Contact" → "Guest") and shows one helpful line instead of three stacked "None"s when an agent has no contacts.
+
+### Removed
+
+- **Dead monolith code.** Purged ~200 lines of orphaned wall/create/template/pattern CSS and the unused `renderToolPicker` / `collectToolPickerState` / `#loading-modal` ("Scanning the last 5 days…") remnants from `agent-manage`, and dead `.section-label` / `label.field` CSS from `create-agent`. The live reuse-picker, edit form, and shared styles are untouched.
+
+### Fixed
+
+- **`create-agent` sub-screen bleed.** The "Build from scratch" button no longer sits underneath the drill-in / search / review sub-screens (it's hidden off the root wall and re-shown only there).
+- **`agent-manage` double modal.** A failed reuse/rebind no longer stacks a generic error modal on top of the inline error already shown in the confirm modal.
+
+### Tests
+
+- Added a `create-agent` harness test asserting a custom model id from the "Other…" segment rides the emitted `create` update verbatim; raised the `badge-patterns` resvg-render timeouts to 20s to defend against render slowness under load.
+
 ## [1.4.16] — 2026-07-06
 
 Completes the settings-app decomposition (epic #109): the monolithic `agent-setup` card is retired, replaced by four bespoke WebXDC cards. Bundles increments 2–4 (none previously released), a new authenticated NL rebind command, two production bug fixes, and a full CX polish pass across all four cards.
