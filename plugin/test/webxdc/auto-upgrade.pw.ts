@@ -24,7 +24,13 @@ const PREBUILT_DIR = join(HERE, "..", "..", "webxdc-prebuilt");
 // spuriously trigger the handshake). Map basename prefix → the minimal
 // payload that unlocks the version check.
 const INIT_PAYLOAD_TYPE: Record<string, string> = {
-  "agent-setup": "init",
+  // The retired agent-setup monolith's entry is gone (epic #109); its
+  // successors each gate on their own 'init'. Without an entry a card's
+  // test THROWS ("no init-payload type registered") — these three were
+  // silently red from the day each card shipped.
+  "agent-manage": "init",
+  "create-agent": "init",
+  "contacts": "init",
   "permission-prompt": "request",
   "file-reviewer": "file", // file-reviewer has no type gate; anything works
   "teleport": "init",
