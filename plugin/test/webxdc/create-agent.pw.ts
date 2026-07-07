@@ -86,6 +86,38 @@ test("chat-ready reply confirms the coach handoff with a terminal success modal"
   await h.close();
 });
 
+test("custom model id from the 'Other…' segment rides the create update verbatim", async () => {
+  const h: HarnessHandle = await createHarness(xdc());
+  await h.push({ type: 'init', senderAddr: 'server', leaves: [], l2Summary: [],
+    availableModels: [], defaultModel: null,
+    availableBuiltinTools: [], availableMcpServers: [], connectedMcpServers: [] });
+  await h.page.waitForSelector('#shell', { state: 'visible', timeout: 4000 });
+
+  // Drill into the manual create form.
+  await h.page.click('text=Build from scratch');
+  await h.page.waitForSelector('#step2.visible', { state: 'visible', timeout: 3000 });
+
+  // Reveal the custom-model-id input via the "Other…" segment.
+  await h.page.click('#create-model-seg button[data-tier="__other__"]');
+  await h.page.waitForSelector('#create-custom-model-row.visible', { state: 'visible', timeout: 3000 });
+
+  // Type a custom id and a name, then Create.
+  await h.page.fill('#create-custom-model-id', 'claude-sonnet-5-0');
+  await h.page.fill('#name', 'Custom model agent');
+  await h.page.click('#create-btn');
+
+  // The emitted create update carries the custom id verbatim in config.model.
+  let model: unknown = undefined;
+  await expect.poll(async () => {
+    const out = await h.outbound();
+    const create = out.find((o: any) => o.update.payload?.type === 'create');
+    model = (create as any)?.update.payload.config.model;
+    return model;
+  }, { timeout: 3000 }).toBe('claude-sonnet-5-0');
+
+  await h.close();
+});
+
 test("create_err reply surfaces the §6 refusal message and re-enables Create", async () => {
   const h: HarnessHandle = await createHarness(xdc());
   await h.push({ type: 'init', senderAddr: 'server', leaves: [], l2Summary: [],

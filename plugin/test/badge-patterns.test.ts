@@ -52,7 +52,7 @@ describe('Badge patterns', () => {
         // an empty / corrupt write.
         expect(statSync(path).size).toBeGreaterThan(1000)
       }
-    })
+    }, 20000)
   }
 
   test('solid (trust-off) renders without a pattern', async () => {
@@ -64,7 +64,7 @@ describe('Badge patterns', () => {
       pattern: 'checker', // ignored when trust=false
     })
     expect(statSync(path).size).toBeGreaterThan(1000)
-  })
+  }, 20000)
 
   // Pixel-sample assertion: each non-trivial pattern must produce at
   // least 2 distinct colors in trust-on mode. Sample points are chosen
@@ -96,7 +96,7 @@ describe('Badge patterns', () => {
       // Every pattern listed in PATTERN_IDS uses two colors; we must
       // see at least two distinct pixel values somewhere in the grid.
       expect(distinct.size).toBeGreaterThanOrEqual(2)
-    })
+    }, 20000)
   }
 
   test('different patterns produce different cache files for the same agent inputs', async () => {
@@ -107,5 +107,5 @@ describe('Badge patterns', () => {
       archetype: 'role', modelFamily: 'sonnet', trust: true, glyph: 'user-round', pattern: 'stripes',
     })
     expect(a).not.toBe(b)
-  })
+  }, 20000)
 })

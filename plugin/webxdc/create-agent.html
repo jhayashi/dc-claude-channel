@@ -61,22 +61,6 @@ body {
   width: 100%;
 }
 
-.section-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #6e7681;
-  margin: 4px 0 10px;
-  font-weight: 600;
-}
-label.field {
-  display: block;
-  font-size: 12px;
-  color: #8b949e;
-  margin-bottom: 6px;
-  margin-top: 14px;
-  font-weight: 500;
-}
 input.text, textarea.text, select.text {
   width: 100%;
   background: #0d1117;
@@ -652,7 +636,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       <svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
     </div>
     <div class="outdated-title">New version available</div>
-    <div class="outdated-sub">A newer create-agent card was sent to this chat. Swipe back and open the latest one.</div>
+    <div class="outdated-sub">A newer New Agent card was sent to this chat. Swipe back and open the latest one.</div>
   </div>
 </div>
 
@@ -688,7 +672,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.02;
+var APP_VERSION = 1.03;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:   { solid: '#B4862A', checker: '#D9B25B' },
@@ -1246,6 +1230,10 @@ function renderWall() {
   hideAll(['wall-results', 'wall-l2', 'wall-leaf-detail']);
   document.getElementById('wall-helper').style.display = '';
   document.getElementById('wall-grid').style.display = '';
+  // "Build from scratch" belongs only on the root wall — re-show it here
+  // (the drill-in / search / review paths hide it so it doesn't bleed
+  // underneath a sub-screen).
+  document.getElementById('wall-manual').style.display = '';
 
   var html = '<div class="wall-grid">';
   var sorted = ((state.catalog && state.catalog.l2Summary) || []).slice().sort(function(a, b) {
@@ -1276,6 +1264,7 @@ function onWallSearch() {
   if (!q) { renderWall(); return; }
   document.getElementById('wall-helper').style.display = 'none';
   document.getElementById('wall-grid').style.display = 'none';
+  document.getElementById('wall-manual').style.display = 'none';
   document.getElementById('wall-l2').innerHTML = '';
   document.getElementById('wall-leaf-detail').innerHTML = '';
 
@@ -1305,6 +1294,7 @@ function enterL2(l2) {
   document.getElementById('wall-helper').style.display = 'none';
   document.getElementById('wall-grid').style.display = 'none';
   document.getElementById('wall-results').style.display = 'none';
+  document.getElementById('wall-manual').style.display = 'none';
   document.getElementById('wall-leaf-detail').innerHTML = '';
   document.getElementById('wall-l2').style.display = '';
 
@@ -1360,6 +1350,7 @@ function showLeafDetail(leafId) {
               '<button class="btn btn-primary" data-action="add-and-review" data-leaf-id-add="' + escapeHtml(l.id) + '">Add &amp; review</button>';
   }
 
+  document.getElementById('wall-manual').style.display = 'none';
   document.getElementById('wall-leaf-detail').style.display = '';
   document.getElementById('wall-leaf-detail').innerHTML =
     '<div class="leaf-detail">' +
@@ -1442,7 +1433,7 @@ function rerenderReviewIfOpen() {
 function showReviewScreen() {
   if (state.build.length === 0) return;
   document.getElementById('wall-l2').style.display = '';
-  hideAll(['wall-grid', 'wall-helper', 'wall-results', 'wall-leaf-detail']);
+  hideAll(['wall-grid', 'wall-helper', 'wall-results', 'wall-leaf-detail', 'wall-manual']);
   var leaves = state.build.map(function(id) {
     return leavesOf().find(function(l) { return l.id === id; });
   }).filter(Boolean);
@@ -1695,6 +1686,9 @@ function handleChatReady() {
 
 function handleChatFailed(errorMessage) {
   if (buildConfirmTimer) { clearTimeout(buildConfirmTimer); buildConfirmTimer = null; }
+  // Swap the heading off the original "Start a new chat…?" question — the
+  // sub now carries the error, so a question heading over it reads wrong.
+  document.getElementById('build-confirm-heading').textContent = "Couldn't start the chat";
   document.getElementById('build-confirm-sub').textContent = errorMessage || 'Something went wrong.';
   setBuildConfirmState('error');
 }
@@ -1756,7 +1750,7 @@ function create() {
     if (creating) {
       creating = false;
       document.getElementById('create-btn').disabled = false;
-      showModal('No response', 'The server did not respond. This app may not be connected — ask Claude to send you the create-agent card.', {variant:'error'});
+      showModal('No response', 'The server did not respond. This app may not be connected — ask Claude to send you the New Agent card.', {variant:'error'});
     }
   }, 15000);
 }

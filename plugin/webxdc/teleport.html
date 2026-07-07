@@ -488,7 +488,7 @@ body {
         <div id="to-summary" class="to-summary"></div>
         <div class="to-note to-note-warn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-2px;margin-right:4px;"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          Don't send messages to this DC chat while the terminal session is active &mdash; single-writer lock.
+          Don't send messages to this DC chat while the terminal session is active &mdash; only one place can use this session at a time.
         </div>
       </div>
 
@@ -581,7 +581,7 @@ body {
 </div>
 
 <script>
-var APP_VERSION = 1.01;
+var APP_VERSION = 1.02;
 var versionMismatchSent = false;
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -733,7 +733,6 @@ function toShowScreen(screen) {
     back.style.display = 'none';
     next.textContent = 'Next'; next.onclick = toAdvanceFromPick;
     next.disabled = !toState.selectedChat;
-    footer.style.display = 'flex';
   } else if (screen === 'jobs') {
     back.textContent = 'Back'; back.onclick = function() { toShowScreen('pick'); };
     next.textContent = 'Next'; next.onclick = toAdvanceFromJobs;

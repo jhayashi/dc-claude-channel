@@ -277,12 +277,17 @@ body {
     </div>
     <div class="body">
       <div id="saved-banner" class="saved-banner" role="status"></div>
-      <div class="section-label">Needs Role</div>
-      <div id="contacts-needs"></div>
-      <div class="section-label">Assigned Roles</div>
-      <div id="contacts-assigned"></div>
-      <div class="section-label">Subscribers</div>
-      <div id="contacts-subscribers"></div>
+      <div id="contacts-all-empty" class="contacts-empty" style="display:none;">
+        No contacts for this agent yet — open this card from a chat bound to the agent whose contacts you want to manage.
+      </div>
+      <div id="contacts-sections">
+        <div class="section-label">Needs Role</div>
+        <div id="contacts-needs"></div>
+        <div class="section-label">Assigned Roles</div>
+        <div id="contacts-assigned"></div>
+        <div class="section-label">Subscribers</div>
+        <div id="contacts-subscribers"></div>
+      </div>
     </div>
   </div>
 
@@ -321,7 +326,7 @@ body {
 </div>
 
 <script>
-var APP_VERSION = 1.01;
+var APP_VERSION = 1.02;
 var versionMismatchSent = false;
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -336,7 +341,7 @@ var ROLE_DISPLAY = {
   'trusted-agent':   { label: 'Trusted Agent',     chipCls: 'role-chip-trusted', badgeCls: 'contact-badge-orange',  iconColor: 'var(--paper)' },
   'family-member':   { label: 'Family Member',     chipCls: 'role-chip-family',  badgeCls: 'contact-badge-amber',   iconColor: 'var(--amber)' },
   'untrusted-agent': { label: 'Untrusted Contact', chipCls: 'role-chip-untrust', badgeCls: 'contact-badge-faint',   iconColor: 'var(--ink-faint)' },
-  'guest':           { label: 'Untrusted Contact', chipCls: 'role-chip-untrust', badgeCls: 'contact-badge-faint',   iconColor: 'var(--ink-faint)' },
+  'guest':           { label: 'Guest',             chipCls: 'role-chip-untrust', badgeCls: 'contact-badge-faint',   iconColor: 'var(--ink-faint)' },
   'no-permissions':  { label: 'No Permissions',    chipCls: 'role-chip-untrust', badgeCls: 'contact-badge-faint',   iconColor: 'var(--ink-faint)' },
 };
 
@@ -422,6 +427,13 @@ function renderContactList(contacts) {
   var needs = contactList.filter(function(c) { return !c.role; });
   var assigned = contactList.filter(function(c) { return c.role && c.role !== 'subscriber'; });
   var subs = contactList.filter(function(c) { return c.role === 'subscriber'; });
+
+  // All three sections empty → one helpful line instead of a stack of "None"s.
+  var sectionsEl = document.getElementById('contacts-sections');
+  var allEmptyEl = document.getElementById('contacts-all-empty');
+  var allEmpty = contactList.length === 0;
+  if (sectionsEl) sectionsEl.style.display = allEmpty ? 'none' : '';
+  if (allEmptyEl) allEmptyEl.style.display = allEmpty ? '' : 'none';
 
   function fill(elId, arr) {
     var el = document.getElementById(elId);
