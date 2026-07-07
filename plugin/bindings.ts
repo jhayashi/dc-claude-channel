@@ -193,36 +193,6 @@ export function getBinding(chatId: number): Binding | null {
   return parsed.success ? parsed.data : null
 }
 
-export interface ResolvedWorkingDir {
-  workingDir: string
-  /** True when the resolved dir differs from the input (caller may persist). */
-  changed: boolean
-  /** The missing dir that was replaced — set only when a heal occurred. */
-  healedFrom?: string
-}
-
-/**
- * Resolve the cwd to spawn a subagent in. Falls back to `fallbackCwd` when the
- * binding has no workingDir (brand-new chat) or when its recorded workingDir no
- * longer exists on disk (e.g. a temporary git worktree cleaned up after a
- * merge/release). Spawning claude into a missing cwd makes it hang with no
- * output until the turn timeout, so we heal to a valid dir instead. `dirExists`
- * is injected so the resolution is pure and unit-testable without the fs.
- */
-export function resolveWorkingDir(
-  workingDir: string | undefined,
-  fallbackCwd: string,
-  dirExists: (p: string) => boolean,
-): ResolvedWorkingDir {
-  if (!workingDir) {
-    return { workingDir: fallbackCwd, changed: true }
-  }
-  if (!dirExists(workingDir)) {
-    return { workingDir: fallbackCwd, changed: true, healedFrom: workingDir }
-  }
-  return { workingDir, changed: false }
-}
-
 // A workingDir is a "plugin-cache-version path" when it lives under
 // .../plugins/cache/<marketplace>/deltachat/<version>[/...]. Claude Code
 // prunes old <version> dirs on plugin auto-update, orphaning any binding

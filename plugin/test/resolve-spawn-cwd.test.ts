@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { isPluginCacheVersionPath, resolveSpawnCwd } from '../bindings'
+import { workingDirGoneMessage } from '../server'
 
 describe('isPluginCacheVersionPath', () => {
   test('matches a plugin-cache version dir (with and without the /plugin subdir)', () => {
@@ -56,5 +57,14 @@ describe('resolveSpawnCwd', () => {
       fallbackCwd: '/cwd', currentPluginDir: CUR, dirExists: () => false,
     })
     expect(r).toEqual({ kind: 'unresolvable', missingDir: pruned })
+  })
+})
+
+describe('workingDirGoneMessage', () => {
+  test('names the missing dir, the chat, and how to repoint it', () => {
+    const m = workingDirGoneMessage(32, '/home/u/projects/gone')
+    expect(m).toContain('/home/u/projects/gone')
+    expect(m).toContain('32')                 // the binding file to edit
+    expect(m).toMatch(/no longer exists/i)
   })
 })

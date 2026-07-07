@@ -267,6 +267,14 @@ function dcToolCount(): number {
   ].filter(n => !SUBAGENT_TOOL_BLOCKLIST.has(n)).length
 }
 
+/** Chat-visible copy when a chat's recorded workingDir is gone and not a
+ *  heal-able plugin-cache path (e.g. a deleted worktree or moved project). */
+export function workingDirGoneMessage(chatId: number, missingDir: string): string {
+  return `⚠️ This chat's working directory (${missingDir}) no longer exists, ` +
+    `so I can't start a session here. Tell me which directory to use, or repoint ` +
+    `"workingDir" in ~/.claude/channels/deltachat/bindings/${chatId}.json to a live path.`
+}
+
 async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | null> {
   const resolvedCheck = bindings.resolveChat(chatId)
   if (!resolvedCheck) {
@@ -361,18 +369,29 @@ async function spawnSubagentForChat(chatId: number): Promise<SubagentProcess | n
   // above but no agentId yet, and we don't want the cwd to drift if the
   // dispatcher is relaunched from elsewhere before the user picks an agent.
   const existing = bindings.getBinding(chatId)
-  const resolvedWd = bindings.resolveWorkingDir(existing?.workingDir, process.cwd(), existsSync)
-  const workingDir = resolvedWd.workingDir
-  if (resolvedWd.healedFrom) {
-    // The recorded dir is gone (e.g. a temporary worktree was cleaned up).
-    // Spawning into a missing cwd hangs claude until the turn timeout, so heal
-    // to the dispatcher's cwd and persist it rather than wedging the chat.
-    logf(
-      'subagent: chat=%d workingDir %s no longer exists; healing to %s',
-      chatId, resolvedWd.healedFrom, workingDir,
-    )
+  const resolvedCwd = bindings.resolveSpawnCwd(existing?.workingDir, {
+    fallbackCwd: process.cwd(),
+    currentPluginDir: import.meta.dir,
+    dirExists: existsSync,
+  })
+  if (resolvedCwd.kind === 'unresolvable') {
+    // The recorded dir is gone and isn't a pruned plugin-cache path we can
+    // heal. Don't silently run the agent elsewhere — tell the owner.
+    logf('subagent: chat=%d workingDir %s is gone (not a plugin-cache path); refusing to spawn',
+      chatId, resolvedCwd.missingDir)
+    try {
+      await client.send(chatId, workingDirGoneMessage(chatId, resolvedCwd.missingDir))
+    } catch (err) {
+      logf('subagent: failed to send workingDir-gone message: %v', err)
+    }
+    return null
   }
-  if (resolvedWd.changed && existing) {
+  const workingDir = resolvedCwd.workingDir
+  if (resolvedCwd.kind === 'healed') {
+    logf('subagent: chat=%d workingDir %s was pruned by a plugin update; healed to %s',
+      chatId, resolvedCwd.healedFrom, workingDir)
+  }
+  if ((resolvedCwd.kind === 'healed' || resolvedCwd.kind === 'adopt') && existing) {
     bindings.saveBinding({ ...existing, workingDir })
   }
 
