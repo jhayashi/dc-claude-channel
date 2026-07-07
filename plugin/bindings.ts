@@ -223,6 +223,17 @@ export function resolveWorkingDir(
   return { workingDir, changed: false }
 }
 
+// A workingDir is a "plugin-cache-version path" when it lives under
+// .../plugins/cache/<marketplace>/deltachat/<version>[/...]. Claude Code
+// prunes old <version> dirs on plugin auto-update, orphaning any binding
+// whose workingDir was pinned to one. Matching the `deltachat` plugin
+// segment keeps this from healing an unrelated plugin's cache path.
+const PLUGIN_CACHE_VERSION_RE = /[\\/]plugins[\\/]cache[\\/][^\\/]+[\\/]deltachat[\\/][^\\/]+/
+
+export function isPluginCacheVersionPath(dir: string): boolean {
+  return PLUGIN_CACHE_VERSION_RE.test(dir)
+}
+
 /** Save a binding. Atomic via temp + rename. */
 export function saveBinding(binding: Binding): void {
   const validated = BindingSchema.parse(binding)
