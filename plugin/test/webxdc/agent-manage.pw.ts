@@ -48,10 +48,61 @@ test("action_err reply surfaces the §6 refusal message", async () => {
 
   await h.push({
     type: "action_err", senderAddr: "server",
-    message: "That change has to come from you directly — say it in our chat, or open this from your 1:1 with me.",
+    message: 'That change has to come from you directly — send it as a message here (e.g. "switch this chat to <agent name>"), or open this card from your 1:1 chat with me.',
   });
 
-  await h.page.waitForSelector('text=say it in our chat', { state: "visible", timeout: 3000 });
+  await h.page.waitForSelector('text=send it as a message here', { state: "visible", timeout: 3000 });
+  await h.close();
+});
+
+test("action_err renders the error-variant modal (non-green icon)", async () => {
+  // The §6 refusal is a failure, not a success — it must show the error
+  // modal (red heading, ✖ icon, no auto-dismiss countdown), not the green
+  // success ✅.
+  const h: HarnessHandle = await createHarness(xdc());
+  await h.push({ ...INIT, version: await h.getAppVersion() });
+  await h.page.waitForSelector('#manage-list .agent-row:has-text("Sleep coach")', { state: "visible", timeout: 4000 });
+
+  await h.push({ type: "action_err", senderAddr: "server", message: "Nope." });
+
+  await h.page.waitForSelector("#modal.visible", { state: "visible", timeout: 3000 });
+  await expect(h.page.locator("#modal")).toHaveClass(/error-variant/);
+  const icon = await h.page.locator("#modal-icon").textContent();
+  expect(icon).not.toContain("✅"); // not the green success check
+  // Error modals get a plain "Dismiss" (no "(5)" countdown suffix).
+  await expect(h.page.locator("#modal-dismiss")).toHaveText("Dismiss");
+  await h.close();
+});
+
+test("rebind chat-ready confirms 'Agent switched' over the manage screen", async () => {
+  // THE headline fix (#120): a successful rebind used to dump the user on
+  // the legacy hub with zero confirmation. Now it lands on the manage list
+  // behind a success modal that names the new agent and points back to chat.
+  const h: HarnessHandle = await createHarness(xdc());
+  await h.push({
+    ...INIT, version: await h.getAppVersion(), view: "switch",
+    existingAgents: [
+      { ...INIT.existingAgents[0], isCurrentAgent: true },
+      { id: "tutor-agent", name: "Tutor", model: "claude-sonnet-4-6", pattern: "checker", bindingCount: 0 },
+    ],
+  });
+  await h.page.waitForSelector("#reuse-picker", { state: "visible", timeout: 4000 });
+  await h.page.click('#reuse-list .agent-row:has-text("Tutor")');
+  await h.page.waitForSelector("#reuse-confirm-modal.visible", { timeout: 3000 });
+  await h.page.click("#reuse-confirm-ok");
+
+  // Dispatcher confirms the rebind and ships a refreshed list (Tutor now current).
+  await h.push({
+    type: "chat-ready", senderAddr: "server", chatId: 7,
+    existingAgents: [
+      { id: "sleep-coach", name: "Sleep coach", model: "claude-sonnet-4-6", pattern: "checker", bindingCount: 0 },
+      { id: "tutor-agent", name: "Tutor", model: "claude-sonnet-4-6", pattern: "checker", bindingCount: 1, isCurrentAgent: true },
+    ],
+  });
+
+  await h.page.waitForSelector("text=Agent switched", { state: "visible", timeout: 3000 });
+  await expect(h.page.locator("#modal-sub")).toContainText("Tutor");
+  await expect(h.page.locator("#manage")).toBeVisible();
   await h.close();
 });
 

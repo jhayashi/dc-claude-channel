@@ -1040,7 +1040,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 <body>
 <div class="card">
   <div id="loading" class="visible">
-    <div class="center"><div class="spinner"></div>Waiting for setup details...</div>
+    <div class="center"><div class="spinner"></div>Loading your agents&hellip;</div>
   </div>
 
   <div id="step0">
@@ -1049,7 +1049,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
         <span class="app-header-logo" aria-hidden="true">
           <img src="/*__ICON_DATA_URI__*/" alt="">
         </span>
-        <span class="app-header-title">Agent &amp; Chat Setup</span>
+        <span class="app-header-title">Manage Agents</span>
         <span class="app-header-version" id="home-version"></span>
       </div>
       <div class="section-label">What would you like to do?</div>
@@ -1071,7 +1071,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
             </span>
             <span class="home-action-body">
               <span class="home-action-label">Switch this chat's agent</span>
-              <span class="home-action-desc">Switch this chat to a different agent. Starts fresh.</span>
+              <span class="home-action-desc">Switch this chat to a different agent.</span>
             </span>
             <span class="home-action-chev" aria-hidden="true">&rsaquo;</span>
           </button>
@@ -1132,13 +1132,14 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
   <!-- Phase 12 — reuse picker scaffold. List rendering lands in 12.2. -->
   <div id="reuse-picker">
     <div class="title-bar">
-      <button class="crumb" type="button" onclick="show('new-chat-mode')">
+      <button class="crumb" type="button" onclick="backFromReusePicker()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         Back
       </button>
-      <div class="title">Pick an agent</div>
+      <div class="title" id="reuse-picker-title">Pick an agent</div>
     </div>
     <div class="body">
+      <div id="reuse-picker-sub" style="display:none; font-size:12px; color:var(--ink-mute); margin-bottom:12px; line-height:1.4;"></div>
       <div id="reuse-empty" class="results-empty" style="display:none;">
         No saved agents yet. Ask Claude in chat to set one up.
       </div>
@@ -1150,7 +1151,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     <div class="title-bar">
       <button class="crumb" type="button" onclick="show('step0')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        Home
+        More
       </button>
       <div class="title">Manage agents</div>
     </div>
@@ -1314,13 +1315,13 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
     </div>
     <div id="reuse-confirm-processing" style="display:none; text-align:center; padding:8px; margin-top:16px;">
       <div class="spinner"></div>
-      <div style="margin-top:8px; color:var(--ink-mute);">Setting up your chat&hellip;</div>
+      <div id="reuse-confirm-processing-text" style="margin-top:8px; color:var(--ink-mute);">Setting up your chat&hellip;</div>
     </div>
   </div>
 </div>
 
 <script>
-var APP_VERSION = 1.05;
+var APP_VERSION = 1.06;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:   { solid: '#B4862A', checker: '#D9B25B' },
@@ -1631,21 +1632,43 @@ function resetTransientState() {
   if (saveBtn) saveBtn.disabled = false;
 }
 
-function showModal(heading, sub) {
-  document.getElementById('modal-heading').textContent = heading;
+// opts.variant: 'success' (default) | 'error'. The modal element is
+// REUSED across opens, so every field (icon, heading color, error class,
+// dismiss button, countdown) is reset on each call — never rely on a prior
+// open's styling. Success auto-dismisses after 5s; error stays put with a
+// plain "Dismiss" button (a failure the user should read, not one that
+// disappears).
+function showModal(heading, sub, opts) {
+  var variant = (opts && opts.variant) || 'success';
+  var iconEl = document.getElementById('modal-icon');
+  var headingEl = document.getElementById('modal-heading');
+  var modalEl = document.getElementById('modal');
+  var dismissEl = document.getElementById('modal-dismiss');
+  headingEl.textContent = heading;
   document.getElementById('modal-sub').textContent = sub;
-  modalCountdown = 5;
-  updateDismissLabel();
-  document.getElementById('modal').classList.add('visible');
-  if (modalTimer) clearInterval(modalTimer);
-  modalTimer = setInterval(function() {
-    modalCountdown--;
-    if (modalCountdown <= 0) {
-      dismissModal();
-    } else {
-      updateDismissLabel();
-    }
-  }, 1000);
+  if (modalTimer) { clearInterval(modalTimer); modalTimer = null; }
+  if (variant === 'error') {
+    iconEl.innerHTML = '&#x2716;';          // heavy multiplication X
+    headingEl.style.color = '#f85149';      // no --red token; GitHub-dark red
+    modalEl.classList.add('error-variant');
+    modalCountdown = 0;
+    dismissEl.textContent = 'Dismiss';
+  } else {
+    iconEl.innerHTML = '&#x2705;';          // check mark button
+    headingEl.style.color = '';             // revert to CSS green
+    modalEl.classList.remove('error-variant');
+    modalCountdown = 5;
+    updateDismissLabel();
+    modalTimer = setInterval(function() {
+      modalCountdown--;
+      if (modalCountdown <= 0) {
+        dismissModal();
+      } else {
+        updateDismissLabel();
+      }
+    }, 1000);
+  }
+  modalEl.classList.add('visible');
 }
 
 function updateDismissLabel() {
@@ -1989,6 +2012,14 @@ function setReuseConfirmState(s) {
   buttons.style.display = (s === 'idle' || s === 'error') ? '' : 'none';
   processing.style.display = (s === 'processing') ? '' : 'none';
   ok.textContent = (s === 'error') ? 'Retry' : (reuseConfirmMode === 'rebind' ? 'Switch' : 'Start chat');
+  // A rebind retargets THIS chat ("Switching agents…"); reuse/default spin
+  // up a brand-new chat ("Setting up your chat…").
+  var procText = document.getElementById('reuse-confirm-processing-text');
+  if (procText) {
+    procText.textContent = (reuseConfirmMode === 'rebind')
+      ? 'Switching agents…'
+      : 'Setting up your chat…';
+  }
 }
 
 function closeReuseConfirm() {
@@ -1997,12 +2028,24 @@ function closeReuseConfirm() {
   reuseConfirmMode = null;
 }
 
-// Called from the WebXDC update listener when the dispatcher reports
-// the new chat is ready. Close the modal and route back to home — the
-// new chat is in the user's chatlist and they switch to it from there.
+// Called from the WebXDC update listener when the dispatcher reports the
+// action succeeded. WebXDC can't self-close, so we can't just vanish — we
+// confirm WHAT happened and point the user back to the chat. The copy is
+// mode-aware, so read reuseConfirmMode/AgentId BEFORE closeReuseConfirm()
+// nulls them. Land on the manage list (the card's root) behind the modal —
+// NOT step0, which dumped the user on the old hub with no confirmation.
 function handleChatReady() {
+  var mode = reuseConfirmMode;
+  var agentId = reuseConfirmAgentId;
   closeReuseConfirm();
-  show('step0');
+  show('manage');
+  if (mode === 'rebind') {
+    var agent = (existingAgents || []).find(function(a){ return a.id === agentId; });
+    var nm = (agent && agent.name) || 'this agent';
+    showModal('Agent switched', 'This chat now uses "' + nm + '". Head back to the chat and say hi.');
+  } else {
+    showModal('Chat created', 'Open the new chat from your chat list to get started.');
+  }
 }
 
 // Called from the WebXDC update listener on chat-failed. Flip the
@@ -2364,16 +2407,38 @@ function gotoNewChat() {
   show('new-chat-mode');
 }
 
+function setReusePickerChrome() {
+  var titleEl = document.getElementById('reuse-picker-title');
+  var subEl = document.getElementById('reuse-picker-sub');
+  if (reusePickerMode === 'rebind') {
+    if (titleEl) titleEl.textContent = "Switch this chat's agent";
+    if (subEl) { subEl.textContent = 'Starts a fresh conversation unless you keep it.'; subEl.style.display = ''; }
+  } else {
+    if (titleEl) titleEl.textContent = 'Pick an agent';
+    if (subEl) { subEl.textContent = ''; subEl.style.display = 'none'; }
+  }
+}
+
 function gotoReusePicker() {
   reusePickerMode = 'new';
+  setReusePickerChrome();
   renderReusePickList();
   show('reuse-picker');
 }
 
 function gotoRebindPicker() {
   reusePickerMode = 'rebind';
+  setReusePickerChrome();
   renderReusePickList();
   show('reuse-picker');
+}
+
+// Back from the picker is mode-aware: rebind was reached from the manage
+// list (the card's root); the new-chat reuse flow was reached from the
+// intermediate mode picker (step0 → new-chat-mode).
+function backFromReusePicker() {
+  if (reusePickerMode === 'rebind') show('manage');
+  else show('new-chat-mode');
 }
 
 function gotoDefaultAgent() {
@@ -2564,7 +2629,7 @@ function saveEdit() {
     if (creating) {
       creating = false;
       document.getElementById('save-btn').disabled = false;
-      showModal('No response', 'The server did not respond. This app may not be connected — ask Claude to send you the agent settings card.');
+      showModal('No response', 'The server did not respond. This app may not be connected — ask Claude to send you the Manage Agents card.', {variant:'error'});
     }
   }, 15000);
 }
@@ -2596,7 +2661,7 @@ function deleteAgent(agentId) {
       if (pendingAction === 'delete') {
         pendingAction = null;
         creating = false;
-        showModal('No response', 'The server did not respond. This card may be outdated \u2014 ask Claude to send you the agent settings card again.');
+        showModal('No response', 'The server did not respond. This card may be outdated \u2014 ask Claude to send you the Manage Agents card again.', {variant:'error'});
       }
     }, 10000);
     window.webxdc.sendUpdate({
@@ -2673,6 +2738,15 @@ window.webxdc.setUpdateListener(function(update) {
   // and routes the card back home; chat-failed flips the modal to
   // its error state with a Retry button.
   if (d.type === 'chat-ready') {
+    // Fresh list: after a rebind/reuse the source chat's binding state
+    // changed (bindingCount, isCurrentAgent), so a re-opened picker no
+    // longer marks the OLD agent "Current".
+    if (d.existingAgents) {
+      existingAgents = d.existingAgents;
+      refreshList();
+      var rpReady = document.getElementById('reuse-picker');
+      if (rpReady && rpReady.classList.contains('visible')) renderReusePickList();
+    }
     handleChatReady();
     return;
   }
@@ -2688,6 +2762,14 @@ window.webxdc.setUpdateListener(function(update) {
   // flag and confirm — the user switches to the new chat from their chat list.
   // (Without this the card would sit in creating=true with no feedback.)
   if (d.type === 'created') {
+    // Fresh list: the reused agent just picked up another bound chat, so
+    // its bindingCount is stale in the manage list / reuse picker.
+    if (d.existingAgents) {
+      existingAgents = d.existingAgents;
+      refreshList();
+      var rpCreated = document.getElementById('reuse-picker');
+      if (rpCreated && rpCreated.classList.contains('visible')) renderReusePickList();
+    }
     resetTransientState();
     showModal('Chat created', 'Open the new chat with "' + (d.name || 'your agent') + '" from your chat list to get started.');
     return;
@@ -2743,7 +2825,7 @@ window.webxdc.setUpdateListener(function(update) {
   }
   if (d.type === 'exportError') {
     creating = false;
-    alert(d.message || 'Export failed.');
+    showModal('Export failed', d.message || 'Could not export the agent.', {variant:'error'});
     return;
   }
 
@@ -2765,7 +2847,7 @@ window.webxdc.setUpdateListener(function(update) {
     }
     showModal('Not done', typeof d.message === 'string' && d.message
       ? d.message
-      : 'That action could not be completed.');
+      : 'That action could not be completed.', {variant:'error'});
     return;
   }
 

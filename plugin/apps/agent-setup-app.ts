@@ -455,16 +455,27 @@ export async function rebindChat(
 
 /**
  * Reply to a Phase-12 mode-picker flow on the source setup card with the
- * new chat's id. The card listens for chat-ready in setUpdateListener,
- * closes the confirmation modal, and routes back to the home screen.
+ * new chat's id and a refreshed picker list. The card listens for
+ * chat-ready in setUpdateListener, closes the confirmation modal, shows a
+ * mode-aware success modal (Agent switched / Chat created), and lands on
+ * the manage list behind it.
  */
 async function sendChatReady(
   msgId: number,
   ctx: AppContext,
   newChatId: number,
+  sourceChatId: number,
 ): Promise<void> {
   const update = JSON.stringify({
-    payload: { type: 'chat-ready', chatId: newChatId, senderAddr: 'server' },
+    payload: {
+      type: 'chat-ready',
+      chatId: newChatId,
+      // Refreshed picker data keyed on the CARD's chat (sourceChatId): a
+      // rebind flips isCurrentAgent; a reuse/default bumps a bindingCount.
+      // Keeps a re-opened picker from marking the OLD agent "Current".
+      existingAgents: await listExistingForPicker(sourceChatId),
+      senderAddr: 'server',
+    },
     summary: 'Chat created',
   })
   try {
@@ -1056,7 +1067,7 @@ async function refuseIfUnauthorized(
   const authResult = await auth()
   if (authResult.ok) return false
   const message = authResult.reason === 'needs-confirmation'
-    ? "That change has to come from you directly — say it in our chat, or open this from your 1:1 with me."
+    ? 'That change has to come from you directly — send it as a message here (e.g. "switch this chat to <agent name>"), or open this card from your 1:1 chat with me.'
     : 'No owner found for this chat.'
   await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
     payload: { type: 'action_err', message, senderAddr: 'server' },
@@ -1258,6 +1269,22 @@ export async function handleExportAgent(
     try { unlinkSync(filePath) } catch {}
   } catch (err) {
     ctx.logf('agent-setup: export failed for agent %s: %v', agentId, err)
+    // Surface the failure to the card so it can flip to the error modal
+    // instead of leaving the export button spinning (matches the
+    // agent-not-found path above).
+    try {
+      await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
+        payload: {
+          type: 'exportError',
+          message: err instanceof Error ? err.message : 'Could not export the agent.',
+          version: getAgentManageVersion(),
+          senderAddr: 'server',
+        },
+        summary: 'Export failed',
+      }))
+    } catch (sendErr) {
+      ctx.logf('agent-setup: export error update failed: %v', sendErr)
+    }
   }
 }
 
@@ -1482,7 +1509,14 @@ export async function handleBindAgent(
     ctx.logf('agent-setup: bound existing agent %s to new chat %d for owner %d', agent.name, newChatId, ownerContactId)
 
     const update = JSON.stringify({
-      payload: { type: 'created', chatId: newChatId, name: agent.name },
+      payload: {
+        type: 'created',
+        chatId: newChatId,
+        name: agent.name,
+        // Refreshed picker data: the reused agent just gained a bound chat,
+        // so its bindingCount is stale in the card's manage list.
+        existingAgents: await listExistingForPicker(sourceChatId),
+      },
       summary: 'Agent created',
     })
     await ctx.client.sendWebXDCUpdate(msgId, update)
@@ -1514,7 +1548,7 @@ export async function handleStartDefaultChat(
     const defaultAgent = agents.ensureDefaultAgent()
     const newChatId = await createReuseChat(ctx, defaultAgent, ownerContactId)
     ctx.logf('agent-setup: default-chat bound %s to chat %d for owner %d', defaultAgent.name, newChatId, ownerContactId)
-    await sendChatReady(msgId, ctx, newChatId)
+    await sendChatReady(msgId, ctx, newChatId, sourceChatId)
   } catch (err) {
     ctx.logf('agent-setup: start-default-chat failed: %v', err)
     await sendChatFailed(msgId, ctx, err instanceof Error ? err.message : 'unknown error')
@@ -1551,7 +1585,7 @@ export async function handleStartReuseChat(
   try {
     const newChatId = await createReuseChat(ctx, agent, ownerContactId)
     ctx.logf('agent-setup: reuse-chat bound %s to chat %d for owner %d', agent.name, newChatId, ownerContactId)
-    await sendChatReady(msgId, ctx, newChatId)
+    await sendChatReady(msgId, ctx, newChatId, sourceChatId)
   } catch (err) {
     ctx.logf('agent-setup: start-reuse-chat failed for agent %s: %v', agentId, err)
     await sendChatFailed(msgId, ctx, err instanceof Error ? err.message : 'unknown error')
@@ -1584,7 +1618,7 @@ export async function handleRebindChat(
   try {
     await rebindChat(ctx, sourceChatId, agent, { keepContext })
     ctx.logf('agent-setup: rebound chat %d -> %s (keepContext=%s)', sourceChatId, agentId, String(keepContext))
-    await sendChatReady(msgId, ctx, sourceChatId)
+    await sendChatReady(msgId, ctx, sourceChatId, sourceChatId)
   } catch (err) {
     ctx.logf('agent-setup: rebind-chat failed for agent %s: %v', agentId, err)
     await sendChatFailed(msgId, ctx, err instanceof Error ? err.message : 'unknown error')

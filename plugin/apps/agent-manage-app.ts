@@ -365,7 +365,7 @@ export const agentManageApp: WebXDCApp = {
           const authResult = await auth()
           if (!authResult.ok) {
             const message = authResult.reason === 'needs-confirmation'
-              ? 'That change has to come from you directly — say it in our chat, or open this from your 1:1 with me.'
+              ? 'That change has to come from you directly — send it as a message here (e.g. "switch this chat to <agent name>"), or open this card from your 1:1 chat with me.'
               : 'No owner found for this chat.'
             await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
               payload: { type: 'action_err', message, senderAddr: 'server' },
