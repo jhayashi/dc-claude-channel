@@ -209,6 +209,10 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 .modal-dismiss:hover { background: #3d444d; }
 .modal-dismiss:active { transform: scale(0.97); }
 
+/* Inline validation error under a form field (blank name / custom model). */
+.field-error { display: none; color: #f85149; font-size: 13px; margin-top: 6px; }
+.field-error.visible { display: block; }
+
 .tool-group {
   background: var(--surface-2);
   border: 1px solid var(--line);
@@ -577,6 +581,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       </div>
       <label class="field-label" for="name">Name</label>
       <input id="name" class="text" type="text" maxlength="256" placeholder="e.g. Research buddy">
+      <div class="field-error" id="name-error"></div>
       <label class="field-label" style="margin-top:12px;">Model</label>
       <div class="seg" id="create-model-seg" role="group" aria-label="Model">
         <button type="button" data-tier="haiku"  aria-pressed="false"><span class="dot haiku"></span>Haiku</button>
@@ -587,6 +592,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       </div>
       <div class="custom-model-row" id="create-custom-model-row">
         <input type="text" id="create-custom-model-id" class="text" placeholder="claude-fable-1-0" autocomplete="off" spellcheck="false">
+        <div class="field-error" id="custom-model-error"></div>
         <div class="help">Custom Anthropic model ID. Verify it's accepted by <code>claude --model</code> before saving.</div>
       </div>
       <label class="field-label" for="system" style="margin-top:12px;">System prompt <span style="color: var(--ink-faint); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 11px; margin-left: 4px;">optional</span></label>
@@ -682,7 +688,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.01;
+var APP_VERSION = 1.02;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:   { solid: '#B4862A', checker: '#D9B25B' },
@@ -793,8 +799,10 @@ function wirePreviewInputs(scope) {
   bar.dataset.wired = 'true';
   var nameInput = document.getElementById('name');
   var trustInput = document.getElementById('skip-permissions');
-  if (nameInput) nameInput.addEventListener('input', function () { refreshLivePreview(); });
+  if (nameInput) nameInput.addEventListener('input', function () { clearFieldError('name-error'); refreshLivePreview(); });
   if (trustInput) trustInput.addEventListener('change', function () { refreshLivePreview(); });
+  var customInput = document.getElementById('create-custom-model-id');
+  if (customInput) customInput.addEventListener('input', function () { clearFieldError('custom-model-error'); });
 }
 
 function refreshLivePreview() {
@@ -840,6 +848,11 @@ var creating = false;
 var versionMismatchSent = false;
 var modalTimer = null;
 var modalCountdown = 0;
+// Guards the one-time seed drill-in. Module-level (in-memory) on purpose:
+// a fresh open is a fresh JS instance, so the seed applies once per card;
+// init re-fires within the same instance (serial-0 replay) don't re-yank
+// the user back into the seeded leaf.
+var seedApplied = false;
 
 // Populated from the init payload's availableModels list.
 // MODEL_TIERS: id -> tier. LATEST_PER_TIER: tier -> latest id (models.json
@@ -942,21 +955,43 @@ function show(id) {
   }
 }
 
-function showModal(heading, sub) {
-  document.getElementById('modal-heading').textContent = heading;
+// opts.variant: 'success' (default) | 'error'. The modal element is
+// REUSED across opens, so every field (icon, heading color, error class,
+// dismiss button, countdown) is reset on each call — never rely on a prior
+// open's styling. Success auto-dismisses after 5s; error stays put with a
+// plain "Dismiss" button (a failure the user should read, not one that
+// disappears).
+function showModal(heading, sub, opts) {
+  var variant = (opts && opts.variant) || 'success';
+  var iconEl = document.getElementById('modal-icon');
+  var headingEl = document.getElementById('modal-heading');
+  var modalEl = document.getElementById('modal');
+  var dismissEl = document.getElementById('modal-dismiss');
+  headingEl.textContent = heading;
   document.getElementById('modal-sub').textContent = sub;
-  modalCountdown = 5;
-  updateDismissLabel();
-  document.getElementById('modal').classList.add('visible');
-  if (modalTimer) clearInterval(modalTimer);
-  modalTimer = setInterval(function() {
-    modalCountdown--;
-    if (modalCountdown <= 0) {
-      dismissModal();
-    } else {
-      updateDismissLabel();
-    }
-  }, 1000);
+  if (modalTimer) { clearInterval(modalTimer); modalTimer = null; }
+  if (variant === 'error') {
+    iconEl.innerHTML = '&#x2716;';          // heavy multiplication X
+    headingEl.style.color = '#f85149';      // no --red token; GitHub-dark red
+    modalEl.classList.add('error-variant');
+    modalCountdown = 0;
+    dismissEl.textContent = 'Dismiss';
+  } else {
+    iconEl.innerHTML = '&#x2705;';          // check mark button
+    headingEl.style.color = '';             // revert to CSS green
+    modalEl.classList.remove('error-variant');
+    modalCountdown = 5;
+    updateDismissLabel();
+    modalTimer = setInterval(function() {
+      modalCountdown--;
+      if (modalCountdown <= 0) {
+        dismissModal();
+      } else {
+        updateDismissLabel();
+      }
+    }, 1000);
+  }
+  modalEl.classList.add('visible');
 }
 
 function updateDismissLabel() {
@@ -969,6 +1004,22 @@ function dismissModal() {
   creating = false;
   var createBtn = document.getElementById('create-btn');
   if (createBtn) createBtn.disabled = false;
+}
+
+// Inline field validation (blank name / blank custom model id). Shows the
+// message under the field instead of a silent focus, and is cleared as the
+// user types into the offending input.
+function setFieldError(id, msg) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('visible');
+}
+function clearFieldError(id) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = '';
+  el.classList.remove('visible');
 }
 
 var availableBuiltinTools = [];
@@ -1090,10 +1141,12 @@ function initCreateForm() {
   wireMemoryCard();
 }
 
-// Open the manual create form (blank). The wall's leaf-driven path
-// dispatches `build-agent` (chat-coach takes over); this is the
-// build-it-yourself path that dispatches `create` directly.
-function gotoCreateForm() {
+// Blank every create-form field back to defaults. Extracted from
+// gotoCreateForm so the `created` handler can re-blank the mounted form
+// after a successful create (so a stray second Create tap can't re-submit
+// the same values and mint a duplicate agent). Does NOT change the visible
+// screen — the caller decides where to land.
+function blankCreateForm() {
   var nameEl = document.getElementById('name');
   if (nameEl) nameEl.value = '';
   var sysEl = document.getElementById('system');
@@ -1108,6 +1161,8 @@ function gotoCreateForm() {
   if (customRow) customRow.classList.remove('visible');
   var customId = document.getElementById('create-custom-model-id');
   if (customId) customId.value = '';
+  clearFieldError('name-error');
+  clearFieldError('custom-model-error');
   createArchetype = 'role';
   createPattern = 'checker';
   creating = false;
@@ -1117,6 +1172,13 @@ function gotoCreateForm() {
   syncTrustCard();
   syncMemoryCard();
   refreshLivePreview();
+}
+
+// Open the manual create form (blank). The wall's leaf-driven path
+// dispatches `build-agent` (chat-coach takes over); this is the
+// build-it-yourself path that dispatches `create` directly.
+function gotoCreateForm() {
+  blankCreateForm();
   show('step2');
 }
 
@@ -1556,6 +1618,7 @@ function hideAll(ids) {
 // (chat-failed: error). From error, Retry returns to processing.
 var buildConfirmLeafIds = null;
 var buildConfirmPattern = null;
+var buildConfirmTimer = null;
 
 function confirmCustomBuild(leafIds, pattern) {
   if (!leafIds || leafIds.length === 0) return;
@@ -1589,6 +1652,14 @@ function buildConfirmOk() {
       senderAddr: webxdc.selfAddr,
     },
   }, '');
+  // A silent server would otherwise leave the spinner spinning forever with
+  // no buttons (uncancellable). Arm a 15s timeout that flips the modal to
+  // its error state; cleared by chat-ready / chat-failed.
+  if (buildConfirmTimer) clearTimeout(buildConfirmTimer);
+  buildConfirmTimer = setTimeout(function() {
+    buildConfirmTimer = null;
+    handleChatFailed('The server did not respond. Ask Claude to send a fresh card and try again.');
+  }, 15000);
 }
 
 function setBuildConfirmState(s) {
@@ -1606,12 +1677,24 @@ function closeBuildConfirm() {
   buildConfirmPattern = null;
 }
 
+// The server created a NEW chat with the coach's opening question in it.
+// WebXDC can't self-close, so we confirm WHAT happened and point the user
+// at their chat list. Reset the drill-in state so we land on the root wall
+// (not deep in a leaf detail) behind the success modal.
 function handleChatReady() {
+  if (buildConfirmTimer) { clearTimeout(buildConfirmTimer); buildConfirmTimer = null; }
   closeBuildConfirm();
+  state.build = [];
+  state.openLeafId = null;
+  var searchEl = document.getElementById('wall-search');
+  if (searchEl) searchEl.value = '';
+  renderWall();
   show('wall-screen');
+  showModal('Your new chat is ready', "Open it from your chat list — the coach's first question is waiting there.");
 }
 
 function handleChatFailed(errorMessage) {
+  if (buildConfirmTimer) { clearTimeout(buildConfirmTimer); buildConfirmTimer = null; }
   document.getElementById('build-confirm-sub').textContent = errorMessage || 'Something went wrong.';
   setBuildConfirmState('error');
 }
@@ -1622,23 +1705,27 @@ function create() {
   if (creating) return;
   var nameVal = document.getElementById('name').value.trim();
   if (!nameVal) {
+    setFieldError('name-error', 'Give your agent a name.');
     document.getElementById('name').focus();
     return;
   }
+  clearFieldError('name-error');
   creating = true;
   document.getElementById('create-btn').disabled = true;
   var createTier = segGetValue(document.getElementById('create-model-seg'));
   // "Other…" sentinel reads the custom-model-id text input and passes the
-  // value verbatim. Empty → block create with focus on the input.
+  // value verbatim. Empty → block create with an inline error + focus.
   var createModelId;
   if (createTier === '__other__') {
     createModelId = (document.getElementById('create-custom-model-id').value || '').trim();
     if (!createModelId) {
       creating = false;
       document.getElementById('create-btn').disabled = false;
+      setFieldError('custom-model-error', 'Enter a model id, or pick a preset.');
       document.getElementById('create-custom-model-id').focus();
       return;
     }
+    clearFieldError('custom-model-error');
   } else {
     createModelId = resolveModelFromTier(createTier, null);
   }
@@ -1669,7 +1756,7 @@ function create() {
     if (creating) {
       creating = false;
       document.getElementById('create-btn').disabled = false;
-      showModal('No response', 'The server did not respond. This app may not be connected — ask Claude to send you the create-agent card.');
+      showModal('No response', 'The server did not respond. This app may not be connected — ask Claude to send you the create-agent card.', {variant:'error'});
     }
   }, 15000);
 }
@@ -1720,12 +1807,23 @@ window.webxdc.setUpdateListener(function(update) {
     show('wall-screen');
 
     // If the dispatcher seeded a leaf (NL "make me a sleep coach"),
-    // pre-select it and open the wall at its detail card.
-    if (d.seedLeaf) {
+    // pre-select it and open the wall at its detail card. Guarded by
+    // seedApplied so this auto-drill fires ONCE per card instance — a
+    // serial-0 init replay on reopen must not re-yank the user back into
+    // the seeded leaf after they've navigated away.
+    if (d.seedLeaf && !seedApplied) {
+      seedApplied = true;
       var seeded = leavesOf().find(function(l) { return l.id === d.seedLeaf; });
       if (seeded) {
         enterL2(seeded.l2);
         showLeafDetail(seeded.id);
+      } else {
+        // Seed matched no leaf (stale/unknown id). Surface it in the search
+        // (de-slugged) and run the filter so the NL request visibly landed
+        // instead of silently dropping the user on the bare wall.
+        var seedTerm = String(d.seedLeaf).replace(/-/g, ' ');
+        var seedSearch = document.getElementById('wall-search');
+        if (seedSearch) { seedSearch.value = seedTerm; onWallSearch(); }
       }
     }
     return;
@@ -1744,8 +1842,11 @@ window.webxdc.setUpdateListener(function(update) {
   if (d.type === 'created') {
     if (createTimeout) { clearTimeout(createTimeout); createTimeout = null; }
     creating = false;
-    var createBtn = document.getElementById('create-btn');
-    if (createBtn) createBtn.disabled = false;
+    // Duplicate-create guard: blank the filled form and drop back to the
+    // wall root behind the success modal, so a stray second Create tap
+    // can't re-submit the same values and mint a duplicate agent.
+    blankCreateForm();
+    show('wall-screen');
     showModal('Agent created', 'Open the new chat in your chat list to get started.');
     return;
   }
@@ -1761,7 +1862,7 @@ window.webxdc.setUpdateListener(function(update) {
     if (createErrBtn) createErrBtn.disabled = false;
     showModal('Not created', typeof d.message === 'string' && d.message
       ? d.message
-      : 'The agent could not be created.');
+      : 'The agent could not be created.', {variant:'error'});
     return;
   }
 }, 0);

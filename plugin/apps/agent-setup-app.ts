@@ -953,7 +953,7 @@ export async function handleCreateAgent(
   const authResult = await auth()
   if (!authResult.ok) {
     const message = authResult.reason === 'needs-confirmation'
-      ? "Creating an agent in a group has to come from you directly — say it in our chat, or open this from your 1:1 with me."
+      ? "Creating an agent in a group has to come from you directly — send it as a message here (e.g. \"create an agent that ...\"), or open this card from your 1:1 chat with me."
       : 'No owner found for this chat.'
     await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
       payload: { type: 'create_err', message, senderAddr: 'server' },

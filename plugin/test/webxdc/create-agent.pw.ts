@@ -42,6 +42,50 @@ test("created reply clears timeout, re-enables Create button, and shows success 
   await h.close();
 });
 
+test("created reply blanks the form and lands on the wall behind the modal (dup guard)", async () => {
+  const h: HarnessHandle = await createHarness(xdc());
+  await h.push({ type: 'init', senderAddr: 'server', leaves: [], l2Summary: [],
+    availableModels: [], defaultModel: null,
+    availableBuiltinTools: [], availableMcpServers: [], connectedMcpServers: [] });
+  await h.page.waitForSelector('#shell', { state: 'visible', timeout: 4000 });
+
+  // Drill into the manual create form and fill a name.
+  await h.page.click('text=Build from scratch');
+  await h.page.waitForSelector('#step2.visible', { state: 'visible', timeout: 3000 });
+  await h.page.fill('#name', 'Dup risk');
+
+  // Dispatcher confirms the create.
+  await h.push({ type: 'created', chatId: 7, name: 'Dup risk', skipChat: false, senderAddr: 'server' });
+
+  // Success modal is up.
+  await h.page.waitForSelector('text=Agent created', { state: 'visible', timeout: 3000 });
+  // The form is torn down behind the modal (no second-tap re-submit surface).
+  await expect(h.page.locator('#step2')).not.toBeVisible({ timeout: 3000 });
+  await expect(h.page.locator('#wall-screen')).toBeVisible({ timeout: 3000 });
+  // And the filled name was blanked.
+  await expect(h.page.locator('#name')).toHaveValue('');
+
+  await h.close();
+});
+
+test("chat-ready reply confirms the coach handoff with a terminal success modal", async () => {
+  const h: HarnessHandle = await createHarness(xdc());
+  await h.push({ type: 'init', senderAddr: 'server', leaves: [], l2Summary: [],
+    availableModels: [], defaultModel: null,
+    availableBuiltinTools: [], availableMcpServers: [], connectedMcpServers: [] });
+  await h.page.waitForSelector('#shell', { state: 'visible', timeout: 4000 });
+
+  // Dispatcher reports the coach's new chat is ready (build-agent path).
+  await h.push({ type: 'chat-ready', chatId: 55, senderAddr: 'server' });
+
+  // Terminal confirmation modal points the user at their chat list.
+  await h.page.waitForSelector('text=Your new chat is ready', { state: 'visible', timeout: 3000 });
+  // We land on the wall root behind it (not deep in a leaf detail).
+  await expect(h.page.locator('#wall-screen')).toBeVisible({ timeout: 3000 });
+
+  await h.close();
+});
+
 test("create_err reply surfaces the §6 refusal message and re-enables Create", async () => {
   const h: HarnessHandle = await createHarness(xdc());
   await h.push({ type: 'init', senderAddr: 'server', leaves: [], l2Summary: [],
@@ -51,10 +95,10 @@ test("create_err reply surfaces the §6 refusal message and re-enables Create", 
 
   // Dispatcher refuses a form-create (multi-human group → needs-confirmation).
   await h.push({ type: 'create_err', senderAddr: 'server',
-    message: 'Creating an agent in a group has to come from you directly — say it in our chat, or open this from your 1:1 with me.' });
+    message: 'Creating an agent in a group has to come from you directly — send it as a message here (e.g. "create an agent that ..."), or open this card from your 1:1 chat with me.' });
 
   // The needs-confirmation guidance is shown (not the misleading "no response" timeout).
-  await h.page.waitForSelector('text=say it in our chat', { state: 'visible', timeout: 3000 });
+  await h.page.waitForSelector('text=create an agent that', { state: 'visible', timeout: 3000 });
 
   // Create button must be re-enabled so the user can retry from the right place.
   const createBtn = h.page.locator('#create-btn');
