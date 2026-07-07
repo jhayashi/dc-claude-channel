@@ -60,7 +60,7 @@ import { createActivityReactor, THINKING_EMOJIS, type ActivityReactor } from './
 import { logToolCall, logTurn, logPermission, logWebXDC, logAutoPairDenial, logSubagentStderr, buildArgPreview, getEventDir } from './events.js'
 import { logLifecycleEvent } from './events-lifecycle.js'
 import { formatHistoryLine, evaluateAttachmentDownload } from './dispatcher/trust-filter.js'
-import { shouldOfferPermissions, shouldOfferAgentSetup } from './dispatcher/member-added-offer.js'
+import { shouldOfferPermissions, shouldOfferAgentSetup, freshPermissionOfferTargets } from './dispatcher/member-added-offer.js'
 import { parseSince, queryEvents, renderEventsMarkdown, ALL_STREAMS, type EventStream } from './events-query.js'
 import { pruneEventLogs } from './dispatcher/event-log-rotate.js'
 import * as resume from './resume.js'
@@ -2049,6 +2049,11 @@ async function main(): Promise<void> {
 
   // Extracted helpers so the router can call them.
 
+  // (#117) Tracks `${chatId}:${contactId}` permission-offers already made this
+  // dispatcher session, so a lingering unpermissioned member doesn't get
+  // re-offered (and re-named) on every subsequent MemberAddedToGroup.
+  const offeredPermissionOffers = new Set<string>()
+
   const handleSystemMessage = async (msg: Message): Promise<void> => {
     logf('dc channel: system message id=%d chat=%d type=%s', msg.id, msg.chatId, msg.systemMessageType)
     if (msg.systemMessageType === 'MemberRemovedFromGroup' && access.isAllowed(msg.chatId)) {
@@ -2064,25 +2069,36 @@ async function main(): Promise<void> {
     }
     if (msg.systemMessageType === 'MemberAddedToGroup') {
       try {
-        const isAgentChat =
-          access.isAllowed(msg.chatId) && bindings.getBinding(msg.chatId)?.agentId != null
-        const binding = bindings.getBinding(msg.chatId)
+        const binding = bindings.getBinding(msg.chatId)   // single read; used by both arms
         const chatHasAgent = binding?.agentId != null
+        const isAgentChat = access.isAllowed(msg.chatId) && chatHasAgent
         if (isAgentChat) {
-          const agentId = bindings.getBinding(msg.chatId)!.agentId!
+          const agentId = binding!.agentId!
           const contacts = await client.getChatContacts(msg.chatId)
           // Candidates: human members (id > 9, not CONTACT_SELF=1) who are not yet permissioned.
           const unpermissioned = contacts.filter(
             (id) => id > 9 && !access.isContactPermissioned(agentId, id),
           )
-          if (unpermissioned.length > 0) {
-            const newId = unpermissioned[0]
+          // Dedup (#117): DC's MemberAddedToGroup message doesn't expose WHICH
+          // contact was just added, so a lingering unpermissioned member would
+          // otherwise re-trigger the offer — naming that stale older contact —
+          // on every later member-add. Offer only for members we haven't
+          // offered for this session, and mark them so we never nag.
+          const fresh = freshPermissionOfferTargets(
+            unpermissioned,
+            (id) => offeredPermissionOffers.has(`${msg.chatId}:${id}`),
+          )
+          if (fresh.length > 0) {
+            const newId = fresh[0]
             const decision = shouldOfferPermissions({
               isAgentChat: true,
               newMemberPermissioned: false,
-              newMemberIsBotSelf: newId === 1,
+              // The id > 9 filter already excludes CONTACT_SELF (=1), so a
+              // fresh candidate is never the bot itself.
+              newMemberIsBotSelf: false,
             })
             if (decision.offer) {
+              for (const id of fresh) offeredPermissionOffers.add(`${msg.chatId}:${id}`)
               const prompt =
                 `[system] A new person (contact ${newId}) just joined this agent chat and isn't permissioned yet. ` +
                 `Briefly offer to set what they can do with this agent — full access, limited, or chat-only — ` +

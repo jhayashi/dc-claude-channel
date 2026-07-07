@@ -28,3 +28,21 @@ export function shouldOfferAgentSetup(args: {
   if (args.chatHasAgent) return { offer: false, reason: 'agent-already-bound' }
   return { offer: true, reason: 'bot-joined-agentless-group' }
 }
+
+/**
+ * From the unpermissioned human members of an agent chat, pick those we have
+ * NOT already offered permissions for. The caller offers for the first result
+ * and marks them all offered. (#117)
+ *
+ * DC's `MemberAddedToGroup` message doesn't expose which contact was just
+ * added, so without this a lingering unpermissioned member re-triggers the
+ * offer — and gets named in it — on every later member-add. Deduping by
+ * already-offered members keeps the offer to genuinely-new members and stops
+ * the spam. Pure: `alreadyOffered` is injected so it unit-tests without state.
+ */
+export function freshPermissionOfferTargets(
+  unpermissioned: readonly number[],
+  alreadyOffered: (contactId: number) => boolean,
+): number[] {
+  return unpermissioned.filter((id) => !alreadyOffered(id))
+}
