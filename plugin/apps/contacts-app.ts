@@ -18,6 +18,7 @@ import {
 } from '../access/webxdc-control-auth.js'
 import * as bindings from '../bindings.js'
 import * as access from '../access/index.js'
+import * as agents from '../agents.js'
 import { logRoleAssignment } from '../events.js'
 
 // ── Handler functions ────────────────────────────────────────────────────
@@ -81,7 +82,14 @@ export async function handleListContacts(ctx: AppContext, msgId: number, sourceC
     ? enriched.filter(c => c.chatmailAddress !== ownAddr)
     : enriched
 
-  await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({ payload: { type: 'contacts_loaded', contacts: filtered } }))
+  // #120: name the managed agent in the payload so the card can render
+  // "Roles for <name>" — roles are per-agent (v1.4.9) but the card
+  // previously never said which agent's roles it was showing.
+  const managedAgentName = agents.getAgent(managedAgentId)?.['x-dc-display-name'] ?? managedAgentId
+
+  await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
+    payload: { type: 'contacts_loaded', contacts: filtered, managedAgentId, managedAgentName },
+  }))
 }
 
 export async function handleAssignRole(
@@ -97,7 +105,7 @@ export async function handleAssignRole(
   const authResult = await auth()
   if (!authResult.ok) {
     const message = authResult.reason === 'needs-confirmation'
-      ? "Setting permissions in a group has to come from you directly — say it in our chat, or open this from your 1:1 with me."
+      ? "Changing permissions in a group has to come from you directly — open this card from your 1:1 chat with me and set it there."
       : 'No owner found for this chat.'
     await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
       payload: { type: 'role_assign_err', contactId, message, senderAddr: 'server' },
