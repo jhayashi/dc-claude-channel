@@ -19,6 +19,6 @@ docs/upstream-issues/**
 /scripts/
 *.log
 
-# Implementation plans are versioned for continuity (specs stay local scratch)
-!docs/plans/
-!docs/plans/**
+# Host-generated plugin-cache orphan marker (Claude Code drops this on a
+# plugin dir it thinks is orphaned; harmless, never ours to track).
+.orphaned_at
