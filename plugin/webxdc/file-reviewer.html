@@ -1218,7 +1218,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.59;
+var APP_VERSION = 1.60;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -1241,6 +1241,13 @@ var exportToastTimer = null;
 // For source: key = line number (1-indexed)
 // For markdown: key = paragraph index (0-indexed)
 var commentsByDoc = {}; // { docIndex: { anchor: commentText } }
+// #112: files whose comments were already sent. Derived from replayed
+// 'comments' updates so a reviewed file doesn't reappear after the reviewer
+// is closed and reopened (WebXDC replays every update from serial 0).
+// `sentTitles` is the legacy fallback for pre-1.60 comments payloads that
+// carry no fileId.
+var sentFileIds = {};
+var sentTitles = {};
 var editingAnchor = null; // currently editing anchor (or null)
 
 function getComments(docIndex) {
@@ -2307,6 +2314,9 @@ function sendComments() {
   var payload = {
     type: 'comments',
     fileTitle: doc.title,
+    // #112: stable key so a reopened reviewer can suppress this file on
+    // replay. fileTitle alone is ambiguous when two files share a title.
+    fileId: doc.fileId || null,
     comments: commentList,
     senderAddr: window.webxdc.selfAddr,
   };
@@ -3068,6 +3078,60 @@ wireKebabMenu();
 document.getElementById('close-dialog-cancel').addEventListener('click', hideCloseDialog);
 document.getElementById('close-dialog-confirm').addEventListener('click', confirmCloseTab);
 
+// #112: remove the document at `index`, keeping commentsByDoc and
+// activeIndex consistent. Display state is fixed up by refreshAfterRemoval
+// once all matching docs are gone (a chunked file spans several entries
+// that share one fileId).
+function removeDocumentAt(index) {
+  documents.splice(index, 1);
+  if (commentsByDoc[index]) delete commentsByDoc[index];
+  var rekeyed = {};
+  for (var k in commentsByDoc) {
+    var oldIdx = Number(k);
+    if (oldIdx > index) rekeyed[oldIdx - 1] = commentsByDoc[k];
+    else rekeyed[oldIdx] = commentsByDoc[k];
+  }
+  commentsByDoc = rekeyed;
+  if (activeIndex === index) activeIndex = -1;
+  else if (activeIndex > index) activeIndex -= 1;
+}
+
+// #112: reconcile the visible view after one or more removals.
+function refreshAfterRemoval() {
+  if (documents.length === 0) {
+    activeIndex = -1;
+    var c = document.getElementById('content');
+    if (c) { c.replaceChildren(); c.style.display = 'none'; }
+    var l = document.getElementById('loading');
+    if (l) l.style.display = 'none';
+    var e = document.getElementById('empty');
+    if (e) e.style.display = 'flex';
+    var b = document.getElementById('bottombar');
+    if (b) b.style.display = 'none';
+  } else {
+    if (activeIndex < 0) activeIndex = 0;
+    if (activeIndex > documents.length - 1) activeIndex = documents.length - 1;
+    showDocument(activeIndex);
+    if (typeof updateBottomBar === 'function') updateBottomBar();
+  }
+  rebuildSidebar();
+}
+
+// #112: record that a file's comments were sent and drop it from the view
+// if it's loaded. Runs for both replayed comments (reopen) and the live
+// echo of our own send — idempotent, so double-handling is harmless.
+function markCommentsSent(fileId, fileTitle) {
+  if (fileId) sentFileIds[fileId] = true;
+  else if (fileTitle) sentTitles[fileTitle] = true;
+  var removedAny = false;
+  for (var i = documents.length - 1; i >= 0; i--) {
+    var d = documents[i];
+    var match = fileId ? (d.fileId === fileId) : (!!fileTitle && d.title === fileTitle);
+    if (match) { removeDocumentAt(i); removedAny = true; }
+  }
+  if (removedAny) refreshAfterRemoval();
+}
+
 window.webxdc.setUpdateListener(function(update) {
   var data = update.payload;
   if (!data) return;
@@ -3087,6 +3151,16 @@ window.webxdc.setUpdateListener(function(update) {
   // with an export request on the receive side.
   if (data.type === 'export-file') return;
 
+  // #112: a 'comments' update means this file's review was already sent.
+  // On reopen it replays right after the file's 'document' update, so drop
+  // the file to keep sent state across reloads. Handled before the version
+  // gate (it's a status update, not document delivery, and carries no
+  // version field).
+  if (data.type === 'comments') {
+    markCommentsSent(data.fileId || null, data.fileTitle || null);
+    return;
+  }
+
   // Auto-upgrade: if server version is newer, request fresh app
   if (data.version && data.version > APP_VERSION && !versionMismatchSent) {
     versionMismatchSent = true;
@@ -3105,6 +3179,10 @@ window.webxdc.setUpdateListener(function(update) {
   // single document. Each chunk preserves its own startLine so comment
   // routing still maps to absolute line numbers.
   if (data.type === 'document' && Array.isArray(data.chunks)) {
+    // #112: skip a file whose comments already replayed (defensive — on a
+    // normal reopen the document replays before its comments, but guard the
+    // reverse ordering too).
+    if (data.fileId && sentFileIds[data.fileId]) return;
     document.getElementById('loading').style.display = 'none';
     document.getElementById('empty').style.display = 'none';
     var firstNewIndex = documents.length;
@@ -3132,6 +3210,9 @@ window.webxdc.setUpdateListener(function(update) {
   // Legacy single-chunk path: old payloads have 'markdown' field
   var content = data.content || data.markdown;
   if (!content) return;
+  // #112: skip a file already marked reviewed (see bundled path above).
+  if ((data.fileId && sentFileIds[data.fileId]) ||
+      (!data.fileId && data.title && sentTitles[data.title])) return;
 
   document.getElementById('loading').style.display = 'none';
   document.getElementById('empty').style.display = 'none';
