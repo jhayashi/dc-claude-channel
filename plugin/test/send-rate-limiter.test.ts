@@ -118,7 +118,11 @@ describe('createSendRateLimiter', () => {
       // ignore
     }
     const after = lim.inspect().tokens
-    expect(after).toBeLessThanOrEqual(before - 2)
+    // Refill is continuous (real time), so `after` can tick up by a sub-token
+    // fraction between the last acquire and this inspect() — an exact `<= 0`
+    // is racy. A *refund* would add a whole token back, so the meaningful
+    // invariant is that net consumption stayed above one full token.
+    expect(before - after).toBeGreaterThan(1)
   })
 
   test('handles 50 parked acquires without leak', async () => {
