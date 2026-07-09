@@ -118,6 +118,28 @@ describe('SocketServer', () => {
     await server.stop()
   })
 
+  it('stop() on an unstarted duplicate does not unlink the live socket (#127)', async () => {
+    // A second server.ts that loses the singleton race constructs a
+    // SocketServer but never calls start(); on shutdown its stop() must
+    // NOT remove the live dispatcher's socket path.
+    expect(existsSync(sockPath)).toBe(true)
+    const duplicate = new SocketServer({
+      path: sockPath,
+      secret,
+      hasSubagent: () => false,
+      getSubagentChat: () => null,
+      onRequest: async () => ({ kind: 'toolResult', id: 'x', result: { content: [{ type: 'text', text: 'x' }] } } as ServerMessage),
+    })
+    await duplicate.stop()
+    // The live server's socket path must survive, and it must still serve.
+    expect(existsSync(sockPath)).toBe(true)
+    const c = await openClient(sockPath)
+    c.send({ kind: 'hello', secret, role: 'hook', chatId: 42, subagentId: 'sub-1' })
+    const ack = await c.read()
+    expect((ack as { kind: string }).kind).toBe('helloAck')
+    c.sock.end()
+  })
+
   it('rejects toolCall before hello', async () => {
     const c = await openClient(sockPath)
     c.send({ kind: 'toolCall', id: 't1', tool: 'dc_send', args: {} })

@@ -69,6 +69,14 @@ export class SocketServer {
   private server: Server | null = null
   private conns = new Map<string, Conn>()
   private nextConnId = 1
+  /**
+   * True only once this instance has successfully bound the socket path.
+   * Guards stop() from unlinking a path this instance never created — a
+   * duplicate server.ts that lost the singleton race constructs a
+   * SocketServer but never calls start(), and its stop() must leave the
+   * live dispatcher's socket intact (#127).
+   */
+  private bound = false
 
   constructor(private opts: SocketServerOptions) {}
 
@@ -84,6 +92,7 @@ export class SocketServer {
       this.server!.once('error', reject)
       this.server!.listen(this.opts.path, () => {
         try { chmodSync(this.opts.path, 0o600) } catch {}
+        this.bound = true
         resolve()
       })
     })
@@ -98,7 +107,12 @@ export class SocketServer {
       await new Promise<void>((resolve) => this.server!.close(() => resolve()))
       this.server = null
     }
-    try { unlinkSync(this.opts.path) } catch {}
+    // Only unlink a socket path this instance actually bound — never
+    // remove the live dispatcher's socket from an unstarted duplicate (#127).
+    if (this.bound) {
+      try { unlinkSync(this.opts.path) } catch {}
+      this.bound = false
+    }
   }
 
   /** Send an out-of-band frame to a specific connection. */
