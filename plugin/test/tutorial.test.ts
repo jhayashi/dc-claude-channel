@@ -34,12 +34,57 @@ describe("tutorial state machine", () => {
     expect(action.passThrough).toBeFalsy();
   });
 
-  test("offered + unrelated text → passThrough, stays in offered", () => {
+  test("offered + unrelated text → parks the tour (done) and passes through (#132)", () => {
+    // The old behavior (stay in 'offered', passThrough) hijacked routing:
+    // while tutorial state was active, passThrough went to the legacy
+    // terminal-notification path indefinitely. A user who answers the tour
+    // offer with a real question has moved on — end the tour silently and
+    // let the subagent answer them.
     tutorial.startTutorial(CHAT_ID);
     const action = tutorial.handleMessage(CHAT_ID, "what's the weather like?");
-    expect(tutorial.getState(CHAT_ID)).toBe("offered");
+    expect(tutorial.getState(CHAT_ID)).toBe("done");
     expect(action.passThrough).toBe(true);
     expect(action.messages.length).toBe(0);
+  });
+
+  test("offered + punctuated/phrase affirmatives are recognized (#132)", () => {
+    for (const phrase of ["yes!", "Yes.", "yes please", "sure thing", "YEAH!"]) {
+      tutorial.clearTutorial(CHAT_ID);
+      tutorial.startTutorial(CHAT_ID);
+      const action = tutorial.handleMessage(CHAT_ID, phrase);
+      expect(tutorial.getState(CHAT_ID)).toBe("permissions_explain");
+      expect(action.sendTestPermission).toBe(true);
+    }
+  });
+
+  test("offered + punctuated negatives are recognized (#132)", () => {
+    for (const phrase of ["no!", "No.", "no thanks", "nah."]) {
+      tutorial.clearTutorial(CHAT_ID);
+      tutorial.startTutorial(CHAT_ID);
+      tutorial.handleMessage(CHAT_ID, phrase);
+      expect(tutorial.getState(CHAT_ID)).toBe("done");
+    }
+  });
+
+  test("agent_offered + unrelated text → parks the tour and passes through (#132)", () => {
+    tutorial.startTutorial(CHAT_ID);
+    tutorial.handleMessage(CHAT_ID, "yes");
+    tutorial.handleMessage(CHAT_ID, "ok");
+    tutorial.handleMessage(CHAT_ID, "ok");        // → agent_offered
+    const action = tutorial.handleMessage(CHAT_ID, "actually, fix my code");
+    expect(tutorial.getState(CHAT_ID)).toBe("done");
+    expect(action.passThrough).toBe(true);
+  });
+
+  test("phase2_offered + unrelated text → parks the tour and passes through (#132)", () => {
+    tutorial.startTutorial(CHAT_ID);
+    tutorial.handleMessage(CHAT_ID, "yes");
+    tutorial.handleMessage(CHAT_ID, "ok");
+    tutorial.handleMessage(CHAT_ID, "ok");        // → agent_offered
+    tutorial.handleMessage(CHAT_ID, "no");        // → phase2_offered
+    const action = tutorial.handleMessage(CHAT_ID, "read my email");
+    expect(tutorial.getState(CHAT_ID)).toBe("done");
+    expect(action.passThrough).toBe(true);
   });
 
   test("permissions_explain + any → file_explain with sendSampleFile", () => {
@@ -179,29 +224,31 @@ describe("tutorial state machine", () => {
   });
 });
 
-describe("tutorial state machine — passThrough on yes/no states with unrelated text", () => {
-  // Branches not previously covered: when the state expects yes/no and gets
-  // neither, the message should passThrough so the LLM (or whatever) can
-  // handle it; the state stays put.
-  test("agent_offered + unrelated text → passThrough, stays in agent_offered", () => {
+describe("tutorial state machine — unrelated text on yes/no states parks the tour (#132)", () => {
+  // When a yes/no state gets neither, the user has moved on. The tour
+  // parks (state → done, restartable via /tour) and the message passes
+  // through so the subagent answers it. The pre-#132 contract (stay in
+  // state + passThrough) diverted every non-matching message to the
+  // legacy terminal-notification path for as long as the state lingered.
+  test("agent_offered + unrelated text → parks, passThrough", () => {
     tutorial.startTutorial(CHAT_ID);
     tutorial.handleMessage(CHAT_ID, "yes");       // → permissions_explain
     tutorial.handleMessage(CHAT_ID, "ok");        // → file_explain
     tutorial.handleMessage(CHAT_ID, "ok");        // → agent_offered
     const action = tutorial.handleMessage(CHAT_ID, "tell me a joke");
-    expect(tutorial.getState(CHAT_ID)).toBe("agent_offered");
+    expect(tutorial.getState(CHAT_ID)).toBe("done");
     expect(action.passThrough).toBe(true);
     expect(action.messages.length).toBe(0);
   });
 
-  test("phase2_offered + unrelated text → passThrough, stays in phase2_offered", () => {
+  test("phase2_offered + unrelated text → parks, passThrough", () => {
     tutorial.startTutorial(CHAT_ID);
     tutorial.handleMessage(CHAT_ID, "yes");       // → permissions_explain
     tutorial.handleMessage(CHAT_ID, "ok");        // → file_explain
     tutorial.handleMessage(CHAT_ID, "ok");        // → agent_offered
     tutorial.handleMessage(CHAT_ID, "no");        // → phase2_offered
     const action = tutorial.handleMessage(CHAT_ID, "what's your favourite colour");
-    expect(tutorial.getState(CHAT_ID)).toBe("phase2_offered");
+    expect(tutorial.getState(CHAT_ID)).toBe("done");
     expect(action.passThrough).toBe(true);
     expect(action.messages.length).toBe(0);
   });
@@ -257,19 +304,15 @@ describe("tutorial state machine — yes/no parsing", () => {
     expect(tutorial.getState(CHAT_ID)).toBe("done");
   });
 
-  test("yes/no matching requires whole-word; trailing chars don't match", () => {
-    // "yes please" / "yes!" are NOT in AFFIRMATIVES — they passThrough.
-    // This is intentional: the yes/no gate is a *strict* affirmation set.
+  test("substring matches don't count as yes; parked instead (#132)", () => {
+    // The gate is still a curated set, not substring matching: an utterance
+    // that merely CONTAINS an affirmative ("yesterday was fun") must not
+    // advance the tour — it parks and passes through like any other
+    // unrelated text.
     tutorial.startTutorial(CHAT_ID);
-    const a = tutorial.handleMessage(CHAT_ID, "yes please");
-    expect(tutorial.getState(CHAT_ID)).toBe("offered");
+    const a = tutorial.handleMessage(CHAT_ID, "yesterday was fun");
+    expect(tutorial.getState(CHAT_ID)).toBe("done");
     expect(a.passThrough).toBe(true);
-
-    tutorial.clearTutorial(CHAT_ID);
-    tutorial.startTutorial(CHAT_ID);
-    const b = tutorial.handleMessage(CHAT_ID, "yes!");
-    expect(tutorial.getState(CHAT_ID)).toBe("offered");
-    expect(b.passThrough).toBe(true);
   });
 });
 

@@ -47,17 +47,40 @@ const states = new Map<number, TutorialState>();
 
 const AFFIRMATIVES = new Set([
   "yes", "y", "yeah", "yep", "sure", "ok", "let's go", "lets go", "tour",
+  "yes please", "sure thing", "yeah sure", "ok sure", "why not",
 ]);
 const NEGATIVES = new Set([
   "no", "n", "nah", "nope", "skip", "later",
+  "no thanks", "no thank you", "not now", "maybe later",
 ]);
 
+// #132: normalize before matching so "Yes!" / "no." / "YEAH" land in the
+// sets — the exact-match-only sets meant almost any natural reply missed
+// and fell into the routing trap below.
+function normalize(text: string): string {
+  return text.trim().toLowerCase().replace(/[!.?,]+$/, "").trim();
+}
+
 function isYes(text: string): boolean {
-  return AFFIRMATIVES.has(text.trim().toLowerCase());
+  return AFFIRMATIVES.has(normalize(text));
 }
 
 function isNo(text: string): boolean {
-  return NEGATIVES.has(text.trim().toLowerCase());
+  return NEGATIVES.has(normalize(text));
+}
+
+/**
+ * #132: a reply to a yes/no offer that matches neither set means the user
+ * has moved on — asked a real question, changed topic. Park the tour
+ * silently (state → done; /tour restarts it) and pass through so the
+ * subagent answers what they actually said. The old behavior (stay in the
+ * offered state and pass through) hijacked message routing: while
+ * tutorial state was active, every non-matching message was diverted to
+ * the legacy terminal-notification path, indefinitely.
+ */
+function parkAndPassThrough(chatId: number): TutorialAction {
+  states.set(chatId, "done");
+  return { messages: [], passThrough: true };
 }
 
 /**
@@ -109,7 +132,7 @@ export function handleMessage(chatId: number, text: string): TutorialAction {
           ],
         };
       }
-      return { messages: [], passThrough: true };
+      return parkAndPassThrough(chatId);
     }
 
     case "permissions_explain": {
@@ -147,10 +170,9 @@ export function handleMessage(chatId: number, text: string): TutorialAction {
         states.set(chatId, "agent_wait");
         return {
           messages: [
-            "Tap below to open the **Agent & Chat setup**. There's a lot to explore " +
-            "in there, but creating a new chat is the first item — you can pick from " +
-            "a template, reuse an existing agent, or create a custom agent from scratch. " +
-            "Try it now.",
+            "Tap below to open the **Manage Agents card**. From there you can " +
+            "create a new agent, reuse or switch agents, and start new chats " +
+            "with them. Try it now.",
           ],
           sendAgentSetup: true,
         };
@@ -166,15 +188,15 @@ export function handleMessage(chatId: number, text: string): TutorialAction {
           ],
         };
       }
-      return { messages: [], passThrough: true };
+      return parkAndPassThrough(chatId);
     }
 
     case "agent_wait": {
       states.set(chatId, "phase2_offered");
       return {
         messages: [
-          "You can just say \"open settings\" or just \"settings\" to bring back this app " +
-          "any time.\n\n" +
+          "You can say \"manage agents\" or \"show me my agents\" to bring back " +
+          "that card any time.\n\n" +
           "Last thing: these mini apps are one of Delta Chat's cool features — **WebXDC apps**. " +
           "And of course you can have Claude make your own. You can even share the apps you've " +
           "made with your friends.\n\n" +
@@ -208,7 +230,7 @@ export function handleMessage(chatId: number, text: string): TutorialAction {
           ],
         };
       }
-      return { messages: [], passThrough: true };
+      return parkAndPassThrough(chatId);
     }
 
     case "game_choice": {

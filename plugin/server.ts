@@ -2688,15 +2688,18 @@ async function main(): Promise<void> {
   }
 
   /**
-   * Handle a paired, authorized incoming message — tutorial intercept first,
-   * then notify the MCP host (terminal Claude Code).
+   * Run one tutorial turn for a chat with active tutorial state. Returns
+   * true when the message advanced the tour (tutorial actions executed);
+   * false on passThrough — the tour parked itself (#132) and the caller
+   * must dispatch the message to the subagent like any normal turn.
    *
-   * NOTE: in Phase 2, regular user text is routed through the subagent cache
-   * by the router. This function is only called for the auto-pair fall-through
-   * path and for tutorial messages.
+   * #132: this used to be dispatchPairedMessage, whose passThrough tail
+   * forwarded to the legacy MCP terminal-notification path — so any
+   * conversational reply to a yes/no offer diverted the whole chat to the
+   * terminal session indefinitely. The legacy tail is deleted; the router
+   * below is now the only dispatch decision.
    */
-  const dispatchPairedMessage = async (msg: Message): Promise<void> => {
-    // Tutorial intercept.
+  const runTutorialTurn = async (msg: Message): Promise<boolean> => {
     const tutorialAction = tutorial.handleMessage(msg.chatId, msg.text)
     if (!tutorialAction.passThrough) {
       for (const text of tutorialAction.messages) {
@@ -2733,37 +2736,9 @@ async function main(): Promise<void> {
           },
         }).catch(err => logf('dc channel: tutorial handoff error: %v', err))
       }
-      return
+      return true
     }
-
-    const meta: Record<string, string> = {
-      chat_id: String(msg.chatId),
-      message_id: String(msg.id),
-      user: safeName(msg.senderName),
-      ts: msg.timestamp.toISOString(),
-    }
-    if (msg.file) {
-      if (msg.viewType === 'Image' || msg.viewType === 'Gif') {
-        meta.image_path = msg.file
-      }
-      meta.attachment_file = msg.file
-      if (msg.fileMime) meta.attachment_mime = msg.fileMime
-      if (msg.fileName) meta.attachment_name = msg.fileName
-      if (msg.fileBytes) meta.attachment_size = String(msg.fileBytes)
-      if (msg.viewType) meta.attachment_type = msg.viewType
-    }
-    const resolvedAgent = bindings.resolveChat(msg.chatId)
-    if (resolvedAgent) {
-      meta.agent_name = resolvedAgent.agent.name
-      meta.agent_prompt = resolvedAgent.agent.body
-    }
-
-    logf('dc channel: incoming message: content=%s meta=%s', msg.text, JSON.stringify(meta))
-
-    mcp.notification({
-      method: 'notifications/claude/channel',
-      params: { content: msg.text, meta },
-    }).catch(err => logf('dc channel: notification send error: %v', err))
+    return false
   }
 
   // Phase 2 router: classify + dispatch to subagent cache.
@@ -2824,8 +2799,13 @@ async function main(): Promise<void> {
       // must reach the bound subagent, not the terminal Claude session.
       const tutState = tutorial.getState(msg.chatId)
       if (tutState !== null && tutState !== 'done') {
-        logf('dispatch: chat=%d path=tutorial-legacy state=%s', msg.chatId, String(tutState))
-        await dispatchPairedMessage(msg)
+        logf('dispatch: chat=%d path=tutorial state=%s', msg.chatId, String(tutState))
+        const handled = await runTutorialTurn(msg)
+        if (handled) return
+        // #132: the tour parked itself on a non-matching reply — the user
+        // asked something real; answer it like any normal turn.
+        logf('dispatch: chat=%d path=subagent (tutorial parked)', msg.chatId)
+        await runSubagentTurn(msg)
         return
       }
       logf('dispatch: chat=%d path=subagent', msg.chatId)
