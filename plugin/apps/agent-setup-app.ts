@@ -1239,12 +1239,14 @@ export async function handleExportAgent(
     const { writeFileSync, unlinkSync, mkdtempSync } = await import('node:fs')
     const { join } = await import('node:path')
     const { tmpdir } = await import('node:os')
-    const YAML = (await import('yaml')).default
 
-    const yamlStr = YAML.stringify(agent)
+    // #130: export the same frontmatter-markdown format the importer (and
+    // terminal CC's ~/.claude/agents/) reads — the old YAML.stringify
+    // document failed its own re-import ("missing frontmatter").
+    const text = agents.exportAgentMarkdown(agent)
     const dir = mkdtempSync(join(tmpdir(), 'dc-agent-export-'))
-    const filePath = join(dir, `${agentId}.yaml`)
-    writeFileSync(filePath, yamlStr)
+    const filePath = join(dir, `${agentId}.md`)
+    writeFileSync(filePath, text)
 
     await ctx.client.sendAttachment(
       sourceChatId,

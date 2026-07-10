@@ -774,6 +774,18 @@ export interface ImportResult {
 }
 
 /**
+ * Serialize an agent to the same frontmatter-markdown format saveAgent
+ * writes to disk and importAgentFromMarkdown parses (#130). This is THE
+ * export format — the manage card's export previously wrote a bare
+ * YAML.stringify(agent) document that its own importer rejected
+ * ("missing frontmatter"), so export→import always failed.
+ */
+export function exportAgentMarkdown(def: AgentDef): string {
+  const { body, ...frontmatter } = def
+  return serializeAgentMarkdown(frontmatter as Record<string, unknown>, body)
+}
+
+/**
  * Parse a markdown file (CC frontmatter + body) as an agent definition,
  * resolve name collisions, and persist. Throws on parse/validation
  * failure.

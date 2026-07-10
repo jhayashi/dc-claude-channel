@@ -1034,7 +1034,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
       <details class="overflow" id="edit-overflow">
         <summary aria-label="More actions">&#x22EF;</summary>
         <div class="menu">
-          <button class="menu-item" type="button" onclick="editOverflowExport()">Export as YAML</button>
+          <button class="menu-item" type="button" onclick="editOverflowExport()">Export agent file</button>
           <button class="menu-item danger" type="button" onclick="editOverflowDelete()">Delete agent</button>
         </div>
       </details>
@@ -1173,7 +1173,7 @@ textarea.text { resize: vertical; min-height: 100px; font-family: 'SF Mono', 'Ca
 </div>
 
 <script>
-var APP_VERSION = 1.07;
+var APP_VERSION = 1.08;
 var GLYPHS = /*__GLYPHS__*/{};
 var PREVIEW_PALETTE = {
   haiku:   { solid: '#B4862A', checker: '#D9B25B' },
@@ -1651,7 +1651,7 @@ function renderManageList() {
     var exportBtn = document.createElement('button');
     exportBtn.className = 'menu-item';
     exportBtn.type = 'button';
-    exportBtn.textContent = 'Export as YAML';
+    exportBtn.textContent = 'Export agent file';
     exportBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); overflow.open = false; exportAgent(id); }; })(a.id);
     menu.appendChild(exportBtn);
 

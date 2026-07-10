@@ -48,6 +48,7 @@ import { isDispatcherListening } from './dispatcher/dispatcher-singleton.js'
 import { SubagentCache, assertCanSpawn } from './dispatcher/subagent-cache.js'
 import { postTurnResult } from './dispatcher/turn-post.js'
 import { handleCreateAgentTool } from './dispatcher/create-agent-tool.js'
+import { tryImportAgentAttachment as tryImportAgentAttachmentImpl } from './dispatcher/agent-import.js'
 import { assertSupportedClaudeVersion } from './cc-version-check.js'
 import { cleanupOrphanSubagents } from './dispatcher/orphan-cleanup.js'
 import { RateLimiter } from './dispatcher/rate-limit.js'
@@ -2229,56 +2230,20 @@ async function main(): Promise<void> {
   }
 
   /**
-   * If the message has a .yaml/.yml file attachment, attempt to import it
-   * as an agent definition. Returns true if the attachment was handled
-   * (import succeeded or failed with an error message sent). Returns
-   * false if no .yaml attachment present — the message should proceed
-   * to the subagent normally.
+   * If the message has a .yaml/.yml/.md attachment that looks like an
+   * agent definition, attempt to import it. Returns true if handled
+   * (imported or refused with a message); false if the message should
+   * proceed to the subagent normally — including ordinary .md documents,
+   * which pass through silently.
    */
-  const tryImportAgentAttachment = async (msg: Message): Promise<boolean> => {
-    if (!msg.file || !msg.fileName) return false
-    const lower = msg.fileName.toLowerCase()
-    if (!lower.endsWith('.yaml') && !lower.endsWith('.yml')) return false
-
-    const chatId = msg.chatId
-    const MAX_IMPORT_BYTES = 256 * 1024
-
-    try {
-      // Same pattern as tryImportFamiliarAttachment — statSync fallback
-      // because msg.fileBytes may be undefined/0 on some DC clients.
-      const { readFileSync, statSync } = await import('node:fs')
-      const actualSize = msg.fileBytes || statSync(msg.file).size
-      if (actualSize > MAX_IMPORT_BYTES) {
-        await client.send(chatId, '\u26a0\ufe0f Agent import failed: file too large (max 256 KB).')
-        return true
-      }
-
-      const text = readFileSync(msg.file, 'utf-8')
-
-      if (text.length > MAX_IMPORT_BYTES) {
-        await client.send(chatId, '\u26a0\ufe0f Agent import failed: file too large (max 256 KB).')
-        return true
-      }
-
-      const result = agents.importAgentFromMarkdown(text)
-      const idNote = result.nameChanged ? ` (saved as "${result.agent.name}" to avoid a name conflict)` : ''
-      await client.send(
-        chatId,
-        `\u2705 Imported agent "${result.agent.name}"${idNote}. To create a chat with it, use the agent setup card.`,
-      )
-      logf('import: agent "%s" imported from attachment in chat %d', result.agent.name, chatId)
-      return true
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      // Truncate long Zod errors to keep the DC message short.
-      const short = message.length > 200 ? message.slice(0, 200) + '...' : message
-      await client.send(chatId, `\u26a0\ufe0f Couldn't import agent from "${msg.fileName}": ${short}`)
-      logf('import: failed for chat %d file=%s: %v', chatId, msg.fileName, err)
-      // Return false so the message still reaches the subagent — the user
-      // may have sent the file as context for a conversation.
-      return false
-    }
-  }
+  // #130/#137: extracted to dispatcher/agent-import.ts (unit-tested;
+  // handles .md terminal-CC files with an agent-frontmatter sniff so
+  // ordinary markdown passes through silently).
+  const tryImportAgentAttachment = (msg: Message): Promise<boolean> =>
+    tryImportAgentAttachmentImpl(
+      { send: (cid, t) => client.send(cid, t), logf },
+      { chatId: msg.chatId, file: msg.file, fileName: msg.fileName, fileBytes: msg.fileBytes },
+    )
 
   /**
    * Schedules export: produce a `.schedules.yaml` of all recurring
