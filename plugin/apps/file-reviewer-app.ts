@@ -355,9 +355,14 @@ export const fileReviewerApp: WebXDCApp = {
         ctx.logf('file-reviewer: %d comments for "%s" from chat %d', comments.length, data.fileTitle, ownerChatId)
 
         const binding = getBinding(ownerChatId)
-        if (binding && ctx.dispatchAndCollect) {
+        // #128: prefer dispatchAndPost so the agent's response to the
+        // comments (what it changed) reaches the chat — dispatchAndCollect
+        // silently discarded it and users saw an updated file appear with
+        // no explanation.
+        const dispatch = ctx.dispatchAndPost ?? ctx.dispatchAndCollect
+        if (binding && dispatch) {
           ctx.logf('file-reviewer: routing comments to subagent for chat %d', ownerChatId)
-          ctx.dispatchAndCollect(ownerChatId, text).catch(err =>
+          dispatch(ownerChatId, text).then(() => {}, err =>
             ctx.logf('file-reviewer: dispatch error chat=%d: %v', ownerChatId, err),
           )
         } else {

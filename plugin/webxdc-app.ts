@@ -60,6 +60,14 @@ export interface AppContext {
   getConnectedMcpServers: () => string[]
   /** Dispatch a synthetic user message to a chat's subagent and return the response text. */
   dispatchAndCollect?: (chatId: number, text: string) => Promise<string>
+  /**
+   * Dispatch a synthetic user message AND post the turn's final text +
+   * policy-denial summary back to the chat (#128). Use this — not
+   * dispatchAndCollect — whenever the user is meant to see the outcome;
+   * dispatchAndCollect is only for callers that consume the text
+   * themselves (e.g. familiar's requestLLM).
+   */
+  dispatchAndPost?: (chatId: number, text: string) => Promise<void>
   /** Per-chat scheduled-job store. Populated by server.ts at startup. */
   scheduleStore: import('./dispatcher/schedule-store.js').ScheduleStore
   /** Subagent cache — used by teleport-out to evict before the command prints. */

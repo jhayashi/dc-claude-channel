@@ -46,6 +46,7 @@ import { decideCleanup } from './cleanup.js'
 import { SocketServer, type SocketRequest } from './dispatcher/socket-server.js'
 import { isDispatcherListening } from './dispatcher/dispatcher-singleton.js'
 import { SubagentCache, assertCanSpawn } from './dispatcher/subagent-cache.js'
+import { postTurnResult } from './dispatcher/turn-post.js'
 import { assertSupportedClaudeVersion } from './cc-version-check.js'
 import { cleanupOrphanSubagents } from './dispatcher/orphan-cleanup.js'
 import { RateLimiter } from './dispatcher/rate-limit.js'
@@ -626,6 +627,13 @@ ctx = {
   async dispatchAndCollect(chatId: number, text: string): Promise<string> {
     const result = await subagentCache.dispatch(chatId, text)
     return result.text ?? ''
+  },
+  // #128: dispatch AND surface the outcome in the chat. Use for offers /
+  // synthetic turns where the user must see the reply; dispatchAndCollect
+  // is only for callers that consume the text themselves.
+  async dispatchAndPost(chatId: number, text: string): Promise<void> {
+    const result = await subagentCache.dispatch(chatId, text)
+    await postTurnResult((cid, t) => client.send(cid, t), chatId, result)
   },
   // scheduleStore / scheduler are `let` at module scope and not assigned
   // until inside main(). ctx is built at module top-level, so expose the
@@ -2104,8 +2112,10 @@ async function main(): Promise<void> {
                 `Briefly offer to set what they can do with this agent — full access, limited, or chat-only — ` +
                 `and tell the owner they can also open the contacts card by saying "manage permissions". ` +
                 `Do not assign any role yourself; wait for the owner.`
+              // #128: dispatchAndPost — the offer's reply must actually
+              // reach the chat (dispatchAndCollect discarded it).
               ctx
-                .dispatchAndCollect?.(msg.chatId, prompt)
+                .dispatchAndPost?.(msg.chatId, prompt)
                 ?.catch((err) =>
                   logf('member-added-offer: dispatch failed chat=%d: %v', msg.chatId, err),
                 )
@@ -2123,7 +2133,8 @@ async function main(): Promise<void> {
               `Briefly offer to set up a specialist agent for this chat (or use one of the owner's existing agents), ` +
               `and mention they can say "set up an agent" or describe what they need (e.g. "I want a sleep coach"). ` +
               `Do not create anything yourself; wait for the owner.`
-            ctx.dispatchAndCollect?.(msg.chatId, prompt)?.catch((err) =>
+            // #128: dispatchAndPost — see member-added offer above.
+            ctx.dispatchAndPost?.(msg.chatId, prompt)?.catch((err) =>
               logf('agent-setup-offer: dispatch failed chat=%d: %v', msg.chatId, err))
           }
         }
@@ -2642,16 +2653,13 @@ async function main(): Promise<void> {
       const memPrefix = await buildMemoryPrefix(chatId, enrichedMsg.text ?? turnInput)
       const result = await subagentCache.dispatch(chatId, memPrefix ? `${memPrefix}\n\n${turnInput}` : turnInput)
       logf('subagent: chat=%d result.text=%s denials=%d', chatId, (result.text ?? '').slice(0, 500).replace(/\n/g, ' '), result.denials.length)
-      if (result.text) {
-        const sentMsgId = await client.send(chatId, result.text)
-        logf('subagent: chat=%d sent msgId=%d', chatId, sentMsgId)
-      }
-      if (result.denials.length > 0) {
-        const summary = result.denials
-          .map((d) => `• ${d.tool_name}${d.command ? ': ' + d.command.slice(0, 80) : ''}`)
-          .join('\n')
-        await client.send(chatId, `\u26a0\ufe0f Some actions were blocked by policy:\n${summary}`)
-      }
+      // #128: shared post-result helper — every dispatch path that surfaces
+      // its outcome to the user must post through postTurnResult.
+      await postTurnResult(async (cid, t) => {
+        const sentMsgId = await client.send(cid, t)
+        logf('subagent: chat=%d sent msgId=%d', cid, sentMsgId)
+        return sentMsgId
+      }, chatId, result)
     } catch (err) {
       logf('dispatch error chat=%d: %v', chatId, err)
       // Suppress the chat-side toast for shutdown-class errors: the user
@@ -2880,10 +2888,22 @@ async function main(): Promise<void> {
       }
       const t1 = Date.now()
       try {
+        // #128: give the edited turn the same [dc ...] metadata envelope a
+        // fresh message gets, so the subagent knows which chat/message it
+        // is acting on. The edit event carries no attachment/sender fields,
+        // so a minimal Message shape is enough for formatSubagentInput.
+        const turnInput = formatSubagentInput({
+          chatId: event.chatId,
+          id: event.msgId,
+          text: event.text,
+        } as Message)
         const editMemPrefix = await buildMemoryPrefix(event.chatId, event.text)
-        await subagentCache.dispatch(event.chatId, editMemPrefix ? `${editMemPrefix}\n\n${event.text}` : event.text)
+        const result = await subagentCache.dispatch(event.chatId, editMemPrefix ? `${editMemPrefix}\n\n${turnInput}` : turnInput)
         logf('edit-as-interrupt: dispatch ok chat=%d turn-elapsed=%dms total=%dms',
              event.chatId, Date.now() - t1, Date.now() - t0)
+        // #128: the edited turn's reply was silently discarded since #45
+        // shipped — the user never saw the response to their correction.
+        await postTurnResult((cid, t) => client.send(cid, t), event.chatId, result)
       } catch (err) {
         logf('edit-as-interrupt: dispatch failed chat=%d: %v', event.chatId, err)
       }
@@ -2969,9 +2989,8 @@ async function main(): Promise<void> {
       try {
         const result = await subagentCache.dispatch(chatId, text)
         logf('reaction: chat=%d synthetic result.text=%s denials=%d', chatId, (result.text ?? '').slice(0, 300).replace(/\n/g, ' '), result.denials.length)
-        if (result.text) {
-          await client.send(chatId, result.text)
-        }
+        // #128: shared post-result helper (was dropping the denial summary).
+        await postTurnResult((cid, t) => client.send(cid, t), chatId, result)
       } catch (err) {
         logf('reaction: synthetic dispatch error chat=%d: %v', chatId, err)
       }
@@ -3143,15 +3162,8 @@ async function main(): Promise<void> {
           (result.text ?? '').slice(0, 500).replace(/\n/g, ' '),
           result.denials.length,
         )
-        if (result.text) {
-          await client.send(chatId, result.text)
-        }
-        if (result.denials.length > 0) {
-          const summary = result.denials
-            .map((d) => `• ${d.tool_name}${d.command ? ': ' + d.command.slice(0, 80) : ''}`)
-            .join('\n')
-          await client.send(chatId, `\u26a0\ufe0f Some actions were blocked by policy:\n${summary}`)
-        }
+        // #128: shared post-result helper (see runSubagentTurn).
+        await postTurnResult((cid, t) => client.send(cid, t), chatId, result)
       } catch (err) {
         logf('scheduler dispatch error chat=%d: %v', chatId, err)
         await client.send(chatId, `\u26a0\ufe0f Scheduled job error: ${err}`).catch(() => {})

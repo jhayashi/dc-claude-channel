@@ -287,7 +287,16 @@ export async function handleResumeAttach(
     const fallback = 'Terminal session imported. Send a message to continue where you left off.'
 
     if (ctx.dispatchAndCollect) {
-      ctx.dispatchAndCollect(newChatId, summaryPrompt).then(resp => {
+      ctx.dispatchAndCollect(newChatId, summaryPrompt).then(async resp => {
+        // #128: the recap itself was silently discarded — only the
+        // CHAT_NAME line was consumed. Post the summary (minus the
+        // control line) so the imported chat opens with the promised
+        // "what we were working on" context.
+        const recap = resp.replace(/^\s*CHAT_NAME:.*$/im, '').trim()
+        if (recap) {
+          await ctx.client.send(newChatId, recap).catch(err =>
+            ctx.logf('teleport: recap send failed chat=%d: %v', newChatId, err))
+        }
         if (!candidate?.sessionName) {
           const nameMatch = resp.match(/CHAT_NAME:\s*(.+)/i)
           if (nameMatch) {
