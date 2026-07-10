@@ -21,7 +21,16 @@
 set +e
 
 STATE_DIR="${HOME}/.claude/channels/deltachat"
+# Pairing source of truth (#131). Post-v1.3 the approved/ dir is retired
+# (renamed approved.legacy/ at first boot) and the allowlist lives in
+# memory, derived from contact records — so "is anything paired?" is
+# answered by bindings/ (dc_access_pair auto-binds the paired chat).
+# The two approved dirs are kept as fallbacks for upgrade windows:
+# approved/ = paired pre-v1.3, dispatcher not yet booted on v1.3+;
+# approved.legacy/ = paired historically, even if every binding was removed.
+BINDINGS_DIR="${STATE_DIR}/bindings"
 APPROVED_DIR="${STATE_DIR}/approved"
+APPROVED_LEGACY_DIR="${STATE_DIR}/approved.legacy"
 
 # --- Detect the --dangerously-load-development-channels flag by walking
 # up the ancestor process tree (the hook may be launched via a shell or
@@ -83,9 +92,20 @@ JSON
   exit 0
 fi
 
-paired=0
-if [ -d "$APPROVED_DIR" ]; then
-  paired=$(find "$APPROVED_DIR" -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d '[:space:]')
+count_files() {
+  if [ -d "$1" ]; then
+    find "$1" -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d '[:space:]'
+  else
+    echo 0
+  fi
+}
+
+paired=$(count_files "$BINDINGS_DIR")
+if [ "${paired:-0}" -eq 0 ] 2>/dev/null; then
+  paired=$(count_files "$APPROVED_DIR")
+fi
+if [ "${paired:-0}" -eq 0 ] 2>/dev/null; then
+  paired=$(count_files "$APPROVED_LEGACY_DIR")
 fi
 
 if [ "${paired:-0}" -gt 0 ] 2>/dev/null; then
