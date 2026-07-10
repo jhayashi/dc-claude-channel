@@ -2063,7 +2063,6 @@ async function main(): Promise<void> {
             (id) => offeredPermissionOffers.has(`${msg.chatId}:${id}`),
           )
           if (fresh.length > 0) {
-            const newId = fresh[0]
             const decision = shouldOfferPermissions({
               isAgentChat: true,
               newMemberPermissioned: false,
@@ -2073,8 +2072,15 @@ async function main(): Promise<void> {
             })
             if (decision.offer) {
               for (const id of fresh) offeredPermissionOffers.add(`${msg.chatId}:${id}`)
+              // #133 fold-in: DC's MemberAdded event doesn't say WHO was
+              // added, so naming fresh[0] could name a lingering member
+              // instead of the newcomer. Name every fresh unpermissioned
+              // member and let the model phrase it.
+              const who = fresh.length === 1
+                ? `A new person (contact ${fresh[0]}) has`
+                : `New people (contacts ${fresh.join(', ')}) have`
               const prompt =
-                `[system] A new person (contact ${newId}) just joined this agent chat and isn't permissioned yet. ` +
+                `[system] ${who} joined this agent chat and aren't permissioned yet. ` +
                 `Briefly offer to set what they can do with this agent — full access, limited, or chat-only — ` +
                 `and tell the owner they can also open the contacts card by saying "manage permissions". ` +
                 `Do not assign any role yourself; wait for the owner.`

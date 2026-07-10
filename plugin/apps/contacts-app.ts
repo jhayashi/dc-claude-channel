@@ -104,8 +104,13 @@ export async function handleAssignRole(
   if (!contactId || !role) return
   const authResult = await auth()
   if (!authResult.ok) {
+    // #133: the old copy sent users to "your 1:1 chat with me", but the
+    // picker there manages the 1:1's OWN bound agent (v1.4.9 per-agent
+    // scoping) — usually not this group's agent, so the contact wouldn't
+    // even appear. The recovery that actually works is an authenticated
+    // chat message in THIS chat, which routes to dc_set_contact_role.
     const message = authResult.reason === 'needs-confirmation'
-      ? "Changing permissions in a group has to come from you directly — open this card from your 1:1 chat with me and set it there."
+      ? "In a group I can't verify who tapped the card, so say it as a normal message instead — e.g. \"give Alice full access\" or \"make Bob chat-only\" — and I'll apply it from your message directly."
       : 'No owner found for this chat.'
     await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
       payload: { type: 'role_assign_err', contactId, message, senderAddr: 'server' },
@@ -145,6 +150,79 @@ export async function handleAssignRole(
     chatmailAddress: info?.address ?? null,
   }
   await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({ payload: { type: 'role_assigned', contact: enriched } }))
+}
+
+/**
+ * dc_set_contact_role implementation (#133). Same write path as the card's
+ * handleAssignRole — per-agent sidecar via the chat's bound agent, record
+ * created on first assignment (Option B), audit-logged — but reached via an
+ * authenticated chat message instead of an unauthenticatable card tap.
+ */
+async function handleSetContactRole(
+  ctx: AppContext,
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  const chatId = typeof args.chat_id === 'string' && args.chat_id.length > 0
+    ? Number(args.chat_id)
+    : NaN
+  const contactId = typeof args.contact_id === 'string' && args.contact_id.length > 0
+    ? Number(args.contact_id)
+    : NaN
+  const role = typeof args.role === 'string' ? args.role.trim() : ''
+
+  if (!Number.isFinite(chatId) || !Number.isFinite(contactId) || !role) {
+    return {
+      content: [{ type: 'text', text: 'dc_set_contact_role: chat_id, contact_id, and role are all required.' }],
+      isError: true,
+    }
+  }
+  if (!Object.prototype.hasOwnProperty.call(access.ROLES, role)) {
+    return {
+      content: [{
+        type: 'text',
+        text: `dc_set_contact_role: unknown role "${role}". Valid roles: ${Object.keys(access.ROLES).join(', ')}.`,
+      }],
+      isError: true,
+    }
+  }
+
+  // Phase 0.2 invariant: the agent context is the agent bound to the chat
+  // where the contact acts — not the asking subagent's own agent.
+  const managedAgentId = bindings.getBindingAgentId(chatId)
+
+  let previous: access.Contact | null = null
+  try { previous = access.loadContact(managedAgentId, contactId) } catch { /* corrupt → treat as no prior */ }
+
+  try {
+    const updated = access.setContactRole(managedAgentId, contactId, role)
+    logRoleAssignment({
+      ts: new Date().toISOString(),
+      assigneeContactId: contactId,
+      assignedRole: role,
+      previousRole: previous?.role ?? null,
+      assignerContactId: null,
+      reason: 'tool',
+    })
+    let displayName = updated.displayName || `Contact ${contactId}`
+    try {
+      const info = await ctx.client.getContact(contactId)
+      if (info?.displayName) displayName = info.displayName
+    } catch { /* keep fallback */ }
+    const prevNote = previous?.role && previous.role !== role ? ` (was ${previous.role})` : ''
+    return {
+      content: [{
+        type: 'text',
+        text: `${displayName} (contact ${contactId}) is now "${role}"${prevNote} for agent "${managedAgentId}". ` +
+          'Takes effect on their next message.',
+      }],
+    }
+  } catch (err) {
+    ctx.logf('contacts: dc_set_contact_role failed: %v', err)
+    return {
+      content: [{ type: 'text', text: `dc_set_contact_role failed: ${(err as Error).message}` }],
+      isError: true,
+    }
+  }
 }
 
 // ── Module-level state ───────────────────────────────────────────────────
@@ -191,10 +269,53 @@ export const contactsApp: WebXDCApp = {
         },
         requiresCapability: 'infrastructure',
       },
+      {
+        name: 'dc_set_contact_role',
+        description:
+          'Directly assign a contact\'s role for the agent bound to a chat — the executable ' +
+          'form of "give Alice full access" / "make Bob read-only" / "block Carol". ' +
+          'Roles: subscriber (full access), trusted-agent (full access, for bots), ' +
+          'family-member (chat + low-stakes actions — "limited"), guest (chat only — ' +
+          '"read-only" / "chat-only"), untrusted-agent (chat only, for bots), ' +
+          'no-permissions (ignored entirely — "block" / "no access"). ' +
+          'chat_id determines WHICH agent\'s roles are edited (the chat\'s bound agent), ' +
+          'so call it with the chat where the contact acts. Works in group chats — ' +
+          'unlike the contacts card, which refuses taps in multi-human groups. ' +
+          'Find contact IDs via dc_check_contact or dc_chat_history.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            chat_id: {
+              type: 'string',
+              description: 'DC chat ID whose bound agent\'s contact roles are being edited.',
+            },
+            contact_id: {
+              type: 'string',
+              description: 'DC contact ID of the person/bot whose role to set.',
+            },
+            role: {
+              type: 'string',
+              description: 'One of: subscriber, trusted-agent, family-member, guest, untrusted-agent, no-permissions.',
+            },
+          },
+          required: ['chat_id', 'contact_id', 'role'],
+        },
+        requiresCapability: 'infrastructure',
+      },
     ]
   },
 
   async callTool(name: string, args: Record<string, unknown>, ctx: AppContext): Promise<ToolResult | null> {
+    if (name === 'dc_set_contact_role') {
+      // NO §6/auth callback here by design (the dc_rebind_chat precedent):
+      // this tool is only reachable via a real, DC-core-authenticated chat
+      // message (fromId), and the dispatcher's capability gate
+      // (requiresCapability: 'infrastructure', resolved against the actual
+      // sender via _currentDriver) authorizes it before callTool runs. This
+      // is the multi-human-group recovery path the card cannot provide —
+      // its tap-driven assign_role is §6-refused there (#133).
+      return handleSetContactRole(ctx, args)
+    }
     if (name !== 'dc_open_contacts_card') return null
 
     const rawChatId = args.chat_id

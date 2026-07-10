@@ -285,8 +285,10 @@ export function logWebXDC(
  *                   role is always `subscriber` for this path.
  *   picked        — subscriber explicitly chose the role via the XDC
  *                   picker (slice 7).
+ *   tool          — dc_set_contact_role, the authenticated chat-message
+ *                   path (#133); assigner is the capability-gated sender.
  */
-export type RoleAssignmentReason = 'terminal_pair' | 'picked'
+export type RoleAssignmentReason = 'terminal_pair' | 'picked' | 'tool'
 
 export interface RoleAssignmentEvent {
   ts: string
