@@ -47,6 +47,7 @@ import { SocketServer, type SocketRequest } from './dispatcher/socket-server.js'
 import { isDispatcherListening } from './dispatcher/dispatcher-singleton.js'
 import { SubagentCache, assertCanSpawn } from './dispatcher/subagent-cache.js'
 import { postTurnResult } from './dispatcher/turn-post.js'
+import { handleCreateAgentTool } from './dispatcher/create-agent-tool.js'
 import { assertSupportedClaudeVersion } from './cc-version-check.js'
 import { cleanupOrphanSubagents } from './dispatcher/orphan-cleanup.js'
 import { RateLimiter } from './dispatcher/rate-limit.js'
@@ -1028,58 +1029,22 @@ const tailHandlers: Record<string, Dispatch> = {
         return { content: [{ type: 'text' as const, text: `Started tutorial in chat ${chatId}.` }] }
   },
 
+  // #129/#137: extracted to dispatcher/create-agent-tool.ts (unit-tested;
+  // seeds the owner's contact record so the new chat is immediately usable).
   dc_create_agent: async (args, _callerChatId) => {
-        const name = ((args.name as string) ?? '').trim()
-        const prompt = ((args.prompt as string) ?? '').trim()
-        const userChatIdStr = args.user_chat_id as string
-        if (!name || !prompt || !userChatIdStr) {
-          return { content: [{ type: 'text' as const, text: 'dc_create_agent: name, prompt, and user_chat_id are required' }], isError: true }
-        }
-        const userChatId = Number(userChatIdStr)
-
-        const contacts = await client.getChatContacts(userChatId)
-        const userContactId = contacts.find(id => id !== 1)
-        if (!userContactId) {
-          return { content: [{ type: 'text' as const, text: 'dc_create_agent: could not find user contact from chat' }], isError: true }
-        }
-
-        const groupId = await client.createGroup(name)
-        await client.addContactToChat(groupId, userContactId)
-
-        access.addChat(groupId, userContactId)
-
-        // Draft an agent from the free-form prompt, then override with the
-        // explicit name/prompt the tool was given. Save agent + bind to chat.
-        const modelArg = args.model as string | undefined
-        const model = modelArg && agents.ALLOWED_MODELS.includes(modelArg as agents.AllowedModel)
-          ? modelArg as agents.AllowedModel
-          : undefined
-        const { agent: draft, inheritClaudeMd } = agents.draftAgentFromDescription(prompt, model)
-        const agentName = agents.synthesizeAgentName(name)
-        try {
-          agents.saveAgent({
-            ...draft,
-            name: agentName,
-            'x-dc-display-name': name,
-            'x-dc-memory-boost': agents.classifyMemoryBoost(prompt),
-            body: prompt,
-          })
-          bindings.bindAgent(groupId, agentName, { inheritClaudeMd })
-        } catch (err) {
-          // Roll back so we don't leave a dangling agent or half-bound chat.
-          try { agents.deleteAgent(agentName) } catch {}
-          try { bindings.deleteBinding(groupId) } catch {}
-          return { content: [{ type: 'text' as const, text: `dc_create_agent: failed to persist agent: ${(err as Error).message}` }], isError: true }
-        }
-
-        // Send welcome message + set icon so the chat surfaces on the user's device.
+    return handleCreateAgentTool({
+      getChatContacts: (chatId) => client.getChatContacts(chatId),
+      createGroup: (name) => client.createGroup(name),
+      addContactToChat: (chatId, contactId) => client.addContactToChat(chatId, contactId),
+      addChat: (chatId, contactId) => access.addChat(chatId, contactId),
+      decorate: async (groupId, agentName) => {
         const savedAgent = agents.getAgent(agentName)
         if (savedAgent) {
           await decorateAgentChat({ client, logf }, groupId, savedAgent)
         }
-
-        const result = `Created agent "${name}" (chat ${groupId}, agent_id=${agentName}).`
-        return { content: [{ type: 'text' as const, text: result }] }
+      },
+      logf,
+    }, args)
   },
 
   dc_update_agent: async (args, callerChatId) => {
