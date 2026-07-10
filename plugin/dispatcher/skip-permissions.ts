@@ -1,11 +1,12 @@
 /**
  * Skip-permissions short-circuit for the dispatcher's permission handler.
  *
- * When a chat is bound to an agent whose metadata has
- * x-dc-skipPermissions=true, the dispatcher auto-approves the subagent's
- * tool call and writes a `skip_auto` permission-log entry instead of
- * showing the WebXDC permission card. This module is the pure check +
- * log write; the socket-server glue lives in server.ts.
+ * When a chat is bound to an agent with `permissionMode: bypassPermissions`
+ * (the standard CC frontmatter field — set via "trust me" / the edit card;
+ * resolved by agents.getSkipPermissions), the dispatcher auto-approves the
+ * subagent's tool call and writes a `skip_auto` permission-log entry
+ * instead of showing the WebXDC permission card. This module is the pure
+ * check + log write; the socket-server glue lives in server.ts.
  */
 
 import * as agents from '../agents.js'

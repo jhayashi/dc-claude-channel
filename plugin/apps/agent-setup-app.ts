@@ -813,7 +813,7 @@ export async function graduateAgent(ctx: AppContext, chatId: number): Promise<vo
     try {
       await ctx.client.send(
         chatId,
-        "Sorry — I couldn't finish setting up your agent. Tap the agent settings card to try again.",
+        "Sorry — I couldn't finish setting up your agent. Say \"set up an agent\" to start over, or \"help me set up an agent\" to browse the catalog again.",
       )
     } catch (sendErr) {
       ctx.logf('agent-setup: graduation-failure notice send failed chat=%d: %v', chatId, sendErr)
