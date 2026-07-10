@@ -4,6 +4,30 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.18] — 2026-07-09
+
+User-journey fix release. A full validation of all 42 user journeys against the implementation (specs vs. code) surfaced five silently-broken marquee flows, several dead-end journeys, and a pile of stale copy — all fixed here. Every fix landed with a red-green regression test; the suite grew from 1455 to 1505 tests.
+
+### Fixed
+
+- **Dispatch results were silently discarded outside the main turn path (#128).** Only `runSubagentTurn` and the scheduler posted a turn's final text; six other dispatch paths dropped it — both native-moment offers (agent-setup and permissions — the #109 marquee moments never posted at all), edit-as-interrupt replies (dropped since #45 shipped), file-reviewer comment responses, the teleport import recap, and the reaction router's denial summaries. All six now post through a shared, unit-tested `postTurnResult` helper. Edited turns also get the standard `[dc …]` metadata envelope.
+- **`dc_create_agent` created a dead chat (#129).** The tool path never seeded the owner's contact record in the new agent's sidecar (#115 recurrence — the card paths were fixed, the tool was missed), so every message into the fresh chat was silently dropped until the next dispatcher restart. Handler extracted to `dispatcher/create-agent-tool.ts` and seeded like the card paths.
+- **Agent export→import round trip was broken both ways (#130).** Export wrote a bare YAML document that the importer (frontmatter-markdown) always rejected; real terminal-CC `.md` files were never intercepted at all. Export now writes the same frontmatter-markdown `~/.claude/agents/` uses (`<agentId>.md`); `.md` attachments import with an agent-frontmatter sniff so ordinary markdown passes through untouched. Round-trip pinned by tests.
+- **False "no chat is paired" banner on every launch (#131).** The SessionStart hook read the `approved/` dir retired at v1.3 first boot; paired detection now reads `bindings/` with legacy fallbacks. Every v1.3+ install saw this on every launch.
+- **Unanswered tour offer hijacked message routing (#132).** Any reply that missed the exact-match yes/no sets ("yes!", "what can you do?") diverted the whole chat to the legacy terminal-notification path indefinitely. Replies are now normalized ("Yes!" works), unmatched replies park the tour and get answered normally, and the legacy notification tail — only reachable via this trap — is deleted.
+- **Teleport bundle (#134).** Pruned-worktree `workingDir` now errors with repair instructions *before* teardown instead of completing and handing over a dead `cd` command; a stale session-index entry can no longer bind an imported chat to a deleted agent; the import-direction group refusal no longer advises the *export* phrase; NL teleport-out warns before deleting scheduled jobs; card copy says "Disconnected" (the bot never leaves — that's the SMTP-queue guard); both card list screens get stale-card timeouts with recovery copy instead of infinite spinners.
+- **File Reviewer "comments sent" state survives reload (#112).** Reviewed files no longer reappear on reopen — sent-state is derived from the update log itself (stable `fileId` on comments payloads, reconstructed on replay).
+- **Duplicate `server.ts` no longer unlinks the live dispatcher socket (#127).** A second dispatcher losing the singleton race removed the socket path on exit, turning every subsequent tool call into a spurious rc=11 "policy denial." `stop()` now only unlinks a socket this instance actually bound.
+
+### Added
+
+- **`dc_set_contact_role` (#133).** Directly-callable role assignment — "give Alice full access" now works as a chat message, gated on the sender's authenticated `fromId` (the `dc_rebind_chat` pattern). This closes the multi-human dead end where the permissions offer fired only in groups, the card always refused there, and the refusal's "use your 1:1" advice broke on per-agent picker scoping. The card refusal copy now teaches the message lane.
+
+### Changed
+
+- **`/help` regenerated with a router-parity test (#136).** The list had drifted (missing `/effort`, `/cost`, `/plugins`, `/tour`, `/export-schedules`, and the terminal-only blocked list). A parity suite now pins HELP_TEXT to the slash router in both directions so it can't drift again. Also swept: the channel prompt's pre-card permission copy, the teleport `view` parameter instruction, coach-failure and import-success copy referencing the retired setup card, and stale module headers.
+- **Testability (#137, partial).** Six `server.ts` closures extracted into unit-tested modules (`turn-post`, `create-agent-tool`, `agent-import`, the tutorial dispatch fork, and hardened `resolveAttachAgent` + `buildResumeCommand`); three new regression suites; two fixture-drift fixes (tests that seeded retired state layouts).
+
 ## [1.4.17] — 2026-07-07
 
 Post-decomposition cleanup (#117): removes dead code carried over from the retired `agent-setup` monolith, dedupes dispatcher logic, and tightens card copy. No behavior change — internal maintenance plus test hardening.
@@ -327,6 +351,7 @@ The agent format aligns with Claude Code's own. Agent definitions move from `~/.
 
 - **`DC_TOOL_NAMES` was missing `reply`.** The cross-chat post tool is registered without a `dc_` prefix and slipped past the initial drift catalog; the boot drift-check warned but newly-saved agents silently lost cross-chat reply access until added.
 
+[1.4.18]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.17...v1.4.18
 [1.4.5]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.4...v1.4.5
 [1.4.4]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.2...v1.4.3
