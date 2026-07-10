@@ -115,7 +115,28 @@ export function buildResumeCommand(
     return { error: 'No agent paired with this chat.' }
   }
 
-  const cwd = opts.cwd ?? binding.workingDir ?? PLUGIN_DIR
+  // #134: resolve the binding's workingDir through the same auto-heal the
+  // spawn path uses (pruned plugin-cache versions heal; anything else gone
+  // is an error). Previously a missing dir sailed through — the teleport
+  // completed, tore the chat down, and handed the user a dead `cd`.
+  let resolvedCwd: string | undefined = opts.cwd
+  if (!resolvedCwd) {
+    const resolution = bindings.resolveSpawnCwd(binding.workingDir, {
+      fallbackCwd: PLUGIN_DIR,
+      currentPluginDir: PLUGIN_DIR,
+      dirExists: (p) => existsSync(p),
+    })
+    if (resolution.kind === 'unresolvable') {
+      return {
+        error:
+          `This chat's working directory (${resolution.missingDir}) no longer exists — ` +
+          `most likely a cleaned-up git worktree. Repoint workingDir in ` +
+          `~/.claude/channels/deltachat/bindings/${chatId}.json to a live directory and try again.`,
+      }
+    }
+    resolvedCwd = resolution.workingDir
+  }
+  const cwd = resolvedCwd
   const modelFlag = opts.model ? ` --model ${opts.model}` : ''
   const nameFlag = opts.chatName ? ` --name ${shellQuote(opts.chatName)}` : ''
 

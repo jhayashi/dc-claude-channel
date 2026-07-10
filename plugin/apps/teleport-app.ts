@@ -189,8 +189,12 @@ export async function handleResumeAttach(
   // §6 authorization gate.
   const authResult = await auth()
   if (!authResult.ok) {
+    // #134: this refusal previously reused the teleport-OUT copy — "say
+    // 'teleport this session'" routes to dc_resume_in_terminal and does
+    // the OPPOSITE of importing. Import has no message-lane equivalent,
+    // so the only recovery is a solo chat.
     const message = authResult.reason === 'needs-confirmation'
-      ? "Teleporting from a group has to come from you directly — say 'teleport this session' in our chat, or open this from your 1:1 with me."
+      ? "Importing a session can't be authorized from a group tap — open the teleport card from a chat where it's just the two of us and attach it there."
       : 'No owner found for this chat.'
     await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
       payload: {

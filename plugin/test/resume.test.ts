@@ -64,13 +64,18 @@ describe('buildResumeCommand', () => {
   let tmpRoot: string
   let projectsRoot: string
   let bindingsRoot: string
+  // #134: buildResumeCommand now refuses a workingDir that doesn't exist
+  // on disk (the pruned-worktree fix), so fixtures must use a real dir.
+  let realWorkingDir: string
 
   beforeEach(() => {
     tmpRoot = mkdtempSync(join(tmpdir(), 'resume-test-'))
     projectsRoot = join(tmpRoot, 'projects')
     bindingsRoot = join(tmpRoot, 'bindings')
+    realWorkingDir = join(tmpRoot, 'myproject')
     mkdirSync(projectsRoot, { recursive: true })
     mkdirSync(bindingsRoot, { recursive: true })
+    mkdirSync(realWorkingDir, { recursive: true })
     resume.setProjectsRoot(projectsRoot)
     bindings.setBindingsDir(bindingsRoot)
   })
@@ -88,7 +93,7 @@ describe('buildResumeCommand', () => {
 
   it('emits a cd && claude --resume command using the binding workingDir', () => {
     const sessionId = '3b9526d5-a8f9-4ccc-a8e8-c08f6fd515ee'
-    const workingDir = '/home/user/src/myproject'
+    const workingDir = realWorkingDir
     writeSessionFile(workingDir, sessionId)
     bindings.saveBinding({
       chatId: 42,
@@ -107,7 +112,7 @@ describe('buildResumeCommand', () => {
 
   it('includes --name flag when chatName is provided', () => {
     const sessionId = '3b9526d5-a8f9-4ccc-a8e8-c08f6fd515ee'
-    const workingDir = '/home/user/src/myproject'
+    const workingDir = realWorkingDir
     writeSessionFile(workingDir, sessionId)
     bindings.saveBinding({
       chatId: 42,
@@ -124,7 +129,7 @@ describe('buildResumeCommand', () => {
 
   it('shell-quotes chat names with special characters', () => {
     const sessionId = '3b9526d5-a8f9-4ccc-a8e8-c08f6fd515ee'
-    const workingDir = '/home/user/src/myproject'
+    const workingDir = realWorkingDir
     writeSessionFile(workingDir, sessionId)
     bindings.saveBinding({
       chatId: 42,
@@ -162,7 +167,7 @@ describe('buildResumeCommand', () => {
   })
 
   it('falls back to a fresh terminal session when binding has no sessionId', () => {
-    const workingDir = '/home/user/src/myproject'
+    const workingDir = realWorkingDir
     bindings.saveBinding({ chatId: 42, workingDir, createdAt: new Date().toISOString() })
     const result = resume.buildResumeCommand(42, { chatName: 'My Agent' })
     if ('error' in result) throw new Error(`expected success: ${result.error}`)
@@ -175,19 +180,19 @@ describe('buildResumeCommand', () => {
     bindings.saveBinding({
       chatId: 42,
       sessionId: 'deadbeef-aaaa-bbbb-cccc-dddddddddddd',
-      workingDir: '/home/user/src/myproject',
+      workingDir: realWorkingDir,
       createdAt: new Date().toISOString(),
     })
     const result = resume.buildResumeCommand(42)
     if ('error' in result) throw new Error(`expected success: ${result.error}`)
     expect(result.kind).toBe('fresh')
     expect(result.sessionId).toBeNull()
-    expect(result.command).toBe('cd /home/user/src/myproject && claude')
+    expect(result.command).toBe(`cd ${realWorkingDir} && claude`)
   })
 
   it('includes --model flag when model is provided', () => {
     const sessionId = 'model-test-uuid-1111-2222-333333333333'
-    const workingDir = '/home/user/src/myproject'
+    const workingDir = realWorkingDir
     writeSessionFile(workingDir, sessionId)
     bindings.saveBinding({ chatId: 42, sessionId, workingDir, createdAt: new Date().toISOString() })
 
@@ -199,7 +204,7 @@ describe('buildResumeCommand', () => {
 
   it('omits --model flag when model is not provided', () => {
     const sessionId = 'no-model-uuid-1111-2222-333333333333'
-    const workingDir = '/home/user/src/myproject'
+    const workingDir = realWorkingDir
     writeSessionFile(workingDir, sessionId)
     bindings.saveBinding({ chatId: 42, sessionId, workingDir, createdAt: new Date().toISOString() })
 
@@ -210,7 +215,7 @@ describe('buildResumeCommand', () => {
 
   it('--model appears before --name in resume command', () => {
     const sessionId = 'order-test-uuid-1111-2222-333333333333'
-    const workingDir = '/home/user/src/myproject'
+    const workingDir = realWorkingDir
     writeSessionFile(workingDir, sessionId)
     bindings.saveBinding({ chatId: 42, sessionId, workingDir, createdAt: new Date().toISOString() })
 

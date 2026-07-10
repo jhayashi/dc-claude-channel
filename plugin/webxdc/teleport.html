@@ -581,7 +581,7 @@ body {
 </div>
 
 <script>
-var APP_VERSION = 1.02;
+var APP_VERSION = 1.03;
 var versionMismatchSent = false;
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -603,8 +603,8 @@ var toState = {
 var TO_PROGRESS_STEPS = [
   { id: 'evict',   label: 'Pausing chat subagent' },
   { id: 'jobs',    label: 'Handling scheduled jobs' },
-  { id: 'state',   label: 'Cleaning up chat state' },
   { id: 'command', label: 'Generating terminal command' },
+  { id: 'state',   label: 'Cleaning up chat state' },
 ];
 
 // to_cli request counter (independent from resume)
@@ -690,8 +690,16 @@ function resetToCliState() {
   if (list) list.replaceChildren();
 }
 
+var toListTimeout = null;
 function sendTeleportListRequest() {
   showLoadingModal('Loading chats', 'Scanning your paired DC chats…');
+  // #134: stale cards (dispatcher restarted) got no reply and spun forever.
+  if (toListTimeout) clearTimeout(toListTimeout);
+  toListTimeout = setTimeout(function() {
+    toListTimeout = null;
+    hideLoadingModal();
+    showModal('No response', 'The server did not respond. This card may be outdated — ask Claude to send you the teleport card again.', { variant: 'error' });
+  }, 15000);
   window.webxdc.sendUpdate({
     payload: {
       type: 'teleport_out_list_request',
@@ -934,7 +942,7 @@ function toRenderConfirm() {
   addRow('Session UUID', (c.sessionId || '—').slice(0, 20) + (c.sessionId && c.sessionId.length > 20 ? '…' : ''), true);
   addRow('Working dir', c.workingDir || '—', true);
   addRow('Scheduled jobs', jobsLine, false);
-  addRow('DC chat', 'Left', false);
+  addRow('DC chat', 'Disconnected', false);
 }
 
 function toCommit() {
@@ -1013,7 +1021,7 @@ function toHandleDone(payload) {
     var v = document.createElement('span'); v.className = 'sum-val'; v.textContent = val;
     row.appendChild(k); row.appendChild(v); summary.appendChild(row);
   };
-  addRow('DC chat', 'Left ✓');
+  addRow('DC chat', 'Disconnected ✓');
   addRow('Jobs', jobsLine);
   addRow('Agent definition', 'Preserved' + (c && c.agentName ? ' (' + c.agentName + ')' : ''));
   toShowScreen('done');
@@ -1113,13 +1121,22 @@ function requestResumeList() {
   var attachBtn = document.getElementById('resume-attach');
   if (attachBtn) attachBtn.disabled = true;
   showLoadingModal('Loading sessions', 'Scanning the last 5 days of claude sessions…');
+  // #134: same stale-card guard as the teleport-out list.
+  if (resumeListTimeout) clearTimeout(resumeListTimeout);
+  resumeListTimeout = setTimeout(function() {
+    resumeListTimeout = null;
+    hideLoadingModal();
+    showModal('No response', 'The server did not respond. This card may be outdated — ask Claude to send you the teleport card again.', { variant: 'error' });
+  }, 15000);
   window.webxdc.sendUpdate({
     payload: { type: 'resume_list_request', requestId: myReq, senderAddr: window.webxdc.selfAddr },
     summary: 'Loading sessions'
   }, 'resume list request ' + myReq);
 }
 
+var resumeListTimeout = null;
 function renderResumeList(candidates) {
+  if (resumeListTimeout) { clearTimeout(resumeListTimeout); resumeListTimeout = null; }
   hideLoadingModal();
   var empty = document.getElementById('resume-empty');
   var list = document.getElementById('resume-list');
@@ -1264,6 +1281,7 @@ window.webxdc.setUpdateListener(function(update) {
 
   // to_cli responses
   if (d.type === 'teleport_out_list') {
+    if (toListTimeout) { clearTimeout(toListTimeout); toListTimeout = null; }
     toRenderPickList(d.chats || []);
     return;
   }

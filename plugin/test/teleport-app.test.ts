@@ -86,3 +86,24 @@ test('refuses resume_attach when not authorized → emits resume_attach_err, no 
   expect(sent.some(p => p.type === 'resume_attach_err')).toBe(true)
   expect(created.length).toBe(0)
 })
+
+test('import refusal copy is direction-correct — never advises the OUT phrase (#134)', async () => {
+  // The old copy reused teleport-out's advice: "say 'teleport this
+  // session'" — which routes to dc_resume_in_terminal and performs the
+  // OPPOSITE operation (exports the group chat to the terminal).
+  const sent: any[] = []
+  const ctx: any = {
+    client: {
+      sendWebXDCUpdate: async (_m: number, u: string) => { sent.push(JSON.parse(u).payload) },
+      createGroup: async () => 999,
+      addContactToChat: async () => {},
+      getChatContacts: async () => [2],
+    },
+    logf: () => {},
+  }
+  const auth = async () => ({ ok: false, reason: 'needs-confirmation' }) as const
+  await handleResumeAttach(ctx, 99, 42, { requestId: 7, sessionId: 'abc123' }, auth)
+  const err = sent.find(p => p.type === 'resume_attach_err')
+  expect(err.message).not.toContain("teleport this session")
+  expect(err.message.toLowerCase()).toContain('import')
+})

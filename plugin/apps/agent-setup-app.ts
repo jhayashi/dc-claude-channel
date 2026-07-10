@@ -379,9 +379,17 @@ export async function decorateAgentChat(
  * this session) → source chat's current agent → default agent.
  */
 export function resolveAttachAgent(sessionId: string, sourceChatId: number): string {
+  // #134: validate every candidate against the live agents dir — the
+  // session-agents index deliberately survives binding deletion, so it can
+  // point at an agent whose .md was since deleted. Binding a new chat to a
+  // ghost agent bricks it (the v1.4.16 null-agent lesson).
+  const alive = (id: string | null | undefined): id is string =>
+    !!id && agents.getAgent(id) !== null
   const indexed = sessionAgents.getAgentForSession(sessionId)
-  const sourceBinding = bindings.getBinding(sourceChatId)
-  return indexed ?? sourceBinding?.agentId ?? agents.DEFAULT_AGENT_ID
+  if (alive(indexed)) return indexed
+  const sourceAgentId = bindings.getBinding(sourceChatId)?.agentId
+  if (alive(sourceAgentId)) return sourceAgentId
+  return agents.DEFAULT_AGENT_ID
 }
 
 /**

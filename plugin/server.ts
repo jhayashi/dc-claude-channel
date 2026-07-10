@@ -1270,12 +1270,21 @@ const tailHandlers: Record<string, Dispatch> = {
         if ('error' in result) {
           return { content: [{ type: 'text' as const, text: `dc_resume_in_terminal: ${result.error}` }], isError: true }
         }
+        // #134: the NL path deletes this chat's scheduled jobs as part of
+        // cleanup (the card path offers delete-or-move; here there's no
+        // UI). Never silently — count them and warn in the chat + result.
+        const jobCount = scheduleStore?.countForChat(chatId) ?? 0
+        const jobNote = jobCount > 0
+          ? `\n⚠️ This deletes ${jobCount} scheduled job${jobCount === 1 ? '' : 's'} tied to this chat. ` +
+            `To keep them, say stop, then use the teleport card ("open the teleport card") which can move jobs to another chat first.`
+          : ''
+
         // Send the paste command directly to the chat. Relying on Claude
         // to echo the tool result in its final text isn't reliable — it
         // sometimes abbreviates to "Paste that after this turn lands"
         // without including the command. This guarantees the user sees it.
         try {
-          await client.send(chatId, `\`\`\`\n${result.command}\n\`\`\``)
+          await client.send(chatId, `\`\`\`\n${result.command}\n\`\`\`${jobNote}`)
         } catch (err) {
           logf('dc_resume_in_terminal: failed to send command to chat %d: %v', chatId, err)
         }
@@ -1317,8 +1326,11 @@ const tailHandlers: Record<string, Dispatch> = {
         const detail = result.kind === 'resume'
           ? `(session ${result.sessionId})`
           : '(no prior session — fresh terminal claude)'
+        const jobDetail = jobCount > 0
+          ? ` Note: ${jobCount} scheduled job(s) tied to this chat will be deleted (already flagged in the chat).`
+          : ''
         return { content: [{ type: 'text' as const, text:
-          `Resume command already sent to chat ${chatId} ${detail}.\n\n` +
+          `Resume command already sent to chat ${chatId} ${detail}.${jobDetail}\n\n` +
           `Do NOT repeat the command in your reply. Send a brief one-line message telling the user to wait for your turn to end, then paste the command in their terminal.`
         }] }
   },

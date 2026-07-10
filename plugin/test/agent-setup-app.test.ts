@@ -431,8 +431,22 @@ describe('resolveAttachAgent', () => {
     }
   })
 
+  // #134: resolveAttachAgent now validates candidates against the live
+  // agents dir (the session-agents index survives agent deletion), so
+  // these fixtures must create the agent .md files they reference.
+  function seedLiveAgent(name: string): void {
+    agents.saveAgent({
+      name,
+      description: 't',
+      model: 'claude-sonnet-5',
+      body: 'x',
+    } as agents.AgentDef)
+  }
+
   test('prefers session-agents index when entry exists', () => {
     // Source chat has a different agent than the index
+    seedLiveAgent('original-agent')
+    seedLiveAgent('source-agent')
     bindings.saveBinding({ chatId: 10, agentId: 'source-agent', createdAt: new Date().toISOString() })
     sessionAgents.setAgentForSession('sess-abc', 'original-agent')
 
@@ -440,6 +454,7 @@ describe('resolveAttachAgent', () => {
   })
 
   test('falls back to source binding agentId when no index entry', () => {
+    seedLiveAgent('source-agent')
     bindings.saveBinding({ chatId: 10, agentId: 'source-agent', createdAt: new Date().toISOString() })
 
     expect(resolveAttachAgent('sess-xyz', 10)).toBe('source-agent')
