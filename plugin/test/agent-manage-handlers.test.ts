@@ -30,3 +30,33 @@ test('handleSaveEdit refused by §6 → emits action_err, no editComplete', asyn
   expect(sent.some(p => p.type === 'action_err')).toBe(true)
   expect(sent.some(p => p.type === 'editComplete')).toBe(false)
 })
+
+// #135: the undeletable built-in and the agent-gone case previously
+// returned silently — the card hung in pendingAction:'delete' until a
+// misattributed 10s "No response" timeout. Both must emit action_err.
+test('handleDeleteAgent on the built-in default → emits action_err (#135)', async () => {
+  const sent: any[] = []
+  const ctx: any = {
+    client: { sendWebXDCUpdate: async (_m: number, u: string) => { sent.push(JSON.parse(u).payload) } },
+    logf: () => {},
+  }
+  const auth = async () => ({ ok: true as const })
+  await handleDeleteAgent(ctx, 99, 42, 'claude-code', auth)
+  const err = sent.find(p => p.type === 'action_err')
+  expect(err).toBeTruthy()
+  expect(err.message).toContain('default agent')
+  expect(sent.some(p => p.type === 'deleted')).toBe(false)
+})
+
+test('handleDeleteAgent on a nonexistent agent → emits action_err (#135)', async () => {
+  const sent: any[] = []
+  const ctx: any = {
+    client: { sendWebXDCUpdate: async (_m: number, u: string) => { sent.push(JSON.parse(u).payload) } },
+    logf: () => {},
+  }
+  const auth = async () => ({ ok: true as const })
+  await handleDeleteAgent(ctx, 99, 42, 'ghost-agent-135', auth)
+  const err = sent.find(p => p.type === 'action_err')
+  expect(err).toBeTruthy()
+  expect(err.message).toContain('no longer exists')
+})

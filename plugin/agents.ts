@@ -417,6 +417,20 @@ export function updateAgentPrompt(name: string, body: string): boolean {
 }
 
 /**
+ * Update just the display name (`x-dc-display-name`) on an agent (#135 —
+ * the "rename yourself to Atlas" execute lane). The canonical slug (and
+ * .md filename) is pinned; a rename never moves the file. Returns false
+ * if missing.
+ */
+export function updateAgentDisplayName(name: string, displayName: string): boolean {
+  const agent = getAgent(name)
+  if (!agent) return false
+  agent['x-dc-display-name'] = displayName
+  saveAgent(agent)
+  return true
+}
+
+/**
  * Update just the model on an agent. Returns false if missing.
  * Throws on invalid model.
  */

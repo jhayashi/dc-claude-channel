@@ -134,6 +134,8 @@ The monolithic `agent-setup` WebXDC card has been fully peeled into four single-
 cd plugin && bun install && bun test
 ```
 
+**Fix-carries-its-seam rule (#137).** Every functional bug found in the 2026-07-09 journey validation lived in an untestable `server.ts` `main()` closure; every extracted, dep-injected module was clean. So: when a fix or feature touches logic inside a `server.ts` closure (tail tool handlers, dispatch branches, offer wiring), extract that logic into a module with injected deps and land the regression test WITH the fix — the `slash-handler.ts` / `dispatcher/create-agent-tool.ts` precedent. Don't patch inside the closure.
+
 ## Visual communication via WebXDC
 
 When the conversation calls for visual output — UI mockups, design comparisons, diagrams, data visualizations — build a self-contained HTML app and send it via `dc_send_webxdc`. A throwaway `.xdc` renders properly on any device and stays accessible from the DC app list. Don't describe visuals in markdown when you can show them.

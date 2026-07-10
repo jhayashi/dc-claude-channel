@@ -541,7 +541,7 @@ export const DC_TOOLS: readonly DcToolDef[] = [
   {
     name: 'dc_update_agent',
     requiresCapability: 'infrastructure',
-    description: 'Update the behavior prompt and/or model for an existing agent. Use when the user asks to change how Claude handles messages in an agent, or to switch which model (haiku/sonnet/opus) runs it. At least one of prompt or model must be provided. Changes apply to all chats bound to the same agent (agent definitions are now shared/reusable); cached subagents are evicted so the next message respawns under the new config.',
+    description: 'Update the behavior prompt, model, and/or display name for an existing agent. Use when the user asks to change how Claude handles messages in an agent, to switch which model (haiku/sonnet/opus) runs it, or to RENAME the agent — "rename yourself to Atlas", "call yourself Max", "change your name to Scout" all map to the name parameter. At least one of prompt, model, or name must be provided. Prompt/model changes apply to all chats bound to the same agent and respawn their subagents; a rename is display-only (no restart) and refreshes each bound chat\'s name and badge.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -552,6 +552,7 @@ export const DC_TOOLS: readonly DcToolDef[] = [
           description: `Updated subagent model (optional). One of: ${MODEL_IDS.join(', ')}.`,
           enum: [...MODEL_IDS],
         },
+        name: { type: 'string', description: 'New display name for the agent (optional). The canonical agent id/slug is unchanged — this is the friendly name shown on chats and badges.' },
       },
       required: ['chat_id'],
     },

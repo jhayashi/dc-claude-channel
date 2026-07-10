@@ -1145,12 +1145,22 @@ export async function handleDeleteAgent(
     return
   }
   if (agents.isUndeletableAgent(agentId)) {
+    // #135: emit a real error — the silent return left the card hanging in
+    // pendingAction:'delete' until a misattributed 10s "No response" modal.
     ctx.logf('agent-setup: refusing to delete built-in default agent %s', agentId)
+    await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
+      payload: { type: 'action_err', message: 'The built-in default agent can’t be deleted.', senderAddr: 'server' },
+      summary: 'Delete refused',
+    })).catch(() => {})
     return
   }
   const agent = agents.getAgent(agentId)
   if (!agent) {
     ctx.logf('agent-setup: delete requested agent %s not found', agentId)
+    await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
+      payload: { type: 'action_err', message: `Agent "${agentId}" no longer exists.`, senderAddr: 'server' },
+      summary: 'Delete refused',
+    })).catch(() => {})
     return
   }
   try {

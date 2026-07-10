@@ -156,8 +156,11 @@ export const agentManageApp: WebXDCApp = {
             },
             view: {
               type: 'string',
-              enum: ['manage', 'switch'],
-              description: '\'switch\' opens the pick-an-agent (rebind) screen directly — use for "switch this chat\'s agent". \'manage\' (default) opens the agent list.',
+              // #135: accept the spec's Appendix-A vocabulary (show/edit/swap)
+              // as aliases — a well-read model passing view:'edit' was
+              // silently coerced to the list with no signal.
+              enum: ['manage', 'switch', 'show', 'swap', 'edit'],
+              description: '\'switch\' (alias \'swap\') opens the pick-an-agent (rebind) screen directly — use for "switch this chat\'s agent". \'manage\' (aliases \'show\', \'edit\'; default) opens the agent list — each agent\'s edit screen is one tap from there.',
             },
           },
           required: ['chat_id'],
@@ -220,7 +223,8 @@ export const agentManageApp: WebXDCApp = {
         }
       }
 
-      const view = args.view === 'switch' ? 'switch' : 'manage'
+      // 'swap' is the spec's word for the rebind screen (#135 alias).
+      const view = (args.view === 'switch' || args.view === 'swap') ? 'switch' : 'manage'
 
       try {
         await openManageCard(ctx, targetChatId, view)

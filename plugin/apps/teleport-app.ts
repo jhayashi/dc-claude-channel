@@ -178,7 +178,16 @@ export async function handleResumeAttach(
   sourceChatId: number,
   payload: { requestId?: unknown; sessionId?: unknown },
   auth: () => Promise<{ ok: true } | { ok: false; reason: 'no-owner' | 'needs-confirmation' }>,
+  // #137: injectable liveness/candidate probes (the real ones shell out to
+  // fuser and scan /proc) so the out→attach round trip is a pure-filesystem
+  // test. Same pattern buildTeleportOutList already uses.
+  deps: {
+    sessionLive?: (sessionId: string) => boolean
+    listCandidates?: () => ReturnType<typeof resume.listResumeCandidates>
+  } = {},
 ): Promise<void> {
+  const sessionLive = deps.sessionLive ?? resume.isSessionLive
+  const listCandidates = deps.listCandidates ?? resume.listResumeCandidates
   const requestId = typeof payload.requestId === 'number' ? payload.requestId : 0
   const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : ''
   if (!sessionId) {
@@ -227,7 +236,7 @@ export async function handleResumeAttach(
       }
     }
 
-    if (resume.isSessionLive(sessionId)) {
+    if (sessionLive(sessionId)) {
       ctx.logf('teleport: session %s appears active in terminal, warning user', sessionId)
       await ctx.client.sendWebXDCUpdate(msgId, JSON.stringify({
         payload: {
@@ -241,7 +250,7 @@ export async function handleResumeAttach(
       }))
       return
     }
-    const candidates = resume.listResumeCandidates()
+    const candidates = listCandidates()
     const candidate = candidates.find(c => c.sessionId === sessionId)
 
     const agentId = resolveAttachAgent(sessionId, sourceChatId)
@@ -451,7 +460,7 @@ export const teleportApp: WebXDCApp = {
 
       if (payload.type === 'resume_list_request') {
         const requestId = typeof payload.requestId === 'number' ? payload.requestId : 0
-        const candidates = resume.listResumeCandidates()
+        const candidates = listCandidates()
         try {
           const update = JSON.stringify({
             payload: {

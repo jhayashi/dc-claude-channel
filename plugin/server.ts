@@ -48,6 +48,7 @@ import { isDispatcherListening } from './dispatcher/dispatcher-singleton.js'
 import { SubagentCache, assertCanSpawn } from './dispatcher/subagent-cache.js'
 import { postTurnResult } from './dispatcher/turn-post.js'
 import { handleCreateAgentTool } from './dispatcher/create-agent-tool.js'
+import { handleUpdateAgentTool } from './dispatcher/update-agent-tool.js'
 import { tryImportAgentAttachment as tryImportAgentAttachmentImpl } from './dispatcher/agent-import.js'
 import { assertSupportedClaudeVersion } from './cc-version-check.js'
 import { cleanupOrphanSubagents } from './dispatcher/orphan-cleanup.js'
@@ -1048,57 +1049,21 @@ const tailHandlers: Record<string, Dispatch> = {
     }, args)
   },
 
+  // #135/#137: extracted to dispatcher/update-agent-tool.ts (unit-tested;
+  // adds the `name` display-rename lane — no restart, badge + chat-name
+  // refresh on every bound chat).
   dc_update_agent: async (args, callerChatId) => {
-        const chatId = Number(args.chat_id as string)
-        const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
-        const model = typeof args.model === 'string' ? args.model.trim() : ''
-        if (!chatId || Number.isNaN(chatId)) {
-          return { content: [{ type: 'text' as const, text: 'dc_update_agent: chat_id is required' }], isError: true }
-        }
-        if (!prompt && !model) {
-          return { content: [{ type: 'text' as const, text: 'dc_update_agent: at least one of prompt or model must be provided' }], isError: true }
-        }
-        if (model && !agents.ALLOWED_MODELS.includes(model as agents.AllowedModel)) {
-          return { content: [{ type: 'text' as const, text: `dc_update_agent: invalid model "${model}". Allowed: ${agents.ALLOWED_MODELS.join(', ')}` }], isError: true }
-        }
-        const resolved = bindings.resolveChat(chatId)
-        if (!resolved) {
-          return { content: [{ type: 'text' as const, text: `No agent configured for chat ${chatId}. Use dc_open_agent_manage_card first.` }], isError: true }
-        }
-        const agentId = resolved.agent.name
-        const changes: string[] = []
-        if (prompt) {
-          if (!agents.updateAgentPrompt(agentId, prompt)) {
-            return { content: [{ type: 'text' as const, text: `Agent ${agentId} not found.` }], isError: true }
-          }
-          changes.push('prompt')
-        }
-        if (model) {
-          if (!agents.updateAgentModel(agentId, model as agents.AllowedModel)) {
-            return { content: [{ type: 'text' as const, text: `Agent ${agentId} not found.` }], isError: true }
-          }
-          changes.push(`model=${model}`)
-        }
-        // Evict every cached subagent bound to this agent so the next turn
-        // respawns with the new prompt/model. With the agent registry shared
-        // across chats, this may affect more than the caller's chat.
-        // EXCEPT: don't evict the caller's own subagent yet — let it finish this
-        // response and exit naturally. Other chats bound to the same agent are
-        // evicted immediately so they pick up the change on next message.
-        const affected = bindings.listBindings().filter(b => b.agentId === agentId)
-        await Promise.all(
-          affected.map(b => {
-            if (b.chatId === callerChatId) {
-              // Caller's subagent will self-exit after responding; don't kill it now.
-              logf('dc_update_agent: deferring evict of caller chat %d (will respawn on next message)', b.chatId)
-              return Promise.resolve()
-            }
-            return subagentCache.evictChat(b.chatId).catch(err =>
-              logf('dc_update_agent: evict failed chat=%d: %v', b.chatId, err),
-            )
-          }),
-        )
-        return { content: [{ type: 'text' as const, text: `Updated ${changes.join(', ')} for agent ${agentId} (${affected.length} chat(s) bound).` }] }
+    return handleUpdateAgentTool({
+      evictChat: (chatId) => subagentCache.evictChat(chatId),
+      refreshChatDecoration: async (chatId, agentName) => {
+        const agent = agents.getAgent(agentName)
+        if (!agent) return
+        const display = (agent['x-dc-display-name'] as string | undefined) ?? agent.name
+        await client.setChatName(chatId, display).catch(() => {})
+        await setAgentIcon({ client, logf }, chatId, agent).catch(() => {})
+      },
+      logf,
+    }, args, callerChatId)
   },
 
   dc_send_webxdc: async (args, _callerChatId) => {
