@@ -10,6 +10,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
+import { buildHelpText } from './slash-commands.js'
 import * as agents from './agents.js'
 import * as bindings from './bindings.js'
 import type { SlashCommand } from './slash-router.js'
@@ -218,29 +219,11 @@ export async function handleSlash(
 // /help
 // ---------------------------------------------------------------------------
 
-// #136: exported so the parity test (and the #108 help card) can pin this
-// text against the router — it had silently drifted (no /effort, /cost,
-// /plugins, /tour, /export-schedules, no blocked list).
-export const HELP_TEXT = `Available commands:
-/help — show this list
-/stop — stop the current turn; resume on next message
-/clear — stop + wipe session (next message starts completely fresh)
-/model <haiku|sonnet|opus> — switch the bound agent's model (curated tiers only; custom model IDs are set from the agent edit card)
-/effort <low|medium|high|xhigh|max|default> — set the agent's reasoning effort
-/compact — compact conversation context
-/usage — 7-day token usage report with chart (alias: /cost)
-/think <question> — engage extended thinking before responding
-/ultrathink <question> — engage maximum extended thinking
-/plan [task] — enter plan mode (no changes until you approve)
-/exit-plan — exit plan mode and execute the approved plan
-/memory — show memory index
-/memory show <key> — show a specific memory entry
-/mcp — list configured MCP servers
-/plugin — list installed plugins (alias: /plugins)
-/tour — restart the onboarding tour
-/export-schedules — export this chat's recurring jobs as a file
-Terminal-only (not available in chat): /config, /keybindings, /update-config, /loop, /schedule
-Other /commands are forwarded to Claude as skill invocations.`
+// #108 increment 1: HELP_TEXT is GENERATED from the SLASH_COMMANDS table
+// (slash-commands.ts) — never hand-edit command prose again (#136 lesson).
+// The parity suite pins the table ↔ router ↔ text triangle, and the help
+// card's Commands topic consumes the same table.
+export const HELP_TEXT = buildHelpText()
 
 // ---------------------------------------------------------------------------
 // /memory

@@ -9,6 +9,8 @@
  * messages land in the coach state machine, not the classifier.
  */
 
+import { BLOCKED_COMMANDS } from './slash-commands.js'
+
 export type SlashCommand =
   | { kind: 'help' }
   | { kind: 'stop' }
@@ -33,14 +35,9 @@ const SLASH_RE = /^\/([a-z][a-z0-9-]*)(?:\s+([\s\S]+))?$/i
 
 // Commands that exist in the terminal CLI but have no equivalent in DC chat.
 // These return a 'blocked' command so the dispatcher can explain why.
-const BLOCKED_SLASHES = new Set([
-  'config',
-  'keybindings',
-  'keybindings-help',
-  'update-config',
-  'loop',
-  'schedule',
-])
+// #108 increment 1: the canonical list lives in slash-commands.ts (the
+// single documented table that also generates HELP_TEXT and the help card).
+const BLOCKED_SLASHES = new Set(BLOCKED_COMMANDS)
 
 export function classifySlash(text: string): SlashCommand | null {
   const t = text.trim()
