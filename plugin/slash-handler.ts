@@ -32,6 +32,12 @@ export interface SlashDeps {
   projectCwd?: string
   /** Directly overrides the resolved memory directory (tests only). */
   memoryDirOverride?: string
+  /**
+   * #108: open the help WebXDC card in the chat. When absent or throwing,
+   * /help falls back to the generated HELP_TEXT — the text stays as the
+   * degraded path so help never fails outright.
+   */
+  openHelpCard?: (chatId: number) => Promise<void>
 }
 
 /**
@@ -48,6 +54,15 @@ export async function handleSlash(
 
   switch (cmd.kind) {
     case 'help': {
+      // #108: prefer the help card; HELP_TEXT is the degraded path.
+      if (deps.openHelpCard) {
+        try {
+          await deps.openHelpCard(chatId)
+          return
+        } catch (err) {
+          deps.logf('slash: openHelpCard failed, falling back to text: %v', err)
+        }
+      }
       await send(chatId, HELP_TEXT).catch(() => {})
       return
     }

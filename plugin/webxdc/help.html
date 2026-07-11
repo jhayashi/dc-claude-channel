@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Help — What can I ask?</title>
+<script src="webxdc.js"></script>
+<style>
+  :root {
+    --bg: #f7f7f9; --card: #ffffff; --text: #1a1a1e; --muted: #6b6b76;
+    --accent: #2e7cf6; --chip-bg: #eef3fe; --chip-border: #c8dafc;
+    --chip-active: #2e7cf6; --chip-active-text: #ffffff;
+    --divider: #e5e5ea; --quirk: #8a6d1a; --quirk-bg: #fdf6e0;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101014; --card: #1c1c22; --text: #ececf1; --muted: #9a9aa5;
+      --accent: #6ba2ff; --chip-bg: #1e2a44; --chip-border: #31446e;
+      --chip-active: #3b6fd4; --chip-active-text: #ffffff;
+      --divider: #2a2a32; --quirk: #d9b64a; --quirk-bg: #2a2410;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.45 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; }
+  #app { max-width: 560px; margin: 0 auto; padding: 12px 14px 40px;
+    padding-top: calc(12px + env(safe-area-inset-top)); }
+
+  header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; min-height: 34px; }
+  header h1 { font-size: 19px; margin: 0; font-weight: 700; flex: 1; }
+  #back { display: none; border: none; background: none; color: var(--accent);
+    font-size: 17px; padding: 4px 8px 4px 0; cursor: pointer; }
+  #back.show { display: block; }
+
+  #search { width: 100%; padding: 10px 12px; border: 1px solid var(--divider);
+    border-radius: 10px; background: var(--card); color: var(--text); font-size: 15px;
+    margin-bottom: 12px; outline: none; }
+  #search:focus { border-color: var(--accent); }
+
+  .tile { display: block; width: 100%; text-align: left; background: var(--card);
+    border: 1px solid var(--divider); border-radius: 12px; padding: 12px 14px;
+    margin-bottom: 10px; cursor: pointer; color: var(--text); }
+  .tile:active { opacity: .8; }
+  .tile .t-head { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 16px; }
+  .tile .t-glyph { font-size: 20px; }
+  .tile .t-teaser { color: var(--muted); font-size: 13px; margin-top: 4px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .journey { background: var(--card); border: 1px solid var(--divider);
+    border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+  .j-head { display: flex; align-items: center; width: 100%; text-align: left;
+    border: none; background: none; color: var(--text); padding: 12px 14px;
+    font-size: 15.5px; font-weight: 600; cursor: pointer; gap: 8px; }
+  .j-head .chev { color: var(--muted); transition: transform .15s; font-size: 12px; }
+  .journey.open .chev { transform: rotate(90deg); }
+  .j-head .badge { margin-left: auto; font-size: 11px; color: var(--muted);
+    border: 1px solid var(--divider); border-radius: 999px; padding: 1px 8px; font-weight: 500; }
+  .j-body { display: none; padding: 0 14px 12px; }
+  .journey.open .j-body { display: block; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .chip { border: 1px solid var(--chip-border); background: var(--chip-bg);
+    color: var(--text); border-radius: 999px; padding: 4px 11px; font-size: 13.5px;
+    cursor: pointer; }
+  .chip.mono { font-family: var(--mono); font-size: 13px; }
+  .chip.active { background: var(--chip-active); color: var(--chip-active-text);
+    border-color: var(--chip-active); }
+  .chip.active::after { content: " ▸"; opacity: .8; }
+
+  .j-text { font-size: 14.5px; color: var(--text); margin: 4px 0 10px; }
+  .tryit { display: inline-block; border: none; border-radius: 10px;
+    background: var(--accent); color: #fff; font-size: 14.5px; font-weight: 600;
+    padding: 9px 16px; cursor: pointer; }
+  .tryit:active { opacity: .85; }
+  .quirk { display: flex; gap: 6px; margin-top: 10px; padding: 8px 10px;
+    background: var(--quirk-bg); color: var(--quirk); border-radius: 8px; font-size: 13px; }
+
+  .result-badge { font-size: 11px; color: var(--muted); margin-left: auto;
+    border: 1px solid var(--divider); border-radius: 999px; padding: 1px 8px; font-weight: 500; }
+  .empty { color: var(--muted); text-align: center; padding: 30px 0 10px; font-size: 14px; }
+  mark { background: transparent; color: var(--accent); font-weight: 700; }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 18px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <button id="back" type="button" aria-label="Back">‹ Back</button>
+    <h1 id="title">What can I ask?</h1>
+  </header>
+  <input id="search" type="search" placeholder="Search help… (try: rename, teleport, roles)" autocomplete="off">
+  <div id="content"></div>
+  <footer id="foot"></footer>
+</div>
+
+<script>
+var APP_VERSION = 1.01;
+
+// Injected at build time by help.ts from help-content.ts. Static by design:
+// the card must render with zero server round-trips (help is what you open
+// when things are confusing).
+var TOPICS = __HELP_CONTENT__;
+
+var state = { screen: 'home', topicId: null, query: '', openJourney: null, activeChip: {} };
+
+var CAN_SEND = typeof window.webxdc !== 'undefined' && typeof window.webxdc.sendToChat === 'function';
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function highlight(text, query) {
+  if (!query) return esc(text);
+  var lower = text.toLowerCase(); var q = query.toLowerCase();
+  var idx = lower.indexOf(q);
+  if (idx < 0) return esc(text);
+  return esc(text.slice(0, idx)) + '<mark>' + esc(text.slice(idx, idx + q.length)) + '</mark>' + esc(text.slice(idx + q.length));
+}
+
+function topicById(id) {
+  for (var i = 0; i < TOPICS.length; i++) if (TOPICS[i].id === id) return TOPICS[i];
+  return null;
+}
+
+function journeyMatches(j, topic, q) {
+  q = q.toLowerCase();
+  if (j.title.toLowerCase().indexOf(q) >= 0) return true;
+  if (topic.title.toLowerCase().indexOf(q) >= 0) return true;
+  if (j.body.toLowerCase().indexOf(q) >= 0) return true;
+  if (j.quirk && j.quirk.toLowerCase().indexOf(q) >= 0) return true;
+  for (var i = 0; i < j.phrases.length; i++) {
+    if (j.phrases[i].toLowerCase().indexOf(q) >= 0) return true;
+  }
+  return false;
+}
+
+// ── Try it ────────────────────────────────────────────────────────────────
+// sendToChat drafts the phrase AS THE USER (they confirm in DC's share
+// flow). This is load-bearing: execute-lane actions are authorized by the
+// authenticated sender of the resulting message — the card itself never
+// changes state. Fallback when the API is missing: select-to-copy hint.
+function tryIt(journeyId) {
+  var phrase = state.activeChip[journeyId];
+  if (!phrase) return;
+  if (CAN_SEND) {
+    try { window.webxdc.sendToChat({ text: phrase }); return; } catch (e) { /* fall through */ }
+  }
+  var el = document.getElementById('phrase-' + journeyId);
+  if (el && window.getSelection) {
+    var range = document.createRange(); range.selectNodeContents(el);
+    var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  }
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────
+function renderJourney(j, topic, q) {
+  var open = state.openJourney === j.id;
+  if (!(j.id in state.activeChip) && j.phrases.length) state.activeChip[j.id] = j.phrases[0];
+  var html = '<div class="journey' + (open ? ' open' : '') + '" id="j-' + esc(j.id) + '">';
+  html += '<button type="button" class="j-head" data-journey="' + esc(j.id) + '">' +
+    '<span class="chev">▶</span><span>' + highlight(j.title, q) + '</span>' +
+    (q ? '<span class="result-badge">' + esc(topic.title) + '</span>' : '') +
+    '</button>';
+  if (open) {
+    html += '<div class="j-body">';
+    if (j.phrases.length) {
+      html += '<div class="chips">';
+      for (var i = 0; i < j.phrases.length; i++) {
+        var p = j.phrases[i];
+        var active = state.activeChip[j.id] === p;
+        html += '<button type="button" class="chip' + (j.slash ? ' mono' : '') + (active ? ' active' : '') +
+          '" data-journey="' + esc(j.id) + '" data-phrase="' + esc(p) + '"' +
+          (active ? ' id="phrase-' + esc(j.id) + '"' : '') + '>' + highlight(p, q) + '</button>';
+      }
+      html += '</div>';
+    }
+    html += '<div class="j-text">' + highlight(j.body, q) + '</div>';
+    if (j.phrases.length) {
+      html += '<button type="button" class="tryit" data-tryit="' + esc(j.id) + '">' +
+        (CAN_SEND ? 'Try it' : 'Select phrase to copy') + '</button>';
+    }
+    if (j.quirk) {
+      html += '<div class="quirk"><span>ⓘ</span><span>' + highlight(j.quirk, q) + '</span></div>';
+    }
+    html += '</div>';
+  }
+  return html + '</div>';
+}
+
+function render() {
+  var content = document.getElementById('content');
+  var title = document.getElementById('title');
+  var back = document.getElementById('back');
+  var foot = document.getElementById('foot');
+  var q = state.query.trim();
+  var html = '';
+
+  if (q) {
+    title.textContent = 'Search';
+    back.classList.remove('show');
+    var hits = 0;
+    for (var t = 0; t < TOPICS.length; t++) {
+      var topic = TOPICS[t];
+      for (var i = 0; i < topic.journeys.length; i++) {
+        var j = topic.journeys[i];
+        if (journeyMatches(j, topic, q)) { html += renderJourney(j, topic, q); hits++; }
+      }
+    }
+    if (!hits) html = '<div class="empty">Nothing matches "' + esc(q) + '". Try a different word — or just ask me in the chat.</div>';
+  } else if (state.screen === 'topic' && state.topicId) {
+    var topic2 = topicById(state.topicId);
+    title.textContent = topic2 ? topic2.glyph + ' ' + topic2.title : 'Help';
+    back.classList.add('show');
+    if (topic2) {
+      for (var k = 0; k < topic2.journeys.length; k++) html += renderJourney(topic2.journeys[k], topic2, '');
+    }
+  } else {
+    title.textContent = 'What can I ask?';
+    back.classList.remove('show');
+    for (var m = 0; m < TOPICS.length; m++) {
+      var tp = TOPICS[m];
+      var teaser = tp.journeys.slice(0, 3).map(function (jj) { return jj.title; }).join(' · ');
+      html += '<button type="button" class="tile" data-topic="' + esc(tp.id) + '">' +
+        '<div class="t-head"><span class="t-glyph">' + esc(tp.glyph) + '</span><span>' + esc(tp.title) + '</span></div>' +
+        '<div class="t-teaser">' + esc(teaser) + '</div></button>';
+    }
+  }
+  content.innerHTML = html;
+  foot.textContent = 'Help v' + APP_VERSION.toFixed(2) + ' — reopen anytime with /help';
+}
+
+// ── Events (delegated) ────────────────────────────────────────────────────
+document.getElementById('content').addEventListener('click', function (e) {
+  var el = e.target.closest('[data-topic],[data-tryit],[data-phrase],.j-head');
+  if (!el) return;
+  if (el.dataset.topic) {
+    state.screen = 'topic'; state.topicId = el.dataset.topic; state.openJourney = null;
+    render(); window.scrollTo(0, 0); return;
+  }
+  if (el.dataset.tryit) { tryIt(el.dataset.tryit); return; }
+  if (el.dataset.phrase) {
+    state.activeChip[el.dataset.journey] = el.dataset.phrase; render(); return;
+  }
+  var head = el.closest('.j-head');
+  if (head) {
+    var id = head.dataset.journey;
+    state.openJourney = state.openJourney === id ? null : id;
+    render();
+  }
+});
+
+document.getElementById('back').addEventListener('click', function () {
+  state.screen = 'home'; state.topicId = null; state.openJourney = null;
+  render(); window.scrollTo(0, 0);
+});
+
+document.getElementById('search').addEventListener('input', function (e) {
+  state.query = e.target.value; state.openJourney = null;
+  render();
+});
+
+// Auto-upgrade handshake (repo invariant: every card implements it — the
+// user may be away from the terminal). The help card is static and gets no
+// routine updates, but if the server ever announces a newer version, reply
+// version_mismatch so it resends a fresh card.
+var versionMismatchSent = false;
+if (window.webxdc && typeof window.webxdc.setUpdateListener === 'function') {
+  window.webxdc.setUpdateListener(function (update) {
+    var data = update && update.payload;
+    if (!data || versionMismatchSent) return;
+    if (data.version && data.version > APP_VERSION) {
+      versionMismatchSent = true;
+      window.webxdc.sendUpdate({
+        payload: { type: 'version_mismatch', appVersion: APP_VERSION, serverVersion: data.version, senderAddr: window.webxdc.selfAddr },
+      }, 'version mismatch');
+    }
+  }, 0);
+}
+
+render();
+</script>
+</body>
+</html>

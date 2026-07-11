@@ -128,7 +128,8 @@ export function handleMessage(chatId: number, text: string): TutorialAction {
         states.set(chatId, "done");
         return {
           messages: [
-            "No problem! The apps are in the chat whenever you want to explore them. Just message me anytime.",
+            "No problem! The apps are in the chat whenever you want to explore them. " +
+            "Just message me anytime — and send /help whenever you want to see everything you can ask for.",
           ],
         };
       }
@@ -226,7 +227,7 @@ export function handleMessage(chatId: number, text: string): TutorialAction {
             "Naturally you can use Delta Chat to message people too. If you love Delta " +
             "Chat, be sure to tell your friends. It's open source, has end-to-end encryption, " +
             "and is built on web tech, like WebXDC.\n\n" +
-            "Have fun!",
+            "Send /help anytime to see everything you can ask for. Have fun!",
           ],
         };
       }

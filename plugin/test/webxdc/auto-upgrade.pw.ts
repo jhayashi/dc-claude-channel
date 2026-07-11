@@ -34,6 +34,7 @@ const INIT_PAYLOAD_TYPE: Record<string, string> = {
   "permission-prompt": "request",
   "file-reviewer": "file", // file-reviewer has no type gate; anything works
   "teleport": "init",
+  "help": "init", // help has no type gate (static card); anything works
 };
 
 function xdcInitType(xdcBasename: string): string {

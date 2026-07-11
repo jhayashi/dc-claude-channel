@@ -70,6 +70,23 @@ describe('/help', () => {
     expect(spy.sendCalls[0].text).toContain('/plan')
     expect(spy.sendCalls[0].text).toContain('/exit-plan')
   })
+
+  test('prefers the help card when openHelpCard is wired (#108)', async () => {
+    const spy = makeSpy({})
+    const opened: number[] = []
+    const deps = { ...spy.deps, openHelpCard: async (chatId: number) => { opened.push(chatId) } }
+    await handleSlash(deps, { kind: 'help' }, 42)
+    expect(opened).toEqual([42])
+    expect(spy.sendCalls).toHaveLength(0) // no text when the card ships
+  })
+
+  test('falls back to HELP_TEXT when openHelpCard throws (#108)', async () => {
+    const spy = makeSpy({})
+    const deps = { ...spy.deps, openHelpCard: async () => { throw new Error('build failed') } }
+    await handleSlash(deps, { kind: 'help' }, 42)
+    expect(spy.sendCalls).toHaveLength(1)
+    expect(spy.sendCalls[0].text).toContain('Available commands:')
+  })
 })
 
 // ---------------------------------------------------------------------------

@@ -49,6 +49,7 @@ import { SubagentCache, assertCanSpawn } from './dispatcher/subagent-cache.js'
 import { postTurnResult } from './dispatcher/turn-post.js'
 import { handleCreateAgentTool } from './dispatcher/create-agent-tool.js'
 import { handleUpdateAgentTool } from './dispatcher/update-agent-tool.js'
+import { buildHelpXDC } from './help.js'
 import { tryImportAgentAttachment as tryImportAgentAttachmentImpl } from './dispatcher/agent-import.js'
 import { assertSupportedClaudeVersion } from './cc-version-check.js'
 import { cleanupOrphanSubagents } from './dispatcher/orphan-cleanup.js'
@@ -2434,6 +2435,13 @@ async function main(): Promise<void> {
     evictChat: (chatId: number) => subagentCache.evictChat(chatId),
     refreshIcon: refreshAgentIcon,
     logf,
+    // #108: /help sends the help card; slash-handler falls back to
+    // HELP_TEXT if this throws. Static card — no registration needed
+    // (no tools, no status updates; Try-it goes through sendToChat).
+    openHelpCard: async (chatId: number) => {
+      const { xdcPath } = await buildHelpXDC()
+      await client.sendWebXDC(chatId, xdcPath)
+    },
   }
 
   const nlIntentDeps = { ...dispatcherDeps, startRefineSession: startRefineSessionForChat }

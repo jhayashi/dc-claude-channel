@@ -16,6 +16,7 @@
   var nextSerial = 1;
   var pendingQueue = [];
   var outbound = [];
+  var sentToChat = [];
 
   function deliver(update) {
     if (!listener) {
@@ -55,7 +56,9 @@
       return Promise.resolve([]);
     },
 
-    sendToChat: function () {
+    sendToChat: function (payload) {
+      // Captured for assertions (help card's Try-it, #108).
+      sentToChat.push(payload);
       return Promise.resolve();
     },
   };
@@ -76,5 +79,6 @@
     getSerial: function () {
       return nextSerial - 1;
     },
+    sentToChat: sentToChat,
   };
 })();
