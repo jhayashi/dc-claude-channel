@@ -44,6 +44,8 @@ unset OR the relay is unreachable — no silent false-green.
 | `RELAY_SMTPS_PORT` | `10465` | SMTP submission port of the local relay |
 | `DC_RPC_DEBUG` | — | Set `1` to unmute dispatcher `deltachat-rpc-server` stderr |
 | `DC_SIM_DEBUG` | — | Set `1` to unmute simulator `deltachat-rpc-server` stderr |
+| `DC_HELP_SMOKE` | — | Set `1` to opt into the help-phrase live smoke (`help-phrases.test.ts`, #138; multi-turn, ~1 Anthropic turn per case) |
+| `DC_HELP_SMOKE_FILTER` | — | Substring filter narrowing the help-phrase smoke to matching case ids, e.g. `list-agents` for a single-case paid probe |
 
 ## Account state
 
@@ -97,6 +99,14 @@ Slice 2 (`subagent-lifecycle.test.ts`) — **opt-in via `DC_TEST_SUBAGENT=1`**:
   produces a reply via the `reply` tool; sim observes the reply.
   Costs ~1 Anthropic turn per run — credentials inherited from the
   parent process env.
+
+Slice 3 (`help-phrases.test.ts`) — **opt-in via `DC_HELP_SMOKE=1`** (also
+requires `DC_TEST_SUBAGENT=1`): drives every t2-tier journey annotated in
+`help-content.ts` through a real subagent turn, one phrase per case, and
+confirms the expected tool call or reply landed — the mutating cases
+(`switch-agent`, `delete-agent`, `teleport-out`) are quarantined at the
+end of the run so an earlier failure is never masked by a rebind or
+disconnect.
 
 Future slices:
 

@@ -77,12 +77,21 @@ const cases: SmokeCase[] = HELP_TOPICS.flatMap(t => t.journeys)
   .map(j => ({ id: j.id, phrase: j.verify!.smokePhrase ?? j.phrases[0], expect: j.verify!.expect }))
   .filter(c => c.id.includes(FILTER));
 
-// Destructive last: teleport-out unbinds the fixture chat — force it to
-// the end so every other phrase runs against a live binding. `schedules`
-// (writes "goodnight" via dc_schedule's smokePhrase) already precedes
-// `chat-search` (searches for "goodnight") in topic-declaration order in
-// help-content.ts, so no extra sort is needed for that pair.
-cases.sort((a, b) => Number(a.id === "teleport-out") - Number(b.id === "teleport-out"));
+// Mutating cases run last, in this order: switch-agent rebinds the chat to
+// the bare smoke-target agent (everything after it would run under a weak
+// model — quarantine it); delete-agent runs after the switch (guide-lane
+// card open, tolerant of the weak agent); teleport-out disconnects the
+// chat and must be terminal. Bun's Array.prototype.sort is stable, so all
+// non-tail cases keep their declaration order — `schedules` (writes
+// "goodnight" via dc_schedule's smokePhrase) still precedes `chat-search`
+// (searches for "goodnight"), per topic-declaration order in
+// help-content.ts.
+const TAIL_ORDER = ["switch-agent", "delete-agent", "teleport-out"];
+const tailRank = (id: string) => {
+  const i = TAIL_ORDER.indexOf(id);
+  return i === -1 ? -1 : i;
+};
+cases.sort((a, b) => tailRank(a.id) - tailRank(b.id));
 
 let dispatcher: Dispatcher | null = null;
 let sim: ClientSim | null = null;
