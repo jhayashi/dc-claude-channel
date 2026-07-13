@@ -16,6 +16,7 @@ docs/upstream-issues/**
 !docs/ARCHITECTURE.md
 !docs/CONTRIBUTING.md
 !docs/d4c-concept-mapping.md
+!docs/HELP-SMOKE.md
 /scripts/
 *.log
 

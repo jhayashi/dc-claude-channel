@@ -45,6 +45,8 @@ Prerequisites for the dev path:
 - `/mcp` should show `plugin:deltachat:deltachat` not plain `deltachat` under Project MCPs
 - Never run Claude Code from inside this repo — the project-level `plugin/.mcp.json` conflicts with the plugin-installed server
 
+Release-time manual pass for help-advertised flows: [`docs/HELP-SMOKE.md`](HELP-SMOKE.md) (#138).
+
 ---
 
 ## Adding a new core WebXDC app
