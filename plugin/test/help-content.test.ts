@@ -1,4 +1,6 @@
 import { describe, test, expect } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { HELP_TOPICS } from '../help-content.js'
 import { classifySlash } from '../slash-router.js'
 import { SLASH_COMMANDS } from '../slash-commands.js'
@@ -109,6 +111,17 @@ describe('verify matrix (#138)', () => {
         expect(j.verify.smokePhrase, `${j.id}: placeholder phrase needs verify.smokePhrase`).toBeTruthy()
         expect(/<[^>]+>/.test(j.verify.smokePhrase!)).toBe(false)
       }
+    }
+  })
+
+  test('every t3 expect anchor resolves to a real HELP-SMOKE.md heading', () => {
+    const doc = readFileSync(join(import.meta.dir, '..', '..', 'docs', 'HELP-SMOKE.md'), 'utf-8')
+    const headings = new Set([...doc.matchAll(/^## (§[a-z-]+)/gm)].map(m => m[1]))
+    for (const j of allJourneys) {
+      if (j.verify?.tier !== 't3') continue
+      const anchor = /§[a-z-]+/.exec(j.verify.expect)?.[0]
+      expect(anchor, `${j.id}: t3 expect "${j.verify.expect}" must contain a §anchor`).toBeTruthy()
+      expect(headings.has(anchor!), `${j.id}: anchor ${anchor} not found in docs/HELP-SMOKE.md`).toBe(true)
     }
   })
 })

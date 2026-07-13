@@ -25,7 +25,18 @@ describe('help-card T1 phrase routing (#138)', () => {
     test(`${j.id}: every phrase routes as ${j.verify!.expect}`, () => {
       for (const phrase of j.phrases) {
         if (j.verify!.expect === 'slash') {
-          if (dispatcherCmds.has(phrase)) continue // intercepted pre-router by server.ts
+          if (dispatcherCmds.has(phrase)) {
+            // Dispatcher-sourced commands are intercepted pre-router by
+            // server.ts, so classifySlash never sees them in production.
+            // Verify the intercept assumption still holds instead of
+            // skipping silently: the router must report 'unknown-slash'
+            // for this phrase. If the router ever learns the name, this
+            // entry's dispatcher intercept would shadow it as dead code —
+            // that's the signal to move the entry off this early-exit.
+            const parsed = classifySlash(phrase)
+            expect(parsed!.kind, `${phrase} is dispatcher-intercepted; a router kind would be shadowed dead code`).toBe('unknown-slash')
+            continue
+          }
           const parsed = classifySlash(phrase)
           expect(parsed, `${phrase} must classify`).not.toBeNull()
           expect(parsed!.kind === 'unknown-slash' ? `UNKNOWN:${phrase}` : 'ok').toBe('ok')

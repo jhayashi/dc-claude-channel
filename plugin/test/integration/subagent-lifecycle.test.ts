@@ -22,7 +22,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { join, resolve } from "node:path";
-import { existsSync, readdirSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { Dispatcher, resetFixtureHome } from "./dispatcher-fixture.js";
 import { ClientSim, resetFixtureState } from "./client-sim.js";
 import { skipIfUnreachable } from "./chatmail-probe.js";
@@ -43,11 +43,10 @@ interface PairedRecord {
   simChatId: number;
 }
 
+const probe = enabled ? await skipIfUnreachable(relay) : null;
 const skipReason = !enabled
   ? "DC_INTEGRATION_TEST=1 + DC_TEST_SUBAGENT=1 both required (LLM cost — opt-in)"
-  : ((await skipIfUnreachable(relay)).skip
-    ? (await skipIfUnreachable(relay) as { skip: true; reason: string }).reason
-    : null);
+  : (probe!.skip ? (probe as { skip: true; reason: string }).reason : null);
 
 if (skipReason) console.log(`[tier-2 subagent] skipping — ${skipReason}`);
 
@@ -137,10 +136,15 @@ async function pair(dispatcher: Dispatcher, sim: ClientSim): Promise<PairedRecor
   return { dispatcherChatId: Number(chatMatch[1]), simChatId };
 }
 
+// `approved/<chatId>` was retired at v1.3 (#66 Option B) — nothing writes
+// it anymore, so checking for it always reports "not approved" and
+// DC_REUSE_ACCOUNTS=1 silently re-pairs every run. Post-v1.3 the source of
+// truth for "this chat is paired" is a binding file: pairing auto-binds
+// the chat, so bindings/<chatId>.json existing implies a paired chat
+// (see #131).
 function isChatApproved(home: string, chatId: number): boolean {
-  const dir = join(home, ".claude", "channels", "deltachat", "approved");
-  if (!existsSync(dir)) return false;
-  return readdirSync(dir).some((f) => f === String(chatId));
+  const path = join(home, ".claude", "channels", "deltachat", "bindings", `${chatId}.json`);
+  return existsSync(path);
 }
 
 function loadPairedRecord(): PairedRecord | null {

@@ -60,11 +60,10 @@ interface PairedRecord {
   simChatId: number;
 }
 
+const probe = enabled ? await skipIfUnreachable(relay) : null;
 const skipReason = !enabled
   ? "DC_INTEGRATION_TEST=1 + DC_TEST_SUBAGENT=1 + DC_HELP_SMOKE=1 required"
-  : ((await skipIfUnreachable(relay)).skip
-    ? (await skipIfUnreachable(relay) as { skip: true; reason: string }).reason
-    : null);
+  : (probe!.skip ? (probe as { skip: true; reason: string }).reason : null);
 
 if (skipReason) console.log(`[help-smoke] skipping — ${skipReason}`);
 
@@ -254,10 +253,15 @@ async function pair(dispatcher: Dispatcher, sim: ClientSim): Promise<PairedRecor
   return { dispatcherChatId: Number(chatMatch[1]), simChatId };
 }
 
+// `approved/<chatId>` was retired at v1.3 (#66 Option B) — nothing writes
+// it anymore, so checking for it always reports "not approved" and
+// DC_REUSE_ACCOUNTS=1 silently re-pairs every run. Post-v1.3 the source of
+// truth for "this chat is paired" is a binding file: pairing auto-binds
+// the chat, so bindings/<chatId>.json existing implies a paired chat
+// (see #131).
 function isChatApproved(home: string, chatId: number): boolean {
-  const dir = join(home, ".claude", "channels", "deltachat", "approved");
-  if (!existsSync(dir)) return false;
-  return readdirSync(dir).some((f) => f === String(chatId));
+  const path = join(home, ".claude", "channels", "deltachat", "bindings", `${chatId}.json`);
+  return existsSync(path);
 }
 
 function loadPairedRecord(): PairedRecord | null {
