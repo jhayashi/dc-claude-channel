@@ -83,3 +83,32 @@ describe('help content lint (#108)', () => {
     expect(json).not.toContain('</script')
   })
 })
+
+describe('verify matrix (#138)', () => {
+  test('every journey with phrases carries a verify tier', () => {
+    for (const j of allJourneys) {
+      if (j.phrases.length > 0) {
+        expect(j.verify, `journey ${j.id} advertises phrases but has no verify annotation`).toBeTruthy()
+      }
+    }
+  })
+
+  test('verify.expect shapes match their tier', () => {
+    for (const j of allJourneys) {
+      if (!j.verify) continue
+      if (j.verify.tier === 't1') expect(/^(slash|nl:[a-z-]+)$/.test(j.verify.expect), `${j.id}: t1 expect "${j.verify.expect}"`).toBe(true)
+      if (j.verify.tier === 't2') expect(/^(tool:[a-z_]+|reply)$/.test(j.verify.expect), `${j.id}: t2 expect "${j.verify.expect}"`).toBe(true)
+    }
+  })
+
+  test('t2 phrases with <placeholders> provide a smokePhrase', () => {
+    for (const j of allJourneys) {
+      if (j.verify?.tier !== 't2') continue
+      const hasPlaceholder = j.phrases.some(p => /<[^>]+>/.test(p))
+      if (hasPlaceholder) {
+        expect(j.verify.smokePhrase, `${j.id}: placeholder phrase needs verify.smokePhrase`).toBeTruthy()
+        expect(/<[^>]+>/.test(j.verify.smokePhrase!)).toBe(false)
+      }
+    }
+  })
+})
