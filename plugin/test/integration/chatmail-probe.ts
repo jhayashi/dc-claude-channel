@@ -31,6 +31,11 @@ export async function probeChatmail(
     const resp = await fetch(url, {
       method: "GET",
       signal: controller.signal,
+      // Real chatmail hosts 301 GET /new -> `dcaccount:...` (the QR
+      // scheme); auto-follow would throw UnsupportedRedirectProtocol
+      // before we can conclude "port is up". We only care that the
+      // relay answered at all.
+      redirect: "manual",
       // Bun-specific: per-request TLS options
       // @ts-ignore
       tls: tlsOpts,

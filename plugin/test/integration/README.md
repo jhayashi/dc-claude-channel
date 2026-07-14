@@ -45,6 +45,7 @@ unset OR the relay is unreachable — no silent false-green.
 | `DC_RPC_DEBUG` | — | Set `1` to unmute dispatcher `deltachat-rpc-server` stderr |
 | `DC_SIM_DEBUG` | — | Set `1` to unmute simulator `deltachat-rpc-server` stderr |
 | `DC_HELP_SMOKE` | — | Set `1` to opt into the help-phrase live smoke (`help-phrases.test.ts`, #138; multi-turn, ~1 Anthropic turn per case) |
+| `CLAUDE_CODE_OAUTH_TOKEN` | — | Required for `DC_TEST_SUBAGENT`/`DC_HELP_SMOKE` runs: the fixture HOME has no credentials, so the spawned `claude -p` needs a token (mint one with `claude setup-token`). Verify with a clean-HOME probe before a paid run. |
 | `DC_HELP_SMOKE_FILTER` | — | Substring filter narrowing the help-phrase smoke to matching case ids, e.g. `list-agents` for a single-case paid probe |
 
 ## Account state
