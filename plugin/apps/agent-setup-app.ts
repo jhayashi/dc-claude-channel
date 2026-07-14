@@ -351,11 +351,39 @@ export async function setAgentIcon(
   )
 }
 
-/** Apply icon + intro message after a chat has been bound to an agent. */
+/**
+ * #139: the intro must match what actually happened — "your new agent" on
+ * a rebind/reuse reads like a duplicate agent was created.
+ *  - created:        a genuinely new agent definition (default, back-compat)
+ *  - reused:         a NEW chat for an EXISTING agent
+ *  - switched:       this chat rebound to another existing agent (fresh session)
+ *  - switched-kept:  same, but the conversation was carried over
+ *  - none:           badge only (e.g. teleport import posts its own recap)
+ */
+export type DecorateIntro = 'created' | 'reused' | 'switched' | 'switched-kept' | 'none'
+
+function introLine(agent: agents.AgentDef, intro: DecorateIntro): string | null {
+  const name = agentDisplayName(agent)
+  switch (intro) {
+    case 'created':
+      return `Hi! This is your new "${name}" agent. Send a message here to get started.`
+    case 'reused':
+      return `New chat with your existing "${name}" agent. Send a message here to get started.`
+    case 'switched':
+      return `This chat now runs your "${name}" agent — starting a fresh conversation.`
+    case 'switched-kept':
+      return `This chat now runs your "${name}" agent — continuing this conversation.`
+    case 'none':
+      return null
+  }
+}
+
+/** Apply icon + context-appropriate intro after a chat has been bound to an agent. */
 export async function decorateAgentChat(
   ctx: DecorateContext,
   chatId: number,
   agent: agents.AgentDef,
+  intro: DecorateIntro = 'created',
 ): Promise<void> {
   try {
     await setAgentIcon(ctx, chatId, agent)
@@ -363,11 +391,10 @@ export async function decorateAgentChat(
     ctx.logf('agent-setup: set icon failed: %v', err)
   }
 
+  const line = introLine(agent, intro)
+  if (line === null) return
   try {
-    await ctx.client.send(
-      chatId,
-      `Hi! This is your new "${agentDisplayName(agent)}" agent. Send a message here to get started.`,
-    )
+    await ctx.client.send(chatId, line)
   } catch (err) {
     ctx.logf('agent-setup: intro message send failed: %v', err)
   }
@@ -414,7 +441,7 @@ export async function createReuseChat(
   bindings.bindAgent(newChatId, agent.name, {
     inheritClaudeMd: agents.inheritClaudeMdForModel(agent.model),
   })
-  await decorateAgentChat(ctx, newChatId, agent)
+  await decorateAgentChat(ctx, newChatId, agent, 'reused')
   return newChatId
 }
 
@@ -455,7 +482,7 @@ export async function rebindChat(
   // took effect above, so don't fail it — and mislead the user into a retry
   // that hits the same-agent guard — over a badge/send hiccup.
   try {
-    await decorateAgentChat(ctx, sourceChatId, agent)
+    await decorateAgentChat(ctx, sourceChatId, agent, opts.keepContext ? 'switched-kept' : 'switched')
   } catch (err) {
     ctx.logf('agent-setup: rebind decorate failed chat=%d: %v', sourceChatId, err)
   }
@@ -1032,7 +1059,7 @@ export async function handleCreateAgent(
       // rejected as "unauthorized sender" (#115).
       access.recordContactPair(agentId, ownerContactId)
       const savedAgent = agents.getAgent(agentId)
-      if (savedAgent) await decorateAgentChat(ctx, newChatId, savedAgent)
+      if (savedAgent) await decorateAgentChat(ctx, newChatId, savedAgent, 'created')
       ctx.logf('agent-setup: created agent %s for chat %d (owner %d)', agentId, newChatId, ownerContactId)
     } else {
       ctx.logf('agent-setup: created agent %s (library only, no chat) (owner %d)', agentId, ownerContactId)
@@ -1525,7 +1552,7 @@ export async function handleBindAgent(
     bindings.bindAgent(newChatId, agent.name, {
       inheritClaudeMd: agents.inheritClaudeMdForModel(agent.model),
     })
-    await decorateAgentChat(ctx, newChatId, agent)
+    await decorateAgentChat(ctx, newChatId, agent, 'reused')
     ctx.logf('agent-setup: bound existing agent %s to new chat %d for owner %d', agent.name, newChatId, ownerContactId)
 
     const update = JSON.stringify({

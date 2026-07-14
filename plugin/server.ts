@@ -1043,7 +1043,7 @@ const tailHandlers: Record<string, Dispatch> = {
       decorate: async (groupId, agentName) => {
         const savedAgent = agents.getAgent(agentName)
         if (savedAgent) {
-          await decorateAgentChat({ client, logf }, groupId, savedAgent)
+          await decorateAgentChat({ client, logf }, groupId, savedAgent, 'created')
         }
       },
       logf,

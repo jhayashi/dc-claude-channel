@@ -267,7 +267,9 @@ export async function handleResumeAttach(
       inheritClaudeMd: agent ? agents.inheritClaudeMdForModel(agent.model) : true,
     })
     await resume.attachSessionToChat(newChatId, sessionId)
-    if (agent) await decorateAgentChat(ctx, newChatId, agent)
+    // #139: badge only — the import posts its own recap; a 'new agent'
+    // greeting here would misrepresent a resumed session.
+    if (agent) await decorateAgentChat(ctx, newChatId, agent, 'none')
 
     ctx.logf('teleport: resume-import created chat %d with session %s for owner %d', newChatId, sessionId, ownerContactId)
 
