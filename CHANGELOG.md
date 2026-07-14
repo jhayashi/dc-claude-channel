@@ -4,6 +4,26 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.19] — 2026-07-14
+
+The discoverability release: the help card ships, every phrase it advertises is machine-verified, and the first live phrase-validation run against a real chatmail relay caught (and fixed) two behavioral bugs.
+
+### Added
+
+- **Help card (#108).** `/help` now delivers a browse-first, searchable WebXDC card indexing all 42 validated user journeys across 8 topics — say-this phrase chips, honest quirk footnotes, and a per-journey **Try it** that drafts the phrase as *your own* message via `sendToChat` (so every action still flows through the authenticated gates; the card itself is stateless). Content is injected at build time and the Commands topic is generated from the structured `slash-commands.ts` table, extending the HELP_TEXT parity guarantee to the card. Falls back to the text list if the card can't send. The tour now points at `/help`.
+- **Agent rename lane (#135).** "Rename yourself to Atlas" works as a chat message — `dc_update_agent` gained a `name` parameter (display-only: badges and chat names refresh everywhere, no restart). Delete stays card-confirmed by design; the manage card's `view` accepts the spec vocabulary (`show`/`edit`/`swap`) as aliases; delete-refusals now surface a real error instead of hanging the card.
+- **Phrase-validation matrix (#138).** Every phrase the help card advertises carries a `verify` tier enforced by lint: T1 (deterministic routing) asserted in CI; T2 as a triple-gated live smoke (`DC_HELP_SMOKE=1`, one real subagent turn per phrase, expected tool asserted from the event log); T3 as a manual checklist (`docs/HELP-SMOKE.md`) wired into the release flow. First full run against a self-hosted chatmail relay: 14/19 demonstrated end-to-end (remainder: model-judgment alternates + one smoke-phrase flaw + #140).
+
+### Fixed
+
+- **Greeting matches what happened (#139).** Switching a chat to an existing agent (or opening a new chat for one) no longer greets with "This is your new agent" — intros are now per-context (created / reused / switched, keep-context aware), and teleport imports send no false greeting at all.
+- **Trusted subagents no longer improvise agent-file surgery (#140).** The first live smoke caught a bypassPermissions subagent hand-deleting an agent's `.md` when asked to delete it — skipping the card confirm and the rebind cascade. The spawn env block (the one prompt surface every subagent sees) now forbids direct `~/.claude/agents` edits and routes changes through the sanctioned tools/card.
+- **Integration harness vs. real chatmail hosts.** The relay reachability probe choked on real chatmail's `dcaccount:` redirect (`DC_TEST_RELAY` against any real host always skipped); `DC_REUSE_ACCOUNTS` read the `approved/` dir retired at v1.3 and never actually reused accounts. Both fixed; the T2 runbook documents the `CLAUDE_CODE_OAUTH_TOKEN` requirement.
+
+### Changed
+
+- **Testability (#137, continued).** `dc_update_agent` extracted from the server closure (7th extraction); teleport out→attach round trip now a filesystem-only test; D3 contacts picker scoping and trust→spawn-argv finally covered; fix-carries-its-seam recorded as a standing convention in CLAUDE.md.
+
 ## [1.4.18] — 2026-07-09
 
 User-journey fix release. A full validation of all 42 user journeys against the implementation (specs vs. code) surfaced five silently-broken marquee flows, several dead-end journeys, and a pile of stale copy — all fixed here. Every fix landed with a red-green regression test; the suite grew from 1455 to 1505 tests.
@@ -351,6 +371,7 @@ The agent format aligns with Claude Code's own. Agent definitions move from `~/.
 
 - **`DC_TOOL_NAMES` was missing `reply`.** The cross-chat post tool is registered without a `dc_` prefix and slipped past the initial drift catalog; the boot drift-check warned but newly-saved agents silently lost cross-chat reply access until added.
 
+[1.4.19]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.18...v1.4.19
 [1.4.18]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.17...v1.4.18
 [1.4.5]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.4...v1.4.5
 [1.4.4]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.3...v1.4.4
