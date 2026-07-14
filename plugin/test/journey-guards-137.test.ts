@@ -111,3 +111,21 @@ describe('D3 contacts picker-universe scoping (#137, v1.4.9 headline)', () => {
     expect(payload.contacts).toEqual([])
   })
 })
+
+describe('agent-definition file-edit guidance (#140)', () => {
+  // Observed live in the #138 smoke: a bypassPermissions subagent asked to
+  // "delete the smoke-target agent" hand-deleted the .md with file tools —
+  // no card confirm, no rebind cascade (the null-agent-binding brick class).
+  // Subagents never see channelInstructions, so the rule must ride the
+  // spawn env block.
+  test('spawn env block forbids direct ~/.claude/agents file edits', () => {
+    const { envBlock } = buildSubagentArgs({
+      chatId: 1,
+      agent: { name: 'g', description: 't', model: 'claude-sonnet-5', body: 'x', tools: 'mcp__dc' },
+    } as never)
+    expect(envBlock).toContain('.claude/agents')
+    expect(envBlock.toLowerCase()).toContain('never')
+    expect(envBlock).toContain('dc_update_agent')
+    expect(envBlock.toLowerCase()).toContain('manage agents card')
+  })
+})

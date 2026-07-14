@@ -156,6 +156,10 @@ export function buildSubagentArgs(
   if (opts.userName) lines.push(`- User: ${opts.userName}`)
   if (opts.claudeVersion) lines.push(`- Claude Code: ${opts.claudeVersion}`)
   lines.push('- For the current date/time, run `date` via Bash (auto-allowed). Other read-only inspection commands (`pwd`, `whoami`, `uname`) are also auto-allowed.')
+  // #140: observed live — a trusted subagent hand-deleted an agent .md,
+  // bypassing the manage card's confirm + rebind cascade. Subagents never
+  // see the channel instructions, so this rule must ride the env block.
+  lines.push('- Agent definitions: NEVER create, edit, or delete files under ~/.claude/agents yourself, even when asked directly — direct file edits skip eviction, badge refresh, and the delete cascade that re-homes bound chats. Use dc_update_agent / dc_create_agent, and route deletion through the Manage Agents card (dc_open_agent_manage_card) so the owner confirms with a tap.')
   const envBlock = lines.join('\n')
 
   const args: string[] = [
