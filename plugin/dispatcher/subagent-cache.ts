@@ -156,7 +156,7 @@ export class SubagentCache {
     }, this.opts.idleTimeoutMs)
   }
 
-  private async evict(chatId: number, reason: 'lru_evict' | 'user_abort' = 'user_abort'): Promise<void> {
+  private async evict(chatId: number, reason: 'lru_evict' | 'user_abort' | 'turn_timeout' = 'user_abort'): Promise<void> {
     const entry = this.entries.get(chatId)
     if (!entry) return
     if (entry.idleTimer) clearTimeout(entry.idleTimer)
@@ -315,10 +315,25 @@ export class SubagentCache {
       entry.currentTurnId = null
       entry.currentTurnToolCalls = 0
       entry.busy = false
-      // Drain one queued message if any
-      const next = entry.queue.shift()
-      if (next) {
-        this.runNow(entry, chatId, next.text, next.turnId).then(next.resolve).catch(next.reject)
+      if (exitReason === 'turn_timeout') {
+        // A timed-out turn leaves the subagent process alive and still churning
+        // on the abandoned turn; its eventual late `result` frame would be
+        // mis-delivered to a future turn (the off-by-one "responding to a prior
+        // question" bug). Kill the poisoned subagent and re-dispatch any queued
+        // work on a fresh one rather than reusing it. NOTE: no `return` here —
+        // that would swallow the timeout rejection this turn's caller must see.
+        const queued = entry.queue.splice(0, entry.queue.length)
+        this.logf('cache: turn timeout chat=%d — evicting; re-dispatching %d queued', chatId, queued.length)
+        await this.evict(chatId, 'turn_timeout')
+        for (const q of queued) {
+          this.dispatch(chatId, q.text).then(q.resolve).catch(q.reject)
+        }
+      } else {
+        // Drain one queued message if any
+        const next = entry.queue.shift()
+        if (next) {
+          this.runNow(entry, chatId, next.text, next.turnId).then(next.resolve).catch(next.reject)
+        }
       }
     }
   }

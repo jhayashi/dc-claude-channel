@@ -14,6 +14,7 @@
  */
 
 import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { FrameBuffer } from './frame-buffer'
 
 interface StreamFrame {
   type: string
@@ -259,15 +260,14 @@ export class SubagentProcess {
   readonly sessionId: string
   private child: ChildProcessWithoutNullStreams
   private buf = ''
-  private frameQueue: StreamFrame[] = []
-  private waiters: Array<(f: StreamFrame) => void> = []
   /**
-   * Reject function for the in-flight readFrame, if any. Set inside the
-   * Promise executor and cleared on resolve/timeout. close() and the exit
-   * handler call abortPendingReaders to fire this so callers unblock
-   * immediately instead of waiting for the multi-hour turn timeout.
+   * Ordered stdout frame buffer + reader state machine. Extracted so the
+   * read/buffer/timeout logic is unit-testable (see frame-buffer.ts). send()
+   * calls frames.clearStale() at each turn boundary so a late `result` frame
+   * from a prior turn can never be mis-delivered as this turn's reply (the
+   * off-by-one bug).
    */
-  private pendingReject: ((err: Error) => void) | null = null
+  private frames = new FrameBuffer<StreamFrame>()
   private busy = false
   private closed = false
   private logf: (fmt: string, ...args: unknown[]) => void
@@ -345,60 +345,16 @@ export class SubagentProcess {
       // Compact trace of every frame (debug only).
       const snippet = line.length > 400 ? line.slice(0, 400) + '...' : line
       this.logf('subagent %s frame: %s', this.subagentId, snippet)
-      if (this.waiters.length) {
-        this.waiters.shift()!(frame)
-      } else {
-        this.frameQueue.push(frame)
-      }
+      this.frames.push(frame)
     }
   }
-
-  /** Mutable deadline for the in-flight readFrame; extendDeadline mutates this. */
-  private pendingDeadline = 0
-  private pendingTimer: NodeJS.Timeout | null = null
 
   /**
    * Extend the in-flight turn deadline by extraMs. Used to pause the turn
    * timeout while a permission prompt is awaiting user input.
    */
   extendDeadline(extraMs: number): void {
-    if (!this.pendingTimer || extraMs <= 0) return
-    this.pendingDeadline += extraMs
-  }
-
-  private readFrame(predicate: (f: StreamFrame) => boolean, timeoutMs: number): Promise<StreamFrame> {
-    for (let i = 0; i < this.frameQueue.length; i++) {
-      if (predicate(this.frameQueue[i])) return Promise.resolve(this.frameQueue.splice(i, 1)[0])
-    }
-    // No frames will arrive after the child has exited or close() has run.
-    // Reject immediately rather than waiting out the multi-hour turn timeout.
-    if (this.closed) {
-      return Promise.reject(new Error(`subagent ${this.subagentId} closed`))
-    }
-    return new Promise<StreamFrame>((resolve, reject) => {
-      this.pendingReject = reject
-      this.pendingDeadline = Date.now() + timeoutMs
-      const arm = () => {
-        const remaining = Math.max(0, this.pendingDeadline - Date.now())
-        this.pendingTimer = setTimeout(() => {
-          // Deadline may have been extended while we were sleeping; re-arm.
-          if (Date.now() < this.pendingDeadline) { arm(); return }
-          const idx = this.waiters.indexOf(resolveWrapper)
-          if (idx >= 0) this.waiters.splice(idx, 1)
-          this.pendingTimer = null
-          this.pendingReject = null
-          reject(new Error(`timeout after ${timeoutMs}ms`))
-        }, remaining)
-      }
-      arm()
-      const resolveWrapper = (f: StreamFrame) => {
-        if (!predicate(f)) { this.frameQueue.push(f); this.waiters.push(resolveWrapper); return }
-        if (this.pendingTimer) { clearTimeout(this.pendingTimer); this.pendingTimer = null }
-        this.pendingReject = null
-        resolve(f)
-      }
-      this.waiters.push(resolveWrapper)
-    })
+    this.frames.extendDeadline(extraMs)
   }
 
   /**
@@ -407,11 +363,8 @@ export class SubagentProcess {
    * with no reader pending — it just clears state.
    */
   private abortPendingReaders(err: Error): void {
-    if (this.pendingTimer) { clearTimeout(this.pendingTimer); this.pendingTimer = null }
-    this.waiters.length = 0
-    const reject = this.pendingReject
-    this.pendingReject = null
-    if (reject) reject(err)
+    this.frames.markClosed()
+    this.frames.abort(err)
   }
 
   async send(text: string, turnTimeoutMs = 4 * 60 * 60 * 1000): Promise<TurnResult> {
@@ -420,10 +373,20 @@ export class SubagentProcess {
     this.busy = true
     this.lastUsed = Date.now()
     try {
+      // Drop anything left buffered by a prior turn BEFORE starting this one.
+      // A late `result` frame from an earlier turn (e.g. one that timed out
+      // while its process kept running) would otherwise be returned here as
+      // THIS turn's reply — the off-by-one / "responding to a prior question"
+      // bug. We hold `busy`, so anything buffered now is provably stale.
+      const dropped = this.frames.clearStale()
+      if (dropped > 0) {
+        this.logf('subagent %s: dropped %d stale frame(s) before turn', this.subagentId, dropped)
+      }
+
       const inputFrame = { type: 'user', message: { role: 'user', content: text } }
       this.child.stdin.write(JSON.stringify(inputFrame) + '\n')
 
-      const resultFrame = await this.readFrame(
+      const resultFrame = await this.frames.read(
         (f) => f.type === 'result' && (f.subtype === 'success' || f.subtype === 'error_during_execution'),
         turnTimeoutMs,
       )

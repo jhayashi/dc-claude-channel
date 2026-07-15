@@ -200,6 +200,36 @@ describe('SubagentCache turn telemetry', () => {
     await cache.closeAll()
   })
 
+  it('on turn timeout, evicts the poisoned subagent and re-dispatches queued work on a fresh one', async () => {
+    // A timed-out turn leaves the real subagent process alive and still churning
+    // on the abandoned turn; reusing it desyncs every future turn (the off-by-one
+    // bug). The cache must kill it and run queued work on a fresh subagent.
+    const subs: ControllableFakeSubagent[] = []
+    const cache = new SubagentCache({
+      maxActive: 4,
+      idleTimeoutMs: 60000,
+      spawnFn: async (chatId) => { const s = new ControllableFakeSubagent(chatId); subs.push(s); return s },
+    })
+    const first = cache.dispatch(5, 'long turn')
+    await new Promise((r) => setTimeout(r, 10))
+    // A second message arrives while the first is in flight — it queues.
+    const second = cache.dispatch(5, 'my actual question')
+    await new Promise((r) => setTimeout(r, 10))
+    expect(subs).toHaveLength(1)
+
+    // The first turn times out.
+    subs[0].timeout(999)
+    await expect(first).rejects.toThrow(/timeout after/)
+    await new Promise((r) => setTimeout(r, 10))
+
+    // The poisoned subagent is killed, and the queued message runs on a NEW one.
+    expect(subs[0].closed).toBe(true)
+    expect(subs).toHaveLength(2)
+    subs[1].complete('fresh answer')
+    expect(await second).toEqual({ text: 'fresh answer', denials: [] })
+    await cache.closeAll()
+  })
+
   it('classifies crash when the subagent dies mid-send', async () => {
     const events: TurnTelemetry[] = []
     const subs: ControllableFakeSubagent[] = []
