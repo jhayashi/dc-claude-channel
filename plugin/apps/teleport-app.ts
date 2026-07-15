@@ -462,7 +462,12 @@ export const teleportApp: WebXDCApp = {
 
       if (payload.type === 'resume_list_request') {
         const requestId = typeof payload.requestId === 'number' ? payload.requestId : 0
-        const candidates = listCandidates()
+        // NOTE: the injectable listCandidates seam is scoped to
+        // handleResumeAttach; this read-only list path calls the real
+        // implementation directly. (A stray seam reference here was a
+        // ReferenceError that broke the import-session list, caught in
+        // the #114 Task-2 review.)
+        const candidates = resume.listResumeCandidates()
         try {
           const update = JSON.stringify({
             payload: {

@@ -107,3 +107,17 @@ test('import refusal copy is direction-correct — never advises the OUT phrase 
   expect(err.message).not.toContain("teleport this session")
   expect(err.message.toLowerCase()).toContain('import')
 })
+
+test('resume_list_request replies with a resume_list (regression: seam-scoped ReferenceError broke the import list)', async () => {
+  const { teleportApp } = await import('../apps/teleport-app.js')
+  teleportApp.restoreSession!(4242, 77)
+  const sent: any[] = []
+  const ctx: any = {
+    client: { sendWebXDCUpdate: async (_m: number, u: string) => { sent.push(JSON.parse(u).payload) } },
+    logf: () => {},
+  }
+  await teleportApp.onWebXDCUpdate!(4242, [
+    { payload: { type: 'resume_list_request', requestId: 3, senderAddr: 'x' }, serial: 1 } as never,
+  ], ctx)
+  expect(sent.some(p => p.type === 'resume_list')).toBe(true)
+})
