@@ -35,6 +35,7 @@ import { setControlAuthDeps } from './apps/teleport-app.js'
 import { setControlAuthDeps as setContactsControlAuthDeps } from './apps/contacts-app.js'
 import { setControlAuthDeps as setCreateControlAuthDeps } from './apps/create-app.js'
 import { setControlAuthDeps as setManageControlAuthDeps } from './apps/agent-manage-app.js'
+import { recordCardSession, updateCardSerial, restoreCardSessions, pruneCardSessions } from './dispatcher/card-sessions.js'
 import { countHumanMembers } from './access/webxdc-control-auth.js'
 import { advanceCoach, isCoachDone, startRefineCoach } from './coach.js'
 import { classifyIntent, shouldClassify } from './nl-intents.js'
@@ -616,6 +617,8 @@ ctx = {
   registerWebXDCMsg(msgId: number, app: WebXDCApp, chatId: number, lastSerial?: number) {
     webxdcAppRegistry.set(msgId, { app, chatId })
     if (lastSerial != null) webxdcLastSerial.set(msgId, lastSerial)
+    // #114: write-through so open cards survive dispatcher restarts.
+    recordCardSession(msgId, app.id, chatId)
   },
   unregisterWebXDCMsg(msgId: number) {
     webxdcAppRegistry.delete(msgId)
@@ -2926,6 +2929,9 @@ async function main(): Promise<void> {
       for (const u of updates) {
         if (u.serial > (webxdcLastSerial.get(msgId) ?? 0)) {
           webxdcLastSerial.set(msgId, u.serial)
+          // #114: persist the cursor so a restored card never replays
+          // already-processed (potentially state-changing) updates.
+          updateCardSerial(msgId, u.serial)
         }
       }
 
@@ -3110,6 +3116,22 @@ async function main(): Promise<void> {
   setContactsControlAuthDeps(controlAuthDeps)
   setCreateControlAuthDeps(controlAuthDeps)
   setManageControlAuthDeps(controlAuthDeps)
+
+  // #114: restore persisted card sessions so cards opened before the
+  // restart keep working. Runs before app.start() so file-reviewer's own
+  // richer restore (which re-registers through registerWebXDCMsg) can
+  // overwrite these baseline entries idempotently.
+  pruneCardSessions()
+  const restoredCards = restoreCardSessions({
+    apps,
+    register: (msgId, _appId, chatId, lastSerial) => {
+      const app = apps.find(a => a.id === _appId)
+      if (!app) return
+      webxdcAppRegistry.set(msgId, { app, chatId })
+      webxdcLastSerial.set(msgId, lastSerial)
+    },
+  })
+  logf('card-sessions: restored %d card session(s)', restoredCards)
 
   // Start all app lifecycle hooks.
   for (const app of apps) {

@@ -532,12 +532,13 @@ export const teleportApp: WebXDCApp = {
     }
   },
 
+  // #114: refill teleportSessions from the persisted card-session store at
+  // boot so a card opened before a restart keeps answering taps.
+  restoreSession(msgId: number, chatId: number): void {
+    teleportSessions.set(msgId, chatId)
+  },
+
   start(ctx: AppContext): void {
-    // Restore any teleport sessions that were registered before a restart.
-    // The cards are registered via registerWebXDCMsg from dc_open_teleport_card
-    // on each new send. On restart, sessions are lost — callers must re-open
-    // the card. Unlike agent-setup-app, teleport cards are lightweight and
-    // don't need persistent session state.
     ctx.logf('teleport: app started')
   },
 }

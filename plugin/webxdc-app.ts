@@ -93,6 +93,13 @@ export interface WebXDCApp {
    */
   onWebXDCUpdate?(msgId: number, updates: WebXDCUpdate[], ctx: AppContext): Promise<void>
   registerNotifications?(ctx: AppContext): void
+  /**
+   * #114: called at boot for each persisted card session so the app can
+   * refill its module-level msgId→chatId map. Implement ONLY where a card's
+   * session should survive restarts (permissions deliberately does not —
+   * a pending permission request must die with the process).
+   */
+  restoreSession?(msgId: number, chatId: number): void
   start?(ctx: AppContext): void
   stop?(): void
 }

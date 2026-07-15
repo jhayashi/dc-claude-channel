@@ -388,6 +388,12 @@ export const agentManageApp: WebXDCApp = {
     }
   },
 
+  // #114: refill manageSessions from the persisted card-session store at
+  // boot so a card opened before a restart keeps answering taps.
+  restoreSession(msgId: number, chatId: number): void {
+    manageSessions.set(msgId, chatId)
+  },
+
   start(ctx: AppContext): void {
     ctx.logf('agent-manage: app started')
   },

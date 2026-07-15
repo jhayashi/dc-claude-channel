@@ -267,6 +267,12 @@ export const createApp: WebXDCApp = {
     }
   },
 
+  // #114: refill createSessions from the persisted card-session store at
+  // boot so a card opened before a restart keeps answering taps.
+  restoreSession(msgId: number, chatId: number): void {
+    createSessions.set(msgId, chatId)
+  },
+
   start(ctx: AppContext): void {
     ctx.logf('create: app started')
   },
