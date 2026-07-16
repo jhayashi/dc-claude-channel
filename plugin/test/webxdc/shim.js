@@ -79,6 +79,9 @@
     getSerial: function () {
       return nextSerial - 1;
     },
+    getListenerSerial: function () {
+      return listenerSerial;
+    },
     sentToChat: sentToChat,
   };
 })();

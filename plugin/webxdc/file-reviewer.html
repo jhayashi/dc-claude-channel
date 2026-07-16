@@ -1218,7 +1218,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.60;
+var APP_VERSION = 1.61;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -1248,6 +1248,72 @@ var commentsByDoc = {}; // { docIndex: { anchor: commentText } }
 // carry no fileId.
 var sentFileIds = {};
 var sentTitles = {};
+
+// #113: resume-from-serial cache. Persisted after every processed update
+// (debounced) and synchronously on the two local-only mutations (tab close,
+// comments sent) so a reopen can skip replaying the full update history.
+var FR_CACHE_KEY = 'frCache.v1';
+var FR_MAX_DOCS = 50;
+var frLastSerial = 0;
+var frCacheWriteTimer = null;
+
+function loadFrCache() {
+  try {
+    var raw = localStorage.getItem(FR_CACHE_KEY);
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.lastSerial !== 'number' || !Array.isArray(parsed.docs)) return null;
+    return parsed;
+  } catch (e) {
+    return null;
+  }
+}
+
+function restoreFrCache(cache) {
+  documents = cache.docs.slice();
+  sentFileIds = cache.sentFileIds || {};
+  sentTitles = cache.sentTitles || {};
+  activeIndex = typeof cache.activeIndex === 'number' ? cache.activeIndex : (documents.length ? documents.length - 1 : -1);
+}
+
+function persistFrCacheNow() {
+  var payload;
+  try {
+    payload = JSON.stringify({
+      lastSerial: frLastSerial,
+      sentFileIds: sentFileIds,
+      sentTitles: sentTitles,
+      docs: documents,
+      activeIndex: activeIndex,
+    });
+    localStorage.setItem(FR_CACHE_KEY, payload);
+  } catch (e) {
+    // Quota guard: retry once with just the active doc; give up silently
+    // on a second failure (next open replays from 0 — never broken, just slower).
+    try {
+      var trimmedDocs = (activeIndex >= 0 && documents[activeIndex]) ? [documents[activeIndex]] : [];
+      payload = JSON.stringify({
+        lastSerial: frLastSerial,
+        sentFileIds: sentFileIds,
+        sentTitles: sentTitles,
+        docs: trimmedDocs,
+        activeIndex: trimmedDocs.length ? 0 : -1,
+      });
+      localStorage.setItem(FR_CACHE_KEY, payload);
+    } catch (e2) {
+      // Give up — no cache persisted this round.
+    }
+  }
+}
+
+function persistFrCache() {
+  if (frCacheWriteTimer) clearTimeout(frCacheWriteTimer);
+  frCacheWriteTimer = setTimeout(function () {
+    frCacheWriteTimer = null;
+    persistFrCacheNow();
+  }, 500);
+}
+
 var editingAnchor = null; // currently editing anchor (or null)
 
 function getComments(docIndex) {
@@ -2349,6 +2415,7 @@ function sendComments() {
     }
   }
   commentsByDoc = newComments;
+  persistFrCacheNow();
 
   // Show next file or loading state
   if (documents.length === 0) {
@@ -3057,6 +3124,7 @@ function confirmCloseTab() {
     else rekeyed[oldIdx] = commentsByDoc[k];
   }
   commentsByDoc = rekeyed;
+  persistFrCacheNow();
 
   if (documents.length === 0) {
     activeIndex = -1;
@@ -3132,7 +3200,26 @@ function markCommentsSent(fileId, fileTitle) {
   if (removedAny) refreshAfterRemoval();
 }
 
-window.webxdc.setUpdateListener(function(update) {
+// #113: restore from cache before registering the listener, so a valid
+// cache renders instantly and the listener resumes past what it already
+// processed instead of replaying from 0.
+var frCache = loadFrCache();
+var frInitialSerial = 0;
+if (frCache) {
+  restoreFrCache(frCache);
+  frLastSerial = frCache.lastSerial;
+  frInitialSerial = frCache.lastSerial;
+  document.getElementById('loading').style.display = 'none';
+  if (documents.length) {
+    document.getElementById('empty').style.display = 'none';
+    rebuildSidebar();
+    showTargetDocument();
+  } else {
+    document.getElementById('empty').style.display = 'flex';
+  }
+}
+
+function handleFrUpdate(update) {
   var data = update.payload;
   if (!data) return;
   if (versionMismatchSent) return;
@@ -3190,8 +3277,18 @@ window.webxdc.setUpdateListener(function(update) {
       var c = data.chunks[i];
       var chunkContent = c.content || c.markdown;
       if (!chunkContent) continue;
+      // #113: idempotent insert — a crash between "applied" and "persisted"
+      // can redeliver this same update on next boot. Dedup by fileId+title
+      // together (never fileId alone — a multi-chunk file shares one fileId
+      // across several distinctly-titled chunks, and deduping on fileId
+      // alone would keep only the first chunk).
+      var chunkTitle = c.title || 'Untitled';
+      var chunkAlreadyHave = documents.some(function (d) {
+        return d.fileId === (data.fileId || null) && d.title === chunkTitle;
+      });
+      if (chunkAlreadyHave) continue;
       documents.push({
-        title: c.title || 'Untitled',
+        title: chunkTitle,
         content: chunkContent,
         language: c.language || data.language || null,
         startLine: c.startLine || 1,
@@ -3217,19 +3314,31 @@ window.webxdc.setUpdateListener(function(update) {
   document.getElementById('loading').style.display = 'none';
   document.getElementById('empty').style.display = 'none';
 
-  documents.push({
-    title: data.title || 'Untitled',
-    content: content,
-    language: data.language || null,
-    startLine: data.startLine || 1,
-    // #73: chunked-fallback path puts fileId on chunk 0 only; legacy
-    // pre-1.42 payloads have no fileId and fall through to "show last."
-    fileId: data.fileId || null,
+  var legacyTitle = data.title || 'Untitled';
+  var legacyAlreadyHave = documents.some(function (d) {
+    return d.fileId === (data.fileId || null) && d.title === legacyTitle;
   });
+  if (!legacyAlreadyHave) {
+    documents.push({
+      title: legacyTitle,
+      content: content,
+      language: data.language || null,
+      startLine: data.startLine || 1,
+      // #73: chunked-fallback path puts fileId on chunk 0 only; legacy
+      // pre-1.42 payloads have no fileId and fall through to "show last."
+      fileId: data.fileId || null,
+    });
+  }
 
   rebuildSidebar();
   showTargetDocument();
-}, 0);
+}
+
+window.webxdc.setUpdateListener(function(update) {
+  handleFrUpdate(update);
+  frLastSerial = update.serial;
+  persistFrCache();
+}, frInitialSerial);
 
 // #73: deep-link to a specific file via the URL fragment carried in the
 // notification's href. Spec example: `index.html#about`; we use
