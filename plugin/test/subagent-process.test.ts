@@ -118,6 +118,23 @@ describe('buildSubagentArgs', () => {
     expect(args).not.toContain('--allowed-tools')
   })
 
+  test('always disallows headless-incompatible interactive tools', () => {
+    // #105: AskUserQuestion/EnterPlanMode/ExitPlanMode need an interactive
+    // UI `claude -p` can't provide; unconditionally deny them so a subagent
+    // can never be granted one, regardless of what the agent's tools list
+    // (a file shared with terminal CC) happens to contain.
+    const { args } = buildSubagentArgs(baseOpts({ agent: { name: 'bare' } }))
+    expect(args).toContain('--disallowed-tools')
+    expect(args[args.indexOf('--disallowed-tools') + 1]).toBe('AskUserQuestion,EnterPlanMode,ExitPlanMode')
+  })
+
+  test('disallows AskUserQuestion even when the agent explicitly grants it', () => {
+    const { args } = buildSubagentArgs(baseOpts({
+      agent: { name: 'legacy', tools: 'Bash, AskUserQuestion' },
+    }))
+    expect(args[args.indexOf('--disallowed-tools') + 1]).toBe('AskUserQuestion,EnterPlanMode,ExitPlanMode')
+  })
+
   test('throws if agent.name is missing', () => {
     expect(() => buildSubagentArgs(baseOpts({ agent: { name: undefined as unknown as string } })))
       .toThrow(/agent\.name is required/)

@@ -172,6 +172,13 @@ export function buildSubagentArgs(
     '--verbose',
     '--settings', opts.settingsPath,
     '--append-system-prompt', envBlock,
+    // #105: these three tools require an interactive UI `claude -p` can't
+    // provide and CC auto-denies them with an opaque error. Deny wins over
+    // --allowed-tools/--agent grants, so this holds even for a legacy or
+    // hand-imported agent .md (shared with terminal CC) that still lists
+    // one — the model sees no tool at all and degrades to a plain-text
+    // question on its own, instead of a bare tool-call failure.
+    '--disallowed-tools', 'AskUserQuestion,EnterPlanMode,ExitPlanMode',
   ]
   // CC reads model / system prompt / tools / memory from the agent .md
   // (via --agent), but does NOT propagate the .md's `permissionMode` into
