@@ -55,6 +55,41 @@ test.describe("file-reviewer cached open (#113)", () => {
     expect(resumedAt).toBe(lastSerial);
   });
 
+  test("a reviewed file stays dismissed after a reload even when its document update is redelivered (#112 under resume-from-serial)", async () => {
+    h = await createHarness(findFileReviewerXdc());
+    const appVersion = await h.getAppVersion();
+    const docPayload = { title: "Report A", content: "# Report A\n\nx\n", fileId: "file-A", version: appVersion };
+
+    await h.push(docPayload);
+    await h.page.waitForSelector("h1");
+
+    // Mark it reviewed: push the matching `comments` update.
+    await h.push({
+      type: "comments",
+      fileId: "file-A",
+      fileTitle: "Report A",
+      comments: [{ paragraph: 1, comment: "looks done" }],
+    });
+    await h.page.waitForSelector("#empty", { state: "visible", timeout: 3_000 });
+
+    // Give the debounced persist time to flush before we reload.
+    await h.page.waitForTimeout(700);
+
+    await h.page.reload({ waitUntil: "load" });
+
+    // After reload, resume-from-serial means updates before lastSerial never
+    // replay again — so this redelivery of the *same* document update is the
+    // only thing that could bring the file back. The reviewed-state must
+    // have survived via `sentFileIds` in the cache, not via replaying the
+    // old `comments` update.
+    await h.push(docPayload);
+
+    const matching = await h.page.evaluate(() =>
+      (window as any).documents.filter((d: any) => d.fileId === "file-A"),
+    );
+    expect(matching.length).toBe(0);
+  });
+
   test("a missing cache falls back to a full replay from serial 0", async () => {
     h = await createHarness(findFileReviewerXdc());
     const resumedAt = await h.page.evaluate(() => (window as any).__harness.getListenerSerial());

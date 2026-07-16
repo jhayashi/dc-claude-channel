@@ -1218,7 +1218,7 @@ Prism.languages.lua={comment:/^#!.+|--(?:\[(=*)\[[\s\S]*?\]\1\]|.*)/m,string:{pa
 Prism.languages.r={comment:/#.*/,string:{pattern:/(['"])(?:\\.|(?!\1)[^\\\r\n])*\1/,greedy:!0},"percent-operator":{pattern:/%[^%\s]*%/,alias:"operator"},boolean:/\b(?:FALSE|TRUE)\b/,ellipsis:/\.\.(?:\.|\d+)/,number:[/\b(?:Inf|NaN)\b/,/(?:\b0x[\dA-Fa-f]+(?:\.\d*)?|\b\d+(?:\.\d*)?|\B\.\d+)(?:[EePp][+-]?\d+)?[iL]?/],keyword:/\b(?:NA|NA_character_|NA_complex_|NA_integer_|NA_real_|NULL|break|else|for|function|if|in|next|repeat|while)\b/,operator:/->?>?|<(?:=|<?-)?|[>=!]=?|::?|&&?|\|\|?|[+*\/^$@~]/,punctuation:/[(){}\[\],;]/};
 </script>
 <script>
-var APP_VERSION = 1.61;
+var APP_VERSION = 1.62;
 var versionMismatchSent = false;
 var documents = [];
 var activeIndex = -1;
@@ -1288,8 +1288,14 @@ function persistFrCacheNow() {
     });
     localStorage.setItem(FR_CACHE_KEY, payload);
   } catch (e) {
-    // Quota guard: retry once with just the active doc; give up silently
-    // on a second failure (next open replays from 0 — never broken, just slower).
+    // Quota guard: retry once with just the active doc. If the retry
+    // succeeds, lastSerial still advances, so the next open resumes past it
+    // rather than replaying from 0 — but the trimmed-out docs are silently
+    // dropped from the cache for good (they never replay again either;
+    // recoverable only by re-sending them). Only if this retry ALSO fails
+    // do we skip the write entirely, which is the truly safe case: no
+    // lastSerial was persisted, so the next open falls back to a full
+    // replay from serial 0.
     try {
       var trimmedDocs = (activeIndex >= 0 && documents[activeIndex]) ? [documents[activeIndex]] : [];
       payload = JSON.stringify({
