@@ -77,4 +77,30 @@ test.describe("file-reviewer cached open (#113)", () => {
     );
     expect(matching.length).toBe(1);
   });
+
+  test("pushing past the 50-doc cap evicts the oldest and shows one toast", async () => {
+    h = await createHarness(findFileReviewerXdc());
+    const appVersion = await h.getAppVersion();
+
+    for (let i = 0; i < 52; i++) {
+      await h.push({
+        title: "Doc " + i,
+        content: "# Doc " + i + "\n\nbody\n",
+        fileId: "doc-" + i,
+        version: appVersion,
+      });
+    }
+    await h.page.waitForSelector("text=Doc 51");
+
+    const fileIds = await h.page.evaluate(() =>
+      (window as any).documents.map((d: any) => d.fileId),
+    );
+    expect(fileIds.length).toBe(50);
+    expect(fileIds).not.toContain("doc-0");
+    expect(fileIds).not.toContain("doc-1");
+    expect(fileIds).toContain("doc-51");
+
+    const toastText = await h.page.textContent(".export-toast");
+    expect(toastText).toContain("2 older files removed");
+  });
 });

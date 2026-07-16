@@ -1256,6 +1256,7 @@ var FR_CACHE_KEY = 'frCache.v1';
 var FR_MAX_DOCS = 50;
 var frLastSerial = 0;
 var frCacheWriteTimer = null;
+var frAccumulatedEvictions = 0;
 
 function loadFrCache() {
   try {
@@ -3164,6 +3165,23 @@ function removeDocumentAt(index) {
   else if (activeIndex > index) activeIndex -= 1;
 }
 
+// #113: cap total cached documents at FR_MAX_DOCS. Evicts the oldest
+// (index 0, since new docs are always appended) until back at the cap,
+// then shows exactly one toast summarizing the whole eviction batch —
+// not one per file. Accumulates evictions across multiple pushes.
+function enforceDocCap() {
+  var evicted = 0;
+  while (documents.length > FR_MAX_DOCS) {
+    removeDocumentAt(0);
+    evicted++;
+  }
+  if (evicted > 0) {
+    frAccumulatedEvictions += evicted;
+    var noun = frAccumulatedEvictions === 1 ? 'file' : 'files';
+    showExportToast('success', frAccumulatedEvictions + ' older ' + noun + ' removed to stay under the ' + FR_MAX_DOCS + '-file limit.');
+  }
+}
+
 // #112: reconcile the visible view after one or more removals.
 function refreshAfterRemoval() {
   if (documents.length === 0) {
@@ -3299,8 +3317,10 @@ function handleFrUpdate(update) {
         fileId: data.fileId || null,
       });
     }
+    var hadNewChunks = documents.length > firstNewIndex;
+    enforceDocCap();
     rebuildSidebar();
-    if (documents.length > firstNewIndex) showTargetDocument();
+    if (hadNewChunks) showTargetDocument();
     return;
   }
 
@@ -3330,6 +3350,7 @@ function handleFrUpdate(update) {
     });
   }
 
+  enforceDocCap();
   rebuildSidebar();
   showTargetDocument();
 }
