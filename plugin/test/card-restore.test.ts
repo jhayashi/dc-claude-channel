@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { setCardSessionsDir, recordCardSession, updateCardSerial, restoreCardSessions } from '../dispatcher/card-sessions.js'
+import { setCardSessionsDir, recordCardSession, updateCardSerial, restoreCardSessions, handleUnknownCardUpdate } from '../dispatcher/card-sessions.js'
 import { teleportApp } from '../apps/teleport-app.js'
 import { contactsApp } from '../apps/contacts-app.js'
 import { createApp } from '../apps/create-app.js'
@@ -74,5 +74,21 @@ describe('card session restore (#114)', () => {
     const seen: number[] = []
     restoreCardSessions({ apps: [contactsApp], register: (_m, _a, _c, lastSerial) => seen.push(lastSerial) })
     expect(seen).toContain(33)
+  })
+})
+
+describe('expired-card fallback wiring (#114)', () => {
+  test('unknown msgId → one notice with the fresh-card copy, deduped across updates', async () => {
+    const sent: string[] = []
+    const notified = new Set<number>()
+    const deps = {
+      resolveChatId: async (m: number) => (m === 900 ? 12 : null),
+      send: async (_c: number, t: string) => { sent.push(t) },
+      notified,
+    }
+    await handleUnknownCardUpdate(900, deps)
+    await handleUnknownCardUpdate(900, deps)
+    expect(sent.length).toBe(1)
+    expect(sent[0]).toContain('expired')
   })
 })

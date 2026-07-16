@@ -957,6 +957,17 @@ export class DCClient {
     };
   }
 
+  /** Resolve which chat a message belongs to. Null if the message is gone. */
+  async getMessageChatId(msgId: number): Promise<number | null> {
+    const { rpc, accountId } = this.ensureAccount();
+    try {
+      const snap = await rpc.getMessage(accountId, msgId);
+      return snap?.chatId ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   async lookupContactByAddr(addr: string): Promise<number | null> {
     const { rpc, accountId } = this.ensureAccount();
     return await rpc.lookupContactIdByAddr(accountId, addr);

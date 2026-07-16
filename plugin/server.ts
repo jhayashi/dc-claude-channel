@@ -35,7 +35,7 @@ import { setControlAuthDeps } from './apps/teleport-app.js'
 import { setControlAuthDeps as setContactsControlAuthDeps } from './apps/contacts-app.js'
 import { setControlAuthDeps as setCreateControlAuthDeps } from './apps/create-app.js'
 import { setControlAuthDeps as setManageControlAuthDeps } from './apps/agent-manage-app.js'
-import { recordCardSession, updateCardSerial, restoreCardSessions, pruneCardSessions } from './dispatcher/card-sessions.js'
+import { recordCardSession, updateCardSerial, restoreCardSessions, pruneCardSessions, handleUnknownCardUpdate } from './dispatcher/card-sessions.js'
 import { countHumanMembers } from './access/webxdc-control-auth.js'
 import { advanceCoach, isCoachDone, startRefineCoach } from './coach.js'
 import { classifyIntent, shouldClassify } from './nl-intents.js'
@@ -170,6 +170,7 @@ function safeName(s: string): string {
 
 const webxdcAppRegistry = new Map<number, { app: WebXDCApp; chatId: number }>()
 const webxdcLastSerial = new Map<number, number>()
+const expiredCardNotices = new Set<number>()
 
 // ── Coach turn serialization ───────────────────────────────────────────
 // Per-chat in-process lock for coach turns. Without this, two messages
@@ -2918,7 +2919,18 @@ async function main(): Promise<void> {
     if (shuttingDown) return
 
     const entry = webxdcAppRegistry.get(msgId)
-    if (!entry?.app.onWebXDCUpdate) return
+    if (!entry?.app.onWebXDCUpdate) {
+      // #114: pre-persistence or pruned card — tell the user once instead
+      // of silently dropping their taps forever.
+      if (!entry) {
+        handleUnknownCardUpdate(msgId, {
+          resolveChatId: (m) => client.getMessageChatId(m),
+          send: (chatId, text) => client.send(chatId, text),
+          notified: expiredCardNotices,
+        }).catch(err => logf('card-sessions: expired-card notice failed msg=%d: %v', msgId, err))
+      }
+      return
+    }
 
     try {
       const lastSerial = webxdcLastSerial.get(msgId) ?? 0
