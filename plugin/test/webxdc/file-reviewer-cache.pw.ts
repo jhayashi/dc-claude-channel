@@ -101,6 +101,44 @@ test.describe("file-reviewer cached open (#113)", () => {
     expect(fileIds).toContain("doc-51");
 
     const toastText = await h.page.textContent(".export-toast");
-    expect(toastText).toContain("2 older files removed");
+    expect(toastText).toContain("1 older file removed");
+  });
+
+  test("eviction toasts show per-batch counts, not cumulative totals", async () => {
+    h = await createHarness(findFileReviewerXdc());
+    const appVersion = await h.getAppVersion();
+
+    // Fill up to exactly 50 docs
+    for (let i = 0; i < 50; i++) {
+      await h.push({
+        title: "Doc " + i,
+        content: "# Doc " + i + "\n\nbody\n",
+        fileId: "doc-" + i,
+        version: appVersion,
+      });
+    }
+    await h.page.waitForSelector("text=Doc 49");
+
+    // First eviction-triggering push (triggers removal of doc-0)
+    await h.push({
+      title: "Doc 50",
+      content: "# Doc 50\n\nbody\n",
+      fileId: "doc-50",
+      version: appVersion,
+    });
+    let toastText = await h.page.textContent(".export-toast");
+    expect(toastText).toContain("1 older file removed");
+
+    // Second eviction-triggering push (triggers removal of doc-1)
+    // If the code were still cumulative, this would show "2 older files removed"
+    // With the fix, it should show "1 older file removed" (just for this push)
+    await h.push({
+      title: "Doc 51",
+      content: "# Doc 51\n\nbody\n",
+      fileId: "doc-51",
+      version: appVersion,
+    });
+    toastText = await h.page.textContent(".export-toast");
+    expect(toastText).toContain("1 older file removed");
   });
 });
