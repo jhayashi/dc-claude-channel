@@ -233,14 +233,16 @@ test('dc_check_contact: rejects missing contact_id', async () => {
 
 // ── dc_exit_session ───────────────────────────────────────────────────────
 
-test('dc_exit_session: errors gracefully when /proc read fails', async () => {
-  // In test environment /proc/<ppid>/stat will exist but parsing may vary.
-  // We just verify the handler is present and returns a result (not throws).
+test('dc_exit_session: registered as infrastructure tool (handler never invoked in tests)', () => {
+  // NEVER call this handler in tests: it resolves this process's grandparent
+  // via /proc and fires a real SIGTERM at it 500ms later. Under `bun test`
+  // that pid is not a claude terminal — it's the test runner's ancestor
+  // (the systemd --user manager, tmux, or the spawning subagent), and the
+  // signal tears it down (2026-07-16: killed the whole user session, twice).
   const def = DC_TOOLS.find(t => t.name === 'dc_exit_session')!
-  const ctx = makeToolCtx()
-  // The handler reads /proc/<ppid>/stat; in test we just check it returns something.
-  const r = await def.handler!({}, ctx)
-  expect(r.content.length).toBeGreaterThan(0)
+  expect(def).toBeDefined()
+  expect(def.requiresCapability).toBe('infrastructure')
+  expect(typeof def.handler).toBe('function')
 })
 
 // ── dc_chat_history ───────────────────────────────────────────────────────
