@@ -4,6 +4,21 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.20] — 2026-07-19
+
+### Fixed
+
+- **File Reviewer cold-open cost no longer scales with total chat history (#113).** WebXDC replays every update from serial 0 on each open, so a chat that had accumulated many reviewed files got slower and heavier to open every time. A `localStorage`-backed snapshot (`frCache.v1`) is now written after every processed update (debounced) and read back on boot, so `setUpdateListener` resumes from the last-seen serial instead of replaying the full history. Cached docs are capped at 50 with a per-batch eviction toast; documented as the reference pattern in `CONTRIBUTING.md` for future long-lived-instance apps.
+- **`AskUserQuestion`/`EnterPlanMode`/`ExitPlanMode` no longer surface an opaque error (#105).** These tools need an interactive UI headless `claude -p` can't provide. They were already dropped from *new* agents' default tool list back in v1.3.0, but that never touched already-saved agent `.md` files — shared with terminal CC, where the tools work fine — so a legacy or hand-imported agent could still carry one and hit the bug. Subagent spawn now unconditionally denies all three via `--disallowed-tools`, which wins over any grant in the agent file, so the model degrades to a clean plain-text question instead of erroring.
+- **WebXDC cards survive a dispatcher restart (#114 P3).** Card sessions (msgId → app/chat/serial) are now persisted and restored on boot; a tap on a card whose session predates persistence (or was pruned) gets a one-time "card expired, reopen" notice instead of silently doing nothing forever.
+- **Stale turn results no longer answer the wrong chat message.** A turn that timed out (or otherwise left its process alive) could emit its `result` frame after the caller had stopped waiting; the next turn would then pick up that stale frame as its own reply, lagging every subsequent reply by one turn for the life of the process. The stdout frame state machine is now a standalone, unit-tested `FrameBuffer` that drops any buffered frame at the start of each turn, and a timed-out subagent is evicted and respawned instead of left alive to leak a late frame.
+- **Teleport's import-session list crashed on every open since v1.4.19.** A #137 scoping refactor left a variable reachable only from a sibling code path, throwing `ReferenceError` on every `resume_list_request` — the card's import list never loaded (15s timeout modal).
+- Fixed a test that invoked the real `dc_exit_session` handler, which fires a real `SIGTERM` at a resolved PID — harmless in production (the target is the terminal `claude` process, by design) but under `bun test` that PID resolves to the test runner's own ancestor, taking down the whole user session. Twice, on 2026-07-16.
+
+### Closed
+
+- **#83 (permissions remediation) closed without a fix.** Couldn't reproduce the underlying premise on the current Claude Code version — the hardcoded pre-hook sensitive-paths policy the issue was built around either no longer exists or no longer covers the paths tested; refusals now happen as model judgment in prose, which never reaches `permission_denials` and isn't something a settings-allowlist mutation could act on.
+
 ## [1.4.19] — 2026-07-14
 
 The discoverability release: the help card ships, every phrase it advertises is machine-verified, and the first live phrase-validation run against a real chatmail relay caught (and fixed) two behavioral bugs.
@@ -371,6 +386,7 @@ The agent format aligns with Claude Code's own. Agent definitions move from `~/.
 
 - **`DC_TOOL_NAMES` was missing `reply`.** The cross-chat post tool is registered without a `dc_` prefix and slipped past the initial drift catalog; the boot drift-check warned but newly-saved agents silently lost cross-chat reply access until added.
 
+[1.4.20]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.19...v1.4.20
 [1.4.19]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.18...v1.4.19
 [1.4.18]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.17...v1.4.18
 [1.4.5]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.4...v1.4.5
