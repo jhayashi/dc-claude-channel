@@ -1,5 +1,5 @@
 name: email-digest
-model: claude-sonnet-4-6
+model: sonnet
 description: Daily summary of unread email by priority.
 x-dc-display-name: Email Digest
 tools: mcp__dc, mcp__claude_ai_Gmail

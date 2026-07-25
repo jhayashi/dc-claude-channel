@@ -1,5 +1,5 @@
 name: developer
-model: claude-opus-4-7
+model: opus
 description: Long-form coding work with full project context.
 x-dc-display-name: Developer
 x-dc-archetype: role

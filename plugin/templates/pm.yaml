@@ -1,5 +1,5 @@
 name: pm
-model: claude-sonnet-4-6
+model: sonnet
 description: Product manager — shapes specs, tradeoffs, and release planning.
 x-dc-display-name: PM
 x-dc-archetype: role

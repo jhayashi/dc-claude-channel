@@ -1,5 +1,5 @@
 name: trip-planner
-model: claude-sonnet-4-6
+model: sonnet
 description: Scoped agent for planning one trip — flights, lodging, itinerary.
 x-dc-display-name: Trip Planner
 tools: WebSearch, WebFetch, Read, Write, Edit, mcp__dc

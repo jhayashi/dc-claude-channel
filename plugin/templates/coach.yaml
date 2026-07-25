@@ -1,5 +1,5 @@
 name: coach
-model: claude-sonnet-4-6
+model: sonnet
 description: Thinking partner — reflective questions, accountability, goal-setting.
 x-dc-display-name: Coach
 x-dc-archetype: role

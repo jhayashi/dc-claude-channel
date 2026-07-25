@@ -1,5 +1,5 @@
 name: tutor
-model: claude-sonnet-4-6
+model: sonnet
 description: Patient tutor for any subject — explains, questions, checks understanding.
 x-dc-display-name: Tutor
 x-dc-archetype: role

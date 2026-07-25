@@ -1,5 +1,5 @@
 name: exec-assistant
-model: claude-sonnet-4-6
+model: sonnet
 description: Handles email triage and calendar scheduling.
 x-dc-display-name: Exec Assistant
 tools: mcp__dc, mcp__claude_ai_Gmail, mcp__claude_ai_Google_Calendar

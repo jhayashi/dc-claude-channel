@@ -1,5 +1,5 @@
 name: news-briefing
-model: claude-haiku-4-5
+model: haiku
 description: Short daily news rundown from the user's configured sources.
 x-dc-display-name: News Briefing
 tools: WebFetch, WebSearch, Read, mcp__dc, mcp__claude_ai_Gmail

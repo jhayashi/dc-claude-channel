@@ -1,5 +1,5 @@
 name: homework-helper
-model: claude-sonnet-4-6
+model: sonnet
 description: Stays on one course or assignment; patient, answers-last.
 x-dc-display-name: Homework Helper
 x-dc-archetype: project

@@ -1,5 +1,5 @@
 name: marketer
-model: claude-sonnet-4-6
+model: sonnet
 description: Drafts copy, positioning, and campaign ideas.
 x-dc-display-name: Marketer
 x-dc-archetype: role

@@ -1,5 +1,5 @@
 name: event-planner
-model: claude-sonnet-4-6
+model: sonnet
 description: Scoped agent for one event — venue, guests, timing, logistics.
 x-dc-display-name: Event Planner
 tools: WebSearch, WebFetch, Read, Write, Edit, mcp__dc, mcp__claude_ai_Google_Calendar

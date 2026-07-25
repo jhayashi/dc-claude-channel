@@ -1,5 +1,5 @@
 name: scheduler
-model: claude-sonnet-4-6
+model: sonnet
 description: Recurring reminders and scheduled prompts delivered to this chat.
 x-dc-display-name: Scheduler
 tools: mcp__dc, mcp__claude_ai_Google_Calendar
