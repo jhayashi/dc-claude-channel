@@ -4,6 +4,16 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.21] — 2026-07-25
+
+### Added
+
+- **Claude 5 in the model registry.** `claude-opus-5` and `claude-sonnet-5` are now listed at the head of their tiers and `default` points at `claude-sonnet-5`. The registry had topped out at Opus 4.8 / Sonnet 4.6, so every tier lookup — `latestModelForTier`, `LATEST_MODELS`, and the "switch to opus" NL path — still resolved to a 4.x model. The 4.x entries are retained so agents already on them keep resolving their labels, badges and `inheritClaudeMd`.
+
+### Changed
+
+- **Agent templates name a model tier instead of pinning an id.** All 12 shipped templates now declare `sonnet` / `opus` / `haiku`, resolved at load to the newest id in that tier, so a model release needs one edit to `plugin/models.json` rather than twelve template files — previously every template went stale on release day and new agents kept being created on 4.x. Agents still *store* a concrete id, so `tierForModel`, `labelForModel`, `inheritClaudeMdForModel`, the badge renderer and the v1.4 migrations all keep keying off real ids, and an explicit id in a template passes through untouched so a template can deliberately hold an agent on an older model. Resolution runs inside `readTemplate` *before* schema validation out of necessity: `AgentDefSchema` gates `model` on `isAcceptableModelId`, which rejects a bare tier, and `readTemplate` returns `null` on a failed parse — so resolving after the schema would drop every tier-valued template from the picker silently rather than erroring. A regression test pins that ordering.
+
 ## [1.4.20] — 2026-07-19
 
 ### Fixed
@@ -386,6 +396,7 @@ The agent format aligns with Claude Code's own. Agent definitions move from `~/.
 
 - **`DC_TOOL_NAMES` was missing `reply`.** The cross-chat post tool is registered without a `dc_` prefix and slipped past the initial drift catalog; the boot drift-check warned but newly-saved agents silently lost cross-chat reply access until added.
 
+[1.4.21]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.20...v1.4.21
 [1.4.20]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.19...v1.4.20
 [1.4.19]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.18...v1.4.19
 [1.4.18]: https://github.com/jhayashi/dc-claude-channel/compare/v1.4.17...v1.4.18
