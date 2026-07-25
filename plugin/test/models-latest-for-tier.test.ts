@@ -2,11 +2,11 @@ import { test, expect } from 'bun:test'
 import { latestModelForTier, tierForModel } from '../models'
 
 test('latestModelForTier returns the newest id for each tier', () => {
-  // v1.4.12 — Opus 4.8 listed first in models.json (newest-first per tier
-  // convention) → latestModelForTier('opus') returns 4.8. Fable 5 is its
-  // own tier so latestModelForTier('fable') returns claude-fable-5.
-  expect(latestModelForTier('opus')).toBe('claude-opus-4-8')
-  expect(latestModelForTier('sonnet')).toBe('claude-sonnet-4-6')
+  // Opus 5 / Sonnet 5 listed first in models.json (newest-first per tier
+  // convention) → latestModelForTier returns them over the retained 4.x
+  // entries. Fable 5 is its own tier so it returns claude-fable-5.
+  expect(latestModelForTier('opus')).toBe('claude-opus-5')
+  expect(latestModelForTier('sonnet')).toBe('claude-sonnet-5')
   expect(latestModelForTier('haiku')).toBe('claude-haiku-4-5')
   expect(latestModelForTier('fable')).toBe('claude-fable-5')
 })

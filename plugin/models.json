@@ -1,10 +1,12 @@
 {
-  "default": "claude-sonnet-4-6",
+  "default": "claude-sonnet-5",
   "models": [
     { "id": "claude-fable-5", "label": "Fable 5", "tier": "fable", "inheritClaudeMd": true },
+    { "id": "claude-opus-5", "label": "Opus 5", "tier": "opus", "inheritClaudeMd": true },
     { "id": "claude-opus-4-8", "label": "Opus 4.8", "tier": "opus", "inheritClaudeMd": true },
     { "id": "claude-opus-4-7", "label": "Opus 4.7", "tier": "opus", "inheritClaudeMd": true },
     { "id": "claude-opus-4-6", "label": "Opus 4.6", "tier": "opus", "inheritClaudeMd": true },
+    { "id": "claude-sonnet-5", "label": "Sonnet 5", "tier": "sonnet", "inheritClaudeMd": true },
     { "id": "claude-sonnet-4-6", "label": "Sonnet 4.6", "tier": "sonnet", "inheritClaudeMd": true },
     { "id": "claude-haiku-4-5", "label": "Haiku 4.5", "tier": "haiku", "inheritClaudeMd": false }
   ],

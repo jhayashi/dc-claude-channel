@@ -24,6 +24,31 @@ import {
   type DraftAgent,
 } from './agents.js'
 import { ARCHETYPE_PALETTES, ARCHETYPE_DEFAULT_GLYPH } from './agent-icons/palettes.js'
+import * as models from './models.js'
+
+/**
+ * Resolve a template's `model` field, which may name a tier (`sonnet`)
+ * rather than a concrete id (`claude-sonnet-4-6`).
+ *
+ * Templates declare tiers so a new model release only requires editing
+ * plugin/models.json — previously each template pinned an id and every
+ * template went stale on release day. Agents still *store* a concrete id,
+ * so tier badges, labels and inheritClaudeMd keep keying off real ids.
+ *
+ * Passthrough cases, in order:
+ *  - a manifest-known id, or a future `claude-<tier>-*` id → already concrete
+ *  - an unresolvable string (`gpt-4`, a typo) → returned unchanged so
+ *    AgentDefSchema still rejects it at parse; we don't mask bad input
+ */
+export function resolveTemplateModel(ref: string): string {
+  if (typeof ref !== 'string' || ref.length === 0) return ref
+  if (models.isAcceptableModelId(ref)) return ref
+  try {
+    return models.latestModelForTier(ref)
+  } catch {
+    return ref
+  }
+}
 
 /**
  * The `x-dc-template` frontmatter block embedded in a template YAML.
@@ -93,6 +118,12 @@ function readTemplate(path: string): { raw: z.infer<typeof TemplateFileSchema>; 
     raw = YAML.parse(readFileSync(path, 'utf-8'))
   } catch {
     return null
+  }
+  // Must run before schema validation: AgentDefSchema gates `model` on
+  // isAcceptableModelId, which rejects a bare tier — an unresolved template
+  // would be dropped silently rather than surfacing as an error.
+  if (raw && typeof raw === 'object' && typeof (raw as { model?: unknown }).model === 'string') {
+    ;(raw as { model: string }).model = resolveTemplateModel((raw as { model: string }).model)
   }
   const parsed = TemplateFileSchema.safeParse(raw)
   if (!parsed.success) return null

@@ -39,9 +39,54 @@ x-dc-template:
 body: hi
 `
 
+describe('resolveTemplateModel', () => {
+  test('resolves a bare tier to the newest id in that tier', () => {
+    expect(templates.resolveTemplateModel('sonnet')).toBe('claude-sonnet-5')
+    expect(templates.resolveTemplateModel('opus')).toBe('claude-opus-5')
+    expect(templates.resolveTemplateModel('haiku')).toBe('claude-haiku-4-5')
+    expect(templates.resolveTemplateModel('fable')).toBe('claude-fable-5')
+  })
+
+  test('passes an explicit manifest id through unchanged', () => {
+    // Back-compat: a template pinning an id keeps that exact id, so an
+    // author can deliberately hold an agent on an older model.
+    expect(templates.resolveTemplateModel('claude-sonnet-4-6')).toBe('claude-sonnet-4-6')
+    expect(templates.resolveTemplateModel('claude-opus-4-7')).toBe('claude-opus-4-7')
+  })
+
+  test('passes a future claude-<tier>-* id through unchanged', () => {
+    expect(templates.resolveTemplateModel('claude-sonnet-6-0')).toBe('claude-sonnet-6-0')
+  })
+
+  test('returns unresolvable input unchanged so the schema still rejects it', () => {
+    expect(templates.resolveTemplateModel('gpt-4')).toBe('gpt-4')
+    expect(templates.resolveTemplateModel('')).toBe('')
+  })
+})
+
 describe('listTemplates', () => {
   test('returns empty when directory is empty', () => {
     expect(templates.listTemplates()).toEqual([])
+  })
+
+  test('resolves a tier-valued model when loading a template', () => {
+    writeTemplate('tiered.yaml', validTemplate.replace('model: claude-sonnet-4-6', 'model: opus'))
+    const list = templates.listTemplates()
+    expect(list.length).toBe(1)
+    expect(list[0]!.model).toBe('claude-opus-5')
+  })
+
+  test('a tier-valued model survives schema validation rather than being skipped', () => {
+    // Regression guard: AgentDefSchema gates `model` on isAcceptableModelId,
+    // which rejects a bare tier. If resolution ever moves after the schema
+    // parse, the template is dropped silently and this returns [].
+    writeTemplate('tiered.yaml', validTemplate.replace('model: claude-sonnet-4-6', 'model: sonnet'))
+    expect(templates.listTemplates().map(t => t.name)).toEqual(['test-role'])
+  })
+
+  test('instantiate resolves a tier-valued model too', () => {
+    writeTemplate('tiered.yaml', validTemplate.replace('model: claude-sonnet-4-6', 'model: haiku'))
+    expect(templates.instantiate('test-role')?.model).toBe('claude-haiku-4-5')
   })
 
   test('returns empty when directory does not exist', () => {
