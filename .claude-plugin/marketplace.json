@@ -11,7 +11,7 @@
       "name": "deltachat",
       "source": "./plugin",
       "description": "Delta Chat messaging channel for Claude Code — e2e encrypted messaging bridge with chat native GUI app platform (WebXDC) used for permission prompts, file iteration, and whatever else you dream up (multi-player games, claude-powered GUIs, etc.).",
-      "version": "1.4.21",
+      "version": "1.4.22",
       "author": {
         "name": "Joe Hayashi"
       },
