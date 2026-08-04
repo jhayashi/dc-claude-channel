@@ -4,6 +4,14 @@ All notable changes to this project are documented here. Dates are in `YYYY-MM-D
 
 ## Unreleased
 
+## [1.4.23] — 2026-08-04
+
+### Added
+
+- **`permission-relay` event stream diagnoses PreToolUse relay failures (2026-08-03/04 outage follow-up).** Every Bash/WebFetch call from a subagent silently timed out for roughly a day with nothing durable left behind to explain why — `permissions-*.log` only ever records a *completed* verdict round-trip, so a hung or erroring relay call left no trace. `permission-hook-client.ts` now logs each of its own error paths (missing env vars, socket error, bad handshake reply, bad verdict reply, unexpected exception) via the new `logPermissionRelayFailure` writer in `events.ts`. The more likely failure mode — the client hanging mid-`connect`/mid-handshake and getting killed by `timeout` before it ever reaches its own error handling — is covered by a fallback in `permission-hook.sh` itself: any exit code the client didn't self-report gets a fallback log entry from a standalone helper (`log-relay-failure.ts`) that does nothing but a synchronous local file write, so it stays reliable during the exact kind of outage it exists to diagnose. Wired into `dc_show_events` (new `permission-relay` stream option) and the log-rotation sweep.
+
+No WebXDC or badge source changed in this release, so the prebuilt caches under `plugin/webxdc-prebuilt/` and `plugin/agent-badges-prebuilt/` are already current and were deliberately not regenerated.
+
 ## [1.4.22] — 2026-07-26
 
 ### Added
