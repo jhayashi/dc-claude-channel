@@ -10,8 +10,8 @@ import { join } from 'node:path'
 
 import { getEventDir } from './events.js'
 
-export type EventStream = 'tools' | 'turns' | 'permissions' | 'webxdc'
-export const ALL_STREAMS: EventStream[] = ['tools', 'turns', 'permissions', 'webxdc']
+export type EventStream = 'tools' | 'turns' | 'permissions' | 'webxdc' | 'permission-relay'
+export const ALL_STREAMS: EventStream[] = ['tools', 'turns', 'permissions', 'webxdc', 'permission-relay']
 
 /**
  * Parse a `since` value. Accepts `<N>h` (hours) or `<N>d` (days) as a
@@ -77,12 +77,14 @@ export interface EventHit {
  * verdict=deny. WebXDC: ownerVerified=false. Turns: exit reasons that
  * indicate something went wrong (crash, turn_timeout, resume_fallback).
  * Normal lifecycle exits (completed/idle/lru_evict/user_abort) are NOT
- * errors.
+ * errors. Permission-relay: every line in this stream is a failure by
+ * construction (a completed relay round-trip never writes here).
  */
 function isError(stream: EventStream, obj: Record<string, unknown>): boolean {
   if (stream === 'tools') return obj.ok === false
   if (stream === 'permissions') return obj.verdict === 'deny'
   if (stream === 'webxdc') return obj.ownerVerified === false
+  if (stream === 'permission-relay') return true
   if (stream === 'turns') {
     const r = obj.exitReason
     return r === 'crash' || r === 'turn_timeout' || r === 'resume_fallback'

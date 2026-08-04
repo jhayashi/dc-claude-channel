@@ -642,7 +642,7 @@ export const DC_TOOLS: readonly DcToolDef[] = [
     name: 'dc_show_events',
     requiresCapability: 'chat',
     description:
-      'Show structured DC runtime events (tool calls, subagent turns, permission verdicts, WebXDC updates) for the user. Reads the JSONL event log in $DC_EVENT_DIR, filters by time window / stream / tool / error flag, and sends the result as a markdown file via the file reviewer. Use when the user asks "what did my agent do?", "show me errors", "why was X denied?", etc.',
+      'Show structured DC runtime events (tool calls, subagent turns, permission verdicts, WebXDC updates, PreToolUse relay failures) for the user. Reads the JSONL event log in $DC_EVENT_DIR, filters by time window / stream / tool / error flag, and sends the result as a markdown file via the file reviewer. Use when the user asks "what did my agent do?", "show me errors", "why was X denied?", "why did my scheduled jobs fail?", etc.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -650,11 +650,11 @@ export const DC_TOOLS: readonly DcToolDef[] = [
         stream: {
           type: 'string',
           description: 'Which log stream to read. Default "all".',
-          enum: ['tools', 'turns', 'permissions', 'webxdc', 'all'],
+          enum: ['tools', 'turns', 'permissions', 'webxdc', 'permission-relay', 'all'],
         },
         since: { type: 'string', description: 'Time window. ISO-8601 timestamp, or "<N>h" / "<N>d" relative offset. Default "24h".' },
         tool: { type: 'string', description: 'Optional tool name filter (tools stream only).' },
-        only_errors: { type: 'boolean', description: 'When true, keep only error events (tools ok=false, permissions deny, webxdc unverified, turns crash/timeout/resume-fallback). Default false.' },
+        only_errors: { type: 'boolean', description: 'When true, keep only error events (tools ok=false, permissions deny, webxdc unverified, turns crash/timeout/resume-fallback, permission-relay always). Default false.' },
       },
       required: ['chat_id'],
     },

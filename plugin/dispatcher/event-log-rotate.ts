@@ -1,12 +1,12 @@
 /**
  * Age-based deletion of dated event-log files under $DC_EVENT_DIR.
  *
- * The six streams (`tools-`, `turns-`, `permissions-`, `webxdc-`,
- * `agent-lifecycle-`, `subagent-stderr-`) already auto-roll daily by filename
- * (`<stream>-YYYY-MM-DD.log`, UTC). Without rotation those files
- * accumulate without bound — a Pi install runs out of disk; a desktop
- * install just wastes it. This module sweeps the dir and deletes files
- * whose filename date is older than `maxAgeDays`.
+ * The seven streams (`tools-`, `turns-`, `permissions-`, `webxdc-`,
+ * `agent-lifecycle-`, `subagent-stderr-`, `permission-relay-`) already
+ * auto-roll daily by filename (`<stream>-YYYY-MM-DD.log`, UTC). Without
+ * rotation those files accumulate without bound — a Pi install runs out
+ * of disk; a desktop install just wastes it. This module sweeps the dir
+ * and deletes files whose filename date is older than `maxAgeDays`.
  *
  * We parse the filename date rather than reading mtime because mtime
  * drifts (backup tooling, `touch`, snapshot restores) which makes
@@ -22,7 +22,7 @@ import { readdir, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 
 /** Streams written by events.ts + events-lifecycle.ts. Order doesn't matter. */
-const STREAM_NAMES = ['tools', 'turns', 'permissions', 'webxdc', 'agent-lifecycle', 'subagent-stderr'] as const
+const STREAM_NAMES = ['tools', 'turns', 'permissions', 'webxdc', 'agent-lifecycle', 'subagent-stderr', 'permission-relay'] as const
 
 const FILENAME_RE = new RegExp(
   `^(${STREAM_NAMES.join('|')})-(\\d{4})-(\\d{2})-(\\d{2})\\.log$`,

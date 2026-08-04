@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { logToolCall, logTurn, logPermission, logWebXDC, logSubagentStderr, buildArgPreview, getEventDir, setEventDir, type ToolCallEvent, type TurnEvent, type PermissionEvent, type WebXDCEvent, type SubagentStderrEvent } from '../events.js'
+import { logToolCall, logTurn, logPermission, logWebXDC, logSubagentStderr, logPermissionRelayFailure, buildArgPreview, getEventDir, setEventDir, type ToolCallEvent, type TurnEvent, type PermissionEvent, type WebXDCEvent, type SubagentStderrEvent, type PermissionRelayFailureEvent } from '../events.js'
 
 function baseEvent(overrides: Partial<ToolCallEvent> = {}): ToolCallEvent {
   return {
@@ -172,6 +172,69 @@ describe('events.logSubagentStderr', () => {
     const files = readdirSync(dir)
     const parsed = JSON.parse(readFileSync(join(dir, files[0]), 'utf-8').trim())
     expect(parsed.exitCode).toBe(null)
+  })
+})
+
+describe('events.logPermissionRelayFailure', () => {
+  let dir: string
+  let prevDir: string
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'events-test-'))
+    prevDir = getEventDir()
+    setEventDir(dir)
+  })
+
+  afterEach(() => {
+    setEventDir(prevDir)
+    try { rmSync(dir, { recursive: true, force: true }) } catch {}
+  })
+
+  function baseRelayFailure(overrides: Partial<PermissionRelayFailureEvent> = {}): PermissionRelayFailureEvent {
+    return {
+      ts: '2026-08-04T15:00:00.000Z',
+      requestId: 'p-1234-5678',
+      chatId: 10,
+      subagentId: 'sub-10-abc123',
+      tool: 'Bash',
+      stage: 'socket_error',
+      exitCode: 11,
+      detail: 'connect ECONNREFUSED',
+      ...overrides,
+    }
+  }
+
+  it('writes one JSONL line to permission-relay-<date>.log with all fields', () => {
+    logPermissionRelayFailure(baseRelayFailure())
+    const files = readdirSync(dir)
+    expect(files).toEqual(['permission-relay-2026-08-04.log'])
+    const parsed = JSON.parse(readFileSync(join(dir, files[0]), 'utf-8').trim())
+    expect(parsed).toMatchObject(baseRelayFailure())
+  })
+
+  it('records the shell-timeout catch-all stage with a null-safe chatId/subagentId', () => {
+    logPermissionRelayFailure(baseRelayFailure({
+      stage: 'shell_timeout_or_unknown_rc',
+      exitCode: 124,
+      chatId: null,
+      subagentId: null,
+      detail: 'shell wrapper caught rc=124 (timeout or client never self-reported)',
+    }))
+    const files = readdirSync(dir)
+    const parsed = JSON.parse(readFileSync(join(dir, files[0]), 'utf-8').trim())
+    expect(parsed.stage).toBe('shell_timeout_or_unknown_rc')
+    expect(parsed.exitCode).toBe(124)
+    expect(parsed.chatId).toBe(null)
+    expect(parsed.subagentId).toBe(null)
+  })
+
+  it('swallows write errors like the other streams', () => {
+    const blocker = join(dir, 'blocker')
+    writeFileSync(blocker, 'not a dir')
+    setEventDir(join(blocker, 'events'))
+    let err: unknown = null
+    expect(() => logPermissionRelayFailure(baseRelayFailure(), (e) => { err = e })).not.toThrow()
+    expect(err).not.toBe(null)
   })
 })
 

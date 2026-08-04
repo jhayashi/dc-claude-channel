@@ -9,6 +9,13 @@
  *   $DC_EVENT_DIR/subagent-stderr-<YYYY-MM-DD>.log — raw subagent stderr +
  *     exit code (crash forensics — without this the cache only sees "died
  *     during send" with no signal/exitcode/trace to explain why)
+ *   $DC_EVENT_DIR/permission-relay-<YYYY-MM-DD>.log — a PreToolUse relay
+ *     attempt (permission-hook.sh / permission-hook-client.ts) that failed
+ *     to reach a verdict at all. Distinct from `permissions`, which only
+ *     ever records a *completed* round-trip — a hung/timed-out/erroring
+ *     relay call never reaches that stream. Added after the 2026-08-03/04
+ *     outage, where every Bash/WebFetch call silently timed out with
+ *     nothing durable left behind to explain why.
  * (default dir: $DC_STATE_DIR/events/ or ~/.claude/channels/deltachat/events/).
  *
  * Filename uses the UTC date at write time; rotation happens implicitly
@@ -375,4 +382,64 @@ export function logSubagentStderr(
   onWriteError?: (err: unknown) => void,
 ): void {
   appendLine('subagent-stderr', ev.ts, ev, onWriteError)
+}
+
+/**
+ * Where a PreToolUse relay attempt (permission-hook.sh /
+ * permission-hook-client.ts) gave up before reaching a verdict.
+ *
+ *   missing_env                  — required DC_* env vars absent (client
+ *                                  never attempted a connection)
+ *   socket_error                 — `net.connect` failed or the socket
+ *                                  emitted an `error` event
+ *   bad_hello_ack                — dispatcher replied to `hello` with
+ *                                  something other than `helloAck`
+ *   bad_verdict_reply            — dispatcher's reply to
+ *                                  `permissionRequest` wasn't a matching
+ *                                  `permissionVerdict`
+ *   unexpected_exception         — any other throw inside the client's
+ *                                  connect handler
+ *   shell_timeout_or_unknown_rc  — permission-hook.sh observed a non-zero
+ *                                  exit the client didn't self-report
+ *                                  (most commonly `timeout`'s rc=124 —
+ *                                  the client hung, e.g. mid-`connect`,
+ *                                  and never reached its own error path)
+ */
+export type PermissionRelayFailureStage =
+  | 'missing_env'
+  | 'socket_error'
+  | 'bad_hello_ack'
+  | 'bad_verdict_reply'
+  | 'unexpected_exception'
+  | 'shell_timeout_or_unknown_rc'
+
+export interface PermissionRelayFailureEvent {
+  ts: string
+  /** Request id assigned by permission-hook.sh (`p-<pid>-<rand>`). Null if unavailable. */
+  requestId: string | null
+  /** Bound chat id, when known. */
+  chatId: number | null
+  /** Subagent id, when known. */
+  subagentId: string | null
+  /** Tool being gated, when known (e.g. `Bash`, `WebFetch`). */
+  tool: string | null
+  /** Where the failure was detected. */
+  stage: PermissionRelayFailureStage
+  /** Process exit code — the client's own (10-14), `timeout`'s (124), or whatever the shell wrapper observed. */
+  exitCode: number
+  /** Free-text detail — error message or unexpected frame contents, clipped to 200 chars. */
+  detail: string
+}
+
+/**
+ * Append one permission-relay-failure event line. See
+ * `PermissionRelayFailureStage` for what this stream captures and why
+ * it's separate from `permissions` (which only ever sees a *completed*
+ * round-trip). Swallows errors, like the other streams.
+ */
+export function logPermissionRelayFailure(
+  ev: PermissionRelayFailureEvent,
+  onWriteError?: (err: unknown) => void,
+): void {
+  appendLine('permission-relay', ev.ts, ev, onWriteError)
 }

@@ -150,6 +150,19 @@ describe('events-query.queryEvents', () => {
     ])
   })
 
+  it('only_errors keeps every permission-relay line (a completed relay never writes here)', () => {
+    write('permission-relay-2026-04-20.log',
+      { ts: '2026-04-20T10:00:00.000Z', stage: 'socket_error', exitCode: 11 },
+      { ts: '2026-04-20T10:01:00.000Z', stage: 'shell_timeout_or_unknown_rc', exitCode: 124 },
+    )
+    const hits = queryEvents({
+      streams: ['permission-relay'],
+      since: new Date('2026-04-20T00:00:00.000Z'),
+      onlyErrors: true,
+    }, dir)
+    expect(hits.length).toBe(2)
+  })
+
   it('skips malformed JSON lines without throwing', () => {
     writeFileSync(join(dir, 'tools-2026-04-20.log'),
       '{"ts":"2026-04-20T10:00:00.000Z","tool":"a","ok":true}\nnot json\n{"ts":"2026-04-20T10:01:00.000Z","tool":"b","ok":true}\n',

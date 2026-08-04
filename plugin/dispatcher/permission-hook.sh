@@ -46,6 +46,14 @@ RC=$?
 
 if [[ $RC -ne 0 ]]; then
   echo "dc-claude-channel: permission relay timed out or errored (rc=$RC)" >&2
+  # permission-hook-client.ts logs its own error paths in-process (rc
+  # 10-14). Any other rc (most commonly `timeout`'s 124, meaning the
+  # client hung and never reached its own error path) means nothing was
+  # logged yet — write a fallback record ourselves so the failure still
+  # leaves a trail. Best-effort: never let logging itself block the deny.
+  if [[ $RC -lt 10 || $RC -gt 14 ]]; then
+    timeout 5 bun "$DIR/log-relay-failure.ts" "$REQUEST_ID" "$RC" "${DC_SUBAGENT_CHAT_ID:-0}" "${DC_SUBAGENT_ID:-}" "$TOOL" "shell wrapper caught rc=$RC (timeout or client never self-reported)" >/dev/null 2>&1 &
+  fi
   exit 2
 fi
 

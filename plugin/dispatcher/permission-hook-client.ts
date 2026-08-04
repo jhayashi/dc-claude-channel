@@ -21,6 +21,7 @@ import {
   parseServerFrame,
   type ServerMessage,
 } from '../shared/protocol.js'
+import { logPermissionRelayFailure, type PermissionRelayFailureStage } from '../events.js'
 
 const REQUEST_ID = process.argv[2] ?? 'p-unknown'
 const SOCKET = process.env.DC_DISPATCHER_SOCKET
@@ -28,8 +29,28 @@ const SECRET = process.env.DC_DISPATCHER_SECRET
 const SUB_ID = process.env.DC_SUBAGENT_ID
 const CHAT_ID = Number(process.env.DC_SUBAGENT_CHAT_ID ?? '0')
 
+/**
+ * Record a relay failure before exiting. Called from every error path
+ * below so an outage like 2026-08-03/04 (every Bash/WebFetch call
+ * silently timing out, no durable evidence of why) leaves a trail.
+ * `tool` is best-effort — it's only known once stdin has parsed.
+ */
+function logFailure(stage: PermissionRelayFailureStage, exitCode: number, detail: string, tool?: string | null): void {
+  logPermissionRelayFailure({
+    ts: new Date().toISOString(),
+    requestId: REQUEST_ID,
+    chatId: Number.isFinite(CHAT_ID) && CHAT_ID !== 0 ? CHAT_ID : null,
+    subagentId: SUB_ID ?? null,
+    tool: tool ?? null,
+    stage,
+    exitCode,
+    detail: detail.slice(0, 200),
+  })
+}
+
 if (!SOCKET || !SECRET || !SUB_ID || !CHAT_ID) {
   console.error('permission-hook-client: missing env vars')
+  logFailure('missing_env', 10, 'one or more of DC_DISPATCHER_SOCKET/DC_DISPATCHER_SECRET/DC_SUBAGENT_ID/DC_SUBAGENT_CHAT_ID missing')
   process.exit(10)
 }
 
@@ -70,6 +91,7 @@ function readFrame(): Promise<ServerMessage> {
 
 sock.on('error', (err) => {
   console.error(`permission-hook-client: socket error: ${err.message}`)
+  logFailure('socket_error', 11, err.message, parsed.tool_name)
   process.exit(11)
 })
 
@@ -85,6 +107,7 @@ sock.on('connect', async () => {
     const ack = await readFrame()
     if (ack.kind !== 'helloAck') {
       console.error(`permission-hook-client: unexpected ack: ${JSON.stringify(ack)}`)
+      logFailure('bad_hello_ack', 12, JSON.stringify(ack), parsed.tool_name)
       process.exit(12)
     }
 
@@ -97,6 +120,7 @@ sock.on('connect', async () => {
     const verdict = await readFrame()
     if (verdict.kind !== 'permissionVerdict' || verdict.id !== REQUEST_ID) {
       console.error(`permission-hook-client: unexpected reply: ${JSON.stringify(verdict)}`)
+      logFailure('bad_verdict_reply', 13, JSON.stringify(verdict), parsed.tool_name)
       process.exit(13)
     }
 
@@ -109,6 +133,7 @@ sock.on('connect', async () => {
     process.exit(0)
   } catch (err) {
     console.error(`permission-hook-client: ${err}`)
+    logFailure('unexpected_exception', 14, err instanceof Error ? `${err.name}: ${err.message}` : String(err), parsed.tool_name)
     process.exit(14)
   }
 })
